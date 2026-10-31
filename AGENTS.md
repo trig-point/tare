@@ -24,16 +24,16 @@ Use Node 22 (at least 22.18) and pnpm 11.2.2. Run these from the repository root
 - Typecheck all workspaces: `pnpm typecheck`
 - Test all workspaces: `pnpm test` (runs `node --test`)
 - Regenerate query types: `pnpm generate`
-- Run engine: copy `.env.example` to `.env`, then `pnpm --filter @tare/engine start`
+- Run engine: optionally copy `.env.example` to `.env`, or set environment variables, then `pnpm --filter @tare/engine start`
 - Health check: `curl -s localhost:3000/health`
 
 Biome handles linting and formatting for the workspace. TypeScript runs in strict mode. Node strips TypeScript types directly; there is no build step or type-stripping flag.
 
 ## Configuration
 
-`DATABASE_URL` is required and is a SQLite file path, or `:memory:` for an ephemeral database. Relative paths resolve from the engine process working directory (`packages/engine` when using the workspace command). Parent directories are created automatically. Startup applies migrations before listening.
+`DATABASE_URL` is required and is a SQLite file path, or `:memory:` for an ephemeral database. Surrounding whitespace is trimmed. Relative paths resolve from the engine process working directory (`packages/engine` when using the workspace command). Parent directories are created automatically. Startup applies migrations before listening.
 
-`PORT` defaults to `3000` and must be an integer from 1 to 65535. `.env.example` lists both variables with safe local values. The startup command loads the root `.env` file; process environment variables can override it.
+`PORT` defaults to `3000` and must be an integer from 1 to 65535. `.env.example` lists both variables with safe local values. The startup command loads the root `.env` file if it exists; process environment variables can override it. Set the required variables in the process environment when running without a file.
 
 TypeSQL generation uses an ignored local database at `packages/engine/data/typesql.sqlite`. Biome formats generated code and permits the generator's explicit `any` type in query output.
 

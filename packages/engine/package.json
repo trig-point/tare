@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node --env-file=../../.env src/index.ts",
-    "start": "node --env-file=../../.env src/index.ts",
+    "dev": "node --env-file-if-exists=../../.env src/index.ts",
+    "start": "node --env-file-if-exists=../../.env src/index.ts",
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --test test/*.test.ts",
     "generate": "node scripts/generate.mts && biome check --write --no-errors-on-unmatched src/queries"

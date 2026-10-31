@@ -11,8 +11,8 @@ const files = readdirSync(directory, {
 });
 // A fresh schema prevents local artifacts from hiding query or migration changes.
 rmSync("./data/typesql.sqlite", { force: true });
-for (const name of files.filter((name) => name.endsWith(".ts"))) {
-  rmSync(join(directory, name));
+for (const name of files.filter((name) => name.endsWith(".sql"))) {
+  rmSync(join(directory, `${name.slice(0, -4)}.ts`), { force: true });
 }
 openDatabase("./data/typesql.sqlite").close();
 const result = spawnSync("typesql", ["compile"], { stdio: "inherit" });

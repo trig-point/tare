@@ -4,8 +4,8 @@ export interface Config {
 }
 
 export function loadConfig(env: Record<string, string | undefined>): Config {
-  const databaseUrl = env.DATABASE_URL;
-  if (!databaseUrl?.trim()) {
+  const databaseUrl = env.DATABASE_URL?.trim();
+  if (!databaseUrl) {
     throw new Error("DATABASE_URL is required");
   }
   const portText = env.PORT ?? "3000";
