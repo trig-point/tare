@@ -22,13 +22,13 @@ importers:
     dependencies:
       '@hono/node-server':
         specifier: 2.1.5
-        version: 2.1.5(hono@4.8.3)
+        version: 2.1.5(hono@4.13.14)
       better-sqlite3:
         specifier: 13.0.3
         version: 13.0.3
       hono:
-        specifier: 4.8.3
-        version: 4.8.3
+        specifier: 4.13.14
+        version: 4.13.14
     devDependencies:
       '@types/better-sqlite3':
         specifier: 9.6.0
@@ -320,8 +320,8 @@ packages:
     deprecated: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
     hasBin: true
 
-  hono@4.8.3:
-    resolution: {integrity: sha512-jYZ6ZtfWjzBdh8H/0CIFfCBHaFL75k+KMzaM177hrWWm2TWL39YMYaJgB74uK/niRc866NMlH9B8uCvIo284WQ==}
+  hono@4.13.14:
+    resolution: {integrity: sha512-yhRLQ21U6qa9Hsu2N7Qcbh8tE+WKEcoErjIo56LeSGiGXGp9sA7UpE86Ui9uexb61KakiGwuHMn2QdV7w6i6kQ==}
     engines: {node: '>=16.9.0'}
 
   iconv-lite@0.7.3:
@@ -621,9 +621,9 @@ snapshots:
   '@biomejs/cli-win32-x64@2.0.6':
     optional: true
 
-  '@hono/node-server@2.1.5(hono@4.8.3)':
+  '@hono/node-server@2.1.5(hono@4.13.14)':
     dependencies:
-      hono: 4.8.3
+      hono: 4.13.14
 
   '@isaacs/cliui@9.0.0': {}
 
@@ -815,7 +815,7 @@ snapshots:
       package-json-from-dist: 1.0.1
       path-scurry: 2.0.2
 
-  hono@4.8.3: {}
+  hono@4.13.14: {}
 
   iconv-lite@0.7.3:
     dependencies:

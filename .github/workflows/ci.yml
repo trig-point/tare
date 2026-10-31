@@ -8,6 +8,7 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       # Catches missing source files and supplies history for the secret scan.
       - uses: actions/checkout@v4
@@ -18,7 +19,8 @@ jobs:
       # Catches runtime drift by installing the supported Node version.
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
+          cache: pnpm
       # Catches dependency manifests that disagree with the lockfile.
       - run: pnpm install --frozen-lockfile
       # Catches lint errors and inconsistent formatting.
@@ -28,7 +30,7 @@ jobs:
       # Catches health, configuration and migration regressions.
       - run: pnpm test
       # Catches stale and untracked generated query files.
-      - run: pnpm generate && git add -N packages/engine/src/queries && git diff --exit-code -- packages/engine/src/queries
+      - run: pnpm generate && git add -N packages/engine/src/queries && git diff --exit-code HEAD -- packages/engine/src/queries
       # Catches committed secrets and tampered scanner downloads.
       - run: |
           set -euo pipefail

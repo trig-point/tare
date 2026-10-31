@@ -7,12 +7,12 @@
     "start": "node --env-file=../../.env src/index.ts",
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --test test/*.test.ts",
-    "generate": "node scripts/generate.mts && biome check --write src/queries"
+    "generate": "node scripts/generate.mts && biome check --write --no-errors-on-unmatched src/queries"
   },
   "dependencies": {
     "@hono/node-server": "2.1.5",
     "better-sqlite3": "13.0.3",
-    "hono": "4.8.3"
+    "hono": "4.13.14"
   },
   "devDependencies": {
     "@types/better-sqlite3": "9.6.0",

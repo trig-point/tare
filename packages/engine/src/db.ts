@@ -9,11 +9,17 @@ export function applyMigrations(
   database.exec(
     "CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY NOT NULL)",
   );
-  const names = readdirSync(migrationsFolder)
-    .filter((name) => /^\d+_.+\.sql$/.test(name))
-    .sort((first, second) =>
-      first.localeCompare(second, "en", { numeric: true }),
-    );
+  const sqlFiles = readdirSync(migrationsFolder).filter((name) =>
+    name.endsWith(".sql"),
+  );
+  for (const name of sqlFiles) {
+    if (!/^\d+_.+\.sql$/.test(name))
+      throw new Error(`Invalid migration filename: ${name}`);
+  }
+  if (sqlFiles.length === 0) throw new Error("No migrations found");
+  const names = sqlFiles.sort((first, second) =>
+    first.localeCompare(second, "en", { numeric: true }),
+  );
   const applied = database.prepare(
     "SELECT name FROM schema_migrations WHERE name = ?",
   );

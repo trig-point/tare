@@ -36,6 +36,58 @@ describe("engine foundation", () => {
     });
   }
 
+  for (const port of ["8080", "1", "65535"]) {
+    test(`config accepts PORT ${port}`, () => {
+      assert.equal(
+        loadConfig({ DATABASE_URL: ":memory:", PORT: port }).port,
+        Number(port),
+      );
+    });
+  }
+
+  test("migration runner rejects an unnumbered SQL file", (context) => {
+    const directory = mkdtempSync(join(tmpdir(), "tare-migration-name-"));
+    context.after(() => rmSync(directory, { recursive: true, force: true }));
+    writeFileSync(
+      join(directory, "foundation.sql"),
+      "CREATE TABLE skipped (id INTEGER);",
+    );
+    const connection = openDatabase(":memory:");
+    try {
+      assert.throws(
+        () =>
+          applyMigrations(connection.database, pathToFileURL(directory + sep)),
+        /Invalid migration filename: foundation.sql/,
+      );
+    } finally {
+      connection.close();
+    }
+  });
+
+  test("migration runner rejects an empty migration folder", (context) => {
+    const directory = mkdtempSync(join(tmpdir(), "tare-migration-empty-"));
+    context.after(() => rmSync(directory, { recursive: true, force: true }));
+    const connection = openDatabase(":memory:");
+    try {
+      assert.throws(
+        () =>
+          applyMigrations(connection.database, pathToFileURL(directory + sep)),
+        /No migrations found/,
+      );
+    } finally {
+      connection.close();
+    }
+  });
+
+  test("generated query returns null for a missing row", () => {
+    const connection = openDatabase(":memory:");
+    try {
+      assert.equal(selectFoundation(connection.database, { id: 999 }), null);
+    } finally {
+      connection.close();
+    }
+  });
+
   test("config rejects a blank database URL", () => {
     assert.throws(
       () => loadConfig({ DATABASE_URL: "   " }),
