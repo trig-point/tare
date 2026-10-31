@@ -10,7 +10,10 @@ const server = serve({ port: config.port, fetch: app.fetch }, (address) => {
   console.info(`Engine listening on port ${address.port}`);
 });
 
+let shuttingDown = false;
 function shutdown() {
+  if (shuttingDown) process.exit(1);
+  shuttingDown = true;
   server.close(() => connection.close());
 }
 

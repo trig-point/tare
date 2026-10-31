@@ -2,14 +2,18 @@ import { mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import Database from "better-sqlite3";
 
-export function applyMigrations(database: Database.Database) {
+export function applyMigrations(
+  database: Database.Database,
+  migrationsFolder = new URL("../migrations/", import.meta.url),
+) {
   database.exec(
     "CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY NOT NULL)",
   );
-  const migrationsFolder = new URL("../migrations/", import.meta.url);
   const names = readdirSync(migrationsFolder)
     .filter((name) => /^\d+_.+\.sql$/.test(name))
-    .sort();
+    .sort((first, second) =>
+      first.localeCompare(second, "en", { numeric: true }),
+    );
   const applied = database.prepare(
     "SELECT name FROM schema_migrations WHERE name = ?",
   );
@@ -31,6 +35,7 @@ export function openDatabase(databaseUrl: string) {
   }
   const database = new Database(databaseUrl);
   try {
+    database.pragma("foreign_keys = ON");
     applyMigrations(database);
     return { database, close: () => database.close() };
   } catch (error) {

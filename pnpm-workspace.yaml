@@ -3,4 +3,3 @@ packages:
   - apps/*
 allowBuilds:
   better-sqlite3: true
-  antlr4ng: true

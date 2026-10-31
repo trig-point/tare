@@ -31,8 +31,8 @@ importers:
         version: 4.8.3
     devDependencies:
       '@types/better-sqlite3':
-        specifier: ^7.6.0
-        version: 7.6.13
+        specifier: 9.6.0
+        version: 9.6.0
       typesql-cli:
         specifier: 0.24.0
         version: 0.24.0(@types/node@22.20.5)
@@ -150,8 +150,8 @@ packages:
     os: [linux]
     libc: [glibc]
 
-  '@types/better-sqlite3@7.6.13':
-    resolution: {integrity: sha512-NMv9ASNARoKksWtsq/SHakpYAYnhBrQgGD8zkLYk/jaK8jUGn08CfEdTRgYhMypUQAfzSP8W6gNLe0q19/t4VA==}
+  '@types/better-sqlite3@9.6.0':
+    resolution: {integrity: sha512-ZEEwBSgMu7GYJOynoagg5X9JbxfL6dTJDsgViJIqh67jV44kyOr9RXfmFjLK5rzC4MWssP06t9hu/JwGDnUbCg==}
 
   '@types/node@22.20.5':
     resolution: {integrity: sha512-U2+DNr+wSjpsTS/wZGYHq7GcwfuSmKiKvoPvK22zwTlRhU91yOniN4qRR5KhIjvif7ysw/dz/hKmfDH0Ris4aA==}
@@ -653,7 +653,7 @@ snapshots:
   '@rollup/rollup-linux-x64-gnu@4.67.2':
     optional: true
 
-  '@types/better-sqlite3@7.6.13':
+  '@types/better-sqlite3@9.6.0':
     dependencies:
       '@types/node': 22.20.5
 

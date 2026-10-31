@@ -7,7 +7,7 @@
     "start": "node --env-file=../../.env src/index.ts",
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --test test/*.test.ts",
-    "generate": "node --input-type=module -e \"import { openDatabase } from './src/db.ts'; openDatabase('./data/typesql.sqlite').close();\" && typesql compile && biome check --write src/queries"
+    "generate": "node scripts/generate.mts && biome check --write src/queries"
   },
   "dependencies": {
     "@hono/node-server": "2.1.5",
@@ -15,7 +15,7 @@
     "hono": "4.8.3"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.0",
+    "@types/better-sqlite3": "9.6.0",
     "typesql-cli": "0.24.0"
   }
 }
