@@ -1,25 +1,40 @@
-import { Database } from "bun:sqlite";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { drizzle } from "drizzle-orm/bun-sqlite";
-import { migrate } from "drizzle-orm/bun-sqlite/migrator";
+import Database from "better-sqlite3";
+
+export function applyMigrations(database: Database.Database) {
+  database.exec(
+    "CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY NOT NULL)",
+  );
+  const migrationsFolder = new URL("../migrations/", import.meta.url);
+  const names = readdirSync(migrationsFolder)
+    .filter((name) => /^\d+_.+\.sql$/.test(name))
+    .sort();
+  const applied = database.prepare(
+    "SELECT name FROM schema_migrations WHERE name = ?",
+  );
+  const record = database.prepare(
+    "INSERT INTO schema_migrations (name) VALUES (?)",
+  );
+  for (const name of names) {
+    database.transaction(() => {
+      if (applied.get(name)) return;
+      database.exec(readFileSync(new URL(name, migrationsFolder), "utf8"));
+      record.run(name);
+    })();
+  }
+}
 
 export function openDatabase(databaseUrl: string) {
   if (databaseUrl !== ":memory:") {
     mkdirSync(dirname(databaseUrl), { recursive: true });
   }
-  const client = new Database(databaseUrl);
+  const database = new Database(databaseUrl);
   try {
-    const database = drizzle(client);
-    migrate(database, {
-      migrationsFolder: fileURLToPath(
-        new URL("../migrations", import.meta.url),
-      ),
-    });
-    return { database, close: () => client.close() };
+    applyMigrations(database);
+    return { database, close: () => database.close() };
   } catch (error) {
-    client.close();
+    database.close();
     throw error;
   }
 }

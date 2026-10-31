@@ -3,13 +3,19 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun --env-file=../../.env src/index.ts",
-    "start": "bun --env-file=../../.env src/index.ts",
+    "dev": "node --env-file=../../.env src/index.ts",
+    "start": "node --env-file=../../.env src/index.ts",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "bun test"
+    "test": "node --test test/*.test.ts",
+    "generate": "node --input-type=module -e \"import { openDatabase } from './src/db.ts'; openDatabase('./data/typesql.sqlite').close();\" && typesql compile && biome check --write src/queries"
   },
   "dependencies": {
-    "drizzle-orm": "0.44.2",
+    "@hono/node-server": "2.1.5",
+    "better-sqlite3": "13.0.3",
     "hono": "4.8.3"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.0",
+    "typesql-cli": "0.24.0"
   }
 }

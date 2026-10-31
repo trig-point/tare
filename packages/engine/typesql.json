@@ -1,0 +1,7 @@
+{
+  "databaseUri": "./data/typesql.sqlite",
+  "sqlDir": "./src/queries",
+  "client": "better-sqlite3",
+  "includeCrudTables": [],
+  "generateIndexFiles": false
+}

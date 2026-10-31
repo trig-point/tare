@@ -1,16 +1,17 @@
-import { createApp } from "./app";
-import { loadConfig } from "./config";
-import { openDatabase } from "./db";
+import { serve } from "@hono/node-server";
+import { createApp } from "./app.ts";
+import { loadConfig } from "./config.ts";
+import { openDatabase } from "./db.ts";
 
 const config = loadConfig(process.env);
 const connection = openDatabase(config.databaseUrl);
 const app = createApp();
-const server = Bun.serve({ port: config.port, fetch: app.fetch });
-console.info(`Engine listening on port ${server.port}`);
+const server = serve({ port: config.port, fetch: app.fetch }, (address) => {
+  console.info(`Engine listening on port ${address.port}`);
+});
 
 function shutdown() {
-  server.stop(true);
-  connection.close();
+  server.close(() => connection.close());
 }
 
 process.on("SIGINT", shutdown);

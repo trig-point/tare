@@ -13,20 +13,26 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      # Catches runtime drift by installing the supported Bun version.
-      - uses: oven-sh/setup-bun@v2
+      # Catches package-manager drift using packageManager from package.json.
+      - uses: pnpm/action-setup@v4
+      # Catches runtime drift by installing the supported Node version.
+      - uses: actions/setup-node@v4
         with:
-          bun-version: 1.2.18
+          node-version: 22
       # Catches dependency manifests that disagree with the lockfile.
-      - run: bun install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile
       # Catches lint errors and inconsistent formatting.
-      - run: bun run lint
+      - run: pnpm lint
       # Catches TypeScript type errors across workspaces.
-      - run: bun run typecheck
+      - run: pnpm typecheck
       # Catches health, configuration and migration regressions.
-      - run: bun test
-      # Catches committed secrets in repository history.
+      - run: pnpm test
+      # Catches stale generated query types.
+      - run: pnpm generate && git diff --exit-code -- packages/engine/src/queries
+      # Catches committed secrets and tampered scanner downloads.
       - run: |
-          curl -fsSL https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz -o /tmp/gitleaks.tar.gz
-          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          curl -fsSL https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz -o /tmp/gitleaks_8.28.0_linux_x64.tar.gz
+          curl -fsSL https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_checksums.txt -o /tmp/gitleaks-checksums.txt
+          grep ' gitleaks_8.28.0_linux_x64.tar.gz$' /tmp/gitleaks-checksums.txt | (cd /tmp && sha256sum -c -)
+          tar -xzf /tmp/gitleaks_8.28.0_linux_x64.tar.gz -C /tmp gitleaks
           /tmp/gitleaks detect --source . --redact --exit-code 1
