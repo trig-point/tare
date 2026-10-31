@@ -323,4 +323,31 @@ describe("engine foundation", () => {
       connection.close();
     }
   });
+
+  test("editing an applied migration fails and names the file", (context) => {
+    const directory = mkdtempSync(join(tmpdir(), "tare-migration-edited-"));
+    context.after(() => rmSync(directory, { recursive: true, force: true }));
+    const migrationPath = join(directory, "0001_foundation.sql");
+    copyFileSync(
+      new URL("../migrations/0001_foundation.sql", import.meta.url),
+      migrationPath,
+    );
+    const connection = openDatabase(":memory:");
+    try {
+      assert.doesNotThrow(() =>
+        applyMigrations(connection.database, pathToFileURL(directory + sep)),
+      );
+      writeFileSync(
+        migrationPath,
+        "CREATE TABLE foundation (id INTEGER PRIMARY KEY NOT NULL, changed INTEGER);",
+      );
+      assert.throws(
+        () =>
+          applyMigrations(connection.database, pathToFileURL(directory + sep)),
+        /Applied migration content changed: 0001_foundation.sql/,
+      );
+    } finally {
+      connection.close();
+    }
+  });
 });

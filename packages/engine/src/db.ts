@@ -7,8 +7,14 @@ export function applyMigrations(
   migrationsFolder = new URL("../migrations/", import.meta.url),
 ) {
   database.exec(
-    "CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY NOT NULL)",
+    "CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY NOT NULL, content_hash TEXT NOT NULL)",
   );
+  const columns = database.pragma("table_info(schema_migrations)") as {
+    name: string;
+  }[];
+  if (!columns.some((column) => column.name === "content_hash")) {
+    database.exec("ALTER TABLE schema_migrations ADD COLUMN content_hash TEXT");
+  }
   const entries = readdirSync(migrationsFolder);
   const prefixes = new Set<bigint>();
   for (const name of entries) {
@@ -27,28 +33,44 @@ export function applyMigrations(
   }
   const sqlFiles = entries.filter((name) => name.endsWith(".sql"));
   if (sqlFiles.length === 0) throw new Error("No migrations found");
-  // Applied history must remain reproducible from the migration files.
+  const migrations = sqlFiles
+    .sort((first, second) =>
+      first.localeCompare(second, "en", { numeric: true }),
+    )
+    .map((name) => {
+      const content = readFileSync(new URL(name, migrationsFolder));
+      return {
+        name,
+        content: content.toString("utf8"),
+        hash: createHash("sha256").update(content).digest("hex"),
+      };
+    });
+  // Stored hashes prevent edited files from silently changing applied history.
   const recorded = database
-    .prepare<[], { name: string }>("SELECT name FROM schema_migrations")
+    .prepare<[], { name: string; content_hash: string | null }>(
+      "SELECT name, content_hash FROM schema_migrations",
+    )
     .all();
   for (const migration of recorded) {
-    if (!sqlFiles.includes(migration.name))
+    const file = migrations.find((file) => file.name === migration.name);
+    if (!file)
       throw new Error(`Applied migration file is missing: ${migration.name}`);
+    if (migration.content_hash === null)
+      throw new Error(`Applied migration hash is missing: ${migration.name}`);
+    if (migration.content_hash !== file.hash)
+      throw new Error(`Applied migration content changed: ${migration.name}`);
   }
-  const names = sqlFiles.sort((first, second) =>
-    first.localeCompare(second, "en", { numeric: true }),
-  );
   const applied = database.prepare(
     "SELECT name FROM schema_migrations WHERE name = ?",
   );
   const record = database.prepare(
-    "INSERT INTO schema_migrations (name) VALUES (?)",
+    "INSERT INTO schema_migrations (name, content_hash) VALUES (?, ?)",
   );
-  for (const name of names) {
+  for (const { name, content, hash } of migrations) {
     database.transaction(() => {
       if (applied.get(name)) return;
-      database.exec(readFileSync(new URL(name, migrationsFolder), "utf8"));
-      record.run(name);
+      database.exec(content);
+      record.run(name, hash);
     })();
   }
 }
@@ -67,3 +89,5 @@ export function openDatabase(databaseUrl: string) {
     throw error;
   }
 }
+
+import { createHash } from "node:crypto";
