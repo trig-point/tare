@@ -1,0 +1,32 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      # Catches missing source files and supplies history for the secret scan.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # Catches runtime drift by installing the supported Bun version.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.18
+      # Catches dependency manifests that disagree with the lockfile.
+      - run: bun install --frozen-lockfile
+      # Catches lint errors and inconsistent formatting.
+      - run: bun run lint
+      # Catches TypeScript type errors across workspaces.
+      - run: bun run typecheck
+      # Catches health, configuration and migration regressions.
+      - run: bun test
+      # Catches committed secrets in repository history.
+      - run: |
+          curl -fsSL https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz -o /tmp/gitleaks.tar.gz
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          /tmp/gitleaks detect --source . --redact --exit-code 1
