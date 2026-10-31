@@ -1,0 +1,21 @@
+{
+  "name": "@tare/engine",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --env-file-if-exists=../../.env src/index.ts",
+    "start": "node --env-file-if-exists=../../.env src/index.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --test test/*.test.ts",
+    "generate": "node scripts/generate.mts && biome check --write --no-errors-on-unmatched src/queries"
+  },
+  "dependencies": {
+    "@hono/node-server": "2.1.5",
+    "better-sqlite3": "13.0.3",
+    "hono": "4.13.14"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "9.6.0",
+    "typesql-cli": "0.24.0"
+  }
+}
