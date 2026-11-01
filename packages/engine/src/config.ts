@@ -2,6 +2,8 @@ export interface Config {
   databaseUrl: string;
   port: number;
   timezone: string;
+  publicUrl: string | undefined;
+  sessionDays: number;
   firstUser: { username: string | undefined; password: string | undefined };
 }
 
@@ -32,12 +34,27 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     throw new Error("PORT must be an integer between 1 and 65535");
   }
   const timezone = validateTimezone(env.TARE_TIMEZONE ?? "UTC");
+  const publicUrl = env.TARE_PUBLIC_URL?.trim() || undefined;
+  if (publicUrl !== undefined) {
+    try {
+      if (!["http:", "https:"].includes(new URL(publicUrl).protocol))
+        throw new Error("Unsupported protocol");
+    } catch {
+      throw new Error("TARE_PUBLIC_URL must be an HTTP or HTTPS URL");
+    }
+  }
+  const sessionDaysText = env.TARE_SESSION_DAYS?.trim() || "30";
+  const sessionDays = Number(sessionDaysText);
+  if (!/^\d+$/.test(sessionDaysText) || sessionDays < 1 || sessionDays > 365)
+    throw new Error("TARE_SESSION_DAYS must be an integer between 1 and 365");
   const username = env.TARE_ADMIN_USERNAME?.trim();
   const password = env.TARE_ADMIN_PASSWORD;
   return {
     databaseUrl,
     port,
     timezone,
+    publicUrl,
+    sessionDays,
     firstUser: {
       username: username === "" ? undefined : username,
       password: password === "" ? undefined : password,

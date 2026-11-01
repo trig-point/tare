@@ -39,7 +39,19 @@ const sampleUser = {
 
 describe("engine", () => {
   test("health returns 200 and ok", async () => {
-    const response = await createApp().request("/health");
+    const connection = openDatabase(":memory:");
+    let response: Response;
+    try {
+      response = await createApp({
+        database: connection.database,
+        config: loadConfig({ DATABASE_URL: ":memory:" }),
+        clock: { now: () => new Date() },
+        dummyHash: "unused",
+        verifyPassword: async () => false,
+      }).request("/health");
+    } finally {
+      connection.close();
+    }
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), { status: "ok" });
   });
@@ -53,6 +65,8 @@ describe("engine", () => {
       databaseUrl: ":memory:",
       port: 3000,
       timezone: "UTC",
+      publicUrl: undefined,
+      sessionDays: 30,
       firstUser: { username: undefined, password: undefined },
     });
   });
