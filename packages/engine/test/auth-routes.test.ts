@@ -205,6 +205,7 @@ test("JSON rejection paths preserve rows and skip verification", async (context)
       "null",
       "[]",
       "42",
+      "{}",
       '{"username":1,"password":"x"}',
       '{"username":"x","password":false}',
     ])
@@ -234,5 +235,19 @@ test("JSON rejection paths preserve rows and skip verification", async (context)
   }
   await rejection(await setup.app.request("/unknown"), 404, "not_found", false);
   assert.deepEqual(setup.rows(), before);
+  assert.deepEqual(setup.calls, []);
+});
+
+test("unexpected handler errors return JSON without exposing details or changing state", async (context) => {
+  const setup = fixture(context);
+  setup.app.put("/api/session", () => {
+    throw new Error("private-handler-message");
+  });
+  await rejection(
+    await setup.app.request("/api/session", { method: "PUT" }),
+    500,
+    "internal",
+  );
+  assert.deepEqual(setup.rows(), []);
   assert.deepEqual(setup.calls, []);
 });
