@@ -67,11 +67,59 @@ export function applyMigrations(
     "INSERT INTO schema_migrations (name, content_hash) VALUES (?, ?)",
   );
   for (const { name, content, hash } of migrations) {
+    if (applied.get(name)) continue;
+    runMigration(
+      database,
+      name,
+      content,
+      () => !!applied.get(name),
+      () => record.run(name, hash),
+    );
+  }
+}
+
+function runMigration(
+  database: Database.Database,
+  name: string,
+  content: string,
+  isApplied: () => boolean,
+  record: () => unknown,
+) {
+  const firstLine = content
+    .replace(/^\uFEFF/, "")
+    .split(/\r?\n/, 1)[0]
+    ?.trim();
+  const rebuild = firstLine === "-- tare:rebuild";
+  if (firstLine?.toLowerCase().includes("tare:rebuild") && !rebuild)
+    throw new Error(`Invalid rebuild marker in migration ${name}`);
+  if (rebuild && database.inTransaction)
+    throw new Error(
+      `Cannot run rebuild migration ${name} inside a transaction`,
+    );
+  const foreignKeys = rebuild
+    ? database.pragma("foreign_keys", { simple: true })
+    : undefined;
+  try {
+    if (rebuild) database.pragma("foreign_keys = OFF");
     database.transaction(() => {
-      if (applied.get(name)) return;
+      if (isApplied()) return;
       database.exec(content);
-      record.run(name, hash);
+      record();
+      if (rebuild) {
+        const violation = database
+          .prepare<[], { table: string }>("PRAGMA foreign_key_check")
+          .get();
+        if (violation)
+          throw new Error(
+            `Migration ${name} violates a foreign key in table ${violation.table}`,
+          );
+      }
     })();
+  } finally {
+    if (rebuild)
+      database.pragma(
+        foreignKeys === 1 ? "foreign_keys = ON" : "foreign_keys = OFF",
+      );
   }
 }
 
