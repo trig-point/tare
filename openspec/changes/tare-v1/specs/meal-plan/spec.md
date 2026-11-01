@@ -12,7 +12,7 @@ Each person SHALL define, through operations, day templates made of slots and da
 - **THEN** it is rejected with a stable error code
 
 ### Requirement: Calendar day-type rule
-A person SHALL be able to choose day types by a keyword in their own calendar feed. The feed URL SHALL be HTTPS, SHALL be treated as a secret (never logged, never shown to another person), and SHALL be fetched only when every address its host resolves to is public: loopback, private, link-local, unique-local, carrier-grade NAT, multicast and unspecified addresses, and IPv4-mapped forms of them, SHALL be rejected. The engine SHALL connect to the address it checked while verifying TLS for the original host name, follow no redirects, stop after 10 seconds or 1 MB, cache the result for an hour, and fall back to the manual day type when the feed is unavailable. Calendars on the local network are therefore not supported. The address check SHALL come from request-filtering-agent, which applies it to the address each connection uses, with a test for each rejected range.
+A person SHALL be able to choose day types by a keyword in their own calendar feed. The feed URL SHALL be HTTPS and SHALL be treated as a secret (never logged, never shown to another person). The engine SHALL fetch it through request-filtering-agent, which checks the address each connection actually uses and refuses loopback, private, link-local, unique-local, carrier-grade NAT, multicast and unspecified addresses and their IPv4-mapped forms, so the address checked is the address used; a test SHALL cover each refused range. The engine SHALL verify TLS for the original host name, follow no redirects, stop after 10 seconds or 1 MB, cache the result for an hour, and fall back to the manual day type when the feed is unavailable. Calendars on the local network are therefore not supported.
 
 #### Scenario: Feed unreachable
 - **WHEN** the calendar feed cannot be fetched
@@ -27,11 +27,31 @@ A person SHALL be able to choose day types by a keyword in their own calendar fe
 - **THEN** the redirect is not followed and the feed counts as unavailable
 
 ### Requirement: Slot budgets
-Each slot SHALL have a budget of today's target times its share. Each intake entry's slot SHALL be stored when the entry is written: the slot a planned-item action names, otherwise the slot whose time window contains its eaten-at time, otherwise the next slot that day, or the last slot when none is later. When a slot's window ends, its unused budget (its current budget, including anything it received, minus its intake), or its overspend as a negative amount, SHALL be spread over the later slots in proportion to their shares, and the ended slot's budget becomes its intake. No budget SHALL go below zero, so the day's total budget is conserved except when an overspend is larger than what the later slots have left. A next-slot operation SHALL report the coming slot and its remaining budget.
+Slot budgets SHALL be computed from today's target, the slots' shares and the intake stored in each slot each time they are read, and never stored. Each intake entry's slot SHALL be stored when the entry is written: the slot a planned-item action names, otherwise the slot whose time window contains its eaten-at time, otherwise the next slot that day, or the last slot when none is later. A slot SHALL count as ended once its window has ended, except the day's last slot, which stays open until the person's day ends. An ended slot's budget SHALL equal its intake. The open slots SHALL share the remaining day budget, which is today's target minus the ended slots' intake: each open slot's budget is the remaining day budget times its share, divided by the sum of the open slots' shares. When the remaining day budget is below zero, every open slot's budget SHALL be zero. Budgets SHALL be whole kcal: each open slot's budget is rounded down and the last open slot takes what is left, so the open slots' budgets add up to the remaining day budget exactly. The day's budgets therefore add up to today's target, unless the ended slots' intake is already above it. When today's target changes during the day, only the open slots' budgets SHALL change; ended slots keep their intake. A next-slot operation SHALL report the coming slot, its budget and its remaining budget.
 
 #### Scenario: Light lunch
-- **WHEN** a person with a 2,000 kcal target and shares of 20, 30, 10 and 40 percent for breakfast, lunch, snack and dinner eats 400 kcal at breakfast and 300 kcal at lunch
-- **THEN** lunch's budget becomes 300 kcal and its 300 kcal left over is spread as 60 kcal to the snack and 240 kcal to dinner, giving budgets of 260 kcal and 1,040 kcal, a total of 2,000 kcal
+- **WHEN** a person with a 2,000 kcal target and shares of 20, 30, 10 and 40 percent for breakfast, lunch, snack and dinner has eaten 400 kcal at breakfast and 300 kcal at lunch, and both windows have ended
+- **THEN** breakfast's budget is 400 kcal and lunch's is 300 kcal, and the remaining 1,300 kcal gives the snack 260 kcal and dinner 1,040 kcal, a total of 2,000 kcal
+
+#### Scenario: Heavy lunch
+- **WHEN** the same person has eaten 400 kcal at breakfast and 900 kcal at lunch, and both windows have ended
+- **THEN** the remaining 700 kcal gives the snack 140 kcal and dinner 560 kcal, a total of 2,000 kcal
+
+#### Scenario: Overspend larger than the rest of the day
+- **WHEN** the same person has eaten 400 kcal at breakfast and 1,700 kcal at lunch, and both windows have ended
+- **THEN** the snack's and dinner's budgets are zero and the day's budgets total 2,100 kcal
+
+#### Scenario: Last slot stays open
+- **WHEN** the same person has eaten 400, 600 and 200 kcal at breakfast, lunch and snack and 600 kcal at dinner, and dinner's window has ended but the day has not
+- **THEN** dinner's budget is 800 kcal with 200 kcal left, matching today's remaining 200 kcal, and a 150 kcal entry at 10 PM is stored in dinner and leaves 50 kcal
+
+#### Scenario: Target changes during the day
+- **WHEN** the same person has eaten 400 kcal at breakfast and 500 kcal at lunch, both windows have ended, and their target changes from 2,000 to 2,200 kcal that afternoon
+- **THEN** breakfast and lunch keep budgets of 400 and 500 kcal, and the snack's and dinner's budgets move from 220 and 880 kcal to 260 and 1,040 kcal, a total of 2,200 kcal
+
+#### Scenario: Rounding
+- **WHEN** the remaining day budget is 1,001 kcal and the open slots are the snack and dinner
+- **THEN** the snack's budget is 200 kcal and dinner's is 801 kcal
 
 ### Requirement: Planned items
 Agents SHALL be able to place planned items, each an on-hand meal or a food with a revision, in a slot. The shared meal action SHALL act on one planned item by id, revision and per-person mutation id, looking up the mutation id before checking the revision so a retry returns the first result. "Ate it" logs the item's nutrition once and "ate 3/4" logs three quarters of it, into the item's slot; for an on-hand meal both take one from it in the same transaction, and a food item changes no stock. "Skip" logs nothing, changes no stock and marks the item skipped. Every accepted action SHALL mark the item eaten or skipped and advance its revision, so a second action with a new mutation id is stale. A stale revision SHALL be rejected.

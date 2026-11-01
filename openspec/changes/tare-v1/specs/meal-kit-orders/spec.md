@@ -54,32 +54,58 @@ The parser SHALL extract service, meals, chef where stated, quantities and deliv
 - **THEN** the email is stored and a question asks the person to enter the order
 
 ### Requirement: Inbound order email endpoint
-The engine SHALL accept raw order emails over HTTP authenticated by a per-person inbound token, which is stored hashed, created and rotated through session-only operations, and allows nothing but posting emails. It SHALL reject emails over 5 MB, read only text and HTML parts, fetch nothing the email links to, and ignore an email the same person has already sent. Each service's sender domain and sender address SHALL come from install configuration. Each email SHALL be marked:
+The engine SHALL accept order emails over HTTP authenticated by a per-person inbound token, which is stored hashed, created and rotated through session-only operations, and allows nothing but posting emails. That token is the trust boundary. The engine SHALL reject a posted email over 5 MB, fetch nothing an email links to, and ignore an email the same person has already sent, judged by the subject message's `Message-ID`, or a hash of its bytes when it has none.
 
-- verified, when Tare checks a DKIM signature itself with mailauth and it passes for the service's configured sender domain, either on the posted message or on the original attached as `message/rfc822`; Tare never trusts `Authentication-Results` or other headers for this;
-- sender-matched, when no signature verifies but the original sender is the service's configured sender address; the authenticated endpoint is then the trust boundary;
+The subject message SHALL be the original attached as `message/rfc822` when the posted email has exactly one such part, and otherwise the posted email itself. Tare SHALL read only the subject message's text and HTML parts. Install configuration SHALL give each service its sender addresses and its accepted DKIM signing domains; an accepted signing domain is one the service controls, never a mail provider's shared domain. Each email SHALL be marked from its subject message alone:
+
+- verified, when Tare checks the subject message's DKIM signatures itself with mailauth and one returns `pass` with a signing domain (`d=`) that is an accepted signing domain or a subdomain of one;
+- sender-matched, when no such signature exists but the subject message has exactly one `From:` address and it is one of the service's sender addresses;
 - unverified, otherwise.
 
-Verified and sender-matched emails SHALL be parsed. An unverified email SHALL be held as a question asking the person to confirm it. The operator's mail rule SHALL post the raw original message, or forward it with the original attached; an inline forward rewrites the message, so its signature cannot verify and it can at best be sender-matched.
+Tare SHALL never decide from `Authentication-Results`, ARC, `Received`, `Sender`, `Reply-To` or `Return-Path` headers, or from a header block quoted in a body. By forward shape:
+
+| Posted as | Subject message | Tiers it can reach | Decided by |
+|---|---|---|---|
+| The raw original | the posted email | verified, sender-matched | its DKIM signatures, then its `From:` |
+| A forward with the original attached | the attached original | verified, sender-matched | the attachment's DKIM signatures, then its `From:` |
+| An inline forward | the posted email, written by the forwarder | unverified only | its `From:`, which is the forwarder |
+
+Verified and sender-matched emails SHALL be parsed. An unverified email SHALL be held as a question asking the person to confirm it. The operator's mail rule SHALL post the raw original or forward with the original attached.
 
 #### Scenario: Missing or wrong token
 - **WHEN** an email is posted without a valid inbound token
 - **THEN** the endpoint answers 401 and stores nothing
 
-#### Scenario: Original attached
-- **WHEN** a forward carries the original as `message/rfc822` and the original's DKIM signature passes for the configured domain
+#### Scenario: Raw original signed by the service
+- **WHEN** the posted email is the service's original and a DKIM signature on it passes with `d=` set to an accepted signing domain
 - **THEN** the email is marked verified and parsed
 
-#### Scenario: Inline forward from the right sender
-- **WHEN** an inline forward's original sender is the service's configured address and no signature verifies
+#### Scenario: Signed by a sending subdomain
+- **WHEN** the only passing signature has `d=` set to `mail.` followed by an accepted signing domain
+- **THEN** the email is marked verified
+
+#### Scenario: Signed by an unlisted domain
+- **WHEN** the subject message's only passing signature has a `d=` that is not accepted and its `From:` is one of the service's sender addresses
 - **THEN** the email is marked sender-matched and parsed
 
+#### Scenario: Original attached
+- **WHEN** a forward carries the original as `message/rfc822` and the attachment's signature passes for an accepted signing domain
+- **THEN** the email is marked verified from the attachment and parsed
+
+#### Scenario: Attached original whose signature broke
+- **WHEN** the attached original's signature no longer passes but its `From:` is one of the service's sender addresses
+- **THEN** the email is marked sender-matched and parsed
+
+#### Scenario: Inline forward
+- **WHEN** a person forwards an order inline, so the posted email's `From:` is the person
+- **THEN** the email is marked unverified and held as a confirmation question, even when its body quotes the service's address
+
 #### Scenario: Unverified sender
-- **WHEN** an email neither verifies nor matches the configured sender
+- **WHEN** the subject message has no passing signature from an accepted signing domain and its `From:` is not one of the service's sender addresses
 - **THEN** no order or meals are created and the person gets a question to confirm the email
 
 #### Scenario: Forged header
-- **WHEN** an email carries an `Authentication-Results` header claiming a DKIM pass but no signature verifies and the sender does not match
+- **WHEN** an email carries an `Authentication-Results` header claiming a DKIM pass but no signature passes and the sender does not match
 - **THEN** it is treated as unverified
 
 #### Scenario: Same email twice

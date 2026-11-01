@@ -27,7 +27,7 @@ New intake and weight entries SHALL be written to on-device storage first, each 
 - **THEN** the server assigns it to a day from its eaten-at time, not from the time it arrived
 
 ### Requirement: Sign-in-needed state
-Queue requests SHALL use `redirect: "manual"`. When a replay gets a 401, a redirect or a response that is not JSON, the queue SHALL keep its entries, show that sign-in is needed, and resume after the person signs in. API requests SHALL send `X-Requested-With: XMLHttpRequest`, which an identity proxy that honors it (Cloudflare Access documents this) answers with 401 instead of a login page; the early proxy probe records the real response on the reference install.
+Queue requests SHALL use `redirect: "manual"`. When a replay gets a 401, a redirect or a response that is not JSON, the queue SHALL keep its entries, show that sign-in is needed, and resume after the person signs in. API requests SHALL send `X-Requested-With: XMLHttpRequest`, which an identity proxy that honors it (Cloudflare Access documents this) answers with 401 instead of a login page; the early proxy probe records the real response on the reference install. Signing in again SHALL be a top-level navigation to a sign-in path that the service worker never answers from its cache, so the request reaches the identity proxy and the proxy can show its own sign-in page; the engine answers that path by sending the person back to the app, where the queue resumes.
 
 #### Scenario: Proxy session expired
 - **WHEN** queued entries are replayed after the proxy session expired
@@ -36,6 +36,10 @@ Queue requests SHALL use `redirect: "manual"`. When a replay gets a 401, a redir
 #### Scenario: Proxy answers with a non-JSON 403
 - **WHEN** a replay gets a 403 whose body is HTML or text
 - **THEN** the queue treats it as sign-in needed and keeps the entry
+
+#### Scenario: Sign in again from the installed app
+- **WHEN** the proxy session has expired and the person taps "Sign in again" in the installed app
+- **THEN** the proxy's sign-in page opens, and after signing in the person is back in the app and the queued entries replay
 
 ### Requirement: Rejected entries
 Responses SHALL be classified in this order: any 5xx is retried later; a 401, a redirect or a non-JSON body is sign-in needed; only then does a JSON 4xx error other than 401 reject the entry. When an entry is rejected, the queue SHALL mark it rejected with the error code, keep it visible, and continue with later entries. The person SHALL be able to edit and resend a rejected entry or discard it.

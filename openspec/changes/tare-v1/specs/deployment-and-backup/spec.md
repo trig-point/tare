@@ -8,7 +8,7 @@ The project SHALL provide a container build (a Dockerfile and a compose example)
 - **THEN** migrations run and `/health` returns 200
 
 ### Requirement: Scheduled jobs
-The engine SHALL run its scheduled jobs (the nightly backup, the weekly recompute and the Oura sync) in-process on daily or weekly schedules in the install's configured timezone, run at most one instance of each job at a time, and record each job's last run and result. Schedules and overrun protection SHALL come from croner.
+The engine SHALL run its scheduled jobs (all four: the nightly backup, the daily delivery-date check for meal-kit orders, the weekly recompute and the Oura daily sync) in-process on daily or weekly schedules in the install's configured timezone, run at most one instance of each job at a time, and record each job's last run and result. Schedules and overrun protection SHALL come from croner, whose protect callback records a blocked run as skipped.
 
 #### Scenario: Overlapping run
 - **WHEN** a job is still running when its next run is due

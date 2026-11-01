@@ -16,7 +16,7 @@ Each operation SHALL be defined once with its name, input schema, output schema,
 - **THEN** the contract test fails
 
 ### Requirement: MCP server
-The engine SHALL serve an MCP server over streamable HTTP at `/mcp`, authenticated by agent tokens. It SHALL be built on the MCP TypeScript SDK and SHALL reject a request whose `Origin` header is present and not on the configured allow list (the SDK transport's `allowedOrigins`), and SHALL bind each MCP session to the person of the token that opened it.
+The engine SHALL serve an MCP server over streamable HTTP at `/mcp`, built on the MCP TypeScript SDK and authenticated by agent tokens. A Tare middleware in front of the SDK transport SHALL reject a request whose `Origin` header is present and not on the configured allow list, and SHALL pass a request with no `Origin` header, which is what agent clients send. The SDK transport's own Origin check SHALL stay off, because it also rejects a request with no `Origin`. The engine SHALL bind each MCP session to the person of the token that opened it.
 
 #### Scenario: Agent lists tools
 - **WHEN** an MCP client connects with a valid agent token
@@ -28,7 +28,15 @@ The engine SHALL serve an MCP server over streamable HTTP at `/mcp`, authenticat
 
 #### Scenario: Foreign origin
 - **WHEN** a request to `/mcp` carries an `Origin` that is not allowed
-- **THEN** the server rejects it with 403
+- **THEN** the server rejects it with 403 before the SDK transport sees it
+
+#### Scenario: No Origin header
+- **WHEN** an agent client sends a request to `/mcp` with a valid token and no `Origin` header
+- **THEN** the request reaches the MCP server
+
+#### Scenario: Allowed origin
+- **WHEN** a request to `/mcp` carries an `Origin` on the allow list and a valid token
+- **THEN** the request reaches the MCP server
 
 #### Scenario: Session used with another person's token
 - **WHEN** a request carries an MCP session id opened by person A and a token belonging to person B

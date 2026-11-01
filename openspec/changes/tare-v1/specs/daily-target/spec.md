@@ -65,7 +65,7 @@ The system SHALL estimate TDEE by energy balance over a window of the 28 days en
 - **THEN** the formula target stays in force and the target shows it is learning
 
 ### Requirement: Weekly recompute
-The system SHALL recompute and store each person's targets in a weekly job on a configured weekday (default Monday) in the install's timezone, and again whenever the person's profile or goal changes. The stored calorie target SHALL be the eligible estimate plus the goal adjustment (the goal rate in kg per week times 7,700 divided by 7), rounded as the formula target is, or the formula target while the estimate is not eligible; the protein target is the formula's. Today's target, the slot budgets and the Home Assistant target sensors SHALL all read the latest stored target through one target reader, which uses the live formula target until the first recompute.
+The system SHALL recompute and store each person's targets in a weekly job on a configured weekday (default Monday) in the install's timezone, and again whenever the person's profile or goal changes. The stored calorie target SHALL be the eligible estimate plus the goal adjustment (the goal rate in kg per week times 7,700 divided by 7), rounded as the formula target is, or the formula target while the estimate is not eligible; the protein target is the formula's. Today's target, the slot budgets and the Home Assistant target sensors SHALL all read the latest stored target through one target reader, which uses the live formula target until the first recompute. A target that changes during the day changes only the budgets of slots that have not ended.
 
 #### Scenario: Week rolls over
 - **WHEN** the weekly recompute runs
