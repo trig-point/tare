@@ -50,18 +50,6 @@ function check(
   }
 }
 
-test("home paths report file and line across platforms", () => {
-  for (const path of [
-    `/${"Users"}/alice/`,
-    `/${"home"}/alice/`,
-    ["C:", "Users", "alice", ""].join("\\"),
-    ["C:", "Users", "alice", ""].join("/"),
-  ]) {
-    const result = check(`safe\n${path}data`);
-    assert.equal(result.status, 1);
-    assert.match(result.output, /sample.txt:2: home-path/);
-  }
-});
 test("denied hosts report location without disclosing the configured value", () => {
   const result = check("secret-host.invalid", {
     TARE_HYGIENE_DENY: "secret-host.invalid",
@@ -96,14 +84,11 @@ test("clean and empty repositories pass", () => {
   assert.equal(check("clean").status, 0);
   assert.equal(check("").status, 0);
 });
-test("placeholders and binary files pass", () => {
-  assert.equal(check(`/${"home"}/<name>/file`).status, 0);
+test("binary files skip planted denied hosts", () => {
   assert.equal(
     check(
-      Buffer.concat([
-        Buffer.from([0]),
-        Buffer.from(["", "home", "alice", "file"].join("/")),
-      ]),
+      Buffer.concat([Buffer.from([0]), Buffer.from("secret-host.invalid")]),
+      { TARE_HYGIENE_DENY: "secret-host.invalid" },
     ).status,
     0,
   );
@@ -111,47 +96,6 @@ test("placeholders and binary files pass", () => {
 test("generic domains match host boundaries", () => {
   assert.equal(check(["printer", "local"].join(".")).status, 1);
   assert.equal(check("printer.locality").status, 0);
-});
-
-test("home paths include escaped, lowercase and terminal forms", () => {
-  for (const path of [
-    ["C:", "Users", "alice", "x"].join("\\\\"),
-    ["", "Users", "alice", "x"].join("\\/"),
-    ["c:", "users", "alice", ""].join("\\"),
-    ["D:", "Users", "alice", "x"].join("\\"),
-    ["", "users", "alice", ""].join("/"),
-    `HOME=/${"home"}/alice`,
-    `"/${"Users"}/alice"`,
-    `/${"home"}/alice`,
-    `/${"home"}/alice next`,
-    `file:///${"Users"}/alice/`,
-  ]) {
-    const result = check(path);
-    assert.equal(result.status, 1, JSON.stringify(path));
-    assert.match(result.output, /sample.txt:1: home-path/);
-  }
-});
-
-test("home paths respect left boundaries and case-insensitive placeholders", () => {
-  for (const content of [
-    "https://app.test/home/dashboard/x",
-    "../Users/Form/x",
-    ...[
-      "<name>",
-      "example",
-      "you",
-      "user",
-      "USERNAME",
-      "username",
-      "<user>",
-      "$user",
-      "runner",
-      "User",
-      "$USER",
-    ].map((username) => ["", "home", username, "file"].join("/")),
-  ]) {
-    assert.equal(check(content).status, 0, content);
-  }
 });
 
 test("denied names match whole label sequences", () => {
@@ -202,18 +146,18 @@ test("comma-only deny configuration is unset in CI", () => {
   }
 });
 
-test("lockfiles are scanned for home paths and denied hosts", () => {
+test("lockfiles are scanned for denied names and hosts", () => {
   for (const content of [
     ["", "home", "alice", "file"].join("/"),
     "secret-host.invalid",
   ]) {
     const result = check(
       content,
-      { TARE_HYGIENE_DENY: "secret-host.invalid" },
+      { TARE_HYGIENE_DENY: "alice,secret-host.invalid" },
       "pnpm-lock.yaml",
     );
     assert.equal(result.status, 1);
-    assert.match(result.output, /pnpm-lock.yaml:1: (home-path|denied-host)/);
+    assert.match(result.output, /pnpm-lock.yaml:1: (denied-name|denied-host)/);
   }
 });
 
@@ -260,7 +204,48 @@ test("success reports scanned files and deny entry counts without values", () =>
     check("", {}, null).output,
     "hygiene: scanned 0 files, 1 deny entries\n",
   );
-  const failed = check(["", "home", "alice", "file"].join("/"));
+  const failed = check("secret-host.invalid", {
+    TARE_HYGIENE_DENY: "secret-host.invalid",
+  });
   assert.equal(failed.status, 1);
   assert.equal(failed.output.includes("hygiene: scanned"), false);
+});
+
+test("configured names match account segments and host labels", () => {
+  for (const separator of ["/", "\\", "\\\\", "\\/"]) {
+    for (const parent of ["Users", "HOME"]) {
+      for (const prefix of ["", "C:", ["", "mnt", "c"].join(separator)]) {
+        const result = check(
+          [prefix, parent, "ALICE", "file"].join(separator),
+          { TARE_HYGIENE_DENY: "alice" },
+        );
+        assert.equal(result.status, 1);
+        assert.match(result.output, /sample.txt:1: denied-name/);
+        assert.equal(result.output.includes("alice"), false);
+      }
+    }
+  }
+  assert.match(
+    check("sub.private-box.invalid", { TARE_HYGIENE_DENY: "private-box" })
+      .output,
+    /denied-name/,
+  );
+});
+
+test("generic home paths and routes pass without a denied name", () => {
+  for (const content of [
+    ["", "home", "node", "app"].join("/"),
+    ["", "Users", "<user>"].join("/"),
+    'app.get("/users/:id", handler)',
+  ]) {
+    assert.equal(
+      check(content, { TARE_HYGIENE_DENY: "private-box" }).status,
+      0,
+    );
+  }
+});
+
+test("long separator lines complete", () => {
+  const result = check("/".repeat(200_000));
+  assert.equal(result.status, 0);
 });

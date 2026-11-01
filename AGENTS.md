@@ -2,7 +2,7 @@
 
 This repository is public. Never add personal data, including real weight, food or health data. Fixtures use made-up people. Never commit secrets; supply them through environment variables.
 
-Hosts, paths and account names come from configuration; `pnpm hygiene` checks this and CI runs it with the `TARE_HYGIENE_DENY` secret.
+Generic home paths are not checked; `pnpm hygiene` uses the `TARE_HYGIENE_DENY` secret for the operator’s account and machine names, and CI runs it.
 
 Use TypeScript only. Tests run with `node --test`.
 

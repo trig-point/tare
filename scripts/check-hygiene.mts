@@ -3,16 +3,6 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-const placeholders = new Set([
-  "<name>",
-  "example",
-  "you",
-  "user",
-  "username",
-  "<user>",
-  "$user",
-  "runner",
-]);
 const allowedHosts = new Set([
   "example.com",
   "example.org",
@@ -61,6 +51,7 @@ const generic = readFileSync(
 const denied = [...generic, ...(forkPullRequest ? [] : configured)]
   .map((value) => value.trim().toLowerCase())
   .filter(Boolean);
+const names = new Set(denied.filter((value) => !value.includes(".")));
 const files = execFileSync("git", ["ls-files", "-z"], { encoding: "utf8" })
   .split("\0")
   .filter(Boolean);
@@ -72,35 +63,30 @@ for (const file of files) {
   scanned += 1;
   const lines = content.toString("utf8").split(/\r?\n/);
   for (const [index, line] of lines.entries()) {
-    const homePaths = line.matchAll(
-      /(?:(?<![\w.-])(?:\\?\/)+(?:users|home)(?:\\?\/)+([^\\/\s"']+)|[a-z]:[\\/]+users[\\/]+([^\\/\s"']+))/gi,
-    );
-    if (
-      [...homePaths].some((match) => {
-        const username = match[1] ?? match[2];
-        return (
-          username !== undefined && !placeholders.has(username.toLowerCase())
-        );
-      })
-    ) {
-      console.error(`${file}:${index + 1}: home-path`);
-      failed = true;
+    const rules = new Set<string>();
+    const segments = line
+      .toLowerCase()
+      .split(/[\\/]+/)
+      .filter(Boolean);
+    for (const [segmentIndex, segment] of segments.entries()) {
+      if (segment !== "users" && segment !== "home") continue;
+      const account = segments[segmentIndex + 1]?.split(/[\s"'`]/, 1)[0];
+      if (account !== undefined && names.has(account)) rules.add("denied-name");
     }
     const hosts =
       line.toLowerCase().match(/[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?/g) ?? [];
-    if (
-      hosts.some(
-        (host) =>
-          !allowedHosts.has(host) &&
-          host !== "env.local" &&
-          denied.some((value) =>
-            value.startsWith(".")
-              ? host.endsWith(value)
-              : `.${host}.`.includes(`.${value}.`),
-          ),
-      )
-    ) {
-      console.error(`${file}:${index + 1}: denied-host`);
+    for (const host of hosts) {
+      if (allowedHosts.has(host) || host === "env.local") continue;
+      for (const value of denied) {
+        const matches = value.startsWith(".")
+          ? host.endsWith(value)
+          : `.${host}.`.includes(`.${value}.`);
+        if (matches)
+          rules.add(value.includes(".") ? "denied-host" : "denied-name");
+      }
+    }
+    for (const rule of rules) {
+      console.error(`${file}:${index + 1}: ${rule}`);
       failed = true;
     }
   }
