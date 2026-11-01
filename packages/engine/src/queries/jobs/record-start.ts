@@ -9,7 +9,7 @@ export type RecordStartResult = {
   job_name: string;
   started_at: string;
   finished_at: string | null;
-  status: "running" | "ok" | "failed";
+  status: string;
   detail: string | null;
   last_skipped_at: string | null;
   skipped_count: number;

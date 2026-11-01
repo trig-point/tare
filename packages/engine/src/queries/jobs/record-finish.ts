@@ -2,7 +2,7 @@ import type { Database } from "better-sqlite3";
 
 export type RecordFinishData = {
   finishedAt: string | null;
-  status: "running" | "ok" | "failed";
+  status: string;
   detail: string | null;
 };
 
@@ -14,7 +14,7 @@ export type RecordFinishResult = {
   job_name: string;
   started_at: string;
   finished_at: string | null;
-  status: "running" | "ok" | "failed";
+  status: string;
   detail: string | null;
   last_skipped_at: string | null;
   skipped_count: number;
