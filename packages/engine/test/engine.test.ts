@@ -53,6 +53,7 @@ describe("engine", () => {
       databaseUrl: ":memory:",
       port: 3000,
       timezone: "UTC",
+      firstUser: { username: undefined, password: undefined },
     });
   });
 

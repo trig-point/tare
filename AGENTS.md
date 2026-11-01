@@ -42,6 +42,8 @@ TypeSQL generation uses an ignored local database at `packages/engine/data/types
 
 `TARE_TIMEZONE` sets the install's IANA timezone for scheduled jobs (default: `UTC`) independently of the process `TZ`. Invalid or empty values prevent startup.
 
+`TARE_ADMIN_USERNAME` and `TARE_ADMIN_PASSWORD` create the first administrator in the install timezone. The system reads them only while the database has no users, and you can remove them after the first start. The username is trimmed; the password is kept exactly as set.
+
 Keep comments short and focused on why. Use descriptive identifiers, never single-letter names. Keep personal data and secrets out of logs as well as source and fixtures.
 
 ## Known TypeSQL gaps
