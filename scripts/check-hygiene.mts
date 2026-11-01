@@ -87,7 +87,7 @@ for (const file of files) {
     const lowerLine = line.toLowerCase();
     const hosts = lowerLine.matchAll(/[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?/g);
     for (const match of hosts) {
-      const host = match[0];
+      let host = match[0];
       if (allowedHosts.has(host)) continue;
       const labels = host.split(".");
       const previous = lowerLine[match.index - 1];
@@ -102,10 +102,12 @@ for (const file of files) {
         labels[0] === "env" &&
         labels[1] === "local" &&
         (previous === "." || pathSegment)
-      )
-        continue;
+      ) {
+        host = labels.slice(2).join(".");
+        if (!host) continue;
+      }
       for (const value of denied) {
-        if (!value.includes(".") && !host.includes(".")) continue;
+        if (!value.includes(".") && !match[0].includes(".")) continue;
         const matches = value.startsWith(".")
           ? host.endsWith(value)
           : `.${host}.`.includes(`.${value}.`);

@@ -342,3 +342,18 @@ test("account segments stop at punctuation", () => {
     assert.match(result.output, /denied-name/);
   }
 });
+
+test("environment filename exemption still checks remaining labels", () => {
+  for (const prefix of ["", ".", "config/"]) {
+    for (const [suffix, rule] of [
+      ["secret-host.invalid", "denied-host"],
+      ["private-box", "denied-name"],
+    ] as const) {
+      const content = `${prefix}${["env", "local", suffix].join(".")}`;
+      const result = check(content, { TARE_HYGIENE_DENY: suffix });
+      assert.equal(result.status, 1);
+      assert.match(result.output, new RegExp(`sample.txt:1: ${rule}`));
+      assert.equal(result.output.includes(suffix), false);
+    }
+  }
+});
