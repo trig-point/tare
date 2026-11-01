@@ -9,6 +9,7 @@ Use TypeScript only. Tests run with `node --test`.
 ## Layout
 
 - `packages/engine`: Node + Hono backend.
+- `packages/nutrition`: nutrition record, unit conversion and storage mapping; pure functions, never opens the database.
 - `packages/engine/src/db.ts`: the only module that opens the SQLite driver; it also runs migrations.
 - `packages/engine/migrations`: schema in numbered `.sql` migrations.
   Start table rebuild migrations with `-- tare:rebuild` on the first line to disable foreign keys before the transaction and check them before commit.

@@ -23,6 +23,9 @@ importers:
       '@hono/node-server':
         specifier: 2.1.5
         version: 2.1.5(hono@4.13.14)
+      '@tare/nutrition':
+        specifier: workspace:*
+        version: link:../nutrition
       better-sqlite3:
         specifier: 13.0.3
         version: 13.0.3
@@ -39,6 +42,8 @@ importers:
       typesql-cli:
         specifier: 0.24.0
         version: 0.24.0(@types/node@22.20.5)
+
+  packages/nutrition: {}
 
 packages:
 
