@@ -12,10 +12,16 @@ import { type TestContext, test } from "node:test";
 import { pathToFileURL } from "node:url";
 import { applyMigrations, openDatabase } from "../src/db.ts";
 
-function fixture(context: TestContext) {
+function fixture(context: TestContext, persistent = false) {
   const directory = mkdtempSync(join(tmpdir(), "tare-rebuild-"));
-  const connection = openDatabase(":memory:");
+  const connection = openDatabase(
+    persistent ? join(directory, "race.sqlite") : ":memory:",
+  );
+  const other = persistent
+    ? openDatabase(join(directory, "race.sqlite"))
+    : undefined;
   context.after(() => {
+    other?.close();
     connection.close();
     rmSync(directory, { recursive: true, force: true });
   });
@@ -34,7 +40,7 @@ function fixture(context: TestContext) {
   );
   const folder = pathToFileURL(directory + sep);
   applyMigrations(connection.database, folder);
-  return { database: connection.database, directory, folder };
+  return { database: connection.database, directory, folder, other };
 }
 
 const rebuild = `-- tare:rebuild
@@ -164,3 +170,32 @@ test("malformed rebuild rolls back and restores foreign keys", (context) => {
   );
   assert.equal(database.pragma("foreign_keys", { simple: true }), 1);
 });
+
+for (const marked of [false, true]) {
+  test(`concurrent application is rechecked inside the transaction (rebuild=${marked})`, (context) => {
+    const { database, directory, folder, other } = fixture(context, true);
+    assert.ok(other);
+    writeFileSync(
+      join(directory, "0003_race.sql"),
+      marked ? rebuild : "CREATE TABLE raced (id INTEGER);",
+    );
+    const original = database.transaction.bind(database);
+    let interleaved = false;
+    context.mock.method(database, "transaction", (callback: () => unknown) => {
+      if (!interleaved) {
+        interleaved = true;
+        applyMigrations(other.database, folder);
+      }
+      return original(callback);
+    });
+    assert.doesNotThrow(() => applyMigrations(database, folder));
+    assert.equal(interleaved, true);
+    assert.deepEqual(
+      database
+        .prepare("SELECT name FROM schema_migrations WHERE name = ?")
+        .all("0003_race.sql"),
+      [{ name: "0003_race.sql" }],
+    );
+    assert.equal(database.pragma("foreign_keys", { simple: true }), 1);
+  });
+}

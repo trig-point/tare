@@ -68,7 +68,13 @@ export function applyMigrations(
   );
   for (const { name, content, hash } of migrations) {
     if (applied.get(name)) continue;
-    runMigration(database, name, content, () => record.run(name, hash));
+    runMigration(
+      database,
+      name,
+      content,
+      () => !!applied.get(name),
+      () => record.run(name, hash),
+    );
   }
 }
 
@@ -76,12 +82,14 @@ function runMigration(
   database: Database.Database,
   name: string,
   content: string,
+  isApplied: () => boolean,
   record: () => unknown,
 ) {
   const rebuild = content.split(/\r?\n/, 1)[0] === "-- tare:rebuild";
   try {
     if (rebuild) database.pragma("foreign_keys = OFF");
     database.transaction(() => {
+      if (isApplied()) return;
       database.exec(content);
       record();
       if (rebuild) {
