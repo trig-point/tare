@@ -139,3 +139,51 @@ test("home paths respect left boundaries and case-insensitive placeholders", () 
     assert.equal(check(content).status, 0, content);
   }
 });
+
+test("denied names match whole label sequences", () => {
+  for (const [host, denied, expected] of [
+    ["private-box.tail1234.ts.net", "private-box", 1],
+    ["sub.secret-host.invalid", "secret-host.invalid", 1],
+    ["notsecret-host.invalid", "secret-host.invalid", 0],
+    ["notprivate-box.tail1234.ts.net", "private-box", 0],
+  ] as const) {
+    const result = check(host, { TARE_HYGIENE_DENY: denied });
+    assert.equal(result.status, expected, host);
+    assert.equal(result.output.includes(denied), false);
+  }
+});
+
+test("environment file names are not hosts", () => {
+  for (const content of [
+    ["env", "local"].join("."),
+    ["", "env", "local"].join("."),
+  ]) {
+    assert.equal(check(content).status, 0);
+  }
+});
+
+test("invalid deny entries report their position without their value", () => {
+  for (const value of [
+    "https://secret-host.invalid",
+    "private_host",
+    "*.invalid",
+    "host:8080",
+    "private host",
+    "[::1]",
+  ]) {
+    const result = check("clean", {
+      TARE_HYGIENE_DENY: `example.com,,${value}`,
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.output, /entry 3 is not a host name/);
+    assert.equal(result.output.includes(value), false);
+  }
+});
+
+test("comma-only deny configuration is unset in CI", () => {
+  for (const value of [",,", " , , "]) {
+    const result = check("clean", { CI: "true", TARE_HYGIENE_DENY: value });
+    assert.equal(result.status, 1);
+    assert.match(result.output, /TARE_HYGIENE_DENY is required in CI/);
+  }
+});

@@ -19,7 +19,16 @@ const allowedHosts = new Set([
   "localhost",
   "127.0.0.1",
 ]);
-const configured = process.env.TARE_HYGIENE_DENY?.trim();
+const entries = (process.env.TARE_HYGIENE_DENY ?? "")
+  .split(",")
+  .map((value) => value.trim().toLowerCase());
+for (const [index, entry] of entries.entries()) {
+  if (entry && !/^\.?[a-z0-9][a-z0-9.-]*$/.test(entry)) {
+    console.error(`TARE_HYGIENE_DENY entry ${index + 1} is not a host name`);
+    process.exit(1);
+  }
+}
+const configured = entries.filter(Boolean);
 let forkPullRequest = false;
 // GitHub's event payload identifies fork PRs by differing head and base repository names.
 if (
@@ -32,7 +41,7 @@ if (
   forkPullRequest =
     typeof head === "string" && typeof base === "string" && head !== base;
 }
-if (process.env.CI === "true" && !configured) {
+if (process.env.CI === "true" && configured.length === 0) {
   if (!forkPullRequest) {
     console.error("TARE_HYGIENE_DENY is required in CI.");
     process.exit(1);
@@ -48,10 +57,7 @@ const generic = readFileSync(
   .split(/\r?\n/)
   .map((line) => line.trim())
   .filter((line) => line && !line.startsWith("#"));
-const denied = [
-  ...generic,
-  ...(forkPullRequest ? [] : (configured ?? "").split(",")),
-]
+const denied = [...generic, ...(forkPullRequest ? [] : configured)]
   .map((value) => value.trim().toLowerCase())
   .filter(Boolean);
 const files = execFileSync("git", ["ls-files", "-z"], { encoding: "utf8" })
@@ -84,11 +90,11 @@ for (const file of files) {
       hosts.some(
         (host) =>
           !allowedHosts.has(host) &&
-          denied.some(
-            (value) =>
-              host === value ||
-              host.endsWith(`.${value}`) ||
-              (value.startsWith(".") && host.endsWith(value)),
+          host !== "env.local" &&
+          denied.some((value) =>
+            value.startsWith(".")
+              ? host.endsWith(value)
+              : `.${host}.`.includes(`.${value}.`),
           ),
       )
     ) {
