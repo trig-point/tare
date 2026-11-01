@@ -42,7 +42,15 @@ The parser SHALL extract service, meals, chef where stated, quantities and deliv
 - **THEN** the email is stored and a question asks the person to enter the order
 
 ### Requirement: Inbound order email endpoint
-The engine SHALL accept raw order emails over HTTP with a per-person token, reject emails over 5 MB, read only text and HTML parts, record whether the receiving server's `Authentication-Results` header shows a DKIM pass for the service's configured sender domain, and ignore an email the same person has already sent.
+The engine SHALL accept raw order emails over HTTP with a per-person token, reject emails over 5 MB, read only text and HTML parts, fetch nothing the email links to, and ignore an email the same person has already sent. Tare SHALL verify the email's DKIM signature itself for the service's configured sender domain, never trusting `Authentication-Results` or other headers, and record the result. An unverified email SHALL become a question asking the person to confirm it, and its order SHALL NOT be processed until they do.
+
+#### Scenario: Unverified sender
+- **WHEN** an order email arrives without a valid DKIM signature from the service's configured domain
+- **THEN** no order or meals on hand are created and the person gets a question to confirm the email
+
+#### Scenario: Forged header
+- **WHEN** an email carries an `Authentication-Results` header claiming a DKIM pass but its signature does not verify
+- **THEN** it is treated as unverified
 
 #### Scenario: Same email twice
 - **WHEN** the same email is posted twice for the same person

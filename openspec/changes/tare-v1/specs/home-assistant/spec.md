@@ -38,11 +38,15 @@ The engine SHALL read weigh-ins from a configured MQTT topic (fed, for example, 
 - **THEN** no weight is logged and the person gets a question to confirm it
 
 ### Requirement: Weekly notice
-When targets are recomputed, the system SHALL notify the person through an MQTT event entity on their Home Assistant device and with a notice on the app's today screen that stays until dismissed.
+When a recompute changes a person's calorie or protein target, the system SHALL notify the person through an MQTT event entity on their Home Assistant device and with a notice on the app's today screen that stays until dismissed.
 
 #### Scenario: New weekly target
-- **WHEN** the weekly recompute stores a new target
+- **WHEN** the weekly recompute stores a target that differs from the previous one
 - **THEN** a notice with the old and new target reaches Home Assistant and the app
+
+#### Scenario: Unchanged target
+- **WHEN** the weekly recompute stores the same target as before
+- **THEN** no notice is sent
 
 ### Requirement: Documented household trust
 The documentation SHALL state that everyone who can use a shared Home Assistant can press any person's buttons, and SHALL include an example dashboard.

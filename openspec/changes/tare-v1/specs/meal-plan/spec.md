@@ -23,7 +23,7 @@ A person SHALL be able to choose day types by a keyword in their own calendar fe
 - **THEN** the redirect is not followed and the feed counts as unavailable
 
 ### Requirement: Slot budgets
-Each slot SHALL have a budget of today's target times its share. An intake entry SHALL belong to the slot a planned-item action names; otherwise to the slot whose time window contains its eaten-at time; otherwise to the next slot that day, or the last slot when none is later. When a slot's window ends, its unused budget, or its overspend as a negative amount, SHALL be spread over the later slots in proportion to their shares, and no budget SHALL go below zero. A next-slot operation SHALL report the coming slot and its remaining budget.
+Each slot SHALL have a budget of today's target times its share. An intake entry SHALL belong to the slot a planned-item action names; otherwise to the slot whose time window contains its eaten-at time; otherwise to the next slot that day, or the last slot when none is later. When a slot's window ends, its unused budget, or its overspend as a negative amount, SHALL be spread over the later slots in proportion to their shares, and no budget SHALL go below zero. The day's total budget is therefore conserved except when an overspend is larger than what the later slots have left. A next-slot operation SHALL report the coming slot and its remaining budget.
 
 #### Scenario: Light lunch
 - **WHEN** a person with a 2,000 kcal target and shares of 20, 30, 10 and 40 percent for breakfast, lunch, snack and dinner eats 400 kcal at breakfast and 300 kcal at lunch
