@@ -2,7 +2,7 @@
 
 This repository is public. Never add personal data, including real weight, food or health data. Fixtures use made-up people. Never commit secrets; supply them through environment variables.
 
-Personal names and hosts are checked by gitleaks with a custom rule kept in the `TARE_GITLEAKS_TOML` secret. To see where a finding is, run `gitleaks git . --redact -v` locally with that config.
+Personal names and hosts are checked by gitleaks on pushes and same-repo PRs with a custom rule kept in the `TARE_GITLEAKS_TOML` secret. Fork PRs and Dependabot runs use default rules only; main re-checks after merge. To locate a finding locally, run `gitleaks git . --config <path-to-config> --redact -v`.
 
 Use TypeScript only. Tests run with `node --test`.
 
