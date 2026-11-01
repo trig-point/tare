@@ -13,7 +13,11 @@ const entries = (process.env.TARE_HYGIENE_DENY ?? "")
   .split(",")
   .map((value) => value.trim().toLowerCase());
 for (const [index, entry] of entries.entries()) {
-  if (entry && !/^\.?[a-z0-9][a-z0-9.-]*$/.test(entry)) {
+  const labels = (entry.startsWith(".") ? entry.slice(1) : entry).split(".");
+  if (
+    entry &&
+    !labels.every((label) => /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(label))
+  ) {
     console.error(`TARE_HYGIENE_DENY entry ${index + 1} is not a host name`);
     process.exit(1);
   }

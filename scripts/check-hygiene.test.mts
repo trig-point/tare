@@ -271,3 +271,18 @@ test("finding paths redact denied values case-insensitively", () => {
     assert.equal(result.output.toLowerCase().includes(denied), false);
   }
 });
+
+test("deny entries require valid labels", () => {
+  for (const value of ["corp.net.", "a..b", "corp-", "-corp"]) {
+    const result = check("clean", {
+      TARE_HYGIENE_DENY: `example.com,,${value}`,
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.output, /entry 3 is not a host name/);
+    assert.equal(result.output.includes(value), false);
+  }
+  assert.equal(
+    check("clean", { TARE_HYGIENE_DENY: "a,a-b,.corp.net" }).status,
+    0,
+  );
+});
