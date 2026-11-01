@@ -1,0 +1,39 @@
+schema: spec-driven
+
+context: |
+  Tare: an open-source, self-hosted nutrition and body-composition tracker (trig-point/tare,
+  public, MIT). pnpm workspace on Node 22. packages/engine is a Hono server over SQLite
+  (better-sqlite3) with numbered .sql migrations, queries in .sql files typed by TypeSQL, no ORM;
+  Kysely only for queries built at runtime from many optional filters. The front end is a PWA
+  (React, Vite, TanStack Router) served by the engine. One small CI job on GitHub-hosted runners;
+  no mutation testing for now. Tickets live in Linear team MHA, initiative Tare 1.0.
+  The repo is public: specs never name the operator's hosts, domains, home paths, machines or
+  personal data. Say "the operator's host" or "the reference install" instead.
+
+rules:
+  proposal:
+    - >-
+      Never name a personal hostname, domain, machine, home path or person's data. The repo is
+      public.
+  design:
+    - >-
+      Never name a personal hostname, domain, machine, home path or person's data. The repo is
+      public.
+  tasks:
+    - >-
+      Every task must be completable in ONE pull request. Where the built-in guidance says a
+      task should be small enough to complete in one session, THIS RULE SUPERSEDES IT, because
+      a session can produce several PRs and session-sizing is too coarse. If one PR cannot take
+      a task from Todo to Done, split it into separate tasks.
+    - >-
+      Number tasks so each maps to exactly one Linear ticket. Authority is the AGENTS.md rule
+      titled One ticket = one PR.
+    - >-
+      A task whose title contains a RANGE of task numbers is a sizing failure; split it.
+    - >-
+      Work that lands no pull request starts with "SPIKE (no PR):" or "OPS (no PR):" and states
+      its Done condition.
+    - >-
+      Annotate every task with (depends on: <ids>) when it has prerequisites, plus
+      (complexity: mechanical|standard|judgment) and (gate: none). Tare runs no mutation
+      testing until a faster method exists, so every task is gate none.
