@@ -103,6 +103,7 @@ for (const file of files) {
       )
         continue;
       for (const value of denied) {
+        if (!value.includes(".") && !host.includes(".")) continue;
         const matches = value.startsWith(".")
           ? host.endsWith(value)
           : `.${host}.`.includes(`.${value}.`);

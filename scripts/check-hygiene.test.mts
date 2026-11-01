@@ -316,3 +316,16 @@ test("environment file exemption excludes URL hosts", () => {
     assert.match(result.output, /sample.txt:1: denied-host/);
   }
 });
+
+test("dotless names match account paths and dotted hosts only", () => {
+  for (const [content, expected] of [
+    ["Copyright alice", 0],
+    ["github.com/alice/repo", 0],
+    [["", "Users", "alice", "x"].join("/"), 1],
+    ["alice.example-tailnet.ts.net", 1],
+  ] as const) {
+    const result = check(content, { TARE_HYGIENE_DENY: "alice" });
+    assert.equal(result.status, expected, content);
+    if (expected === 1) assert.match(result.output, /denied-name/);
+  }
+});
