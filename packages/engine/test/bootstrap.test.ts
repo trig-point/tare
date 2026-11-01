@@ -10,6 +10,7 @@ import { loadConfig } from "../src/config.ts";
 import { openDatabase } from "../src/db.ts";
 import { countUsers } from "../src/queries/count-users.ts";
 import { insertAccount } from "../src/queries/insert-account.ts";
+import { recordStart } from "../src/queries/jobs/record-start.ts";
 import { selectUser } from "../src/queries/select-user.ts";
 
 const clock = { now: () => new Date("2024-02-29T12:00:00.000Z") };
@@ -243,6 +244,17 @@ test("engine process refuses an empty database without admin settings before lis
   const directory = mkdtempSync(join(tmpdir(), "tare-bootstrap-process-"));
   context.after(() => rmSync(directory, { recursive: true, force: true }));
   const databasePath = join(directory, "engine.sqlite");
+  const seed = openDatabase(databasePath);
+  let runningJob: ReturnType<typeof recordStart>;
+  try {
+    runningJob = recordStart(seed.database, {
+      jobName: "example-job",
+      startedAt: clock.now().toISOString(),
+    });
+    assert.ok(runningJob);
+  } finally {
+    seed.close();
+  }
   const environment: NodeJS.ProcessEnv = {
     ...process.env,
     DATABASE_URL: databasePath,
@@ -282,6 +294,6 @@ test("engine process refuses an empty database without admin settings before lis
   assert.deepEqual(countUsers(connection.database), { count: 0 });
   assert.deepEqual(
     connection.database.prepare("SELECT * FROM job_runs").all(),
-    [],
+    [runningJob],
   );
 });
