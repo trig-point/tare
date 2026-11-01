@@ -49,3 +49,5 @@ TypeSQL CLI 0.24.0 generates these queries without error but loses result types:
 Both wrappers and their SQL files live in `packages/engine/test/compat/`, outside the generated set. Other compatibility shapes use generated functions. For future queries built at runtime from many optional filters, Kysely is allowed under ruling `tare-kysely-if-dynamic`.
 
 `src/queries/compat/` and the compat fixture are test-only, never import them from engine code, and generation also loads `test/fixtures/typesql-compat.sql`, a test-only schema that is not a migration.
+
+SQLite RETURNING row order is unspecified; callers sort the returned rows if they need an order.

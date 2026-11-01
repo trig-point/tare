@@ -83,7 +83,9 @@ for (const [minimum, expected] of [
   test(`RETURNING returns ${expected.length} rows`, (context) => {
     const database = setup(context);
     assert.deepEqual(
-      returning(database, { label: "updated" }, { minimum }),
+      returning(database, { label: "updated" }, { minimum }).sort(
+        (first, second) => first.id - second.id,
+      ),
       expected,
     );
     assert.deepEqual(cte(database, { minimum: 1 }), [
