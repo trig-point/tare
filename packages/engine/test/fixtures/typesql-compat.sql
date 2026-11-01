@@ -1,0 +1,2 @@
+CREATE TABLE compat_items (id INTEGER PRIMARY KEY, label TEXT NOT NULL, group_id INTEGER);
+CREATE TABLE compat_groups (id INTEGER PRIMARY KEY, name TEXT NOT NULL);

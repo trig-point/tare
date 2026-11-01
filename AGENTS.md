@@ -38,3 +38,12 @@ Biome handles linting and formatting for the workspace. TypeScript runs in stric
 TypeSQL generation uses an ignored local database at `packages/engine/data/typesql.sqlite`. Biome formats generated code and permits the generator's explicit `any` type in query output.
 
 Keep comments short and focused on why. Use descriptive identifiers, never single-letter names. Keep personal data and secrets out of logs as well as source and fixtures.
+
+## Known TypeSQL gaps
+
+TypeSQL CLI 0.24.0 generates these queries without error but loses result types:
+
+- LEFT JOIN: generated `LeftJoinResult.name` is `string`; an unmatched row returns `null`. Use the `left-join.mts` wrapper with `string | null`.
+- `json_extract`: generated `JsonResult.name` is `any | null`; callers lose type checking. Use the `json.mts` wrapper with `unknown` and narrow the result before using it.
+
+Both SQL files live in test fixtures, outside the generated set. Other compatibility shapes use generated functions. For future queries built at runtime from many optional filters, Kysely is allowed under ruling `tare-kysely-if-dynamic`.
