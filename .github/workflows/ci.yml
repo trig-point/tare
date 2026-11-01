@@ -72,6 +72,15 @@ jobs:
             fi
             echo "Custom gitleaks canary passed."
           fi
+          default_probe_dir=$(mktemp -d "$RUNNER_TEMP/gitleaks-default.XXXXXX")
+          printf '%s%s\n' 'ghp_' 'aB3dE5fG7hI9jK1mN3pQ5rS7tU9vW1xY3zA5' > "$default_probe_dir/probe.txt"
+          default_probe_status=0
+          "$RUNNER_TEMP/gitleaks" dir "$default_probe_dir" --config "$RUNNER_TEMP/gitleaks.toml" --redact --exit-code 1 > "$RUNNER_TEMP/gitleaks-default.log" 2>&1 || default_probe_status=$?
+          if [ "$default_probe_status" -ne 1 ] || ! grep -qE 'leaks found: [1-9][0-9]*' "$RUNNER_TEMP/gitleaks-default.log"; then
+            echo "::error::default gitleaks rules did not load."
+            exit 1
+          fi
+          echo "Default gitleaks probe passed."
           scan_status=0
           "$RUNNER_TEMP/gitleaks" git . --config "$RUNNER_TEMP/gitleaks.toml" --redact --exit-code 1 > "$RUNNER_TEMP/gitleaks.log" 2>&1 || scan_status=$?
           summary=$(grep -oE '[0-9]+ commits scanned|no leaks found|leaks found: [0-9]+|scanned ~[0-9.]+ ?(bytes|KB|MB|GB)' "$RUNNER_TEMP/gitleaks.log" || true)
