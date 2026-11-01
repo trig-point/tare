@@ -199,3 +199,60 @@ for (const marked of [false, true]) {
     assert.equal(database.pragma("foreign_keys", { simple: true }), 1);
   });
 }
+
+for (const marker of [
+  "\uFEFF-- tare:rebuild",
+  "-- tare:rebuild\r",
+  "  -- tare:rebuild  ",
+]) {
+  test(`normalized rebuild marker ${JSON.stringify(marker)} preserves rows`, (context) => {
+    const { database, directory, folder } = fixture(context);
+    writeFileSync(
+      join(directory, "0003_marker.sql"),
+      rebuild.replace("-- tare:rebuild", marker),
+    );
+    assert.doesNotThrow(() => applyMigrations(database, folder));
+    assert.deepEqual(database.prepare("SELECT * FROM parent").all(), [
+      { id: 1, label: "Sample", added: null },
+    ]);
+    assert.equal(database.pragma("foreign_keys", { simple: true }), 1);
+  });
+}
+
+for (const marker of [
+  "--tare:rebuild",
+  "-- TARE:REBUILD",
+  "-- tare:rebuild extra",
+]) {
+  test(`malformed rebuild marker ${marker} names the file`, (context) => {
+    const { database, directory, folder } = fixture(context);
+    writeFileSync(
+      join(directory, "0003_marker.sql"),
+      `${marker}\nCREATE TABLE skipped_marker (id INTEGER);`,
+    );
+    assert.throws(
+      () => applyMigrations(database, folder),
+      /Invalid rebuild marker.*0003_marker.sql/,
+    );
+    assert.equal(
+      database
+        .prepare("SELECT name FROM sqlite_schema WHERE name = ?")
+        .get("skipped_marker"),
+      undefined,
+    );
+    assert.equal(database.pragma("foreign_keys", { simple: true }), 1);
+  });
+}
+
+test("a rebuild marker on line two keeps ordinary foreign-key enforcement", (context) => {
+  const { database, directory, folder } = fixture(context);
+  writeFileSync(join(directory, "0003_marker.sql"), `\n${rebuild}`);
+  assert.throws(
+    () => applyMigrations(database, folder),
+    /FOREIGN KEY constraint failed/,
+  );
+  assert.deepEqual(database.prepare("SELECT * FROM parent").all(), [
+    { id: 1, label: "Sample" },
+  ]);
+  assert.equal(database.pragma("foreign_keys", { simple: true }), 1);
+});

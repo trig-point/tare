@@ -85,7 +85,13 @@ function runMigration(
   isApplied: () => boolean,
   record: () => unknown,
 ) {
-  const rebuild = content.split(/\r?\n/, 1)[0] === "-- tare:rebuild";
+  const firstLine = content
+    .replace(/^\uFEFF/, "")
+    .split(/\r?\n/, 1)[0]
+    ?.trim();
+  const rebuild = firstLine === "-- tare:rebuild";
+  if (firstLine?.toLowerCase().includes("tare:rebuild") && !rebuild)
+    throw new Error(`Invalid rebuild marker in migration ${name}`);
   try {
     if (rebuild) database.pragma("foreign_keys = OFF");
     database.transaction(() => {
