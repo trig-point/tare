@@ -1,6 +1,39 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { loadConfig } from "../src/config.ts";
+import { test as authTest } from "./support/hang-ceiling.ts";
+
+authTest(
+  "session config validates lifetime and URL and treats empty values as unset",
+  () => {
+    for (const value of [undefined, "", " "]) {
+      const config = loadConfig({
+        DATABASE_URL: ":memory:",
+        TARE_SESSION_DAYS: value,
+        TARE_PUBLIC_URL: value,
+      });
+      assert.equal(config.sessionDays, 30);
+      assert.equal(config.publicUrl, undefined);
+    }
+    for (const value of ["0", "366", "1.5", "text"])
+      assert.throws(
+        () =>
+          loadConfig({ DATABASE_URL: ":memory:", TARE_SESSION_DAYS: value }),
+        /TARE_SESSION_DAYS/,
+      );
+    for (const value of ["not-a-url", "ftp://tare.example.test"])
+      assert.throws(
+        () => loadConfig({ DATABASE_URL: ":memory:", TARE_PUBLIC_URL: value }),
+        /TARE_PUBLIC_URL/,
+      );
+    for (const value of ["1", "365"])
+      assert.equal(
+        loadConfig({ DATABASE_URL: ":memory:", TARE_SESSION_DAYS: value })
+          .sessionDays,
+        Number(value),
+      );
+  },
+);
 
 test("first user settings trim only the username and preserve password spaces", () => {
   assert.deepEqual(
