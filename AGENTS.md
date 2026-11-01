@@ -9,6 +9,7 @@ Use TypeScript only. Tests run with `node --test`.
 - `packages/engine`: Node + Hono backend.
 - `packages/engine/src/db.ts`: the only module that opens the SQLite driver; it also runs migrations.
 - `packages/engine/migrations`: schema in numbered `.sql` migrations.
+  Start table rebuild migrations with `-- tare:rebuild` on the first line to disable foreign keys before the transaction and check them before commit.
 - `packages/engine/src/queries`: queries in `.sql` files with TypeSQL-generated types.
 - `apps/*`: application workspaces.
 
@@ -38,3 +39,16 @@ Biome handles linting and formatting for the workspace. TypeScript runs in stric
 TypeSQL generation uses an ignored local database at `packages/engine/data/typesql.sqlite`. Biome formats generated code and permits the generator's explicit `any` type in query output.
 
 Keep comments short and focused on why. Use descriptive identifiers, never single-letter names. Keep personal data and secrets out of logs as well as source and fixtures.
+
+## Known TypeSQL gaps
+
+TypeSQL CLI 0.24.0 generates these queries without error but loses result types:
+
+- LEFT JOIN: generated `LeftJoinResult.name` is `string`; an unmatched row returns `null`. Use the `left-join.mts` wrapper with `string | null`.
+- `json_extract`: generated `JsonResult.name` is `any | null`; callers lose type checking. Use the `json.mts` wrapper with `unknown` and narrow the result before using it.
+
+Both wrappers and their SQL files live in `packages/engine/test/compat/`, outside the generated set. Other compatibility shapes use generated functions. For future queries built at runtime from many optional filters, Kysely is allowed under ruling `tare-kysely-if-dynamic`.
+
+`src/queries/compat/` and the compat fixture are test-only, never import them from engine code, and generation also loads `test/fixtures/typesql-compat.sql`, a test-only schema that is not a migration.
+
+SQLite RETURNING row order is unspecified; callers sort the returned rows if they need an order.

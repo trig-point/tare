@@ -6,7 +6,7 @@
   "linter": { "enabled": true, "rules": { "recommended": true } },
   "overrides": [
     {
-      "includes": ["packages/engine/src/queries/*.ts"],
+      "includes": ["packages/engine/src/queries/**/*.ts"],
       "linter": { "rules": { "suspicious": { "noExplicitAny": "off" } } }
     }
   ]
