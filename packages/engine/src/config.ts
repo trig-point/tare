@@ -1,6 +1,7 @@
 export interface Config {
   databaseUrl: string;
   port: number;
+  timezone: string;
 }
 
 export function loadConfig(env: Record<string, string | undefined>): Config {
@@ -18,5 +19,13 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
   ) {
     throw new Error("PORT must be an integer between 1 and 65535");
   }
-  return { databaseUrl, port };
+  const timezone = env.TARE_TIMEZONE ?? "UTC";
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: timezone });
+    if (!timezone || /^[+-]/.test(timezone))
+      throw new Error("IANA timezone required");
+  } catch {
+    throw new Error("TARE_TIMEZONE must be an IANA timezone");
+  }
+  return { databaseUrl, port, timezone };
 }

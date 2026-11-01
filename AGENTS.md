@@ -40,6 +40,8 @@ Biome handles linting and formatting for the workspace. TypeScript runs in stric
 
 TypeSQL generation uses an ignored local database at `packages/engine/data/typesql.sqlite`. Biome formats generated code and permits the generator's explicit `any` type in query output.
 
+`TARE_TIMEZONE` sets the install's IANA timezone for scheduled jobs (default: `UTC`) independently of the process `TZ`. Invalid or empty values prevent startup.
+
 Keep comments short and focused on why. Use descriptive identifiers, never single-letter names. Keep personal data and secrets out of logs as well as source and fixtures.
 
 ## Known TypeSQL gaps
