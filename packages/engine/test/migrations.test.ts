@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import {
-  copyFileSync,
+  cpSync,
   mkdtempSync,
   readdirSync,
   rmSync,
@@ -11,6 +11,16 @@ import { join, sep } from "node:path";
 import { type TestContext, test } from "node:test";
 import { pathToFileURL } from "node:url";
 import { applyMigrations, openDatabase } from "../src/db.ts";
+
+const migrations = new URL("../migrations/", import.meta.url);
+const nextNumber =
+  Math.max(
+    ...readdirSync(migrations)
+      .filter((name) => name.endsWith(".sql"))
+      .map((name) => Number(name.split("_")[0])),
+  ) + 1;
+const pendingName = (suffix: string) =>
+  `${String(nextNumber + 1).padStart(4, "0")}_${suffix}`;
 
 function fixture(context: TestContext, persistent = false) {
   const directory = mkdtempSync(join(tmpdir(), "tare-rebuild-"));
@@ -25,12 +35,9 @@ function fixture(context: TestContext, persistent = false) {
     connection.close();
     rmSync(directory, { recursive: true, force: true });
   });
-  copyFileSync(
-    new URL("../migrations/0001_foundation.sql", import.meta.url),
-    join(directory, "0001_foundation.sql"),
-  );
+  cpSync(migrations, directory, { recursive: true });
   writeFileSync(
-    join(directory, "0002_seed.sql"),
+    join(directory, `${String(nextNumber).padStart(4, "0")}_seed.sql`),
     `
     CREATE TABLE parent (id INTEGER PRIMARY KEY, label TEXT);
     CREATE TABLE child (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parent(id));
@@ -56,13 +63,10 @@ test("orphaned rebuild rolls back schema, rows and record and restores foreign k
     .prepare("SELECT name, sql FROM sqlite_schema ORDER BY name")
     .all();
   writeFileSync(
-    join(directory, "0003_rebuild.sql"),
+    join(directory, pendingName("rebuild.sql")),
     `${rebuild}DELETE FROM parent;`,
   );
-  assert.throws(
-    () => applyMigrations(database, folder),
-    /0003_rebuild.sql.*child/,
-  );
+  assert.throws(() => applyMigrations(database, folder), /rebuild.sql.*child/);
   assert.deepEqual(
     database.prepare("SELECT name, sql FROM sqlite_schema ORDER BY name").all(),
     before,
@@ -76,7 +80,7 @@ test("orphaned rebuild rolls back schema, rows and record and restores foreign k
   assert.equal(
     database
       .prepare("SELECT name FROM schema_migrations WHERE name = ?")
-      .get("0003_rebuild.sql"),
+      .get(pendingName("rebuild.sql")),
     undefined,
   );
   assert.equal(database.pragma("foreign_keys", { simple: true }), 1);
@@ -84,7 +88,7 @@ test("orphaned rebuild rolls back schema, rows and record and restores foreign k
 
 test("clean rebuild preserves populated rows and restores foreign keys", (context) => {
   const { database, directory, folder } = fixture(context);
-  writeFileSync(join(directory, "0003_rebuild.sql"), rebuild);
+  writeFileSync(join(directory, pendingName("rebuild.sql")), rebuild);
   applyMigrations(database, folder);
   assert.deepEqual(database.prepare("SELECT * FROM parent").all(), [
     { id: 1, label: "Sample", added: null },
@@ -133,7 +137,7 @@ test("fresh database replays every real migration and second run is a no-op", (c
 test("unmarked migration rolls back the whole file on statement failure", (context) => {
   const { database, directory, folder } = fixture(context);
   writeFileSync(
-    join(directory, "0003_bad.sql"),
+    join(directory, pendingName("bad.sql")),
     "CREATE TABLE partial (id INTEGER); INSERT INTO parent VALUES (2, 'Other'); INVALID SQL;",
   );
   assert.throws(() => applyMigrations(database, folder), /syntax error/);
@@ -149,7 +153,7 @@ test("unmarked migration rolls back the whole file on statement failure", (conte
   assert.equal(
     database
       .prepare("SELECT name FROM schema_migrations WHERE name = ?")
-      .get("0003_bad.sql"),
+      .get(pendingName("bad.sql")),
     undefined,
   );
   assert.equal(database.pragma("foreign_keys", { simple: true }), 1);
@@ -157,7 +161,10 @@ test("unmarked migration rolls back the whole file on statement failure", (conte
 
 test("malformed rebuild rolls back and restores foreign keys", (context) => {
   const { database, directory, folder } = fixture(context);
-  writeFileSync(join(directory, "0003_bad.sql"), `${rebuild}INVALID SQL;`);
+  writeFileSync(
+    join(directory, pendingName("bad.sql")),
+    `${rebuild}INVALID SQL;`,
+  );
   assert.throws(() => applyMigrations(database, folder), /syntax error/);
   assert.deepEqual(database.prepare("SELECT * FROM parent").all(), [
     { id: 1, label: "Sample" },
@@ -165,7 +172,7 @@ test("malformed rebuild rolls back and restores foreign keys", (context) => {
   assert.equal(
     database
       .prepare("SELECT name FROM schema_migrations WHERE name = ?")
-      .get("0003_bad.sql"),
+      .get(pendingName("bad.sql")),
     undefined,
   );
   assert.equal(database.pragma("foreign_keys", { simple: true }), 1);
@@ -176,7 +183,7 @@ for (const marked of [false, true]) {
     const { database, directory, folder, other } = fixture(context, true);
     assert.ok(other);
     writeFileSync(
-      join(directory, "0003_race.sql"),
+      join(directory, pendingName("race.sql")),
       marked ? rebuild : "CREATE TABLE raced (id INTEGER);",
     );
     const original = database.transaction.bind(database);
@@ -193,8 +200,8 @@ for (const marked of [false, true]) {
     assert.deepEqual(
       database
         .prepare("SELECT name FROM schema_migrations WHERE name = ?")
-        .all("0003_race.sql"),
-      [{ name: "0003_race.sql" }],
+        .all(pendingName("race.sql")),
+      [{ name: pendingName("race.sql") }],
     );
     assert.equal(database.pragma("foreign_keys", { simple: true }), 1);
   });
@@ -208,7 +215,7 @@ for (const marker of [
   test(`normalized rebuild marker ${JSON.stringify(marker)} preserves rows`, (context) => {
     const { database, directory, folder } = fixture(context);
     writeFileSync(
-      join(directory, "0003_marker.sql"),
+      join(directory, pendingName("marker.sql")),
       rebuild.replace("-- tare:rebuild", marker),
     );
     assert.doesNotThrow(() => applyMigrations(database, folder));
@@ -227,12 +234,12 @@ for (const marker of [
   test(`malformed rebuild marker ${marker} names the file`, (context) => {
     const { database, directory, folder } = fixture(context);
     writeFileSync(
-      join(directory, "0003_marker.sql"),
+      join(directory, pendingName("marker.sql")),
       `${marker}\nCREATE TABLE skipped_marker (id INTEGER);`,
     );
     assert.throws(
       () => applyMigrations(database, folder),
-      /Invalid rebuild marker.*0003_marker.sql/,
+      /Invalid rebuild marker.*marker.sql/,
     );
     assert.equal(
       database
@@ -246,7 +253,7 @@ for (const marker of [
 
 test("a rebuild marker on line two keeps ordinary foreign-key enforcement", (context) => {
   const { database, directory, folder } = fixture(context);
-  writeFileSync(join(directory, "0003_marker.sql"), `\n${rebuild}`);
+  writeFileSync(join(directory, pendingName("marker.sql")), `\n${rebuild}`);
   assert.throws(
     () => applyMigrations(database, folder),
     /FOREIGN KEY constraint failed/,
@@ -259,11 +266,11 @@ test("a rebuild marker on line two keeps ordinary foreign-key enforcement", (con
 
 test("pending rebuild inside a caller transaction fails naming the file", (context) => {
   const { database, directory, folder } = fixture(context);
-  writeFileSync(join(directory, "0003_nested.sql"), rebuild);
+  writeFileSync(join(directory, pendingName("nested.sql")), rebuild);
   database.transaction(() => {
     assert.throws(
       () => applyMigrations(database, folder),
-      /0003_nested.sql.*inside.*transaction/,
+      /nested.sql.*inside.*transaction/,
     );
     assert.equal(database.inTransaction, true);
     assert.deepEqual(database.prepare("SELECT * FROM parent").all(), [
@@ -272,7 +279,7 @@ test("pending rebuild inside a caller transaction fails naming the file", (conte
     assert.equal(
       database
         .prepare("SELECT name FROM schema_migrations WHERE name = ?")
-        .get("0003_nested.sql"),
+        .get(pendingName("nested.sql")),
       undefined,
     );
     assert.equal(database.pragma("foreign_keys", { simple: true }), 1);
@@ -282,7 +289,7 @@ test("pending rebuild inside a caller transaction fails naming the file", (conte
 test("clean rebuild restores disabled foreign-key enforcement", (context) => {
   const { database, directory, folder } = fixture(context);
   database.pragma("foreign_keys = OFF");
-  writeFileSync(join(directory, "0003_disabled.sql"), rebuild);
+  writeFileSync(join(directory, pendingName("disabled.sql")), rebuild);
   applyMigrations(database, folder);
   assert.deepEqual(database.prepare("SELECT * FROM parent").all(), [
     { id: 1, label: "Sample", added: null },
