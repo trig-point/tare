@@ -4,27 +4,49 @@ import { type TestContext, test } from "node:test";
 import { openDatabase } from "../src/db.ts";
 import { cte } from "../src/queries/compat/cte.ts";
 import { type InListParams, inList } from "../src/queries/compat/in-list.ts";
-import { json } from "../src/queries/compat/json.mts";
-import { leftJoin } from "../src/queries/compat/left-join.mts";
 import { returning } from "../src/queries/compat/returning.ts";
 import { upsert } from "../src/queries/compat/upsert.ts";
 import { window } from "../src/queries/compat/window.ts";
+import { json } from "./compat/json.mts";
+import { leftJoin } from "./compat/left-join.mts";
 
 type Equal<Actual, Expected> = (<Value>() => Value extends Actual
   ? 1
   : 2) extends <Value>() => Value extends Expected ? 1 : 2
   ? true
   : false;
-const returningArray: Equal<
-  ReturnType<typeof returning>,
-  { id: number; label: string }[]
-> = true;
-const nullableJoin: Equal<
-  ReturnType<typeof leftJoin>[number]["name"],
-  string | null
-> = true;
-const listParameter: Equal<InListParams["ids"], number[]> = true;
-assert.ok(returningArray && nullableJoin && listParameter);
+const typeChecks: [
+  Equal<Parameters<typeof returning>[1], { label: string }>,
+  Equal<Parameters<typeof returning>[2], { minimum: number }>,
+  Equal<ReturnType<typeof returning>, { id: number; label: string }[]>,
+  Equal<Parameters<typeof upsert>[1], { id: number | null; label: string }>,
+  Equal<ReturnType<typeof upsert>, { id: number; label: string } | null>,
+  Equal<Parameters<typeof cte>[1], { minimum: number }>,
+  Equal<ReturnType<typeof cte>, { id: number; label: string }[]>,
+  Equal<Parameters<typeof window>, [db: Parameters<typeof cte>[0]]>,
+  Equal<ReturnType<typeof window>, { id: number; position: number }[]>,
+  Equal<InListParams, { ids: number[] }>,
+  Equal<ReturnType<typeof inList>, { id: number; label: string }[]>,
+  Equal<ReturnType<typeof leftJoin>[number]["name"], string | null>,
+  Equal<ReturnType<typeof json>["name"], unknown>,
+  Equal<Equal<ReturnType<typeof JSON.parse>, unknown>, false>,
+] = [
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+];
+assert.ok(typeChecks.every(Boolean));
 
 function setup(context: TestContext) {
   const connection = openDatabase(":memory:");
@@ -64,7 +86,10 @@ for (const [minimum, expected] of [
       returning(database, { label: "updated" }, { minimum }),
       expected,
     );
-    assert.deepEqual(cte(database, { minimum }), expected);
+    assert.deepEqual(cte(database, { minimum: 1 }), [
+      { id: 1, label: minimum <= 1 ? "updated" : "first" },
+      { id: 2, label: minimum <= 2 ? "updated" : "second" },
+    ]);
   });
 }
 
@@ -98,9 +123,10 @@ test("CTE filters rows and handles no matches", (context) => {
 
 test("window function numbers ordered rows", (context) => {
   const database = setup(context);
+  database.prepare("UPDATE compat_items SET id = ? WHERE id = ?").run(7, 2);
   assert.deepEqual(window(database), [
     { id: 1, position: 1 },
-    { id: 2, position: 2 },
+    { id: 7, position: 2 },
   ]);
   database.prepare("DELETE FROM compat_items").run();
   assert.deepEqual(window(database), []);
