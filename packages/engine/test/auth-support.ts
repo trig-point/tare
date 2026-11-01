@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import type { TestContext } from "node:test";
 import { createApp } from "../src/app.ts";
+import { hashPassword } from "../src/auth/password.ts";
 import type { AppOptions } from "../src/auth/routes.ts";
 import { loadConfig } from "../src/config.ts";
 import { openDatabase } from "../src/db.ts";
@@ -11,6 +12,7 @@ export const credentials = {
   password: "invented-password",
 };
 export const requestedWith = { "X-Requested-With": "XMLHttpRequest" };
+export const dummyHash = await hashPassword("invented-dummy-password");
 export function fixture(
   context: TestContext,
   overrides: Partial<AppOptions> = {},
@@ -33,7 +35,7 @@ export function fixture(
     database,
     clock,
     config: loadConfig({ DATABASE_URL: ":memory:" }),
-    dummyHash: "dummy-hash",
+    dummyHash,
     verifyPassword: async (password, stored) => {
       calls.push(stored);
       return password === credentials.password && stored === "example-hash";

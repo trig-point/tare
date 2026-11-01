@@ -6,6 +6,7 @@ import { loadConfig } from "../src/config.ts";
 import {
   cookie,
   credentials,
+  dummyHash,
   fixture,
   publicUser,
   rejection,
@@ -123,7 +124,7 @@ test("wrong password and unknown user verify once and preserve a live cookie", a
     );
     assert.deepEqual(setup.rows(), before);
   }
-  assert.deepEqual(setup.calls, ["example-hash", "dummy-hash"]);
+  assert.deepEqual(setup.calls, ["example-hash", dummyHash]);
   await rejection(
     await setup.signIn(credentials, { Cookie: liveCookie }),
     403,

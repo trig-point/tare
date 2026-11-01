@@ -16,6 +16,7 @@ import { loadConfig } from "../src/config.ts";
 import { applyMigrations, openDatabase } from "../src/db.ts";
 import { insertUser } from "../src/queries/insert-user.ts";
 import { selectUser } from "../src/queries/select-user.ts";
+import { dummyHash } from "./auth-support.ts";
 
 const migrations = new URL("../migrations/", import.meta.url);
 const realNames = readdirSync(migrations).filter((name) =>
@@ -46,7 +47,7 @@ describe("engine", () => {
         database: connection.database,
         config: loadConfig({ DATABASE_URL: ":memory:" }),
         clock: { now: () => new Date() },
-        dummyHash: "unused",
+        dummyHash,
         verifyPassword: async () => false,
       }).request("/health");
     } finally {
