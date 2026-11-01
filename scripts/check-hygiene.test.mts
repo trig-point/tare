@@ -98,3 +98,44 @@ test("generic domains match host boundaries", () => {
   assert.equal(check(["printer", "local"].join(".")).status, 1);
   assert.equal(check("printer.locality").status, 0);
 });
+
+test("home paths include escaped, lowercase and terminal forms", () => {
+  for (const path of [
+    ["C:", "Users", "alice", "x"].join("\\\\"),
+    ["", "Users", "alice", "x"].join("\\/"),
+    ["c:", "users", "alice", ""].join("\\"),
+    ["D:", "Users", "alice", "x"].join("\\"),
+    ["", "users", "alice", ""].join("/"),
+    `HOME=/${"home"}/alice`,
+    `"/${"Users"}/alice"`,
+    `/${"home"}/alice`,
+    `/${"home"}/alice next`,
+    `file:///${"Users"}/alice/`,
+  ]) {
+    const result = check(path);
+    assert.equal(result.status, 1, JSON.stringify(path));
+    assert.match(result.output, /sample.txt:1: home-path/);
+  }
+});
+
+test("home paths respect left boundaries and case-insensitive placeholders", () => {
+  for (const content of [
+    "https://app.test/home/dashboard/x",
+    "../Users/Form/x",
+    ...[
+      "<name>",
+      "example",
+      "you",
+      "user",
+      "USERNAME",
+      "username",
+      "<user>",
+      "$user",
+      "runner",
+      "User",
+      "$USER",
+    ].map((username) => ["", "home", username, "file"].join("/")),
+  ]) {
+    assert.equal(check(content).status, 0, content);
+  }
+});

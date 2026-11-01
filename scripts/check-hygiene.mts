@@ -3,7 +3,16 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-const placeholders = new Set(["<name>", "example", "you", "user", "USERNAME"]);
+const placeholders = new Set([
+  "<name>",
+  "example",
+  "you",
+  "user",
+  "username",
+  "<user>",
+  "$user",
+  "runner",
+]);
 const allowedHosts = new Set([
   "example.com",
   "example.org",
@@ -56,12 +65,14 @@ for (const file of files) {
   const lines = content.toString("utf8").split(/\r?\n/);
   for (const [index, line] of lines.entries()) {
     const homePaths = line.matchAll(
-      /(?:\/(?:Users|home)\/([^/\s]+)\/|[A-Za-z]:[\\/]Users[\\/]([^\\/\s]+)[\\/])/g,
+      /(?:(?<![\w.-])(?:\\?\/)+(?:users|home)(?:\\?\/)+([^\\/\s"']+)|[a-z]:[\\/]+users[\\/]+([^\\/\s"']+))/gi,
     );
     if (
       [...homePaths].some((match) => {
         const username = match[1] ?? match[2];
-        return username !== undefined && !placeholders.has(username);
+        return (
+          username !== undefined && !placeholders.has(username.toLowerCase())
+        );
       })
     ) {
       console.error(`${file}:${index + 1}: home-path`);
