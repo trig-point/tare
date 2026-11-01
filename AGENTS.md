@@ -12,7 +12,7 @@ Use TypeScript only. Tests run with `node --test`.
 - `packages/engine/src/queries`: queries in `.sql` files with TypeSQL-generated types.
 - `apps/*`: application workspaces.
 
-SQLite only. No ORM. Parameters only: never insert values into SQL strings. Every query is exercised by a test against a real migrated SQLite database. Commit generated query files and regenerate them after changing SQL or migrations.
+SQLite only. No ORM. Kysely (a query builder) is allowed only for a query built at runtime from many optional filters. Parameters only: never insert values into SQL strings. Every query is exercised by a test against a real migrated SQLite database. Commit generated query files and regenerate them after changing SQL or migrations.
 
 ## Commands
 

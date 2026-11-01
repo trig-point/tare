@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Logging operations
-The system SHALL provide operations to log food, log weight, read today's totals, find a food, and edit and delete entries. Writes SHALL be idempotent by client id.
+The system SHALL provide operations to log food, log weight, edit and delete entries, read today's totals and find a food. Each intake entry SHALL carry the time it was eaten. Writes SHALL be idempotent by a client id that is unique per person.
 
 #### Scenario: Log food from the catalog
 - **WHEN** a person logs a catalog food with a number of servings
@@ -9,17 +9,21 @@ The system SHALL provide operations to log food, log weight, read today's totals
 
 #### Scenario: Repeated client id
 - **WHEN** the same entry is submitted twice with the same client id
-- **THEN** one entry exists
+- **THEN** one entry exists and the second call returns it
 
 ### Requirement: Per-person day boundary
-Each person SHALL have a timezone and a day-start hour, defaulting to 4 AM, and entries SHALL be assigned to days by that rule.
+Each person SHALL have a timezone and a day-start hour, defaulting to 4 AM. Each entry's day SHALL be computed from its eaten-at time by that rule when it is written, and stored.
 
 #### Scenario: Late snack
-- **WHEN** a person with the default day start logs a snack at 1 AM local time
+- **WHEN** a person with the default day start logs a snack eaten at 1 AM local time
 - **THEN** it counts toward the previous day
 
+#### Scenario: Timezone change
+- **WHEN** a person changes their timezone
+- **THEN** entries already written keep their stored day, and new entries use the new timezone
+
 ### Requirement: Day sign-off
-A person SHALL be able to close a day by reviewing its ledger and recording hunger, fullness and notes. Only a signed-in person, not an agent token, SHALL mark a day complete.
+A person SHALL be able to close a day by reviewing its ledger and recording hunger, fullness and notes. Only a signed-in person, not an agent token, SHALL mark a day complete. Any create, edit or delete of a signed-off day's intake, by any path, SHALL clear that day's sign-off until the person signs it off again. The app SHALL list past days that are not signed off so the person can review them in turn.
 
 #### Scenario: Close a day
 - **WHEN** a person reviews a day and signs it off
@@ -27,14 +31,22 @@ A person SHALL be able to close a day by reviewing its ledger and recording hung
 
 #### Scenario: Agent tries to sign off
 - **WHEN** an agent token calls the sign-off operation
-- **THEN** the call is rejected; agents may add notes but not complete the day
+- **THEN** the call is rejected with 403; agents may add notes but not complete the day
+
+#### Scenario: Intake changed after sign-off
+- **WHEN** an agent or the person edits, adds or deletes an intake entry on a signed-off day
+- **THEN** the day is no longer signed off and drops out of the adaptive TDEE until it is signed off again
+
+#### Scenario: Note added after sign-off
+- **WHEN** an agent adds a note to a signed-off day
+- **THEN** the day stays signed off
 
 ### Requirement: Food entry screens
 The app SHALL show today's totals and remaining budget, let a person log weight, search the catalog, quick-add calories and protein, and edit or delete entries. Online lookups SHALL run only when the person asks.
 
 #### Scenario: Search online
 - **WHEN** a catalog search finds nothing and the person taps "search online"
-- **THEN** one lookup runs against the external sources
+- **THEN** one lookup runs against the external sources and only exact matches are offered
 
 ### Requirement: Barcode scanning
 The app SHALL scan EAN-13, UPC-A, EAN-8 and UPC-E barcodes with the browser's native detector when it supports them and with a self-hosted, precached WASM reader otherwise, and SHALL offer manual barcode entry.
@@ -48,14 +60,18 @@ The app SHALL scan EAN-13, UPC-A, EAN-8 and UPC-E barcodes with the browser's na
 - **THEN** the code is kept as a string and normalized before lookup
 
 ### Requirement: Regular meals
-A person SHALL be able to save named regular meals (such as a usual restaurant order) with calories, macros, an uncertainty range and a baseline source, and log them in one step.
+A person SHALL be able to save named regular meals (such as a usual restaurant order) with calories, macros, an uncertainty range and a baseline source (where the values came from: a published menu, a label, or the person's own estimate), and log them in one step. Regular meals SHALL be owned by the person who saved them and SHALL NOT be visible to anyone else.
 
 #### Scenario: Log a regular meal
 - **WHEN** a person logs a saved regular meal
 - **THEN** the entry carries the meal's values, range and provenance `estimated`
 
+#### Scenario: Another person's meal
+- **WHEN** another person searches for that meal's name or logs it by id
+- **THEN** the search returns nothing and the log is rejected as not found
+
 ### Requirement: One-time importer
-A command SHALL import intake, weight and day-note JSON lines into a named person's account, idempotently. Imported days SHALL arrive not signed off.
+A command SHALL import intake, weight and day-note JSON lines into a named person's account, idempotently, through the engine's database module. Imported days SHALL arrive not signed off.
 
 #### Scenario: Import twice
 - **WHEN** the same files are imported twice

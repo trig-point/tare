@@ -1,6 +1,6 @@
 ## Context
 
-The engine scaffold is merged: a Hono server on Node 22, SQLite through better-sqlite3, numbered `.sql` migrations with a small runner, queries in `.sql` files typed by TypeSQL 0.24.0, Biome, and one CI job. Version 1 is built for one operator and must work for anyone who self-hosts it, so every host, key, path and account name comes from configuration.
+The engine scaffold is merged: a Hono server on Node 22, SQLite through better-sqlite3, numbered `.sql` migrations with a small runner that already checksums applied files, queries in `.sql` files typed by TypeSQL 0.24.0, Biome, and one CI job. Version 1 is built for one operator and must work for anyone who self-hosts it, so every host, key, path and account name comes from configuration.
 
 Constraints that shape every decision below:
 
@@ -16,7 +16,7 @@ Constraints that shape every decision below:
 - Several people on one install, each with their own data, login, agent tokens and Home Assistant device.
 - Logging from the PWA, from an AI agent over MCP, from a barcode, from a forwarded meal-kit email, and from a Bluetooth scale through Home Assistant.
 - A daily target that starts from a formula and becomes adaptive once there is enough clean data.
-- A meal plan of slots that agents fill and Tare tracks.
+- A meal plan of slots that agents fill and Tare tracks, usable without an MQTT broker.
 - Each piece lands as one reviewable pull request.
 
 **Non-Goals:**
@@ -26,69 +26,87 @@ Constraints that shape every decision below:
 - Feeding activity data into the calorie target (version 1 shows it beside intake only).
 - Offline editing and deleting; the version 1 offline queue holds new entries only.
 - Code that reads any meal-kit or delivery provider's website. Agents outside this repository may supply values over MCP.
+- Deleting a person, changing a password, and finer agent-token scopes (post version 1).
 
 ## Decisions
 
 ### Operations are defined once
 
-Each operation (name, input and output schema, handler, required scope) lives in one registry. HTTP routes and MCP tools are generated from it, and a contract test fails if an operation is missing from either. Every write takes an explicit `provenance`; a food logged without a catalog food defaults to `estimated`, because an agent's numbers are its own estimate. Alternative considered: hand-written routes with an MCP wrapper. Rejected because the two surfaces would drift.
+Each operation (name, input and output schema, handler, caller class, administrator flag) lives in one registry. The caller class is either session only or session and agent token. Every operation becomes an HTTP route; agent-callable ones also become MCP tools. A contract test fails if an agent-callable operation is missing from either surface or a session-only one is listed as a tool. Session-only operations include day sign-off and creating or revoking tokens, so a leaked agent token cannot mint more tokens or close a day. Version 1 has no finer scopes. Alternative considered: hand-written routes with an MCP wrapper. Rejected because the two surfaces would drift.
+
+### Provenance comes from the source, not the caller
+
+A write that references a food takes the food's provenance and rejects a different one. A write with caller-supplied numbers may claim `label` only with a source naming where the label was read; otherwise it is `estimated`. No caller can store `verified` numbers it made up: `verified` exists only on USDA Foundation and SR Legacy rows in the source cache. An agent answering a meal-kit nutrition question from the provider's page therefore writes `label` with that page as its source.
 
 ### Two credentials at the proxy, one identity in Tare
 
-Browsers pass the proxy with its one-time PIN. Agents pass it with a proxy service token (two headers) and then present a Tare agent token, which decides which person they act for. The PWA sends `X-Requested-With: XMLHttpRequest`, so an expired proxy session returns 401 instead of a login page. Home Assistant and the inbound email sender reach Tare on the local network. Alternatives considered: exempting `/api` and `/mcp` from the proxy, or no proxy. The operator chose to keep the whole host behind the proxy. A spike on the real proxy records each route's response before the MCP and offline-queue tasks merge.
+Browsers pass the proxy with its one-time PIN. Agents pass it with a proxy service token (two headers) and then present a Tare agent token, which decides which person they act for. The PWA sends `X-Requested-With: XMLHttpRequest`; Cloudflare Access documents that it then answers an expired session with 401 instead of a login page. That is a claim about the proxy, so an early probe on the real proxy records it before the MCP and offline-queue tasks start, and the client treats any 401, redirect or non-JSON response as "sign in again" either way. The probe runs the container (engine, app shell and sign-in API) and sends each agent client's service-token headers to `/mcp`; the engine's own 404 there proves the headers passed the proxy before the MCP server exists. The reference install then runs a client smoke test once the MCP server and the logging screens exist. Home Assistant and the inbound email sender reach Tare on the local network. Alternatives considered: exempting `/api` and `/mcp` from the proxy, or no proxy. The operator chose to keep the whole host behind the proxy.
 
-### The offline queue never drops an entry
+### The offline queue never silently drops an entry
 
-Writes go to IndexedDB first, each with a client-generated id, bound to the signed-in user. Replay happens on launch, on reconnect and after sign-in. The server treats a repeated client id as the same write and returns the stored row. A queued entry is removed only after a JSON acknowledgement; a 401, a redirect or an HTML body means "sign in again" and the entry stays. The service worker never caches HTML it did not build. Alternative considered: Workbox background sync alone. Rejected as the only path because it is not guaranteed and cannot distinguish an expired session.
+Writes go to IndexedDB first, each with a client-generated id and its eaten-at time, bound to the signed-in user, and the app requests persistent storage. Replay happens on launch, on reconnect and after sign-in, with `redirect: "manual"` so a proxy redirect is visible instead of surfacing as a network error. The server treats a repeated client id as the same write and returns the stored row. A queued entry is removed only after a JSON acknowledgement. A 401, a redirect or a non-JSON body means "sign in again", and the entry stays. A network error or a 5xx is retried later. Any other JSON error marks that entry rejected with its code; later entries continue, and the person edits and resends it or discards it. The service worker never caches HTML it did not build. Alternative considered: Workbox background sync alone. Rejected as the only path because it is not guaranteed and cannot distinguish an expired session.
 
 ### Tenant isolation is structural
 
-Personal tables carry a NOT NULL `user_id`. Owned children reference `(user_id, id)` composite keys so a row cannot point at another person's parent. Queries take the authenticated user as a parameter from a helper, never from the request body. Two-user negative tests exercise reads, totals, exports and background jobs. Alternative considered: a lint that checks query text for `user_id`. Rejected because it passes unsafe joins and cannot see child references.
+Personal tables carry a NOT NULL `user_id`. Owned children reference `(user_id, id)` composite keys so a row cannot point at another person's parent. Queries take the authenticated user as a parameter from a helper, never from the request body; jobs and the importer take the person from the row they process or the command's named person through the same helper. The only shared rows are the source cache that the USDA and Open Food Facts adapters write. Everything a person or an agent creates, including regular meals, typed labels and answered meal-kit nutrition, is owned by that person, so one person's saved restaurant order or wrong answer never reaches another person's search or totals. Idempotency keys (client ids, mutation ids, inbound message hashes) are unique per person. Task 1.6 ships a two-user test helper, and every later task that adds a personal table, query, operation or job adds its own two-user negative test. Alternative considered: a lint that checks query text for `user_id`. Rejected because it passes unsafe joins and cannot see child references.
 
 ### The data layer stays as built, with a compatibility file
 
-TypeSQL is pinned at 0.24.0 with the existing invalid-SQL guard. A compatibility test file generates and runs one query of each shape Tare needs (RETURNING with 0, 1 and many rows, upsert, LEFT JOIN nullability, CTE, window function, JSON function, empty `IN` list). A shape that fails is recorded once and handled with a hand-typed wrapper or Kysely under the existing ruling. The migration runner gains checksums of applied files and a rebuild path that disables foreign keys before `BEGIN`, because `PRAGMA foreign_keys` does nothing inside a transaction. One writer connection, WAL, `foreign_keys=ON`, `busy_timeout` 5000. Alternatives considered: sqlc's TypeScript plugin (Beta for SQLite) and `node:sqlite` (not yet stable). Neither justifies switching now.
+TypeSQL is pinned at 0.24.0 with the existing invalid-SQL guard. A compatibility test file generates and runs one query of each shape Tare needs (RETURNING with 0, 1 and many rows, upsert, LEFT JOIN nullability, CTE, window function, JSON function, empty `IN` list), and lands before the first schema task. A shape that fails is recorded once and handled with a hand-typed wrapper. Kysely is allowed only for a query built at runtime from many optional filters; no version 1 task needs one yet. The runner already checksums applied files; it gains a rebuild path that disables foreign keys before `BEGIN`, checks them before commit and re-enables them after, because `PRAGMA foreign_keys` does nothing inside a transaction. Schema changes are new migrations, never edits. One writer connection in the engine, WAL, `foreign_keys=ON`, `busy_timeout` 5000, and write transactions with `BEGIN IMMEDIATE` so the one-time importer, a separate process using the same database module, waits instead of failing on a lock upgrade. The new packages (`packages/nutrition`, `packages/order-parser`, `packages/health-sources`) take their data as arguments and never open the database; the engine owns all SQL. Alternatives considered: sqlc's TypeScript plugin (Beta for SQLite) and `node:sqlite` (not yet stable). Neither justifies switching now.
 
 ### The nutrition chain only accepts exact matches
 
-Resolution order: known foods, then USDA FoodData Central, then Open Food Facts, then a question. A similar-named generic food is not the meal that was delivered, so a miss becomes a question rather than a guess. Each adapter emits only its own provenance class. Open Food Facts is called only for a barcode or an explicit "search online" action (it allows 10 searches a minute), with the required User-Agent and results cached in the catalog.
+An automatic lookup (a food named in a log call, a meal from an order) searches only the person's own foods and the shared source cache. External sources run only on an explicit lookup: a barcode scan or "search online", USDA FoodData Central first, then Open Food Facts. A similar-named generic food is not the meal that was delivered, so a miss is reported as no match in the app and becomes a question for an order's meal. Each adapter emits the provenance of the data it read: USDA Foundation and SR Legacy as `verified`, USDA Branded and Open Food Facts as `label`; the USDA adapter requests no other data types. Open Food Facts allows 100 product reads and 10 searches a minute, so search-as-you-type is out; the adapter sends the required User-Agent and its results land in the shared cache.
 
-### Meal-kit orders are reconciled per delivery week
+### Meal-kit orders are reconciled per delivery
 
-Providers send more than one email per order. The reference provider sends a scheduling email (meals, chef, quantity, delivery date) and a processed email at cutoff (meals and quantity only). The parser extracts each email into a fixed schema with a short evidence excerpt per field that must occur in the email. Reconciliation merges emails into one order per service and delivery week, lets the processed list supersede the scheduled one, and takes the date from the scheduling email or asks. Deduplication uses message hashes and order keys, never the model. The parser has no tools and fetches nothing. With no model configured, an email becomes a question instead of being dropped. Fixtures are synthetic emails that copy real layouts with made-up meals and people.
+Providers send more than one email per order. The reference provider sends a scheduling email (meals, chef, quantity, delivery date) and a processed email at cutoff (meals and quantity only). The parser extracts each email into a fixed schema with a short evidence excerpt per field that must occur in the email. Orders are keyed by person, service and delivery date. A processed email with no date attaches to the person's earliest scheduled order for that service delivering after the email arrived, supersedes its meal list, and takes each meal's chef from the scheduled list by name, so the nutrition key (service, meal name, chef) survives the replacement; with no matching order it asks. Deduplication uses per-person message hashes and order keys, never the model. The parser has no tools and fetches nothing. With no model configured, an email becomes a question instead of being dropped. Fixtures are synthetic emails that copy real layouts with made-up meals and people.
 
 ### A day counts only after the person signs it off
 
-Each user has a timezone and a day-start hour (default 4 AM), so a late snack lands in the right day. Closing a day is a screen in the PWA that shows the day's ledger and takes hunger, fullness and notes; only the signed-in person can sign off; agent tokens cannot. The adaptive TDEE uses signed-off days only and keeps the formula target until enough exist. Imported days arrive unsigned and get a bulk review list.
+Each user has a timezone and a day-start hour (default 4 AM). An entry's day is computed from its eaten-at time when it is written and stored, so a late snack lands in the right day and a later timezone change does not move history. Closing a day is a screen in the PWA that shows the day's ledger and takes hunger, fullness and notes; sign-off is a session-only operation, so agent tokens cannot sign off, though they can add notes. A database trigger clears a day's sign-off whenever its intake is created, edited or deleted, so every write path (an agent, a meal action, the importer, the person) invalidates the review, and the day must be signed off again before it counts. The adaptive TDEE uses signed-off days only and keeps the formula target until enough exist. Imported days arrive unsigned and appear in the list of unsigned past days.
 
 ### Adaptive TDEE is energy balance over clean days
 
-Average intake over a rolling window of signed-off days, minus the trend weight change times an energy density, gives the estimate. Intake marked `estimated` widens the uncertainty band using its stored low and high values. A minimum-data rule decides eligibility; until then the formula stands and the target shows a "learning" state.
+Over the 28 days ending yesterday: mean daily intake of the signed-off days, minus the weight rate times 7,700 kcal per kg, where the weight rate is the change in the smoothed trend across the whole window divided by its 28 elapsed days. Intake is averaged over signed-off days only, on the assumption that they represent the window; weight is measured over elapsed days because the scale does not care whether a day was signed off. Low and high bounds replace each `estimated` entry with its stored low and high values (25 percent either side when it has none). The estimate is eligible with at least 14 signed-off days and 8 weigh-in days in the window; until then the formula stands and the target shows a "learning" state. Window, energy density, counts and default range are configuration with these defaults. The trend is exponential smoothing with factor 0.1 on days with a reading, held through gaps. The formula target is Mifflin-St Jeor on the trend weight with a fixed activity factor table, a goal adjustment of the weekly goal rate times 7,700 over 7, and protein at 1.6 g per kg of trend weight by default. The specs carry worked numbers for each.
+
+### Scheduled work runs in one job runner
+
+The nightly backup, the weekly recompute and the Oura daily sync run as named jobs in one in-process runner on schedules in the install's configured timezone, one instance of each at a time, with the last run and result recorded. Tests drive it with an injected clock. Alternative considered: each job with its own timer. Rejected because every ticket would invent its own scheduler and none would be testable without waiting.
 
 ### Home Assistant gets stable entities and specific buttons
 
-One MQTT device per person with identifiers built from an install id and the Tare user id, `default_entity_id` for readable names, discovery re-published on Home Assistant's birth message, and an empty retained config on user deletion. kcal sensors carry no `total_increasing` state class, because edits would read as meter resets. Buttons carry the item id and a revision; the engine rejects stale revisions and publishes the result. A shared Home Assistant publishes every press under its own broker identity, so the household behind one Home Assistant is trusted, and the setup docs say so.
+One MQTT device per person with identifiers built from an install id and the Tare user id, `default_entity_id` for readable names, and discovery re-published when Home Assistant publishes its online (birth) message. Sensors arrive only once their producers exist: target, remaining, today and weight trend first, the TDEE estimate with the weekly recompute. kcal sensors carry no `total_increasing` state class, because edits would read as meter resets. A button's discovery config has a fixed press payload, so each on-hand meal and planned item gets its own buttons, each with a press payload that carries the item id and current revision, and discovery is re-published whenever the item or its revision changes; an entity that goes away gets an empty retained config on its own topic. The engine rejects stale revisions and publishes the outcome to a last-press result sensor. Weekly notices go out as an MQTT event entity. The Tare broker user may use only its own topic prefix, the discovery prefix, Home Assistant's status topic and the configured scale topic, and a real deny test proves it. The meal plan itself needs no broker; its Home Assistant buttons and next-slot sensor come last. A shared Home Assistant publishes every press under its own broker identity, so the household behind one Home Assistant is trusted, and the setup docs say so.
+
+### Meal actions share one write path
+
+Eating changes intake and stock together, so it is one action in one transaction, built once and called by the app, agents and Home Assistant. It acts on an on-hand meal (and later a planned item) by id and revision, rejects a stale revision, and is idempotent by a per-person mutation id. "Ate it" logs the item's nutrition once and "ate 3/4" logs three quarters; both take one meal from stock because a meal-kit meal is one unit. "Skip" exists for planned items only: it logs nothing, moves no stock and marks the item skipped. An entry made by a planned-item action belongs to that item's slot; other entries belong to the slot whose time window contains their eaten-at time, else the next slot, else the last. Unused or overspent budget is spread over later slots by share, so the day's total is conserved.
 
 ### Oura is OAuth per install with locked refresh
 
-Each install registers its own Oura OAuth app (up to 10 users before Oura review). Refresh tokens are single-use, so refresh runs under a per-user lock and saves both new tokens atomically. Membership errors are shown separately from authorization errors. Version 1 polls daily and maps only documented daily fields.
+Each install registers its own Oura OAuth app (up to 10 users before Oura review). Connecting creates a single-use state value stored on the server with the person who started it, so a callback cannot attach someone else's Oura account. Tokens are encrypted with a secret key from configuration; a restore without the key keeps everything else and asks each person to reconnect. Refresh tokens are single-use, so refresh runs under a per-user lock and saves both new tokens atomically. Membership errors are shown separately from authorization errors. Version 1 polls daily from the `daily_activity`, `daily_sleep`, `sleep`, `daily_readiness`, `daily_stress` and `workout` endpoints.
+
+### The calendar fetch is the one per-person outbound URL
+
+A person's calendar feed URL is a secret and a server-side fetch target, so the engine resolves the host, rejects any non-public address (including IPv4-mapped forms), connects to the address it checked, follows no redirects, and stops after 10 seconds or 1 MB. Calendars on the local network are therefore unsupported; that is the trade-off for letting every person set a URL.
 
 ## Risks / Trade-offs
 
-- [Proxy behavior differs from the docs] → The proxy spike records real responses from the installed PWA and from each agent client before dependent tasks merge.
-- [TypeSQL misses a needed SQL shape] → The compatibility file finds it once; the fallback is a hand-typed wrapper or Kysely.
+- [Proxy behavior differs from the docs] → The early proxy probe records real responses before the MCP and offline-queue tasks start, and the reference install's client smoke test proves the finished clients.
+- [TypeSQL misses a needed SQL shape] → The compatibility file finds it before the first schema task; the fallback is a hand-typed wrapper.
 - [Meal-kit email layouts change] → Evidence excerpts and schema validation turn a changed layout into questions rather than wrong data.
-- [Unknown meals pile up as questions] → The catalog keys answers by meal and chef, so each meal asks once; agents can answer over MCP.
-- [Partial logging corrupts the TDEE] → Only signed-off days count.
+- [Unknown meals pile up as questions] → Answers are stored by meal and chef, so each meal asks each person once; agents can answer over MCP.
+- [Partial logging corrupts the TDEE] → Only signed-off days count, and any later intake change clears the sign-off.
+- [Default TDEE and formula numbers do not fit a person] → They are configuration with stated defaults, and the specs carry worked examples to test against.
 - [Broker ACLs silently not enforced] → A real deny test on the deployed broker before Home Assistant tasks merge.
 - [Oura token rotation races] → Per-user lock and atomic save.
-- [Server-side calendar fetch] → The day-type calendar rule fetches only a configured HTTPS URL, rejects private network targets, caches results, and falls back to the manual day type.
+- [Server-side calendar fetch] → Resolved-address checks, no redirects, size and time limits, and a manual fallback.
 
 ## Migration Plan
 
-There is no installed base. The placeholder migration from the scaffold is replaced before the first install; after the first install, migrations are append-only with checksums. The operator's existing interim logs (JSON lines for intake, weight and day notes) are imported once with the importer command into the operator's account; imported days arrive unsigned.
+There is no installed base. The scaffold's `0001_foundation.sql` creates a placeholder table and has been applied to development databases, and the runner fails startup on an edited applied file, so the core schema arrives as a new migration that creates the real tables and drops the placeholder; `0001` is never edited. Migrations stay append-only with checksums. The operator's existing interim logs (JSON lines for intake, weight and day notes) are imported once with the importer command into the operator's account; imported days arrive unsigned.
 
 ## Open Questions
 
-- Which Bluetooth scale variant the reference install uses; the scale task starts by capturing a real MQTT payload.
-- Whether Codex's MCP client can send the proxy's service-token headers; the proxy spike answers it.
+- Which Bluetooth scale variant the reference install uses, and how its readings reach MQTT; the scale task starts by capturing a real payload.
+- Whether Codex's MCP client can send the proxy's service-token headers; the early proxy probe answers it.

@@ -7,13 +7,13 @@ Tare exists to close the loop between what a person eats and what their weight d
 - Accounts for several people on one install: password login, per-user agent tokens, and every personal row scoped to its owner.
 - One definition per operation (log food, log weight, today, find food, and the rest), served as HTTP routes and as an MCP server so AI agents can log on a person's behalf.
 - A web app installed as a PWA: today view, food search, barcode scanning, day sign-off, and an offline queue that never drops an entry.
-- A nutrition source chain that only accepts exact matches: known foods, USDA FoodData Central, Open Food Facts, then a question to the person. Every value records where it came from.
-- Meal-kit orders: a forwarded order email is parsed into an order for a delivery week, merged with the other email for the same week, and turned into meals on hand. Unknown meals become nutrition questions that a person or an agent answers once.
+- A nutrition source chain that only accepts exact matches: the person's own foods and a shared cache automatically, USDA FoodData Central and Open Food Facts when the person asks, and a question when an order's meal is unknown. Every value records where it came from, and callers cannot claim lab-verified numbers.
+- Meal-kit orders: a forwarded order email is parsed into an order for a delivery date, merged with the other email for the same delivery, and turned into meals on hand. Unknown meals become nutrition questions that a person or an agent answers once.
 - A daily target: a formula from the person's profile first, then an adaptive TDEE estimate learned from signed-off days and the weight trend.
-- Health signals (steps, sleep, heart rate and similar) from manual entry, agents and Oura, shown next to intake but not fed into the target in version 1.
+- Health signals (steps, sleep, heart rate and similar) from manual entry, agents and Oura, shown beside intake; version 1 does not feed them into the target.
 - Home Assistant integration over MQTT: per-person sensors, panel buttons that act on a specific item, and weigh-ins from a Bluetooth scale.
 - A meal plan: day templates of slots with a share of the day's budget each, day types, leftover budget rolling forward, and planned items that agents place.
-- Operations: a container image, nightly backups with a tested restore, migration checksums, and a CI check that keeps personal paths and hostnames out of source.
+- Operations: a container image, a job runner for scheduled work, nightly backups with a tested restore, a safe table-rebuild path for migrations, and a CI check that keeps personal paths and hostnames out of source.
 
 ## Capabilities
 

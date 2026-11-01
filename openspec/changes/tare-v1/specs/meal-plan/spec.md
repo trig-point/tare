@@ -8,25 +8,41 @@ Each person SHALL define day templates made of slots, each with a name, a time w
 - **THEN** today's slots come from that type's template
 
 ### Requirement: Calendar day-type rule
-A person SHALL be able to choose day types by a keyword in a calendar feed. The engine SHALL fetch only the configured HTTPS URL, reject private network targets, cache the result, and fall back to the manual day type when the feed is unavailable.
+A person SHALL be able to choose day types by a keyword in their own calendar feed. The feed URL SHALL be HTTPS, SHALL be treated as a secret (never logged, never shown to another person), and SHALL be fetched only when every address its host resolves to is public: loopback, private, link-local, unique-local, carrier-grade NAT, multicast and unspecified addresses, and IPv4-mapped forms of them, SHALL be rejected. The engine SHALL connect to the address it checked, follow no redirects, stop after 10 seconds or 1 MB, cache the result for an hour, and fall back to the manual day type when the feed is unavailable. Calendars on the local network are therefore not supported.
 
 #### Scenario: Feed unreachable
 - **WHEN** the calendar feed cannot be fetched
 - **THEN** today uses the manual or default day type and logging is unaffected
 
+#### Scenario: Host resolves to a private address
+- **WHEN** a feed's public-looking host name resolves to a private address
+- **THEN** nothing is fetched and the manual day type is used
+
+#### Scenario: Redirect
+- **WHEN** the feed answers with a redirect
+- **THEN** the redirect is not followed and the feed counts as unavailable
+
 ### Requirement: Slot budgets
-Each slot SHALL have a budget from today's target and its share. Unused budget SHALL roll into later slots. A next-slot operation and sensor SHALL report the coming slot and its remaining budget.
+Each slot SHALL have a budget of today's target times its share. An intake entry SHALL belong to the slot a planned-item action names; otherwise to the slot whose time window contains its eaten-at time; otherwise to the next slot that day, or the last slot when none is later. When a slot's window ends, its unused budget, or its overspend as a negative amount, SHALL be spread over the later slots in proportion to their shares, and no budget SHALL go below zero. A next-slot operation SHALL report the coming slot and its remaining budget.
 
 #### Scenario: Light lunch
-- **WHEN** a person eats less than the lunch budget
-- **THEN** the remainder is added to the later slots
+- **WHEN** a person with a 2,000 kcal target and shares of 20, 30, 10 and 40 percent for breakfast, lunch, snack and dinner eats 400 kcal at breakfast and 300 kcal at lunch
+- **THEN** the 300 kcal left from lunch is spread as 60 kcal to the snack and 240 kcal to dinner, giving budgets of 260 kcal and 1,040 kcal
 
 ### Requirement: Planned items
-Agents SHALL be able to place planned items in a slot. One shared meal action (ate, ate 3/4, skip) SHALL act on a specific item by id and revision, log intake and update stock in one transaction, and be idempotent by mutation id.
+Agents SHALL be able to place planned items, each an on-hand meal or a food with a revision, in a slot. The shared meal action SHALL act on one planned item by id and revision: "ate it" logs the item's nutrition once and "ate 3/4" logs three quarters of it, both taking one from the linked on-hand meal in the same transaction; "skip" logs nothing, changes no stock and marks the item skipped. A stale revision SHALL be rejected, and the action SHALL be idempotent by a per-person mutation id.
 
 #### Scenario: Agent plans dinner
 - **WHEN** an agent places an on-hand meal in the dinner slot
 - **THEN** the app and Home Assistant show it as dinner's planned item
+
+#### Scenario: Skip
+- **WHEN** a person skips a planned on-hand meal
+- **THEN** no intake is logged, the meal's quantity is unchanged and the item shows as skipped
+
+#### Scenario: Ate three quarters of a planned meal
+- **WHEN** a person marks a planned 800 kcal on-hand meal as "ate 3/4"
+- **THEN** a 600 kcal entry is logged in that slot and the meal's quantity drops by one
 
 #### Scenario: Retry of a meal action
 - **WHEN** the same meal action is retried with the same mutation id
@@ -40,8 +56,8 @@ The app SHALL show today's slots with their budgets and planned items and offer 
 - **THEN** each slot shows its remaining budget and planned item
 
 ### Requirement: Suggested slot budgets
-The system SHALL suggest slot shares from a person's slot-labelled history and let them accept or ignore the suggestion.
+Once a person has at least 14 signed-off days of slot-assigned intake, the system SHALL suggest each slot's share as that slot's average share of those days' intake, and the slot view SHALL let the person accept or ignore the suggestion.
 
 #### Scenario: Enough history
-- **WHEN** a person has enough slot-labelled days
-- **THEN** the system offers slot shares based on what they actually ate per slot
+- **WHEN** a person has 14 or more signed-off days of slot-assigned intake
+- **THEN** the slot view offers shares based on what they actually ate per slot

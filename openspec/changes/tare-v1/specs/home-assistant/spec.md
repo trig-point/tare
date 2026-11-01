@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Per-person sensors through MQTT discovery
-The engine SHALL publish one Home Assistant device per person through MQTT discovery, with identifiers built from an install id and the person's id, readable default entity ids, and sensors for target, remaining calories and protein, today's intake, weight trend and TDEE estimate. Discovery SHALL be re-published when Home Assistant announces it is online, and removed with an empty retained config when a person is deleted.
+The engine SHALL publish one Home Assistant device per person through MQTT discovery, with identifiers built from an install id and the person's id, readable default entity ids, and sensors for target, remaining calories and protein, today's intake and weight trend. The TDEE estimate sensor SHALL arrive with the weekly recompute. Discovery SHALL be re-published when Home Assistant publishes its online status (its birth message). An entity that goes away SHALL be removed with an empty retained config on its own discovery topic. kcal sensors SHALL carry no meter-style state class.
 
 #### Scenario: Home Assistant restarts
 - **WHEN** Home Assistant publishes its online status
@@ -12,21 +12,33 @@ The engine SHALL publish one Home Assistant device per person through MQTT disco
 - **THEN** the sensor shows the lower value and no meter reset is recorded
 
 ### Requirement: Item buttons
-Buttons for "ate it", "ate 3/4" and "skip" SHALL send the item id and a revision. The engine SHALL reject a press whose revision is stale and publish the result.
+Each on-hand meal SHALL get "ate it" and "ate 3/4" buttons, and each planned item SHALL get "ate it", "ate 3/4" and "skip" buttons. Each button's discovery config SHALL carry the item id and its current revision in the press payload, and SHALL be re-published whenever the item or its revision changes. A press SHALL run the shared meal action; the engine SHALL reject a press whose revision is stale and publish the outcome to a last-press result sensor for that person.
 
 #### Scenario: Slot changed before the press
 - **WHEN** a press arrives carrying the revision of an item that is no longer current
 - **THEN** nothing is logged and the result sensor says the press was stale
 
+#### Scenario: Last meal eaten
+- **WHEN** the last of an on-hand meal is eaten
+- **THEN** its buttons are removed from Home Assistant
+
 ### Requirement: Scale weigh-ins
-The engine SHALL read weigh-ins published by the Home Assistant scale integration, map the scale's user to a Tare person from configuration, de-duplicate repeats, and turn unmapped or implausible readings into questions.
+The engine SHALL read weigh-ins from a configured MQTT topic (fed, for example, by Home Assistant's MQTT statestream or an automation that republishes the scale's state), map the scale's user to a Tare person from configuration, and count readings for the same scale user within 10 minutes once. A reading for an unmapped scale user SHALL become a question for the administrators. A reading outside 20 to 350 kg, or more than 3 kg from the person's trend, SHALL become a question for that person instead of a weight.
 
 #### Scenario: Unmapped scale user
 - **WHEN** a reading arrives for a scale user with no mapping
-- **THEN** no weight is logged and a question is raised
+- **THEN** no weight is logged and the administrators get a question
+
+#### Scenario: Repeat reading
+- **WHEN** the scale publishes the same user's reading twice within 10 minutes
+- **THEN** one weight is logged
+
+#### Scenario: Implausible reading
+- **WHEN** a mapped person with a trend of 80 kg gets a reading of 86 kg
+- **THEN** no weight is logged and the person gets a question to confirm it
 
 ### Requirement: Weekly notice
-When targets are recomputed, the system SHALL notify the person in Home Assistant and in the app.
+When targets are recomputed, the system SHALL notify the person through an MQTT event entity on their Home Assistant device and with a notice on the app's today screen that stays until dismissed.
 
 #### Scenario: New weekly target
 - **WHEN** the weekly recompute stores a new target
