@@ -30,11 +30,15 @@ Results from the external adapters SHALL be written to a source cache shared by 
 - **THEN** no external request is made
 
 ### Requirement: Open Food Facts adapter
-The adapter SHALL look up products by barcode, send the configured User-Agent, and stay within 100 product reads and 10 searches a minute.
+The adapter SHALL look up products by barcode, search products by name on an explicit search, send the configured User-Agent, and stay within 100 product reads and 10 searches a minute. A name search SHALL return only results that pass the exact-match rule, each with its serving basis.
 
 #### Scenario: Rate limit reached
 - **WHEN** a lookup would exceed the per-minute limit
 - **THEN** the adapter returns a rate-limited result without calling Open Food Facts
+
+#### Scenario: Search by name
+- **WHEN** a person runs "search online" for a packaged product by name and no USDA key is configured
+- **THEN** Open Food Facts is searched once by name, and only exact matches are offered, or no match with manual entry
 
 ### Requirement: USDA FoodData Central adapter
 The adapter SHALL use an API key from configuration and search only on an explicit request.

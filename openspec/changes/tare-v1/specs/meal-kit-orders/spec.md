@@ -12,7 +12,7 @@ The system SHALL keep a queue of questions it could not answer itself, each tied
 - **THEN** every administrator sees it and no other person does
 
 ### Requirement: Meals on hand
-An order's meals SHALL be expected meals until the person's own day, by their timezone and day-start hour, has reached the order's delivery date, or until a person or their agent calls `mark_delivery` for that order, whichever comes first; then they are meals on hand. Every reader of meals (the on-hand list, the meal action, plan reads and the published buttons) SHALL decide this through one shared due-date check when it reads, so the change is exact for any timezone offset. A daily maintenance job SHALL record the change for meals already due, without changing a meal's revision; nothing depends on when it runs. Expected meals cannot be eaten. The system SHALL track meals on hand per person with quantity, delivery date and a revision that changes on every update. Eating one SHALL go through one meal action that takes the meal id, its revision and a per-person mutation id. The action SHALL first look up the mutation id and, when it was already applied, return the stored result without checking the revision; otherwise it SHALL reject a stale revision. "Ate it" logs the meal's nutrition once and "ate 3/4" logs three quarters of it, and both reduce the quantity by one, in one transaction. A meal whose nutrition question is unanswered, or whose quantity is zero, SHALL be rejected with a stable error code and nothing changed.
+An order's meals SHALL be expected meals until the person's own day, by their timezone and day-start hour, has reached the order's delivery date, or until a person or their agent calls `mark_delivery` for that order, whichever comes first; then they are meals on hand. Every reader of meals (the on-hand list, the meal action, plan reads and the published buttons) SHALL decide this through one shared due-date check when it reads: a meal is on hand once its order's stored `delivered_at` is set or the person's day has reached the delivery date, so the change is exact for any timezone offset. `mark_delivery` and a daily maintenance job SHALL set `delivered_at` through one function, with the job setting it only for orders already due and without changing any meal's revision; no reader depends on the job having run. The meal action on a due meal whose order has no `delivered_at` yet SHALL treat it as on hand and leave `delivered_at` to the job. Expected meals cannot be eaten: the meal action SHALL reject a meal that is not yet due with a stable error code and change nothing. The system SHALL track meals on hand per person with quantity, delivery date and a revision that changes on every update. Eating one SHALL go through one meal action that takes the meal id, its revision and a per-person mutation id. The action SHALL first look up the mutation id and, when it was already applied, return the stored result without checking the revision; otherwise it SHALL reject a stale revision. "Ate it" logs the meal's nutrition once and "ate 3/4" logs three quarters of it, and both reduce the quantity by one, in one transaction. A meal whose nutrition question is unanswered, or whose quantity is zero, SHALL be rejected with a stable error code and nothing changed.
 
 #### Scenario: Delivery date arrives
 - **WHEN** the person's day reaches an order's delivery date and nobody has called `mark_delivery`
@@ -46,8 +46,12 @@ An order's meals SHALL be expected meals until the person's own day, by their ti
 - **WHEN** a person eats an on-hand meal whose quantity is zero
 - **THEN** the action is rejected with a stable error code and nothing is logged
 
+#### Scenario: Not yet due
+- **WHEN** a person eats an expected meal before their day reaches its order's delivery date and nobody has called `mark_delivery`
+- **THEN** the action is rejected with a stable error code and nothing is logged
+
 ### Requirement: Order email parsing
-The parser SHALL extract service, meals, chef where stated, quantities and delivery date where stated from an order email into a fixed schema through a configured OpenAI-compatible model, with an evidence excerpt per field that must occur in the email. It SHALL have no tools and fetch nothing. Uncertain fields SHALL become questions.
+The parser SHALL extract service, meals, chef where stated, quantities and delivery date where stated from an order email into a fixed schema through a configured OpenAI-compatible model, with an evidence excerpt per field that must occur in the email. It SHALL have no tools and fetch nothing. It SHALL return uncertain and dropped fields, or a no-model result, and the engine SHALL turn them into questions.
 
 #### Scenario: Unsupported field
 - **WHEN** an extracted field's excerpt does not occur in the email
@@ -74,7 +78,7 @@ Tare SHALL never decide from `Authentication-Results`, ARC, `Received`, `Sender`
 | A forward with the original attached | the attached original | verified, sender-matched | the attachment's DKIM signatures, then its `From:` |
 | An inline forward | the posted email, written by the forwarder | unverified only | its `From:`, which is the forwarder |
 
-Verified and sender-matched emails SHALL be parsed. An unverified email SHALL be held as a question asking the person to confirm it. The operator's mail rule SHALL post the raw original or forward with the original attached.
+Verified and sender-matched emails SHALL be parsed. An unverified email SHALL be held as a question asking the person to confirm it. Each email's mark SHALL be stored with the email and written to the engine log with the email's id; the person sees an unverified email's mark in its held question. The operator's mail rule SHALL post the raw original or forward with the original attached.
 
 #### Scenario: Missing or wrong token
 - **WHEN** an email is posted without a valid inbound token

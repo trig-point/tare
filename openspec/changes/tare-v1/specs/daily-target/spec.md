@@ -38,7 +38,7 @@ The system SHALL compute a weight trend by exponential smoothing with a factor o
 - **THEN** the trend holds at 80.1 kg through the gap and then becomes 80.05 kg
 
 ### Requirement: Adaptive TDEE from signed-off days
-The system SHALL estimate TDEE by energy balance over a window of the 28 days ending yesterday. Mean intake SHALL be the total intake of the signed-off days in the window divided by the number of those days. The weight rate SHALL be the trend on the window's last day minus the trend at the start of the span, divided by the elapsed days of the span, so weight is measured over elapsed days whether or not each day was signed off. The span starts on the day before the window's first day when the trend existed then, and otherwise on the trend's first day inside the window. The estimate SHALL be mean intake minus the weight rate times 7,700 kcal per kg. Low and high bounds SHALL be computed the same way with each `estimated` entry replaced by its stored low and high values, or by 25 percent below and above when it has none. The estimate SHALL be eligible once the window has at least 14 signed-off days, weigh-ins on at least 8 days, and a span of at least 14 days; until then the formula target stays in force and the target shows a learning state. The window length, energy density, eligibility counts, minimum span and default range SHALL be configuration with these defaults.
+The system SHALL estimate TDEE by energy balance over a window of the 28 days ending yesterday. Mean intake SHALL be the total intake of the signed-off days in the window divided by the number of those days. The weight rate SHALL be the trend on the window's last day minus the trend at the start of the span, divided by the elapsed days of the span, so weight is measured over elapsed days whether or not each day was signed off. The span starts on the day before the window's first day when the trend existed then, and otherwise on the trend's first day inside the window. The span's length SHALL be counted in elapsed days, the window's last day minus the span's start day: 28 days from the day before the window, 20 from a start on the window's 8th day and 8 from a start on its 20th. The estimate SHALL be mean intake minus the weight rate times 7,700 kcal per kg. Low and high bounds SHALL be computed the same way with each `estimated` entry replaced by its stored low and high values, or by 25 percent below and above when it has none. The estimate SHALL be eligible once the window has at least 14 signed-off days, weigh-ins on at least 8 days, and a span of at least 14 days; until then the formula target stays in force and the target shows a learning state. The window length, energy density, eligibility counts, minimum span and default range SHALL be configuration with these defaults.
 
 #### Scenario: Worked estimate
 - **WHEN** a window has 20 signed-off days totalling 48,000 kcal and the trend falls from 90.0 kg to 89.0 kg across it
@@ -50,11 +50,11 @@ The system SHALL estimate TDEE by energy balance over a window of the 28 days en
 
 #### Scenario: First weigh-in inside the window
 - **WHEN** a person's trend starts on the window's 8th day at 85.0 kg and is 84.2 kg on its 28th day, and the window has 16 signed-off days totalling 35,200 kcal and weigh-ins on 10 days
-- **THEN** the span is 20 days, the weight rate is minus 0.04 kg per day, and the estimate is 2,508 kcal (2,200 plus 308)
+- **THEN** the span is 20 days (day 28 minus day 8), the weight rate is minus 0.04 kg per day, and the estimate is 2,508 kcal (2,200 plus 308)
 
 #### Scenario: Span too short
 - **WHEN** a person's trend starts on the window's 20th day
-- **THEN** the span is 8 days, the estimate is not eligible, and the target shows it is learning
+- **THEN** the span is 8 days (day 28 minus day 20), the estimate is not eligible, and the target shows it is learning
 
 #### Scenario: Unsigned days
 - **WHEN** a window contains days that are not signed off

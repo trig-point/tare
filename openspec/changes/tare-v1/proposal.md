@@ -12,7 +12,7 @@ Tare exists to close the loop between what a person eats and what their weight d
 - A daily target: a formula from the person's profile first, then an adaptive TDEE estimate learned from signed-off days and the weight trend.
 - Health signals (steps, sleep, heart rate and similar) from manual entry, agents and Oura, shown beside intake; version 1 does not feed them into the target.
 - Home Assistant integration over MQTT: per-person sensors, panel buttons that act on a specific item, and weigh-ins from a Bluetooth scale.
-- A meal plan: day templates of slots with a share of the day's budget each, day types, leftover budget rolling forward, and planned items that agents place.
+- A meal plan: day templates of slots with a share of the day's budget each, day types, leftover budget shared across the day's open slots, and planned items that agents place.
 - Operations: a container image, a job runner for scheduled work, nightly backups with a tested restore, a safe table-rebuild path for migrations, and a CI check that keeps personal paths and hostnames out of source.
 
 ## Capabilities
@@ -39,7 +39,7 @@ None. No specs exist yet.
 
 - `packages/engine`: new migrations, queries, operations, routes, MCP server and jobs.
 - New packages: `packages/nutrition`, `packages/order-parser`, `packages/health-sources`, and `apps/web` (the PWA).
-- New runtime dependencies: an MQTT client, an MCP server library, a barcode WASM reader, and the PWA toolchain.
+- New runtime dependencies, each named by the task that adds it: zod and @hono/zod-validator, @hono/mcp, croner, rate-limiter-flexible, mailauth, mailparser, the openai SDK, oauth4webapi, async-mutex, request-filtering-agent, node-ical and mqtt (mqtt.js) in the engine; vite-plugin-pwa (Workbox), TanStack Router and TanStack Query, idb, barcode-detector and uPlot in the PWA.
 - External services, each optional and configured by the operator: an OpenAI-compatible model endpoint, USDA FoodData Central (API key), Open Food Facts (no key, rate limited), Oura (an OAuth app per install), and an MQTT broker.
 - Out of this repository: agent skills that use the MCP interface (meal-kit picking and nutrition answering) live in the operator's own agent configuration and are tracked separately.
 - Post version 1, not specified here: a pantry (Grocy) and a pantry-aware meal solver, a CLI, a HACS package, more health sources, paid nutrition providers, and image-based logging.

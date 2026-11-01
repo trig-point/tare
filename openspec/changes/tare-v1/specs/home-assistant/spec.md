@@ -41,6 +41,13 @@ The engine SHALL read weigh-ins from a configured MQTT topic (fed, for example, 
 - **WHEN** a mapped person with a trend of 80 kg gets a reading of 86 kg
 - **THEN** no weight is logged and the person gets a question to confirm it
 
+### Requirement: Next-slot sensor
+Once the meal plan exists, each person's device SHALL gain a next-slot sensor whose state is the coming slot's remaining budget in whole kcal, with the slot's name and budget as attributes, taken from the next-slot operation. It SHALL be re-published when an entry, today's target or the plan changes, and when a slot ends.
+
+#### Scenario: Entry logged in the coming slot
+- **WHEN** dinner is the coming slot with a 560 kcal budget and nothing eaten, and the person logs a 200 kcal entry in it
+- **THEN** the next-slot sensor changes from 560 to 360 kcal and still names dinner
+
 ### Requirement: Weekly recompute in Home Assistant
 Each person's device SHALL gain a TDEE estimate sensor once the weekly recompute exists. When a recompute changes a person's calorie or protein target, the system SHALL notify the person through an MQTT event entity on their Home Assistant device.
 

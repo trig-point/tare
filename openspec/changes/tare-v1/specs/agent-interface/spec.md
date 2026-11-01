@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: One definition per operation
-Each operation SHALL be defined once with its name, input schema, output schema, handler, caller class and whether it needs an administrator. The caller class SHALL be either session only (a signed-in person in the app) or session and agent token. Every operation SHALL be served as an HTTP route; every operation an agent token may call SHALL also be served as an MCP tool with the same schemas. In version 1 an agent token may call every session-and-agent operation for its owner; there are no finer scopes. Every administrator operation is session only.
+Each operation SHALL be defined once with its name, input schema, output schema, handler, caller class and whether it needs an administrator. The caller class SHALL be public, session only (a signed-in person in the app) or session and agent token. Public SHALL be used for sign-in only: it needs no session or token, is served only as an HTTP route and is never an MCP tool. Every operation SHALL be served as an HTTP route; every operation an agent token may call SHALL also be served as an MCP tool with the same schemas. In version 1 an agent token may call every session-and-agent operation for its owner; there are no finer scopes. Every administrator operation is session only.
 
 #### Scenario: Operation on both surfaces
 - **WHEN** a session-and-agent operation is added to the registry
@@ -10,6 +10,10 @@ Each operation SHALL be defined once with its name, input schema, output schema,
 #### Scenario: Session-only operation
 - **WHEN** an agent token calls a session-only operation, such as token creation
 - **THEN** the call is rejected with 403, and the operation is not listed as an MCP tool
+
+#### Scenario: Signed-out sign-in
+- **WHEN** a signed-out person, with no session cookie, submits a correct username and password to the sign-in route
+- **THEN** they are signed in, and the sign-in operation is not listed as an MCP tool
 
 #### Scenario: Surfaces cannot drift
 - **WHEN** an agent-callable operation is missing from either surface, or a session-only operation appears as an MCP tool
