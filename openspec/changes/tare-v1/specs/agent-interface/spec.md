@@ -1,0 +1,73 @@
+## ADDED Requirements
+
+### Requirement: One definition per operation
+Each operation SHALL be defined once with its name, input schema, output schema, handler, caller class and whether it needs an administrator. The caller class SHALL be public, session only (a signed-in person in the app) or session and agent token. Public SHALL be used for sign-in only: it needs no session or token, is served only as an HTTP route and is never an MCP tool. Every operation SHALL be served as an HTTP route; every operation an agent token may call SHALL also be served as an MCP tool with the same schemas. In version 1 an agent token may call every session-and-agent operation for its owner; there are no finer scopes. Every administrator operation is session only.
+
+#### Scenario: Operation on both surfaces
+- **WHEN** a session-and-agent operation is added to the registry
+- **THEN** it is reachable as an HTTP route and listed as an MCP tool with the same schemas
+
+#### Scenario: Session-only operation
+- **WHEN** an agent token calls a session-only operation, such as token creation
+- **THEN** the call is rejected with 403, and the operation is not listed as an MCP tool
+
+#### Scenario: Signed-out sign-in
+- **WHEN** a signed-out person, with no session cookie, submits a correct username and password to the sign-in route
+- **THEN** they are signed in, and the sign-in operation is not listed as an MCP tool
+
+#### Scenario: Surfaces cannot drift
+- **WHEN** an agent-callable operation is missing from either surface, or a session-only operation appears as an MCP tool
+- **THEN** the contract test fails
+
+### Requirement: MCP server
+The engine SHALL serve an MCP server over streamable HTTP at `/mcp`, built on the MCP TypeScript SDK and authenticated by agent tokens. A Tare middleware in front of the SDK transport SHALL reject a request whose `Origin` header is present and not on the configured allow list, and SHALL pass a request with no `Origin` header, which is what agent clients send. The SDK transport's own Origin check SHALL stay off, because it also rejects a request with no `Origin`. The engine SHALL bind each MCP session to the person of the token that opened it.
+
+#### Scenario: Agent lists tools
+- **WHEN** an MCP client connects with a valid agent token
+- **THEN** it can list and call every agent-callable operation for the token's owner
+
+#### Scenario: Missing token
+- **WHEN** an MCP client connects without a token
+- **THEN** the server rejects the request with 401
+
+#### Scenario: Foreign origin
+- **WHEN** a request to `/mcp` carries an `Origin` that is not allowed
+- **THEN** the server rejects it with 403 before the SDK transport sees it
+
+#### Scenario: No Origin header
+- **WHEN** an agent client sends a request to `/mcp` with a valid token and no `Origin` header
+- **THEN** the request reaches the MCP server
+
+#### Scenario: Allowed origin
+- **WHEN** a request to `/mcp` carries an `Origin` on the allow list and a valid token
+- **THEN** the request reaches the MCP server
+
+#### Scenario: Session used with another person's token
+- **WHEN** a request carries an MCP session id opened by person A and a token belonging to person B
+- **THEN** the server rejects the request
+
+### Requirement: Provenance set by its source
+Every operation that writes a nutrition value SHALL record a provenance of `verified`, `label` or `estimated`, decided by where the numbers came from. A write that references a food SHALL take that food's provenance, and a provenance argument that differs from it SHALL be rejected. A write that supplies its own numbers MAY state `label` together with a source naming where the label was read; a `label` claim without a source SHALL be rejected, and a write that makes no provenance claim SHALL be stored as `estimated`. No caller SHALL be able to store `verified` for numbers it supplied; `verified` comes only from USDA Foundation and SR Legacy foods in the source cache.
+
+#### Scenario: Agent logs free-text food
+- **WHEN** an agent logs a food by name and numbers without a food reference or a provenance
+- **THEN** the entry is stored with provenance `estimated`
+
+#### Scenario: Caller claims verified
+- **WHEN** a write supplies its own numbers with provenance `verified`
+- **THEN** the write is rejected with a stable error code and nothing is stored
+
+#### Scenario: Label without a source
+- **WHEN** a write supplies its own numbers with provenance `label` and no source
+- **THEN** the write is rejected with a stable error code
+
+#### Scenario: Food reference
+- **WHEN** a person logs a USDA Foundation food from the source cache
+- **THEN** the entry carries provenance `verified` from the food
+
+### Requirement: Errors readable by machines
+Operations SHALL return JSON errors with a stable code, and SHALL return 401 rather than an HTML page when authentication is missing or expired.
+
+#### Scenario: Expired session on an API call
+- **WHEN** an API request carries an expired session
+- **THEN** the response is 401 with a JSON body
