@@ -93,7 +93,15 @@ test("clean and empty repositories pass", () => {
 });
 test("placeholders and binary files pass", () => {
   assert.equal(check(`/${"home"}/<name>/file`).status, 0);
-  assert.equal(check(Buffer.from([0, 255, 100])).status, 0);
+  assert.equal(
+    check(
+      Buffer.concat([
+        Buffer.from([0]),
+        Buffer.from(["", "home", "alice", "file"].join("/")),
+      ]),
+    ).status,
+    0,
+  );
 });
 test("generic domains match host boundaries", () => {
   assert.equal(check(["printer", "local"].join(".")).status, 1);
