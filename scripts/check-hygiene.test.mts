@@ -3,6 +3,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import {
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -22,6 +23,7 @@ function check(
   headRepository: string | null = "contributor/tare",
   options: {
     symlinkTarget?: string;
+    allowPatterns?: string;
     additionalFiles?: Record<string, string>;
   } = {},
 ) {
@@ -60,7 +62,15 @@ function check(
     ];
     if (tracked.length > 0)
       execFileSync("git", ["add", "--", ...tracked], { cwd: directory });
-    const result = spawnSync(process.execPath, [script], {
+    let scanner = script;
+    if (options.allowPatterns !== undefined) {
+      const runner = join(directory, ".scanner");
+      mkdirSync(runner);
+      scanner = join(runner, "check-hygiene.mts");
+      writeFileSync(scanner, readFileSync(script));
+      writeFileSync(join(runner, "hygiene-allow.txt"), options.allowPatterns);
+    }
+    const result = spawnSync(process.execPath, [scanner], {
       cwd: directory,
       encoding: "utf8",
       timeout: HANG_CEILING_MS,
@@ -304,7 +314,10 @@ for (const row of hygieneCases) {
   test(`case table: ${row.label}`, () => {
     const result = check(
       row.content,
-      { TARE_HYGIENE_DENY: "alice,secret-host.invalid,corp.net" },
+      {
+        TARE_HYGIENE_DENY:
+          "deny" in row ? row.deny : "alice,secret-host.invalid,corp.net",
+      },
       "filename" in row ? row.filename : "sample.txt",
     );
     assert.equal(result.status, row.status, result.output);
@@ -347,4 +360,29 @@ test("output guard stays silent when fallback contains a denied entry", () => {
   const result = check("denied", { TARE_HYGIENE_DENY: "denied" });
   assert.equal(result.status, 1);
   assert.equal(result.output, "");
+});
+
+test("invalid allow patterns report line numbers and are skipped", () => {
+  const result = check(
+    "github.com/alice/repo",
+    { TARE_HYGIENE_DENY: "alice" },
+    "sample.txt",
+    "contributor/tare",
+    {
+      allowPatterns:
+        "# reason\ngithub.com/\n{name}/{name}\ngithub.com/{name}\n",
+    },
+  );
+  assert.equal(result.status, 1);
+  assert.match(result.output, /hygiene-allow.txt:2:/);
+  assert.match(result.output, /hygiene-allow.txt:3:/);
+  assert.equal(result.output.includes("denied-name"), false);
+  assert.equal(result.output.includes("alice"), false);
+});
+test("finding on line three reports its location", () => {
+  const result = check("clean\nclean\n/home/alice", {
+    TARE_HYGIENE_DENY: "alice",
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.output, /sample.txt:3: denied-name/);
 });

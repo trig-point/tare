@@ -66,13 +66,21 @@ function run() {
       "Warning: fork PR secrets unavailable; configured hygiene checks skipped.",
     );
   }
-  const allowed = readFileSync(
+  const allowLines = readFileSync(
     fileURLToPath(new URL("./hygiene-allow.txt", import.meta.url)),
     "utf8",
-  )
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith("#"));
+  ).split(/\r?\n/);
+  const allowed: string[] = [];
+  for (const [index, line] of allowLines.entries()) {
+    const pattern = line.trim();
+    if (!pattern || pattern.startsWith("#")) continue;
+    if (pattern.split("{name}").length !== 2) {
+      output(`hygiene-allow.txt:${index + 1}: expected one {name}`);
+      failed = true;
+      continue;
+    }
+    allowed.push(pattern);
+  }
   const denied = forkPullRequest ? [] : configured;
   function findRules(line: string): Set<string> {
     const lower = line.toLowerCase();
@@ -87,7 +95,7 @@ function run() {
               .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
               .replace(
                 "\\{name\\}",
-                name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+                `${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![a-z0-9.@-])`,
               )
               .replace("\\{year\\}", "[0-9]{4}");
             return [...lower.matchAll(new RegExp(expression, "g"))].map(
@@ -113,6 +121,7 @@ function run() {
   }
   const files = execFileSync("git", ["ls-files", "-z"], {
     encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
     stdio: ["ignore", "pipe", "pipe"],
   })
     .split("\0")

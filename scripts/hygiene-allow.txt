@@ -1,4 +1,6 @@
 # Public GitHub handles identify repository owners in links.
 github.com/{name}
+# SSH GitHub remotes also identify public repository owners.
+github.com:{name}
 # Copyright notices identify the public copyright holder.
 copyright (c) {year} {name}

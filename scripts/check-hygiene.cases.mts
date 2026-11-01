@@ -318,4 +318,27 @@ export const hygieneCases = [
     content: "https://github.com/alice/repo then alice",
     status: 1,
   },
+  {
+    label: "copyright email suffix",
+    content: "Copyright (c) 2026 alice@private.invalid",
+    deny: "alice",
+    status: 1,
+  },
+  {
+    label: "GitHub dotted suffix",
+    content: "https://github.com/alice.secret-host.invalid/repo",
+    deny: "alice",
+    status: 1,
+  },
+  {
+    label: "copyright hyphen suffix",
+    content: "Copyright (c) 2026 alice-internal",
+    deny: "alice",
+    status: 1,
+  },
+  {
+    label: "SSH GitHub remote",
+    content: "git@github.com:alice/repo.git",
+    status: 0,
+  },
 ];
