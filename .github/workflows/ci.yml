@@ -26,6 +26,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # Catches lint errors and inconsistent formatting.
       - run: pnpm lint
+      # Catches committed home paths and private hosts, including a missing deny secret.
+      - run: pnpm hygiene
+        env:
+          TARE_HYGIENE_DENY: ${{ secrets.TARE_HYGIENE_DENY }}
       # Catches TypeScript type errors across workspaces.
       - run: pnpm typecheck
       # Catches health, configuration and migration regressions.
