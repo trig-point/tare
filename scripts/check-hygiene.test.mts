@@ -249,3 +249,25 @@ test("long separator lines complete", () => {
   const result = check("/".repeat(200_000));
   assert.equal(result.status, 0);
 });
+
+test("finding paths redact denied values case-insensitively", () => {
+  for (const [content, filename, denied, rule] of [
+    [
+      "secret-host.invalid",
+      "Secret-Host.Invalid.conf",
+      "secret-host.invalid",
+      "denied-host",
+    ],
+    [
+      ["", "home", "alice", "file"].join("/"),
+      "Alice.conf",
+      "alice",
+      "denied-name",
+    ],
+  ] as const) {
+    const result = check(content, { TARE_HYGIENE_DENY: denied }, filename);
+    assert.equal(result.status, 1);
+    assert.equal(result.output, `<redacted path>:1: ${rule}\n`);
+    assert.equal(result.output.toLowerCase().includes(denied), false);
+  }
+});

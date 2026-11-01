@@ -58,6 +58,11 @@ const files = execFileSync("git", ["ls-files", "-z"], { encoding: "utf8" })
 let failed = false;
 let scanned = 0;
 for (const file of files) {
+  const reportedPath = denied.some((value) =>
+    file.toLowerCase().includes(value),
+  )
+    ? "<redacted path>"
+    : file;
   const content = readFileSync(file);
   if (content.includes(0)) continue;
   scanned += 1;
@@ -86,7 +91,7 @@ for (const file of files) {
       }
     }
     for (const rule of rules) {
-      console.error(`${file}:${index + 1}: ${rule}`);
+      console.error(`${reportedPath}:${index + 1}: ${rule}`);
       failed = true;
     }
   }
