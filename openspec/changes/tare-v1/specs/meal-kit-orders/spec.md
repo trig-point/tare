@@ -51,7 +51,7 @@ An order's meals SHALL be expected meals until the person's own day, by their ti
 - **THEN** the action is rejected with a stable error code and nothing is logged
 
 ### Requirement: Order email parsing
-The parser SHALL extract service, meals, chef where stated, quantities and delivery date where stated from an order email into a fixed schema through a configured OpenAI-compatible model, with an evidence excerpt per field that must occur in the email; a meal's excerpt SHALL contain both its name and its quantity, so a quantity cannot move to another meal. It SHALL have no tools and fetch nothing. It SHALL return uncertain and dropped fields, or a no-model result, and the engine SHALL turn them into questions.
+The parser SHALL extract service, meals, chef where stated, quantities and delivery date where stated from an order email into a fixed schema through a configured OpenAI-compatible model, with an evidence excerpt per field that must occur in the email; when the email states a meal's quantity, that meal's excerpt SHALL contain both its name and its quantity, so a quantity cannot move to another meal. It SHALL have no tools and fetch nothing. It SHALL return uncertain and dropped fields, or a no-model result, and the engine SHALL turn them into questions.
 
 #### Scenario: Unsupported field
 - **WHEN** an extracted field's excerpt does not occur in the email

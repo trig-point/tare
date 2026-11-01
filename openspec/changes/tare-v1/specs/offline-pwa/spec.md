@@ -12,7 +12,7 @@ The engine SHALL serve a web app with a manifest, icons and a service worker so 
 - **THEN** the service worker does not cache that page as the app shell
 
 ### Requirement: Offline write queue
-New intake and weight entries SHALL be written to on-device storage first, each with a client-generated id, the time it was eaten or measured and the signed-in person, and replayed to the server when possible. The app SHALL request persistent storage. An entry SHALL leave the queue only after the server acknowledges it with JSON. A network error, a 5xx, a 408 or a 429 response SHALL leave the entry queued for a later retry; while the app is open and online, the queue SHALL retry it on a timer with backoff instead of waiting for a relaunch.
+New intake and weight entries SHALL be written to on-device storage first, each with a client-generated id, the time it was eaten or measured and the signed-in person, and replayed to the server when possible. The app SHALL request persistent storage. An entry SHALL leave the queue only after the server acknowledges it with JSON. A network error, a 5xx, a 408 or a 429 response SHALL leave the entry queued for a later retry; while the app is open and online, the queue SHALL retry it on a timer that starts at 30 seconds and doubles up to a 15-minute cap, instead of waiting for a relaunch.
 
 #### Scenario: Logged with no signal
 - **WHEN** a person logs a food while offline

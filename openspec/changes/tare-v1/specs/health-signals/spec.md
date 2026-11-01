@@ -34,7 +34,7 @@ Each install SHALL use its own Oura OAuth app from configuration, and each perso
 - **THEN** intake, weights and signals are intact and each Oura connection shows that it needs reconnecting
 
 ### Requirement: Oura daily sync
-A daily job SHALL fetch each connected person's data from Oura's daily_activity, daily_sleep, sleep, daily_readiness, daily_stress and workout endpoints, map it into the signals vocabulary, and record when each person's source last synced. Each run SHALL upsert by person, source and date (and by the source's session id for activity sessions), so a retry or overlapping run stores nothing twice, and SHALL advance a person's last sync only after their data is stored.
+A daily job SHALL fetch each connected person's data from Oura's daily_activity, daily_sleep, sleep, daily_readiness, daily_stress and workout endpoints, map it into the signals vocabulary, and record when each person's source last synced. Each run SHALL upsert by person, source and date for daily values, and by the source's record id for sleep periods and activity sessions, which can be several a day, so a retry or overlapping run stores nothing twice, and SHALL advance a person's last sync only after their data is stored.
 
 #### Scenario: Sync after the ring app syncs
 - **WHEN** the daily job runs after the person's ring data has synced
