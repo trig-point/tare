@@ -22,7 +22,7 @@ The engine SHALL write a nightly online SQLite backup to a configured folder out
 - **THEN** `PRAGMA integrity_check` and `PRAGMA foreign_key_check` pass and a signed-in read returns data
 
 ### Requirement: Migration safety
-The migration runner SHALL record a checksum of each applied migration and fail when an applied file changes or goes missing. Schema changes SHALL ship as new migrations, never as edits to applied ones. Table rebuilds SHALL turn foreign keys off before the transaction begins, check them before commit, and turn them back on after.
+The migration runner SHALL record a checksum of each applied migration and fail when an applied file changes or goes missing. Schema changes SHALL ship as new migrations, never as edits to applied ones. A table rebuild SHALL be a migration whose first line is `-- tare:rebuild`, which the runner applies outside its usual transaction: it turns foreign keys off before the transaction begins, checks them before commit, and turns them back on after.
 
 #### Scenario: Edited migration
 - **WHEN** an applied migration file is edited
@@ -33,7 +33,7 @@ The migration runner SHALL record a checksum of each applied migration and fail 
 - **THEN** the foreign-key check fails, the transaction rolls back and foreign keys are on afterwards
 
 ### Requirement: Repository hygiene check
-CI SHALL fail when tracked source contains an absolute home path or a hostname or domain on the deny list. The deny list SHALL come from tracked generic patterns plus a CI variable, so personal values never enter the repository.
+CI SHALL fail when tracked source contains an absolute home path or a hostname or domain on the deny list. The deny list SHALL come from tracked generic patterns plus a CI variable, so personal values never enter the repository. A failure SHALL name only the file and line, never the matched value or the deny list, because CI logs on a public repository are public.
 
 #### Scenario: Planted hostname
 - **WHEN** a pull request adds a denied hostname to a source file

@@ -38,10 +38,14 @@ rules:
       idempotent replay, a revision check) is its own task with complexity judgment, whatever
       its size. Callers of that write path are separate tasks that depend on it.
     - >-
-      A task that adds a personal table, query, operation or background job includes a two-user
-      negative test built on the shared two-user test helper.
+      A task that adds a personal table, query, operation or background job says "two-user test"
+      in its line and includes a two-user negative test built on the shared two-user test helper.
+      Tasks that come before the helper exists name the later task that carries their test.
     - >-
       Annotate every task with (depends on: <ids>) when it has prerequisites, plus
-      (complexity: mechanical|standard|judgment) and (gate: none). A task depends on every task
+      (complexity: mechanical|standard|judgment) and (gate: none). Mechanical: the task text fully
+      determines the result. Standard: the approach is settled and tests or the diff can check it.
+      Judgment: a decision is still open, it touches a trust or security boundary or a shared
+      write path, or its correctness is hard to check locally; raise a class when unsure. A task depends on every task
       whose behavior its acceptance needs, not only on the task before it. Tare runs no mutation
       testing until a faster method exists, so every task is gate none.

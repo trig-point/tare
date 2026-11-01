@@ -23,7 +23,7 @@ Each adapter SHALL emit only the provenance class of the data it read: USDA Foun
 - **THEN** its values are stored with provenance `label`, not `verified`
 
 ### Requirement: Shared source cache
-Results from the external adapters SHALL be written to a source cache shared by every person on the install, and only the adapters SHALL write to it.
+Results from the external adapters SHALL be written to a source cache shared by every person on the install. Only the lookup operations SHALL write to it, and only with adapter results; no person or agent writes it directly.
 
 #### Scenario: Repeat barcode
 - **WHEN** a barcode already in the source cache is scanned again, by the same person or another

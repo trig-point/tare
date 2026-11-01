@@ -12,7 +12,11 @@ The system SHALL keep a queue of questions it could not answer itself, each tied
 - **THEN** every administrator sees it and no other person does
 
 ### Requirement: Meals on hand
-The system SHALL track meals on hand per person with quantity, delivery date and a revision that changes on every update. Eating one SHALL go through one meal action that takes the meal id and revision: "ate it" logs the meal's nutrition once, "ate 3/4" logs three quarters of it, and both reduce the quantity by one, in one transaction. A stale revision SHALL be rejected, and a retry with the same per-person mutation id SHALL change nothing a second time.
+An order's meals SHALL be expected meals until its delivery date arrives in the person's day, checked by a daily job, or until a person or their agent calls `mark_delivery` for that order, whichever comes first; then they become meals on hand. Expected meals have no eat actions and no Home Assistant buttons. The system SHALL track meals on hand per person with quantity, delivery date and a revision that changes on every update. Eating one SHALL go through one meal action that takes the meal id, its revision and a per-person mutation id. The action SHALL first look up the mutation id and, when it was already applied, return the stored result without checking the revision; otherwise it SHALL reject a stale revision. "Ate it" logs the meal's nutrition once and "ate 3/4" logs three quarters of it, and both reduce the quantity by one, in one transaction. A meal whose nutrition question is unanswered, or whose quantity is zero, SHALL be rejected with a stable error code and nothing changed.
+
+#### Scenario: Delivery date arrives
+- **WHEN** the person's day reaches an order's delivery date and nobody has called `mark_delivery`
+- **THEN** its expected meals become meals on hand
 
 #### Scenario: Ate one
 - **WHEN** a person marks an on-hand meal eaten
@@ -23,12 +27,20 @@ The system SHALL track meals on hand per person with quantity, delivery date and
 - **THEN** one intake entry of 450 kcal is logged and the quantity drops by one
 
 #### Scenario: Stale revision
-- **WHEN** the action carries a revision older than the meal's current one
+- **WHEN** an action with a new mutation id carries a revision older than the meal's current one
 - **THEN** nothing is logged, the quantity is unchanged and the result says the action was stale
 
 #### Scenario: Retried action
-- **WHEN** the same action is sent twice with the same mutation id
+- **WHEN** an action that succeeded is sent again with the same mutation id and its original revision
 - **THEN** intake and quantity change once and the second call returns the first result
+
+#### Scenario: Nutrition not answered yet
+- **WHEN** a person eats an on-hand meal whose nutrition question is still open
+- **THEN** the action is rejected with a stable error code and the quantity is unchanged
+
+#### Scenario: None left
+- **WHEN** a person eats an on-hand meal whose quantity is zero
+- **THEN** the action is rejected with a stable error code and nothing is logged
 
 ### Requirement: Order email parsing
 The parser SHALL extract service, meals, chef where stated, quantities and delivery date where stated from an order email into a fixed schema through a configured OpenAI-compatible model, with an evidence excerpt per field that must occur in the email. It SHALL have no tools and fetch nothing. Uncertain fields SHALL become questions.
@@ -42,14 +54,32 @@ The parser SHALL extract service, meals, chef where stated, quantities and deliv
 - **THEN** the email is stored and a question asks the person to enter the order
 
 ### Requirement: Inbound order email endpoint
-The engine SHALL accept raw order emails over HTTP with a per-person token, reject emails over 5 MB, read only text and HTML parts, fetch nothing the email links to, and ignore an email the same person has already sent. Tare SHALL verify the email's DKIM signature itself for the service's configured sender domain, never trusting `Authentication-Results` or other headers, and record the result. An unverified email SHALL become a question asking the person to confirm it, and its order SHALL NOT be processed until they do.
+The engine SHALL accept raw order emails over HTTP authenticated by a per-person inbound token, which is stored hashed, created and rotated through session-only operations, and allows nothing but posting emails. It SHALL reject emails over 5 MB, read only text and HTML parts, fetch nothing the email links to, and ignore an email the same person has already sent. Each service's sender domain and sender address SHALL come from install configuration. Each email SHALL be marked:
+
+- verified, when Tare checks a DKIM signature itself and it passes for the service's configured sender domain, either on the posted message or on the original attached as `message/rfc822`; Tare never trusts `Authentication-Results` or other headers for this;
+- sender-matched, when no signature verifies but the original sender is the service's configured sender address; the authenticated endpoint is then the trust boundary;
+- unverified, otherwise.
+
+Verified and sender-matched emails SHALL be parsed. An unverified email SHALL be held as a question asking the person to confirm it. The operator's mail rule SHALL post the raw original message, or forward it with the original attached; an inline forward rewrites the message, so its signature cannot verify and it can at best be sender-matched.
+
+#### Scenario: Missing or wrong token
+- **WHEN** an email is posted without a valid inbound token
+- **THEN** the endpoint answers 401 and stores nothing
+
+#### Scenario: Original attached
+- **WHEN** a forward carries the original as `message/rfc822` and the original's DKIM signature passes for the configured domain
+- **THEN** the email is marked verified and parsed
+
+#### Scenario: Inline forward from the right sender
+- **WHEN** an inline forward's original sender is the service's configured address and no signature verifies
+- **THEN** the email is marked sender-matched and parsed
 
 #### Scenario: Unverified sender
-- **WHEN** an order email arrives without a valid DKIM signature from the service's configured domain
-- **THEN** no order or meals on hand are created and the person gets a question to confirm the email
+- **WHEN** an email neither verifies nor matches the configured sender
+- **THEN** no order or meals are created and the person gets a question to confirm the email
 
 #### Scenario: Forged header
-- **WHEN** an email carries an `Authentication-Results` header claiming a DKIM pass but its signature does not verify
+- **WHEN** an email carries an `Authentication-Results` header claiming a DKIM pass but no signature verifies and the sender does not match
 - **THEN** it is treated as unverified
 
 #### Scenario: Same email twice
@@ -61,7 +91,7 @@ The engine SHALL accept raw order emails over HTTP with a per-person token, reje
 - **THEN** the endpoint answers 413 and stores nothing
 
 ### Requirement: Order reconciliation
-The system SHALL keep one order per person, service and delivery date. An email that states a delivery date SHALL join or create the order for that date. A processed or final list SHALL supersede the scheduled list. A processed email without a date SHALL attach to the person's earliest scheduled order for that service whose delivery date is after the email was received, and SHALL take each meal's chef from the scheduled list by meal name. When no order matches, the system SHALL raise a question.
+The system SHALL keep one order per person, service and delivery date. An email that states a delivery date SHALL join or create the order for that date. A processed or final list SHALL supersede the expected meals of an order that has not been delivered yet. A processed email without a date SHALL attach to the person's earliest scheduled order for that service whose delivery date is after the email was received, and SHALL take each meal's chef from the scheduled list by meal name. When no order matches, or a list arrives for an order already delivered, the system SHALL raise a question instead of changing stock. Confirming a held email SHALL release it into parsing and reconciliation; rejecting it SHALL discard it.
 
 #### Scenario: Scheduling then processed email
 - **WHEN** a scheduling email and a processed email arrive for the same delivery
@@ -75,8 +105,12 @@ The system SHALL keep one order per person, service and delivery date. An email 
 - **WHEN** a processed email without a date arrives and the person has no later scheduled order for that service
 - **THEN** no order is created and a question asks for the delivery date
 
+#### Scenario: Confirmed held email
+- **WHEN** the person confirms a held unverified email
+- **THEN** it is parsed and reconciled as if it had been verified
+
 ### Requirement: New-meal nutrition questions
-Creating an on-hand meal with no known nutrition SHALL raise a nutrition question that the person or their agent can answer with label values and a source. The answer SHALL become one of that person's own foods keyed by service, meal name and chef, so the same meal never asks that person again. A meal with no chef SHALL match on service and meal name only when exactly one of the person's foods has that name.
+When an order is created with a meal that has no known nutrition, the system SHALL raise a nutrition question that the person or their agent can answer with label values and a source, before the meal arrives. The answer SHALL become one of that person's own foods keyed by service, meal name and chef, so the same meal never asks that person again. A meal with no chef SHALL match on service and meal name only when exactly one of the person's foods has that name.
 
 #### Scenario: Repeat meal
 - **WHEN** a meal whose nutrition the person answered before arrives in a later order

@@ -12,7 +12,7 @@ The system SHALL provide operations to log food, log weight, edit and delete ent
 - **THEN** one entry exists and the second call returns it
 
 ### Requirement: Per-person day boundary
-Each person SHALL have a timezone and a day-start hour, defaulting to 4 AM. Each entry's day SHALL be computed from its eaten-at time by that rule when it is written, and stored.
+Each person SHALL have a timezone and a day-start hour, defaulting to 4 AM. Each intake entry's day SHALL be computed from its eaten-at time, and each weigh-in's day from its measured-at time, by that rule when it is written, and stored.
 
 #### Scenario: Late snack
 - **WHEN** a person with the default day start logs a snack eaten at 1 AM local time
@@ -23,7 +23,7 @@ Each person SHALL have a timezone and a day-start hour, defaulting to 4 AM. Each
 - **THEN** entries already written keep their stored day, and new entries use the new timezone
 
 ### Requirement: Day sign-off
-A person SHALL be able to close a day by reviewing its ledger and recording hunger, fullness and notes. Only a signed-in person, not an agent token, SHALL mark a day complete. Any create, edit or delete of a signed-off day's intake, by any path, SHALL clear that day's sign-off until the person signs it off again. The app SHALL list past days that are not signed off so the person can review them in turn.
+A person SHALL be able to close a day by reviewing its ledger and recording hunger, fullness and notes. Only a signed-in person, not an agent token, SHALL mark a day complete. Any create, edit or delete of a signed-off day's intake, by any path, SHALL clear that day's sign-off until the person signs it off again; an edit that moves an entry to another day SHALL clear the sign-off of both days. Operations SHALL read one day's ledger and list the past days that are not signed off, and the app SHALL use them so the person can review those days in turn.
 
 #### Scenario: Close a day
 - **WHEN** a person reviews a day and signs it off
@@ -36,6 +36,10 @@ A person SHALL be able to close a day by reviewing its ledger and recording hung
 #### Scenario: Intake changed after sign-off
 - **WHEN** an agent or the person edits, adds or deletes an intake entry on a signed-off day
 - **THEN** the day is no longer signed off and drops out of the adaptive TDEE until it is signed off again
+
+#### Scenario: Entry moved to another day
+- **WHEN** an entry on signed-off day A is edited so its eaten-at time falls on signed-off day B
+- **THEN** neither day is signed off any more
 
 #### Scenario: Note added after sign-off
 - **WHEN** an agent adds a note to a signed-off day
@@ -60,11 +64,15 @@ The app SHALL scan EAN-13, UPC-A, EAN-8 and UPC-E barcodes with the browser's na
 - **THEN** the code is kept as a string and normalized before lookup
 
 ### Requirement: Regular meals
-A person SHALL be able to save named regular meals (such as a usual restaurant order) with calories, macros, an uncertainty range and a baseline source (where the values came from: a published menu, a label, or the person's own estimate), and log them in one step. Regular meals SHALL be owned by the person who saved them and SHALL NOT be visible to anyone else.
+A person SHALL be able to save, edit and delete named regular meals (such as a usual restaurant order) with calories, macros, an uncertainty range and a baseline source (where the values came from: a published menu, a label, or the person's own estimate), and log them in one step. The baseline source SHALL set the meal's provenance under the rule that provenance is set by its source: a published menu or a label gives `label` with that source named, and the person's own estimate gives `estimated`. Regular meals SHALL be owned by the person who saved them and SHALL NOT be visible to anyone else.
 
 #### Scenario: Log a regular meal
-- **WHEN** a person logs a saved regular meal
+- **WHEN** a person logs a saved regular meal whose baseline source is their own estimate
 - **THEN** the entry carries the meal's values, range and provenance `estimated`
+
+#### Scenario: Meal from a published menu
+- **WHEN** a person saves a regular meal whose values come from the restaurant's published menu and logs it
+- **THEN** the entry carries provenance `label` with the menu named as its source
 
 #### Scenario: Another person's meal
 - **WHEN** another person searches for that meal's name or logs it by id

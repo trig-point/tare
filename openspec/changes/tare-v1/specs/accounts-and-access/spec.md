@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Password login with sessions
-The system SHALL let a person sign in with a username and password and keep them signed in with a session cookie that is HTTP-only, `SameSite=Lax`, `Secure` when served over HTTPS, and valid for a configured lifetime. Passwords SHALL be stored only as scrypt hashes with a per-user salt. Signing out SHALL end the session on the server. A state-changing request authenticated by the cookie SHALL carry `X-Requested-With: XMLHttpRequest`, or the system SHALL reject it with 403.
+The system SHALL let a person sign in with a username and password and keep them signed in with a session cookie that is HTTP-only, `SameSite=Lax`, `Secure` when the install's configured public URL is HTTPS (a proxy in front may end TLS), and valid for a configured lifetime. Passwords SHALL be stored only as scrypt hashes with a per-user salt. Signing out SHALL end the session on the server. A state-changing request authenticated by the cookie SHALL carry `X-Requested-With: XMLHttpRequest`, or the system SHALL reject it with 403; routes authenticated another way (a token, or the Oura callback's single-use state) are checked by that instead.
 
 #### Scenario: Correct password
 - **WHEN** a person submits a correct username and password
@@ -31,11 +31,19 @@ The system SHALL create the first user, as an administrator, from configuration 
 - **THEN** startup fails with an error naming the missing settings
 
 ### Requirement: Administrator adds a user
-An administrator SHALL be able to add another person, who gets their own login, data and agent tokens.
+An administrator SHALL be able to add another person, who gets their own login, data and agent tokens. Adding a user, like every administrator operation, SHALL be session only.
 
 #### Scenario: Second person added
 - **WHEN** an administrator adds a user with a username and initial password
 - **THEN** that person can sign in and sees none of the first person's data
+
+#### Scenario: Administrator's agent token
+- **WHEN** an agent token belonging to an administrator calls the add-user operation
+- **THEN** the call is rejected with 403 and no user is created
+
+#### Scenario: Not an administrator
+- **WHEN** a signed-in person who is not an administrator calls the add-user operation
+- **THEN** the call is rejected with 403 and no user is created
 
 ### Requirement: Agent tokens
 Each person SHALL be able to create named agent tokens, see when each was last used, and revoke them. Tokens SHALL be stored only as hashes and shown once at creation. Creating and revoking tokens SHALL be session-only operations.
@@ -53,7 +61,7 @@ Each person SHALL be able to create named agent tokens, see when each was last u
 - **THEN** the system rejects the call with 403 and creates nothing
 
 ### Requirement: Tenant isolation
-Every personal row SHALL carry a non-null owner, owned rows SHALL reference their parents through the owner and id together, and every query on personal data SHALL take the person from the session or token through the shared helper, never from the request body. Background jobs and the importer SHALL take the person from the row they process or from the command's named person, through the same helper. The only rows without a single owning person SHALL be the source cache that the nutrition adapters write, which every person reads, and questions that no person can own (such as a reading from an unmapped scale user), which only administrators see. Every food a person or an agent creates (regular meals, typed labels, answered meal nutrition) SHALL be owned by that person. Keys that make writes idempotent (client ids, mutation ids, inbound message hashes) SHALL be unique per person, not across the install. Every task that adds a personal table, query, operation or job SHALL add a two-user negative test with the shared helper.
+Every personal row SHALL carry a non-null owner, owned rows SHALL reference their parents through the owner and id together, and every query on personal data SHALL take the person from the session or token through the shared helper, never from the request body. Background jobs and the importer SHALL take the person from the row they process or from the command's named person, through the same helper. The only rows without a single owning person SHALL be the source cache that the nutrition adapters write, which every person reads, and questions that no person can own (such as a reading from an unmapped scale user), which only administrators see. Every food a person or an agent creates (regular meals, typed labels, answered meal nutrition) SHALL be owned by that person. The source cache is a household trust assumption, stated in the setup docs: everyone on an install can find the products in it, though not who looked them up. Keys that make writes idempotent (client ids, mutation ids, inbound message hashes) SHALL be unique per person, not across the install. Every task that adds a personal table, query, operation or job SHALL add a two-user negative test with the shared helper; the tables created before the helper exists get theirs from the first tasks that read and write them.
 
 #### Scenario: Another person's id
 - **WHEN** a person reads, edits, deletes or totals using an id that belongs to someone else
