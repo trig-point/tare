@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Day templates and slots
-Each person SHALL define, through operations, day templates made of slots and day types that choose a template. Each slot SHALL have a name, a time window, a share of the day's calories and protein, and an optional fill hint: free text for agents placing items (such as "high protein" or "leftovers"). A template SHALL be rejected unless its shares sum to 100 percent and its windows do not overlap.
+Each person SHALL define, through operations, day templates made of slots and day types that choose a template. Each slot SHALL have a name, a time window, a share of the day's calories and protein, and an optional fill hint: free text for agents placing items (such as "high protein" or "leftovers"). A template SHALL be rejected unless every share is above zero, the shares sum to 100 percent and its windows do not overlap.
 
 #### Scenario: Pick a day type
 - **WHEN** a person sets today's day type
@@ -31,7 +31,7 @@ A person SHALL be able to choose day types by keywords in their own calendar fee
 - **THEN** the redirect is not followed and the feed counts as unavailable
 
 ### Requirement: Slot budgets
-Slot budgets SHALL be computed from today's target, the slots' shares and the intake stored in each slot each time they are read, and never stored. Each intake entry's slot SHALL be stored when the entry is written: the slot a planned-item action names, otherwise the slot whose time window contains its eaten-at time, otherwise the next slot that day, or the last slot when none is later. An entry with no stored slot, or whose stored slot belongs to a template other than today's (it was logged before today's template existed, or the day type changed), SHALL be assigned on read by the same time-window rule, so no intake drops out of the budgets. A slot SHALL count as ended once its window has ended, except the day's last slot, which stays open until the person's day ends. A slot's intake SHALL be the sum of its entries' kcal, rounded once to the nearest whole kcal (halves up) before it is used; the entries keep their exact values. An ended slot's budget SHALL equal its intake. The open slots SHALL share the remaining day budget, which is today's target minus the ended slots' intake: each open slot's budget is the remaining day budget times its share, divided by the sum of the open slots' shares. When the remaining day budget is below zero, every open slot's budget SHALL be zero. Budgets SHALL be whole kcal: each open slot's budget is rounded down and the last open slot takes what is left, so the open slots' budgets add up exactly to the remaining day budget, which is computed from the rounded intakes. The day's budgets therefore add up to today's target, unless the ended slots' intake is already above it. When today's target changes during the day, only the open slots' budgets SHALL change; ended slots keep their intake. Protein budgets SHALL follow the same rules with today's protein target and the same shares, in whole grams. A next-slot operation SHALL report the coming slot, its budget and its remaining budget.
+Slot budgets SHALL be computed from today's target, the slots' shares and the intake stored in each slot each time they are read, and never stored. Each intake entry's slot SHALL be stored when the entry is written: the slot a planned-item action names, otherwise the slot whose time window contains its eaten-at time, otherwise the next slot that day, or the last slot when none is later. An entry with no stored slot, or whose stored slot belongs to a template other than today's (it was logged before today's template existed, or the day type changed), SHALL be assigned on read by the same time-window rule, so no intake drops out of the budgets. A slot SHALL count as ended once its window has ended, except the day's last slot, which stays open until the person's day ends. A slot's intake SHALL be the sum of its entries' kcal, rounded once to the nearest whole kcal (halves up) before it is used; the entries keep their exact values. An ended slot's budget SHALL equal its intake. The open slots SHALL share the remaining day budget, which is today's target minus the ended slots' intake: each open slot's budget is the remaining day budget times its share, divided by the sum of the open slots' shares. When the remaining day budget is below zero, every open slot's budget SHALL be zero. Budgets SHALL be whole kcal: each open slot's budget is rounded down and the last open slot takes what is left, so the open slots' budgets add up exactly to the remaining day budget, computed from the rounded intakes, when it is zero or more. The day's budgets therefore add up to today's target, unless the ended slots' intake is already above it. When today's target changes during the day, only the open slots' budgets SHALL change; ended slots keep their intake. Protein budgets SHALL follow the same rules with today's protein target and the same shares, in whole grams. A next-slot operation SHALL report the coming slot, its budget and its remaining budget.
 
 #### Scenario: Light lunch
 - **WHEN** a person with a 2,000 kcal target and shares of 20, 30, 10 and 40 percent for breakfast, lunch, snack and dinner has eaten 400 kcal at breakfast and 300 kcal at lunch, and both windows have ended
@@ -100,8 +100,16 @@ The app SHALL show today's slots with their budgets and planned items and offer 
 - **THEN** each slot shows its remaining budget and planned item
 
 ### Requirement: Suggested slot budgets
-Once a person has at least 14 signed-off days of slot-assigned intake, the system SHALL suggest each slot's share as that slot's average share of those days' intake, and the slot view SHALL let the person accept or ignore the suggestion.
+Once a person has at least 14 signed-off days of slot-assigned intake, the system SHALL suggest each slot's share as that slot's intake over those days divided by the days' total intake, in whole percent with at least 1 percent for every slot and the largest slot absorbing the rounding difference so the shares sum to 100, and the slot view SHALL let the person accept or ignore the suggestion. When those days' total intake is zero, the system SHALL offer no suggestion and keep the current shares, as it does before the 14th signed-off day.
 
 #### Scenario: Enough history
 - **WHEN** a person has 14 or more signed-off days of slot-assigned intake
 - **THEN** the slot view offers shares based on what they actually ate per slot
+
+#### Scenario: Skipped slot
+- **WHEN** a person's 14 signed-off days hold 0 kcal at breakfast, 8,400 at lunch, 2,800 at the snack and 16,800 at dinner
+- **THEN** the suggestion is 1, 30, 10 and 59 percent, so breakfast stays above zero, dinner absorbs the difference and the shares sum to 100
+
+#### Scenario: No intake to suggest from
+- **WHEN** a person has 14 signed-off days with no intake in any slot
+- **THEN** no suggestion is offered and the current shares stay

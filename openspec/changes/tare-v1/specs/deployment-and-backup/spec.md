@@ -15,7 +15,7 @@ The engine SHALL run its scheduled jobs (all four: the nightly backup, the daily
 - **THEN** the second run is skipped and recorded as skipped
 
 ### Requirement: Nightly backup with tested restore
-The engine SHALL write a nightly online SQLite backup, through better-sqlite3's `backup()`, to a configured folder outside the data volume and keep a configured number of copies. A test SHALL restore a backup and pass integrity and foreign-key checks and an authenticated read.
+The engine SHALL write a nightly online SQLite backup, through better-sqlite3's `backup()`, to a configured folder outside the data volume and keep a configured number of copies. The compose example SHALL mount that folder as its own volume, so recreating the container keeps the backups. A test SHALL restore a backup and pass integrity and foreign-key checks and an authenticated read.
 
 #### Scenario: Restore drill
 - **WHEN** the restore test opens a backup produced while the engine was writing

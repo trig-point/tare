@@ -47,7 +47,7 @@ The engine SHALL serve an MCP server over streamable HTTP at `/mcp`, built on th
 - **THEN** the server rejects the request
 
 ### Requirement: Provenance set by its source
-Every operation that writes a nutrition value SHALL record a provenance of `verified`, `label` or `estimated`, decided by where the numbers came from. A write that references a food SHALL take that food's provenance, and a provenance argument that differs from it SHALL be rejected. A write that supplies its own numbers MAY state `label` together with a source naming where the label was read, and SHALL otherwise be stored as `estimated`. No caller SHALL be able to store `verified` for numbers it supplied; `verified` comes only from USDA Foundation and SR Legacy foods in the source cache.
+Every operation that writes a nutrition value SHALL record a provenance of `verified`, `label` or `estimated`, decided by where the numbers came from. A write that references a food SHALL take that food's provenance, and a provenance argument that differs from it SHALL be rejected. A write that supplies its own numbers MAY state `label` together with a source naming where the label was read; a `label` claim without a source SHALL be rejected, and a write that makes no provenance claim SHALL be stored as `estimated`. No caller SHALL be able to store `verified` for numbers it supplied; `verified` comes only from USDA Foundation and SR Legacy foods in the source cache.
 
 #### Scenario: Agent logs free-text food
 - **WHEN** an agent logs a food by name and numbers without a food reference or a provenance

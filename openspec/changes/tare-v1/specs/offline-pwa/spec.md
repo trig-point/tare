@@ -12,7 +12,7 @@ The engine SHALL serve a web app with a manifest, icons and a service worker so 
 - **THEN** the service worker does not cache that page as the app shell
 
 ### Requirement: Offline write queue
-New intake and weight entries SHALL be written to on-device storage first, each with a client-generated id, the time it was eaten or measured and the signed-in person, and replayed to the server when possible. The app SHALL request persistent storage. An entry SHALL leave the queue only after the server acknowledges it with JSON. A network error, a 5xx, a 408 or a 429 response SHALL leave the entry queued for a later retry.
+New intake and weight entries SHALL be written to on-device storage first, each with a client-generated id, the time it was eaten or measured and the signed-in person, and replayed to the server when possible. The app SHALL request persistent storage. An entry SHALL leave the queue only after the server acknowledges it with JSON. A network error, a 5xx, a 408 or a 429 response SHALL leave the entry queued for a later retry; while the app is open and online, the queue SHALL retry it on a timer with backoff instead of waiting for a relaunch.
 
 #### Scenario: Logged with no signal
 - **WHEN** a person logs a food while offline
@@ -27,7 +27,7 @@ New intake and weight entries SHALL be written to on-device storage first, each 
 - **THEN** the server assigns it to a day from its eaten-at time, not from the time it arrived
 
 ### Requirement: Sign-in-needed state
-Queue requests SHALL use `redirect: "manual"`. When a replay gets a 401, a redirect or a response that is not JSON, the queue SHALL keep its entries, show that sign-in is needed, and resume after the person signs in. API requests SHALL send `X-Requested-With: XMLHttpRequest`, which an identity proxy that honors it (Cloudflare Access documents this) answers with 401 instead of a login page; the early proxy probe records the real response on the reference install. Signing in again SHALL be a top-level navigation to a sign-in path that the service worker never answers from its cache, so the request reaches the identity proxy and the proxy can show its own sign-in page; the engine answers that path by sending the person back to the app, where the queue resumes.
+Queue requests SHALL use `redirect: "manual"`. When a replay gets a 401, a redirect (which `redirect: "manual"` returns as an `opaqueredirect` response with status 0, not as a network error) or a response that is not JSON, the queue SHALL keep its entries, show that sign-in is needed, and resume after the person signs in. API requests SHALL send `X-Requested-With: XMLHttpRequest`, which an identity proxy that honors it (Cloudflare Access documents this) answers with 401 instead of a login page; the early proxy probe records the real response on the reference install. Signing in again SHALL be a top-level navigation to a sign-in path that the service worker never answers from its cache, so the request reaches the identity proxy and the proxy can show its own sign-in page; the engine answers that path by sending the person back to the app, where the queue resumes.
 
 #### Scenario: Proxy session expired
 - **WHEN** queued entries are replayed after the proxy session expired
