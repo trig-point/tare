@@ -33,8 +33,16 @@ The migration runner SHALL record a checksum of each applied migration and fail 
 - **THEN** the foreign-key check fails, the transaction rolls back and foreign keys are on afterwards
 
 ### Requirement: Repository hygiene check
-CI SHALL fail when tracked source contains an absolute home path or a hostname or domain on the deny list. The deny list SHALL come from tracked generic patterns plus a CI variable, so personal values never enter the repository. A failure SHALL name only the file and line, never the matched value or the deny list, because CI logs on a public repository are public. The check SHALL be custom rules for the gitleaks job CI already runs, with redacted output.
+CI SHALL fail when the repository's history contains an absolute home path or a personal name, hostname or domain on the deny list. The check SHALL use gitleaks, pinned to one version by its published checksum, with custom rules kept in a CI secret so personal values never enter the repository. The rules SHALL match whole words and allow the copyright line and github.com handle URLs. CI SHALL write the secret to a file only the runner user can read and always pass it with `--config`, never through gitleaks' configuration environment variables (a parse error there prints the whole config), so a committed `.gitleaks.toml` is never read. Before the scan, a canary rule in the custom config SHALL catch a canary planted in a temporary directory, so a config that lost its rules fails. Output SHALL be redacted and reduced to summary lines with the exit code kept, because CI logs on a public repository are public. Fork pull requests and Dependabot runs cannot read the secret, so they SHALL scan with gitleaks' default rules and a warning, and the push to main re-checks with the custom rules.
 
 #### Scenario: Planted hostname
-- **WHEN** a pull request adds a denied hostname to a source file
-- **THEN** the CI job fails naming the file and line
+- **WHEN** a pull request from the repository adds a denied hostname
+- **THEN** the CI job fails and its log shows the leak count, never the matched value or the rules
+
+#### Scenario: Custom rules lost
+- **WHEN** the secret is missing on a push or same-repository pull request, or its config no longer catches the canary
+- **THEN** the CI job fails before scanning, with a fixed message
+
+#### Scenario: Fork pull request
+- **WHEN** a pull request comes from a fork or from Dependabot
+- **THEN** the job scans with gitleaks' default rules and warns that the custom rules were unavailable
