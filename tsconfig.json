@@ -12,10 +12,5 @@
     "verbatimModuleSyntax": true,
     "noUncheckedIndexedAccess": true
   },
-  "include": [
-    "packages/**/*.ts",
-    "apps/**/*.ts",
-    "apps/**/*.tsx",
-    "scripts/**/*.mts"
-  ]
+  "include": ["packages/**/*.ts", "apps/**/*.ts", "apps/**/*.tsx"]
 }

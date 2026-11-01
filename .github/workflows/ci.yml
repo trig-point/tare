@@ -26,18 +26,31 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # Catches lint errors and inconsistent formatting.
       - run: pnpm lint
-      # Catches configured account names in home paths, denied hosts, and a missing deny secret
-      - run: pnpm hygiene
-        env:
-          TARE_HYGIENE_DENY: ${{ secrets.TARE_HYGIENE_DENY }}
       # Catches TypeScript type errors across workspaces.
       - run: pnpm typecheck
       # Catches health, configuration and migration regressions.
       - run: pnpm test
       # Catches stale and untracked generated query files.
       - run: pnpm generate && git add -N packages/engine/src/queries && git diff --exit-code HEAD -- packages/engine/src/queries
-      # Catches committed secrets and tampered scanner downloads.
-      - run: |
+      # Catches missing custom rules outside fork PRs.
+      - name: Check gitleaks configuration
+        env:
+          GITLEAKS_CONFIG_TOML: ${{ secrets.TARE_GITLEAKS_TOML }}
+          FORK_PULL_REQUEST: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != '' && github.event.pull_request.head.repo.full_name != github.repository }}
+        run: |
+          if [ -z "$GITLEAKS_CONFIG_TOML" ]; then
+            if [ "$FORK_PULL_REQUEST" = true ]; then
+              echo "::warning::Custom gitleaks rules unavailable for fork PR."
+            else
+              echo "::error::TARE_GITLEAKS_TOML is required."
+              exit 1
+            fi
+          fi
+      # Catches personal names, hosts, secrets and tampered scanner downloads.
+      - name: Scan with gitleaks
+        env:
+          GITLEAKS_CONFIG_TOML: ${{ secrets.TARE_GITLEAKS_TOML }}
+        run: |
           set -euo pipefail
           curl -fsSL https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz -o /tmp/gitleaks_8.28.0_linux_x64.tar.gz
           echo 'a65b5253807a68ac0cafa4414031fd740aeb55f54fb7e55f386acb52e6a840eb  /tmp/gitleaks_8.28.0_linux_x64.tar.gz' | sha256sum -c -

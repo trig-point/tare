@@ -2,7 +2,7 @@
 
 This repository is public. Never add personal data, including real weight, food or health data. Fixtures use made-up people. Never commit secrets; supply them through environment variables.
 
-`pnpm hygiene` checks every tracked file and path locally and in CI against the `TARE_HYGIENE_DENY` secret. Entries match at non-alphanumeric boundaries; dotted entries also reject a preceding hyphen. Dotless entries need at least three characters. Only the generic public GitHub-handle and copyright contexts in `scripts/hygiene-allow.txt` are allowed; there is no generic `.local` rule. Output is checked for denied values before printing.
+Personal names and hosts are checked by gitleaks with a custom rule kept in the `TARE_GITLEAKS_TOML` secret. To see where a finding is, run `gitleaks git . --redact -v` locally with that config.
 
 Use TypeScript only. Tests run with `node --test`.
 
@@ -23,7 +23,6 @@ Use Node 22 (at least 22.18) and pnpm 11.2.2. Run these from the repository root
 
 - Install: `pnpm install`
 - Lint and format check: `pnpm lint`
-- Hygiene check: `pnpm hygiene`
 - Apply formatting: `pnpm format`
 - Typecheck all workspaces: `pnpm typecheck`
 - Test all workspaces: `pnpm test` (runs `node --test`)
