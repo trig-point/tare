@@ -2,7 +2,7 @@
 
 This repository is public. Never add personal data, including real weight, food or health data. Fixtures use made-up people. Never commit secrets; supply them through environment variables.
 
-Generic home paths are not checked. Dotless `TARE_HYGIENE_DENY` entries match account segments after `users`, `home` or leading `~`, exact URL hosts, and labels in dotted host tokens. Dotted entries match whole-label host suffixes. URL paths and bare names pass; env filenames are excluded from host tokens. `pnpm hygiene` checks every tracked file and path locally and in CI.
+`pnpm hygiene` checks every tracked file and path locally and in CI against the `TARE_HYGIENE_DENY` secret. Entries match at non-alphanumeric boundaries; dotted entries also reject a preceding hyphen. Dotless entries need at least three characters. Only the generic public GitHub-handle and copyright contexts in `scripts/hygiene-allow.txt` are allowed; there is no generic `.local` rule. Output is checked for denied values before printing.
 
 Use TypeScript only. Tests run with `node --test`.
 

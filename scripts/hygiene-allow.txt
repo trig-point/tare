@@ -1,0 +1,4 @@
+# Public GitHub handles identify repository owners in links.
+github.com/{name}
+# Copyright notices identify the public copyright holder.
+copyright (c) {year} {name}

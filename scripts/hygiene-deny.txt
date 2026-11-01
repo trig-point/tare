@@ -1,2 +1,0 @@
-# RFC 6762 reserves .local for local-network hosts, which belong in configuration.
-.local

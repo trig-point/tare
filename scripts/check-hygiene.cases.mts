@@ -56,11 +56,6 @@ export const hygieneCases = [
     status: 1,
   },
   {
-    label: "API path",
-    content: "https://api.github.com/users/alice",
-    status: 0,
-  },
-  {
     label: "GitHub path",
     content: "github.com/alice/repo",
     status: 0,
@@ -81,11 +76,6 @@ export const hygieneCases = [
     status: 0,
   },
   {
-    label: "bare name",
-    content: "alice",
-    status: 0,
-  },
-  {
     label: "hidden env",
     content: ".env.local",
     status: 0,
@@ -96,11 +86,6 @@ export const hygieneCases = [
     status: 0,
   },
   {
-    label: "env URL",
-    content: `https://${["env", "local"].join(".")}/`,
-    status: 1,
-  },
-  {
     label: "label boundary",
     content: "notalice.tailnet.test",
     status: 0,
@@ -109,31 +94,6 @@ export const hygieneCases = [
     label: "dotted suffix",
     content: "sub.secret-host.invalid",
     status: 1,
-  },
-  {
-    label: "non suffix",
-    content: "secret-host.invalid.conf",
-    status: 0,
-  },
-  {
-    label: "userinfo",
-    content: "https://alice.example@github.com:443/repo",
-    status: 0,
-  },
-  {
-    label: "query",
-    content: "https://github.com?next=alice.example",
-    status: 0,
-  },
-  {
-    label: "fragment",
-    content: "https://github.com#alice.example",
-    status: 0,
-  },
-  {
-    label: "URL path host",
-    content: "https://github.com/secret-host.invalid",
-    status: 0,
   },
   {
     label: "second token",
@@ -151,11 +111,6 @@ export const hygieneCases = [
     status: 1,
   },
   {
-    label: "nested tilde",
-    content: "folder/~alice/file",
-    status: 0,
-  },
-  {
     label: "env example",
     content: ".env.local.example",
     status: 0,
@@ -164,11 +119,6 @@ export const hygieneCases = [
     label: "env colon",
     content: "env.local:",
     status: 0,
-  },
-  {
-    label: "generic host",
-    content: ["printer", "local"].join("."),
-    status: 1,
   },
   {
     label: "generic boundary",
@@ -202,5 +152,170 @@ export const hygieneCases = [
     content: "clean",
     status: 0,
     filename: "docs/notalice.md",
+  },
+  {
+    label: "email",
+    content: "alice@secret-host.invalid",
+    status: 1,
+  },
+  {
+    label: "author",
+    content: "Author <person@secret-host.invalid>",
+    status: 1,
+  },
+  {
+    label: "SSH",
+    content: "ssh ops@secret-host.invalid",
+    status: 1,
+  },
+  {
+    label: "git remote",
+    content: "git@secret-host.invalid:o/r.git",
+    status: 1,
+  },
+  {
+    label: "bare port",
+    content: "secret-host.invalid:8123",
+    status: 1,
+  },
+  {
+    label: "bare path",
+    content: "secret-host.invalid/health",
+    status: 1,
+  },
+  {
+    label: "port and path",
+    content: "curl secret-host.invalid:8123/health",
+    status: 1,
+  },
+  {
+    label: "wildcard",
+    content: "*.secret-host.invalid",
+    status: 1,
+  },
+  {
+    label: "corporate wildcard",
+    content: "*.corp.net",
+    status: 1,
+  },
+  {
+    label: "NO_PROXY",
+    content: "NO_PROXY=.secret-host.invalid",
+    status: 1,
+  },
+  {
+    label: "mount colon",
+    content: "-v /home/alice:/data",
+    status: 1,
+  },
+  {
+    label: "file URL",
+    content: "file:///Users/alice/x",
+    status: 1,
+  },
+  {
+    label: "Windows file URL",
+    content: "file:///C:/Users/alice/x",
+    status: 1,
+  },
+  {
+    label: "URL comma",
+    content: "https://secret-host.invalid,",
+    status: 1,
+  },
+  {
+    label: "bold Markdown",
+    content: "**secret-host.invalid**",
+    status: 1,
+  },
+  {
+    label: "boundary prefix",
+    content: "notsecret-host.invalid",
+    status: 0,
+  },
+  {
+    label: "hyphen prefix",
+    content: "my-secret-host.invalid",
+    status: 0,
+  },
+  {
+    label: "longer prose",
+    content: "alicebeth malice",
+    status: 0,
+  },
+  {
+    label: "public GitHub URL",
+    content: "https://github.com/alice/repo",
+    status: 0,
+  },
+  {
+    label: "options property",
+    content: "options.local = true",
+    status: 0,
+  },
+  {
+    label: "bare configured name",
+    content: "alice",
+    status: 1,
+  },
+  {
+    label: "URL path name",
+    content: "https://api.github.com/users/alice",
+    status: 1,
+  },
+  {
+    label: "URL user info",
+    content: "https://alice.example@github.com/repo",
+    status: 1,
+  },
+  {
+    label: "URL query name",
+    content: "https://github.com?next=alice.example",
+    status: 1,
+  },
+  {
+    label: "URL fragment name",
+    content: "https://github.com#alice.example",
+    status: 1,
+  },
+  {
+    label: "URL host in path",
+    content: "https://github.com/secret-host.invalid",
+    status: 1,
+  },
+  {
+    label: "dotted continuation",
+    content: "secret-host.invalid.conf",
+    status: 1,
+  },
+  {
+    label: "nested name",
+    content: "folder/~alice/file",
+    status: 1,
+  },
+  {
+    label: "unconfigured local URL",
+    content: "https://env.local/",
+    status: 0,
+  },
+  {
+    label: "unconfigured host",
+    content: "printer.local",
+    status: 0,
+  },
+  {
+    label: "configured env-like token",
+    content: "env.local.secret-host.invalid",
+    status: 1,
+  },
+  {
+    label: "leading dot env token",
+    content: ".env.local.secret-host.invalid",
+    status: 1,
+  },
+  {
+    label: "allowed then denied",
+    content: "https://github.com/alice/repo then alice",
+    status: 1,
   },
 ];

@@ -88,12 +88,12 @@ test("denied hosts report location without disclosing the configured value", () 
   assert.match(result.output, /sample.txt:1: denied-host/);
   assert.equal(result.output.includes("secret-host.invalid"), false);
 });
-test("documentation domains remain allowed even when denied", () => {
+test("configured documentation domains are checked", () => {
   assert.equal(
     check("example.com example.org localhost 127.0.0.1", {
       TARE_HYGIENE_DENY: "example.com,example.org,localhost,127.0.0.1",
     }).status,
-    0,
+    1,
   );
 });
 test("CI rejects missing and empty configuration", () => {
@@ -103,12 +103,18 @@ test("CI rejects missing and empty configuration", () => {
     assert.match(result.output, /TARE_HYGIENE_DENY is required in CI/);
   }
 });
-test("fork PR warns while retaining generic checks", () => {
+test("fork PR warns and skips unavailable configured checks", () => {
   const environment = { CI: "true", GITHUB_EVENT_NAME: "pull_request" };
   const clean = check("clean", environment);
   assert.equal(clean.status, 0);
   assert.match(clean.output, /Warning: fork PR/);
-  assert.equal(check(["printer", "local"].join("."), environment).status, 1);
+  assert.equal(
+    check("secret-host.invalid", {
+      ...environment,
+      TARE_HYGIENE_DENY: "secret-host.invalid",
+    }).status,
+    0,
+  );
 });
 test("clean and empty text files pass", () => {
   assert.equal(check("clean").status, 0);
@@ -203,7 +209,7 @@ test("success reports presence without the configured count", () => {
   assert.equal(clean.status, 0);
   assert.match(
     clean.output,
-    /^hygiene: scanned 1 files; configured deny list: absent; generic patterns: \d+\n$/,
+    /^hygiene: scanned 1 files; configured deny list: absent\n$/,
   );
   const configured = check("clean", {
     TARE_HYGIENE_DENY: "secret-host.invalid,other.invalid",
@@ -211,7 +217,7 @@ test("success reports presence without the configured count", () => {
   assert.equal(configured.status, 0);
   assert.match(
     configured.output,
-    /^hygiene: scanned 1 files; configured deny list: present; generic patterns: \d+\n$/,
+    /^hygiene: scanned 1 files; configured deny list: present\n$/,
   );
   assert.equal(
     configured.output,
@@ -245,7 +251,7 @@ test("finding paths redact denied values case-insensitively", () => {
     assert.equal(result.status, 1);
     assert.equal(
       result.output,
-      `${denied === "alice" ? "<redacted path>:0: denied-path\n" : ""}<redacted path>:1: ${rule}\n`,
+      `<redacted path>:0: denied-path\n<redacted path>:1: ${rule}\n`,
     );
     assert.equal(result.output.toLowerCase().includes(denied), false);
   }
@@ -261,7 +267,7 @@ test("deny entries require valid labels", () => {
     assert.equal(result.output.includes(value), false);
   }
   assert.equal(
-    check("clean", { TARE_HYGIENE_DENY: "a,a-b,.corp.net" }).status,
+    check("clean", { TARE_HYGIENE_DENY: "abc,a-b,.corp.net" }).status,
     0,
   );
 });
@@ -298,9 +304,47 @@ for (const row of hygieneCases) {
   test(`case table: ${row.label}`, () => {
     const result = check(
       row.content,
-      { TARE_HYGIENE_DENY: "alice,secret-host.invalid" },
+      { TARE_HYGIENE_DENY: "alice,secret-host.invalid,corp.net" },
       "filename" in row ? row.filename : "sample.txt",
     );
     assert.equal(result.status, row.status, result.output);
   });
 }
+
+test("short dotless deny entries fail validation", () => {
+  for (const entry of ["a", "ab"]) {
+    const result = check("clean", { TARE_HYGIENE_DENY: entry });
+    assert.equal(result.status, 1);
+  }
+});
+test("output guard redacts leading-dot entries in filenames", () => {
+  const result = check(
+    "secret-host.invalid",
+    { TARE_HYGIENE_DENY: ".secret-host.invalid" },
+    "Secret-Host.Invalid.conf",
+  );
+  assert.equal(result.status, 1);
+  assert.match(result.output, /<redacted path>/);
+  assert.equal(
+    result.output.toLowerCase().includes("secret-host.invalid"),
+    false,
+  );
+});
+test("output guard hides rule text containing a denied entry", () => {
+  const result = check("path", { TARE_HYGIENE_DENY: "path" }, "docs/path.md");
+  assert.equal(result.status, 1);
+  assert.match(result.output, /hygiene: finding hidden/);
+  assert.equal(result.output.includes("path"), false);
+});
+test("output guard rejects unsafe success text", () => {
+  const result = check("clean", { TARE_HYGIENE_DENY: "present" });
+  assert.equal(result.status, 1);
+  assert.match(result.output, /hygiene: finding hidden/);
+  assert.equal(result.output.includes("present"), false);
+});
+
+test("output guard stays silent when fallback contains a denied entry", () => {
+  const result = check("denied", { TARE_HYGIENE_DENY: "denied" });
+  assert.equal(result.status, 1);
+  assert.equal(result.output, "");
+});
