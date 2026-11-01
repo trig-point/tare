@@ -2,7 +2,7 @@
 
 This repository is public. Never add personal data, including real weight, food or health data. Fixtures use made-up people. Never commit secrets; supply them through environment variables.
 
-Generic home paths are not checked; dotless entries in the `TARE_HYGIENE_DENY` secret match only account segments immediately after `users` or `home` and labels in dotted host tokens, while bare names in prose or other URL path segments pass; `pnpm hygiene` runs locally and in CI.
+Generic home paths are not checked; `TARE_HYGIENE_DENY` names match configured `users`/`home` or `~name` paths outside URLs, dotted host labels, or exact URL authority hosts; bare prose and URL path segments pass, and `pnpm hygiene` runs locally and in CI.
 
 Use TypeScript only. Tests run with `node --test`.
 
@@ -23,6 +23,7 @@ Use Node 22 (at least 22.18) and pnpm 11.2.2. Run these from the repository root
 
 - Install: `pnpm install`
 - Lint and format check: `pnpm lint`
+- Hygiene check: `pnpm hygiene`
 - Apply formatting: `pnpm format`
 - Typecheck all workspaces: `pnpm typecheck`
 - Test all workspaces: `pnpm test` (runs `node --test`)

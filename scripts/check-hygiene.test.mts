@@ -307,7 +307,10 @@ test("finding paths redact denied values case-insensitively", () => {
   ] as const) {
     const result = check(content, { TARE_HYGIENE_DENY: denied }, filename);
     assert.equal(result.status, 1);
-    assert.equal(result.output, `<redacted path>:1: ${rule}\n`);
+    assert.equal(
+      result.output,
+      `<redacted path>:0: denied-path\n<redacted path>:1: ${rule}\n`,
+    );
     assert.equal(result.output.toLowerCase().includes(denied), false);
   }
 });
@@ -488,4 +491,28 @@ test("environment filenames beside punctuation pass", () => {
   ]) {
     assert.equal(check(content).status, 0, content);
   }
+});
+
+test("tracked paths use segment and label rules", () => {
+  for (const filename of [
+    "docs/private-box.md",
+    "home/alice/data.txt",
+    "docs/secret-host.invalid.conf",
+  ]) {
+    const result = check(
+      "clean",
+      { TARE_HYGIENE_DENY: "alice,private-box,secret-host.invalid" },
+      filename,
+    );
+    assert.equal(result.status, 1);
+    assert.equal(result.output, "<redacted path>:0: denied-path\n");
+  }
+  assert.equal(
+    check(
+      "clean",
+      { TARE_HYGIENE_DENY: "private-box" },
+      "docs/notprivate-box.md",
+    ).status,
+    0,
+  );
 });
