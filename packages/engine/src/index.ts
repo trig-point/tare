@@ -2,19 +2,40 @@ import { serve } from "@hono/node-server";
 import { createApp } from "./app.ts";
 import { loadConfig } from "./config.ts";
 import { openDatabase } from "./db.ts";
+import { createJobRunner } from "./jobs.ts";
 
 const config = loadConfig(process.env);
 const connection = openDatabase(config.databaseUrl);
+const runner = createJobRunner({
+  database: connection.database,
+  timezone: config.timezone,
+  clock: { now: () => new Date() },
+  report: (code, jobName) => console.error(code, jobName),
+});
+runner.start();
 const app = createApp();
 const server = serve({ port: config.port, fetch: app.fetch }, (address) => {
   console.info(`Engine listening on port ${address.port}`);
 });
 
 let shuttingDown = false;
-function shutdown() {
+async function shutdown() {
   if (shuttingDown) process.exit(1);
   shuttingDown = true;
-  server.close(() => connection.close());
+  try {
+    const results = await Promise.allSettled([
+      runner.stop(),
+      new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      }),
+    ]);
+    if (results.some((result) => result.status === "rejected")) {
+      console.error("shutdown_failed");
+      process.exitCode = 1;
+    }
+  } finally {
+    connection.close();
+  }
 }
 
 process.on("SIGINT", shutdown);

@@ -36,9 +36,11 @@ Biome handles linting and formatting for the workspace. TypeScript runs in stric
 
 `DATABASE_URL` is required and is a SQLite file path, or `:memory:` for an ephemeral database. Surrounding whitespace is trimmed. Relative paths resolve from the engine process working directory (`packages/engine` when using the workspace command). Parent directories are created automatically. Startup applies migrations before listening.
 
-`PORT` defaults to `3000` and must be an integer from 1 to 65535. `.env.example` lists both variables with safe local values. The startup command loads the root `.env` file if it exists; process environment variables can override it. Set the required variables in the process environment when running without a file.
+`PORT` defaults to `3000` and must be an integer from 1 to 65535. `.env.example` lists the configuration variables with safe local values. The startup command loads the root `.env` file if it exists; process environment variables can override it. Set the required variables in the process environment when running without a file.
 
 TypeSQL generation uses an ignored local database at `packages/engine/data/typesql.sqlite`. Biome formats generated code and permits the generator's explicit `any` type in query output.
+
+`TARE_TIMEZONE` sets the install's IANA timezone for scheduled jobs (default: `UTC`) independently of the process `TZ`. Invalid or empty values prevent startup.
 
 Keep comments short and focused on why. Use descriptive identifiers, never single-letter names. Keep personal data and secrets out of logs as well as source and fixtures.
 
@@ -49,6 +51,7 @@ TypeSQL CLI 0.24.0 generates these queries without error but loses result types:
 - LEFT JOIN: generated `LeftJoinResult.name` is `string`; an unmatched row returns `null`. Use the `left-join.mts` wrapper with `string | null`.
 - `json_extract`: generated `JsonResult.name` is `any | null`; callers lose type checking. Use the `json.mts` wrapper with `unknown` and narrow the result before using it.
 - Composite primary key insert: generated `InsertDayParams.user_id` permits `null` although `days.user_id` is NOT NULL. Callers must pass a number. The schema test uses a non-null owner type and verifies that SQLite rejects NULL.
+- CHECK-constrained text: generated job status fields widen to `string` with the core schema present. Keep generated output unchanged and narrow statuses at the call site when a union is needed.
 
 Both wrappers and their SQL files live in `packages/engine/test/compat/`, outside the generated set. Other compatibility shapes use generated functions. For future queries built at runtime from many optional filters, Kysely is allowed, as stated above.
 

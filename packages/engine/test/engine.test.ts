@@ -52,6 +52,7 @@ describe("engine", () => {
     assert.deepEqual(loadConfig({ DATABASE_URL: ":memory:" }), {
       databaseUrl: ":memory:",
       port: 3000,
+      timezone: "UTC",
     });
   });
 
