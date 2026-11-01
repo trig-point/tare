@@ -329,3 +329,16 @@ test("dotless names match account paths and dotted hosts only", () => {
     if (expected === 1) assert.match(result.output, /denied-name/);
   }
 });
+
+test("account segments stop at punctuation", () => {
+  for (const content of [
+    `HOME=${["", "home", "alice;"].join("/")}`,
+    `(see ${["", "Users", "alice)"].join("/")}`,
+    `cwd=${["", "Users", "alice,"].join("/")}`,
+    ["", "home", "ALICE."].join("/"),
+  ]) {
+    const result = check(content, { TARE_HYGIENE_DENY: "alice" });
+    assert.equal(result.status, 1);
+    assert.match(result.output, /denied-name/);
+  }
+});

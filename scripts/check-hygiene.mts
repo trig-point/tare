@@ -79,7 +79,9 @@ for (const file of files) {
       .filter(Boolean);
     for (const [segmentIndex, segment] of segments.entries()) {
       if (segment !== "users" && segment !== "home") continue;
-      const account = segments[segmentIndex + 1]?.split(/[\s"'`]/, 1)[0];
+      const account = segments[segmentIndex + 1]
+        ?.match(/^[a-z0-9._-]+/i)?.[0]
+        .replace(/\.$/, "");
       if (account !== undefined && names.has(account)) rules.add("denied-name");
     }
     const lowerLine = line.toLowerCase();
