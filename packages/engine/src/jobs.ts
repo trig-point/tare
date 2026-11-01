@@ -1,15 +1,22 @@
 import type { Database } from "better-sqlite3";
 import { Cron } from "croner";
+import { validateTimezone } from "./config.ts";
 import { interruptRuns } from "./queries/jobs/interrupt-runs.ts";
-import { recordFinish } from "./queries/jobs/record-finish.ts";
+import {
+  type RecordFinishResult,
+  recordFinish,
+} from "./queries/jobs/record-finish.ts";
 import { recordSkipped } from "./queries/jobs/record-skipped.ts";
 import { recordStart } from "./queries/jobs/record-start.ts";
 
 interface Job {
   name: string;
   schedule: string;
+  /** Jobs must honor the signal and return short, non-sensitive result codes. */
   run(options: { signal: AbortSignal }): Promise<string> | string;
 }
+
+type JobRunResult = RecordFinishResult | { readonly status: "skipped" };
 
 interface RunnerOptions {
   database: Database;
@@ -24,7 +31,7 @@ export function createJobRunner({
   clock,
   report,
 }: RunnerOptions) {
-  new Intl.DateTimeFormat("en", { timeZone: timezone });
+  validateTimezone(timezone);
   const jobs = new Map<string, Job>();
   const timers: Cron[] = [];
   const busy = new Set<string>();
@@ -32,6 +39,7 @@ export function createJobRunner({
   const controller = new AbortController();
   let started = false;
   let stopped = false;
+  let shutdownFinished = false;
   let stopping: Promise<void> | undefined;
 
   function reportSafely(
@@ -56,6 +64,7 @@ export function createJobRunner({
   }
 
   function scheduledSkip(name: string) {
+    if (shutdownFinished) return;
     try {
       skip(name);
     } catch {
@@ -63,7 +72,12 @@ export function createJobRunner({
     }
   }
 
-  function execute(job: Job, manual: boolean) {
+  function execute(job: Job, manual: true): Promise<JobRunResult>;
+  function execute(job: Job, manual: false): Promise<JobRunResult | undefined>;
+  function execute(
+    job: Job,
+    manual: boolean,
+  ): Promise<JobRunResult | undefined> {
     const name = job.name;
     if (stopped) return Promise.reject(new Error("Job runner stopped"));
     if (busy.has(name)) {
@@ -72,7 +86,7 @@ export function createJobRunner({
       } catch (error) {
         if (manual) return Promise.reject(error);
         reportSafely("record_write_failed", name);
-        return Promise.resolve();
+        return Promise.resolve(undefined);
       }
     }
     busy.add(name);
@@ -88,7 +102,7 @@ export function createJobRunner({
       busy.delete(name);
       if (manual) return Promise.reject(error);
       reportSafely("record_write_failed", name);
-      return Promise.resolve();
+      return Promise.resolve(undefined);
     }
 
     // Track the run before its body can call stop or request another run.
@@ -171,7 +185,13 @@ export function createJobRunner({
       if (stopping) return stopping;
       stopped = true;
       for (const timer of timers) timer.stop();
-      stopping = Promise.allSettled([...pending]).then(() => undefined);
+      // Drain croner's queued protect callbacks before callers can close SQLite.
+      stopping = new Promise<void>((resolve) => setTimeout(resolve, 0)).then(
+        async () => {
+          await Promise.allSettled([...pending]);
+          shutdownFinished = true;
+        },
+      );
       controller.abort();
       return stopping;
     },

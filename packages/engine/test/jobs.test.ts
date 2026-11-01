@@ -2,13 +2,42 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type TestContext, test } from "node:test";
+import { test as runTest, type TestContext } from "node:test";
 import { setImmediate } from "node:timers/promises";
 import { scheduledJobs } from "croner";
 import { openDatabase } from "../src/db.ts";
 import { createJobRunner } from "../src/jobs.ts";
 import type { RecordFinishResult } from "../src/queries/jobs/record-finish.ts";
 import { recordStart } from "../src/queries/jobs/record-start.ts";
+
+const HANG_CEILING_MS = 60_000;
+const realSetTimeout = globalThis.setTimeout;
+const realClearTimeout = globalThis.clearTimeout;
+
+function test(
+  name: string,
+  run: (context: TestContext) => void | Promise<void>,
+) {
+  return runTest(name, { timeout: HANG_CEILING_MS }, run);
+}
+
+async function waitFor<Value>(
+  promise: Promise<Value>,
+  event: string,
+): Promise<Value> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const ceiling = new Promise<never>((_resolve, reject) => {
+    timer = realSetTimeout(
+      () => reject(new Error(`Timed out waiting for ${event}`)),
+      HANG_CEILING_MS,
+    );
+  });
+  try {
+    return await Promise.race([promise, ceiling]);
+  } finally {
+    realClearTimeout(timer);
+  }
+}
 
 function deferred<Value = string>() {
   let resolve!: (value: Value) => void;
@@ -42,7 +71,9 @@ function setup(context: TestContext, timezone = "UTC") {
   });
   context.after(async () => {
     held.resolve("finished");
-    await runner.stop();
+    context.mock.timers.tick(0);
+    context.mock.reset();
+    await waitFor(runner.stop(), "runner cleanup");
     if (connection.database.open) connection.close();
     rmSync(directory, { recursive: true, force: true });
   });
@@ -75,11 +106,16 @@ function setup(context: TestContext, timezone = "UTC") {
   };
   const fire = async () => {
     context.mock.timers.tick(1000);
-    await entered.promise;
+    await waitFor(entered.promise, "job start");
   };
   const skipTick = () => {
     context.mock.timers.tick(1000);
     context.mock.timers.tick(1);
+  };
+  const stop = () => {
+    const stopping = runner.stop();
+    context.mock.timers.tick(0);
+    return waitFor(stopping, "runner stop");
   };
   const fail = (pattern: RegExp) => {
     const original = connection.database.prepare.bind(connection.database);
@@ -107,6 +143,7 @@ function setup(context: TestContext, timezone = "UTC") {
     start,
     fire,
     skipTick,
+    stop,
     fail,
     calls: () => calls,
   };
@@ -131,11 +168,60 @@ test("two blocked scheduled firings count twice and finish preserves skips", asy
   const skippedAt = fixture.read()?.last_skipped_at;
   assert.equal(fixture.read()?.skipped_count, 2);
   fixture.held.resolve("saved");
-  await fixture.runner.stop();
+  await fixture.stop();
   assert.equal(fixture.read()?.status, "ok");
   assert.equal(fixture.read()?.detail, "saved");
   assert.equal(fixture.read()?.skipped_count, 2);
   assert.equal(fixture.read()?.last_skipped_at, skippedAt);
+});
+
+test("stop records a queued protect skip before resolving and closing SQLite", async (context) => {
+  const fixture = setup(context);
+  fixture.start();
+  await fixture.fire();
+  const queued = deferred<void>();
+  const originalSetTimeout = globalThis.setTimeout;
+  const protectTimer = context.mock.method(globalThis, "setTimeout", ((
+    callback: () => void,
+    delay?: number,
+  ) => {
+    if (delay === 0) {
+      // Keep croner's callback on the next mocked timer turn.
+      const timer = originalSetTimeout(callback, 1);
+      queued.resolve();
+      return timer;
+    }
+    return originalSetTimeout(callback, delay);
+  }) as typeof setTimeout);
+  context.mock.timers.tick(1000);
+  await waitFor(queued.promise, "queued protect callback");
+  protectTimer.mock.restore();
+  assert.equal(fixture.read()?.skipped_count, 0);
+  let closed = false;
+  let recordedAtClose: RecordFinishResult | undefined;
+  const stopping = fixture.runner.stop().then(() => {
+    recordedAtClose = fixture.read();
+    fixture.close();
+    closed = true;
+  });
+  fixture.held.resolve("saved");
+  await setImmediate();
+  if (closed)
+    assert.equal(
+      recordedAtClose?.skipped_count,
+      1,
+      "stop resolved before the queued skip was recorded",
+    );
+  assert.equal(closed, false);
+  assert.equal(fixture.read()?.status, "ok");
+  context.mock.timers.tick(1);
+  assert.equal(fixture.read()?.skipped_count, 1);
+  assert.equal(closed, false);
+  await stopping;
+  assert.equal(recordedAtClose?.skipped_count, 1);
+  assert.equal(closed, true);
+  assert.equal(fixture.calls(), 1);
+  assert.deepEqual(fixture.reports, []);
 });
 
 for (const broken of [false, true]) {
@@ -145,7 +231,7 @@ for (const broken of [false, true]) {
     await fixture.fire();
     const protect = deferred<() => void>();
     const originalSetTimeout = globalThis.setTimeout;
-    context.mock.method(globalThis, "setTimeout", ((
+    const protectTimer = context.mock.method(globalThis, "setTimeout", ((
       callback: () => void,
       delay?: number,
     ) => {
@@ -156,7 +242,8 @@ for (const broken of [false, true]) {
       return originalSetTimeout(callback, delay);
     }) as typeof setTimeout);
     context.mock.timers.tick(1000);
-    const blocked = await protect.promise;
+    const blocked = await waitFor(protect.promise, "protect callback");
+    protectTimer.mock.restore();
     fixture.held.resolve("saved");
     await setImmediate();
     assert.equal(fixture.read()?.status, "ok");
@@ -208,7 +295,7 @@ for (const manual of [false, true]) {
     };
     fixture.start();
     if (manual)
-      assert.equal((await fixture.runner.runNow("daily"))?.status, "failed");
+      assert.equal((await fixture.runner.runNow("daily")).status, "failed");
     else await fixture.cron().trigger();
     assert.equal(fixture.read()?.status, "failed");
     assert.equal(fixture.read()?.detail, "job_failed");
@@ -234,7 +321,7 @@ for (const broken of [false, true]) {
         entry === "scheduled"
           ? fixture.runner.runNow("daily")
           : fixture.cron().trigger();
-      await fixture.entered.promise;
+      await waitFor(fixture.entered.promise, "job start");
       const failure = broken ? fixture.fail(/last_skipped_at =/) : undefined;
       if (entry === "manual") {
         if (broken)
@@ -265,7 +352,7 @@ for (const second of ["scheduled", "manual"] as const) {
     const fixture = setup(context);
     fixture.start();
     const running = fixture.runner.runNow("daily");
-    await fixture.entered.promise;
+    await waitFor(fixture.entered.promise, "job start");
     assert.equal(fixture.cron().isBusy(), false);
     fixture.skipTick();
     await setImmediate();
@@ -285,7 +372,7 @@ test("row 9: scheduled guard survives two manual skips", async (context) => {
   const fixture = setup(context);
   fixture.start();
   const running = fixture.cron().trigger();
-  await fixture.entered.promise;
+  await waitFor(fixture.entered.promise, "job start");
   assert.deepEqual(await fixture.runner.runNow("daily"), { status: "skipped" });
   assert.deepEqual(await fixture.runner.runNow("daily"), { status: "skipped" });
   assert.equal(fixture.calls(), 1);
@@ -298,7 +385,7 @@ test("zero-row skip and finish updates are record failures", async (context) => 
   const fixture = setup(context);
   fixture.start();
   const running = fixture.runner.runNow("daily");
-  await fixture.entered.promise;
+  await waitFor(fixture.entered.promise, "job start");
   fixture.database
     .prepare("DELETE FROM job_runs WHERE job_name = ?")
     .run("daily");
@@ -361,13 +448,14 @@ for (const failure of ["none", "body", "finish"] as const) {
       () => "resolved",
       () => "rejected",
     );
-    await fixture.entered.promise;
+    await waitFor(fixture.entered.promise, "job start");
     let closed = false;
     const stopping = fixture.runner.stop().then(() => {
       fixture.close();
       closed = true;
     });
-    await aborted.promise;
+    await waitFor(aborted.promise, "job abort");
+    context.mock.timers.tick(0);
     assert.equal(closed, false);
     assert.equal(fixture.database.open, true);
     assert.equal(fixture.read()?.status, "running");
@@ -382,7 +470,7 @@ for (const failure of ["none", "body", "finish"] as const) {
     await assert.doesNotReject(stopping);
     assert.equal(await outcome, failure === "finish" ? "rejected" : "resolved");
     assert.equal(closed, true);
-    await assert.doesNotReject(fixture.runner.stop());
+    await assert.doesNotReject(fixture.stop());
   });
 }
 
@@ -436,7 +524,7 @@ test("records use the injected clock; restarting a job preserves skip columns", 
   fixture.clock.now = () => new Date("2026-01-01T12:00:00Z");
   fixture.start();
   const running = fixture.runner.runNow("daily");
-  await fixture.entered.promise;
+  await waitFor(fixture.entered.promise, "job start");
   assert.equal(fixture.read()?.started_at, "2026-01-01T12:00:00.000Z");
   await fixture.runner.runNow("daily");
   fixture.clock.now = () => new Date("2026-01-01T13:00:00Z");
@@ -463,7 +551,7 @@ test("empty runner stops, names are unique, and invalid lifecycle calls fail", a
     () => fixture.runner.register({ ...fixture.job, name: "other" }),
     /registration closed/,
   );
-  await fixture.runner.stop();
+  await fixture.stop();
   assert.throws(() => fixture.runner.start(), /stopped/);
 });
 
@@ -477,7 +565,7 @@ for (const initial of ["manual", "scheduled"] as const) {
           initial === "manual"
             ? fixture.runner.runNow("daily")
             : fixture.cron().trigger();
-        await fixture.entered.promise;
+        await waitFor(fixture.entered.promise, "job start");
         let expectedSkips = 0;
         for (const entry of [first, second]) {
           if (entry === "manual") await fixture.runner.runNow("daily");
@@ -507,7 +595,7 @@ test("no registered jobs creates no timers and stops cleanly", async (context) =
   const fixture = setup(context);
   fixture.runner.start();
   assert.equal(scheduledJobs.length, 0);
-  await assert.doesNotReject(fixture.runner.stop());
+  await assert.doesNotReject(fixture.stop());
 });
 
 test("a malformed schedule stops timers already created during startup", async (context) => {
@@ -522,3 +610,20 @@ test("a malformed schedule stops timers already created during startup", async (
   assert.equal(scheduledJobs.length, 0);
   await assert.rejects(fixture.runner.runNow("daily"), /not running/);
 });
+
+for (const timezone of ["", " ", "invalid/timezone", "+01:00"]) {
+  test(`runner rejects timezone ${JSON.stringify(timezone)} before creating timers`, (context) => {
+    const fixture = setup(context);
+    assert.throws(
+      () =>
+        createJobRunner({
+          database: fixture.database,
+          timezone,
+          clock: fixture.clock,
+          report: fixture.reporter.report,
+        }),
+      /TARE_TIMEZONE/,
+    );
+    assert.equal(scheduledJobs.length, 0);
+  });
+}
