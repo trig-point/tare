@@ -10,11 +10,12 @@ const script = fileURLToPath(new URL("./check-hygiene.mts", import.meta.url));
 function check(
   content: string | Buffer,
   environment: Record<string, string | undefined> = {},
+  filename = "sample.txt",
 ) {
   const directory = mkdtempSync(join(tmpdir(), "tare-hygiene-"));
   try {
     execFileSync("git", ["init", "-q", directory]);
-    writeFileSync(join(directory, "sample.txt"), content);
+    writeFileSync(join(directory, filename), content);
     writeFileSync(
       join(directory, "event.json"),
       JSON.stringify({
@@ -24,7 +25,7 @@ function check(
         },
       }),
     );
-    execFileSync("git", ["add", "sample.txt"], { cwd: directory });
+    execFileSync("git", ["add", filename], { cwd: directory });
     const result = spawnSync(process.execPath, [script], {
       cwd: directory,
       encoding: "utf8",
@@ -185,5 +186,20 @@ test("comma-only deny configuration is unset in CI", () => {
     const result = check("clean", { CI: "true", TARE_HYGIENE_DENY: value });
     assert.equal(result.status, 1);
     assert.match(result.output, /TARE_HYGIENE_DENY is required in CI/);
+  }
+});
+
+test("lockfiles are scanned for home paths and denied hosts", () => {
+  for (const content of [
+    ["", "home", "alice", "file"].join("/"),
+    "secret-host.invalid",
+  ]) {
+    const result = check(
+      content,
+      { TARE_HYGIENE_DENY: "secret-host.invalid" },
+      "pnpm-lock.yaml",
+    );
+    assert.equal(result.status, 1);
+    assert.match(result.output, /pnpm-lock.yaml:1: (home-path|denied-host)/);
   }
 });

@@ -65,7 +65,6 @@ const files = execFileSync("git", ["ls-files", "-z"], { encoding: "utf8" })
   .filter(Boolean);
 let failed = false;
 for (const file of files) {
-  if (file === "pnpm-lock.yaml") continue;
   const content = readFileSync(file);
   if (content.includes(0)) continue;
   const lines = content.toString("utf8").split(/\r?\n/);
