@@ -286,3 +286,21 @@ test("deny entries require valid labels", () => {
     0,
   );
 });
+
+test("environment file exemption excludes URL hosts", () => {
+  const filename = ["env", "local"].join(".");
+  for (const content of [
+    `.${filename}`,
+    `.${filename}.example`,
+    `config/${filename}`,
+    `config\\${filename}`,
+    filename,
+  ]) {
+    assert.equal(check(content).status, 0, content);
+  }
+  for (const environment of [{}, { TARE_HYGIENE_DENY: filename }]) {
+    const result = check(`https://${filename}/`, environment);
+    assert.equal(result.status, 1);
+    assert.match(result.output, /sample.txt:1: denied-host/);
+  }
+});

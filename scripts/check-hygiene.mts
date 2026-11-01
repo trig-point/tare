@@ -82,10 +82,26 @@ for (const file of files) {
       const account = segments[segmentIndex + 1]?.split(/[\s"'`]/, 1)[0];
       if (account !== undefined && names.has(account)) rules.add("denied-name");
     }
-    const hosts =
-      line.toLowerCase().match(/[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?/g) ?? [];
-    for (const host of hosts) {
-      if (allowedHosts.has(host) || host === "env.local") continue;
+    const lowerLine = line.toLowerCase();
+    const hosts = lowerLine.matchAll(/[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?/g);
+    for (const match of hosts) {
+      const host = match[0];
+      if (allowedHosts.has(host)) continue;
+      const labels = host.split(".");
+      const previous = lowerLine[match.index - 1];
+      const next = lowerLine[match.index + host.length];
+      const prefix = lowerLine.slice(Math.max(0, match.index - 3), match.index);
+      const urlHost = prefix.endsWith("://") || prefix.endsWith("//");
+      const pathSegment =
+        !urlHost &&
+        (previous === undefined || /[\\/\s"'`]/.test(previous)) &&
+        (next === undefined || /[\\/\s"'`]/.test(next));
+      if (
+        labels[0] === "env" &&
+        labels[1] === "local" &&
+        (previous === "." || pathSegment)
+      )
+        continue;
       for (const value of denied) {
         const matches = value.startsWith(".")
           ? host.endsWith(value)
