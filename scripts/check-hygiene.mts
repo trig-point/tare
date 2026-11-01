@@ -21,7 +21,8 @@ function urlRanges(line: string) {
       continue;
     }
     let end = marker + 3;
-    while (end < line.length && !/[\s"'`<>]/.test(line.charAt(end))) end += 1;
+    while (end < line.length && !/[\s"'`<>)\]]/.test(line.charAt(end)))
+      end += 1;
     const remainder = line.slice(marker + 3, end);
     const delimiter = remainder.search(/[/?#]/);
     const authority =
@@ -116,8 +117,17 @@ for (const file of files) {
   const lines = content.toString("utf8").split(/\r?\n/);
   for (const [index, line] of lines.entries()) {
     const rules = new Set<string>();
-    const segments = line
-      .toLowerCase()
+    const lowerLine = line.toLowerCase();
+    const urls = urlRanges(lowerLine);
+    const accountParts: string[] = [];
+    let accountCursor = 0;
+    for (const url of urls) {
+      accountParts.push(lowerLine.slice(accountCursor, url.start), " ");
+      accountCursor = url.end;
+    }
+    accountParts.push(lowerLine.slice(accountCursor));
+    const segments = accountParts
+      .join("")
       .split(/[\\/]+/)
       .filter(Boolean);
     for (const [segmentIndex, segment] of segments.entries()) {
@@ -127,8 +137,6 @@ for (const file of files) {
         .replace(/\.$/, "");
       if (account !== undefined && names.has(account)) rules.add("denied-name");
     }
-    const lowerLine = line.toLowerCase();
-    const urls = urlRanges(lowerLine);
     let urlIndex = 0;
     const hosts = lowerLine.matchAll(/[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?/g);
     for (const match of hosts) {
@@ -163,7 +171,12 @@ for (const file of files) {
         if (!host) continue;
       }
       for (const value of denied) {
-        if (!value.includes(".") && !match[0].includes(".")) continue;
+        const authorityHost =
+          url !== undefined &&
+          match.index === url.hostStart &&
+          match.index + match[0].length === url.hostEnd;
+        if (!value.includes(".") && !match[0].includes(".") && !authorityHost)
+          continue;
         const matches = value.startsWith(".")
           ? host.endsWith(value)
           : `.${host}.`.includes(`.${value}.`);

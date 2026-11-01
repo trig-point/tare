@@ -442,3 +442,28 @@ test("scans with no readable text files fail", () => {
     assert.equal(result.output.includes("hygiene: scanned"), false);
   }
 });
+
+test("Markdown badge links check each URL host", () => {
+  const result = check(
+    "[![CI](https://img.shields.io/badge/x)](https://secret-host.invalid/p)",
+    { TARE_HYGIENE_DENY: "secret-host.invalid" },
+    "README.md",
+  );
+  assert.equal(result.status, 1);
+  assert.match(result.output, /README.md:1: denied-host/);
+});
+
+test("dotless URL authorities are checked while localhost is allowed", () => {
+  const environment = { TARE_HYGIENE_DENY: "private-box,localhost" };
+  assert.equal(check("http://private-box:8123/", environment).status, 1);
+  assert.equal(check("http://localhost:8123/", environment).status, 0);
+});
+
+test("URL users and home paths do not match account segments", () => {
+  for (const content of [
+    "https://api.github.com/users/alice",
+    "https://api.github.com/home/alice",
+  ]) {
+    assert.equal(check(content, { TARE_HYGIENE_DENY: "alice" }).status, 0);
+  }
+});
