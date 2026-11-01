@@ -12,11 +12,15 @@ The system SHALL keep a queue of questions it could not answer itself, each tied
 - **THEN** every administrator sees it and no other person does
 
 ### Requirement: Meals on hand
-An order's meals SHALL be expected meals until its delivery date arrives in the person's day, checked by a daily job, or until a person or their agent calls `mark_delivery` for that order, whichever comes first; then they become meals on hand. Expected meals cannot be eaten. The system SHALL track meals on hand per person with quantity, delivery date and a revision that changes on every update. Eating one SHALL go through one meal action that takes the meal id, its revision and a per-person mutation id. The action SHALL first look up the mutation id and, when it was already applied, return the stored result without checking the revision; otherwise it SHALL reject a stale revision. "Ate it" logs the meal's nutrition once and "ate 3/4" logs three quarters of it, and both reduce the quantity by one, in one transaction. A meal whose nutrition question is unanswered, or whose quantity is zero, SHALL be rejected with a stable error code and nothing changed.
+An order's meals SHALL be expected meals until the person's own day, by their timezone and day-start hour, has reached the order's delivery date, or until a person or their agent calls `mark_delivery` for that order, whichever comes first; then they are meals on hand. Every reader of meals (the on-hand list, the meal action, plan reads and the published buttons) SHALL decide this through one shared due-date check when it reads, so the change is exact for any timezone offset. A daily maintenance job SHALL record the change for meals already due, without changing a meal's revision; nothing depends on when it runs. Expected meals cannot be eaten. The system SHALL track meals on hand per person with quantity, delivery date and a revision that changes on every update. Eating one SHALL go through one meal action that takes the meal id, its revision and a per-person mutation id. The action SHALL first look up the mutation id and, when it was already applied, return the stored result without checking the revision; otherwise it SHALL reject a stale revision. "Ate it" logs the meal's nutrition once and "ate 3/4" logs three quarters of it, and both reduce the quantity by one, in one transaction. A meal whose nutrition question is unanswered, or whose quantity is zero, SHALL be rejected with a stable error code and nothing changed.
 
 #### Scenario: Delivery date arrives
 - **WHEN** the person's day reaches an order's delivery date and nobody has called `mark_delivery`
-- **THEN** its expected meals become meals on hand
+- **THEN** its expected meals count as meals on hand from that moment, whether or not the maintenance job has run
+
+#### Scenario: Half-hour timezone offset
+- **WHEN** a person in a timezone five and a half hours ahead of UTC, whose day starts at 4 AM, reads their meals at 3:59 AM and again at 4:00 AM local time on an order's delivery date
+- **THEN** the meals are expected at 3:59 AM and on hand at 4:00 AM
 
 #### Scenario: Ate one
 - **WHEN** a person marks an on-hand meal eaten

@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Per-person sensors through MQTT discovery
-The engine SHALL publish one Home Assistant device per person through MQTT discovery, with identifiers built from an install id and the person's id, readable default entity ids, and sensors for target, remaining calories and protein, today's intake and weight trend. Discovery SHALL be re-published when Home Assistant publishes its online status (its birth message). An entity that goes away SHALL be removed with an empty retained config on its own discovery topic. kcal sensors SHALL carry no meter-style state class.
+The engine SHALL publish one Home Assistant device per person through MQTT discovery, with identifiers built from an install id and the person's id, readable default entity ids, and sensors for the calorie and protein targets, the calories and protein remaining, the calories and protein eaten today, and the weight trend. Discovery SHALL be re-published when Home Assistant publishes its online status (its birth message). An entity that goes away SHALL be removed with an empty retained config on its own discovery topic. kcal sensors SHALL carry no meter-style state class.
 
 #### Scenario: Home Assistant restarts
 - **WHEN** Home Assistant publishes its online status
@@ -12,7 +12,7 @@ The engine SHALL publish one Home Assistant device per person through MQTT disco
 - **THEN** the sensor shows the lower value and no meter reset is recorded
 
 ### Requirement: Item buttons
-Each on-hand meal SHALL get "ate it" and "ate 3/4" buttons, and each planned item that is not yet eaten or skipped SHALL get "ate it", "ate 3/4" and "skip" buttons. Each button's discovery config SHALL carry the item id and its current revision in the press payload, and SHALL be re-published whenever the item or its revision changes; a planned item's buttons are removed once it is eaten or skipped. A press SHALL run the shared meal action through the engine's MQTT handler, which acts for the person whose device the button belongs to; the engine SHALL reject a press whose revision is stale and publish the outcome to a last-press result sensor for that person.
+Each on-hand meal SHALL get "ate it" and "ate 3/4" buttons, and each planned item that is not yet eaten or skipped SHALL get "ate it", "ate 3/4" and "skip" buttons. Each button's discovery config SHALL carry the item id and its current revision in the press payload, and SHALL be re-published whenever the item or its revision changes; a planned item's buttons are removed once it is eaten or skipped. An order's meal buttons SHALL appear at the moment the person's day reaches its delivery date: the publisher reads meals through the shared due-date check and sets a timer for the next delivery date coming due. A press SHALL run the shared meal action through the engine's MQTT handler, which acts for the person whose device the button belongs to; the engine SHALL reject a press whose revision is stale and publish the outcome to a last-press result sensor for that person.
 
 #### Scenario: Slot changed before the press
 - **WHEN** a press arrives carrying the revision of an item that is no longer current

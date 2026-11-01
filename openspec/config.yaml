@@ -36,7 +36,7 @@ rules:
     - >-
       A concurrency or shared write-path requirement (one transaction across tables, a lock,
       idempotent replay, a revision check) is its own task with complexity judgment, whatever
-      its size. Callers of that write path are separate tasks that depend on it.
+      its size. Callers of that write path are separate tasks that depend on it. A job or operation that does nothing but call the task's new function may share its task, unless the task would pass about 800 hand-written lines or a caller is independently shippable, in which case it is split.
     - >-
       A task that adds a personal table, query, operation or background job says "two-user test"
       in its line and includes a two-user negative test built on the shared two-user test helper.

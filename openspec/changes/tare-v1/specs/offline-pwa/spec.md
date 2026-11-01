@@ -12,7 +12,7 @@ The engine SHALL serve a web app with a manifest, icons and a service worker so 
 - **THEN** the service worker does not cache that page as the app shell
 
 ### Requirement: Offline write queue
-New intake and weight entries SHALL be written to on-device storage first, each with a client-generated id, the time it was eaten or measured and the signed-in person, and replayed to the server when possible. The app SHALL request persistent storage. An entry SHALL leave the queue only after the server acknowledges it with JSON. A network error or a 5xx response SHALL leave the entry queued for a later retry.
+New intake and weight entries SHALL be written to on-device storage first, each with a client-generated id, the time it was eaten or measured and the signed-in person, and replayed to the server when possible. The app SHALL request persistent storage. An entry SHALL leave the queue only after the server acknowledges it with JSON. A network error, a 5xx, a 408 or a 429 response SHALL leave the entry queued for a later retry.
 
 #### Scenario: Logged with no signal
 - **WHEN** a person logs a food while offline
@@ -42,10 +42,14 @@ Queue requests SHALL use `redirect: "manual"`. When a replay gets a 401, a redir
 - **THEN** the proxy's sign-in page opens, and after signing in the person is back in the app and the queued entries replay
 
 ### Requirement: Rejected entries
-Responses SHALL be classified in this order: any 5xx is retried later; a 401, a redirect or a non-JSON body is sign-in needed; only then does a JSON 4xx error other than 401 reject the entry. When an entry is rejected, the queue SHALL mark it rejected with the error code, keep it visible, and continue with later entries. The person SHALL be able to edit and resend a rejected entry or discard it.
+Responses SHALL be classified in this order: any 5xx, 408 or 429 is retried later; a 401, a redirect or a non-JSON body is sign-in needed; only then does any other JSON 4xx error reject the entry. When an entry is rejected, the queue SHALL mark it rejected with the error code, keep it visible, and continue with later entries. The person SHALL be able to edit and resend a rejected entry or discard it.
 
 #### Scenario: Temporary outage
 - **WHEN** a replay gets a 503, with or without a JSON body
+- **THEN** the entry stays queued for a later retry and is not marked rejected
+
+#### Scenario: Rate limited or timed out
+- **WHEN** a replay gets a JSON 429 or 408
 - **THEN** the entry stays queued for a later retry and is not marked rejected
 
 #### Scenario: Entry the server cannot accept
