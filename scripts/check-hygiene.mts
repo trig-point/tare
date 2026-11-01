@@ -3,6 +3,42 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+function urlRanges(line: string) {
+  const ranges: Array<{
+    start: number;
+    end: number;
+    hostStart: number;
+    hostEnd: number;
+  }> = [];
+  let cursor = 0;
+  while (cursor < line.length) {
+    const marker = line.indexOf("://", cursor);
+    if (marker === -1) break;
+    let start = marker;
+    while (start > 0 && /[a-z0-9+.-]/.test(line.charAt(start - 1))) start -= 1;
+    if (!/[a-z]/.test(line.charAt(start))) {
+      cursor = marker + 3;
+      continue;
+    }
+    let end = marker + 3;
+    while (end < line.length && !/[\s"'`<>]/.test(line.charAt(end))) end += 1;
+    const remainder = line.slice(marker + 3, end);
+    const delimiter = remainder.search(/[/?#]/);
+    const authority =
+      delimiter === -1 ? remainder : remainder.slice(0, delimiter);
+    const hostOffset = authority.lastIndexOf("@") + 1;
+    const port = authority.indexOf(":", hostOffset);
+    ranges.push({
+      start,
+      end,
+      hostStart: marker + 3 + hostOffset,
+      hostEnd: marker + 3 + (port === -1 ? authority.length : port),
+    });
+    cursor = end;
+  }
+  return ranges;
+}
+
 const allowedHosts = new Set([
   "example.com",
   "example.org",
@@ -85,9 +121,22 @@ for (const file of files) {
       if (account !== undefined && names.has(account)) rules.add("denied-name");
     }
     const lowerLine = line.toLowerCase();
+    const urls = urlRanges(lowerLine);
+    let urlIndex = 0;
     const hosts = lowerLine.matchAll(/[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?/g);
     for (const match of hosts) {
       let host = match[0];
+      let url = urls[urlIndex];
+      while (url && match.index >= url.end) {
+        urlIndex += 1;
+        url = urls[urlIndex];
+      }
+      if (
+        url &&
+        match.index >= url.start &&
+        (match.index < url.hostStart || match.index + host.length > url.hostEnd)
+      )
+        continue;
       if (allowedHosts.has(host)) continue;
       const labels = host.split(".");
       const previous = lowerLine[match.index - 1];

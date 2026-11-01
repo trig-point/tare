@@ -357,3 +357,32 @@ test("environment filename exemption still checks remaining labels", () => {
     }
   }
 });
+
+test("URL host checks exclude paths queries fragments and user info", () => {
+  for (const content of [
+    "https://github.com/alice.example/repo",
+    "https://alice.example@github.com:443/repo",
+    "https://github.com?next=alice.example",
+    "https://github.com#alice.example",
+    "https://github.com/secret-host.invalid",
+  ]) {
+    assert.equal(
+      check(content, { TARE_HYGIENE_DENY: "alice,secret-host.invalid" }).status,
+      0,
+      content,
+    );
+  }
+  for (const content of [
+    "https://alice.example/repo",
+    "https://login@alice.example:443/repo",
+    "https://secret-host.invalid:443/alice.example",
+    "alice.example",
+    "safe https://github.com/alice.example next alice.example",
+  ]) {
+    assert.equal(
+      check(content, { TARE_HYGIENE_DENY: "alice,secret-host.invalid" }).status,
+      1,
+      content,
+    );
+  }
+});
