@@ -57,6 +57,8 @@ test("malformed stored hashes return false without throwing or deriving", async 
     format(`${salt.slice(0, -1)}B`, key),
     format(salt, `${key.slice(0, -1)}B`),
     format(`${salt}!`, key),
+    format(`${salt.slice(0, 11)}!${salt.slice(11)}`, key),
+    format(salt, `${key.slice(0, 21)}!${key.slice(21)}`),
     format(salt, `${key}\n`),
     "",
     `scrypt$N=32768,r=8,p=3$${salt}`,
