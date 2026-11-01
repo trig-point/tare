@@ -15,6 +15,17 @@ From a person's profile (height, birth date, sex, activity level, goal rate and 
 - **WHEN** a made-up male, 180 cm, age 40, trend weight 80.0 kg, moderate activity, goal rate minus 0.5 kg per week and the default protein factor has his target computed
 - **THEN** the resting rate is 1,730 kcal, the calorie target is 2,130 kcal (1,730 times 1.55 minus 550, rounded) and the protein target is 128 g
 
+### Requirement: Profile and target screens
+The app SHALL let a person enter and edit their profile, and SHALL show a target card (target, eaten and remaining calories and protein, or the learning state) and a chart of weigh-ins with the weight trend.
+
+#### Scenario: Profile entered in the app
+- **WHEN** a person fills in the profile form and has a weigh-in
+- **THEN** the target card shows their calorie and protein target
+
+#### Scenario: Trend chart
+- **WHEN** a person with weigh-ins opens the weight chart
+- **THEN** it shows each day's first reading and the trend line
+
 ### Requirement: Weight trend
 The system SHALL compute a weight trend by exponential smoothing with a factor of 0.1: on a day with a reading (days follow the person's day rule), the trend moves 0.1 of the way from yesterday's trend to the day's first reading; on a day without one it holds. The first reading starts the trend. Readings SHALL never be invented for days without one, and the trend SHALL be recomputed when a past reading is added, edited or deleted.
 
@@ -67,3 +78,14 @@ The system SHALL recompute and store each person's targets in a weekly job on a 
 #### Scenario: Goal changed mid-week
 - **WHEN** a person changes their goal rate on a Thursday
 - **THEN** their target is recomputed and stored that day
+
+### Requirement: Weekly target notice in the app
+When a recompute changes a person's calorie or protein target, the app's today screen SHALL show a notice with the old and new target, stored per person until they dismiss it.
+
+#### Scenario: Notice shown
+- **WHEN** a recompute changes a person's target
+- **THEN** their today screen shows a notice with the old and new target
+
+#### Scenario: Notice dismissed
+- **WHEN** the person dismisses the notice
+- **THEN** it does not return on that device or any other, until the next change

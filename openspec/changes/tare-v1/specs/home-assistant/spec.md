@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Per-person sensors through MQTT discovery
-The engine SHALL publish one Home Assistant device per person through MQTT discovery, with identifiers built from an install id and the person's id, readable default entity ids, and sensors for target, remaining calories and protein, today's intake and weight trend. The TDEE estimate sensor SHALL arrive with the weekly recompute. Discovery SHALL be re-published when Home Assistant publishes its online status (its birth message). An entity that goes away SHALL be removed with an empty retained config on its own discovery topic. kcal sensors SHALL carry no meter-style state class.
+The engine SHALL publish one Home Assistant device per person through MQTT discovery, with identifiers built from an install id and the person's id, readable default entity ids, and sensors for target, remaining calories and protein, today's intake and weight trend. Discovery SHALL be re-published when Home Assistant publishes its online status (its birth message). An entity that goes away SHALL be removed with an empty retained config on its own discovery topic. kcal sensors SHALL carry no meter-style state class.
 
 #### Scenario: Home Assistant restarts
 - **WHEN** Home Assistant publishes its online status
@@ -12,7 +12,7 @@ The engine SHALL publish one Home Assistant device per person through MQTT disco
 - **THEN** the sensor shows the lower value and no meter reset is recorded
 
 ### Requirement: Item buttons
-Each on-hand meal SHALL get "ate it" and "ate 3/4" buttons, and each planned item that is not yet eaten or skipped SHALL get "ate it", "ate 3/4" and "skip" buttons. Each button's discovery config SHALL carry the item id and its current revision in the press payload, and SHALL be re-published whenever the item or its revision changes; a planned item's buttons are removed once it is eaten or skipped. A press SHALL run the shared meal action; the engine SHALL reject a press whose revision is stale and publish the outcome to a last-press result sensor for that person.
+Each on-hand meal SHALL get "ate it" and "ate 3/4" buttons, and each planned item that is not yet eaten or skipped SHALL get "ate it", "ate 3/4" and "skip" buttons. Each button's discovery config SHALL carry the item id and its current revision in the press payload, and SHALL be re-published whenever the item or its revision changes; a planned item's buttons are removed once it is eaten or skipped. A press SHALL run the shared meal action through the engine's MQTT handler, which acts for the person whose device the button belongs to; the engine SHALL reject a press whose revision is stale and publish the outcome to a last-press result sensor for that person.
 
 #### Scenario: Slot changed before the press
 - **WHEN** a press arrives carrying the revision of an item that is no longer current
@@ -41,12 +41,12 @@ The engine SHALL read weigh-ins from a configured MQTT topic (fed, for example, 
 - **WHEN** a mapped person with a trend of 80 kg gets a reading of 86 kg
 - **THEN** no weight is logged and the person gets a question to confirm it
 
-### Requirement: Weekly notice
-When a recompute changes a person's calorie or protein target, the system SHALL notify the person through an MQTT event entity on their Home Assistant device and with a notice on the app's today screen, stored per person until they dismiss it.
+### Requirement: Weekly recompute in Home Assistant
+Each person's device SHALL gain a TDEE estimate sensor once the weekly recompute exists. When a recompute changes a person's calorie or protein target, the system SHALL notify the person through an MQTT event entity on their Home Assistant device.
 
 #### Scenario: New weekly target
 - **WHEN** the weekly recompute stores a target that differs from the previous one
-- **THEN** a notice with the old and new target reaches Home Assistant and the app
+- **THEN** an event with the old and new target reaches the person's Home Assistant device and the TDEE estimate sensor shows the new estimate
 
 #### Scenario: Unchanged target
 - **WHEN** the weekly recompute stores the same target as before

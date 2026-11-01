@@ -35,7 +35,7 @@ A person SHALL be able to close a day by reviewing its ledger and recording hung
 
 #### Scenario: Intake changed after sign-off
 - **WHEN** an agent or the person edits, adds or deletes an intake entry on a signed-off day
-- **THEN** the day is no longer signed off and drops out of the adaptive TDEE until it is signed off again
+- **THEN** the day is no longer signed off until the person signs it off again
 
 #### Scenario: Entry moved to another day
 - **WHEN** an entry on signed-off day A is edited so its eaten-at time falls on signed-off day B

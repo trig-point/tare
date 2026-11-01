@@ -5,7 +5,7 @@ The engine SHALL serve a web app with a manifest, icons and a service worker so 
 
 #### Scenario: Install on a phone
 - **WHEN** a person opens the app in a supporting mobile browser
-- **THEN** the browser offers to install it and the installed app opens to the sign-in or today screen
+- **THEN** the browser offers to install it and the installed app opens to the sign-in screen, or to its home screen when signed in
 
 #### Scenario: Proxy login page
 - **WHEN** an identity proxy in front of the app returns its own HTML login page

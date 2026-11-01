@@ -18,7 +18,7 @@ The engine SHALL run its scheduled jobs (the nightly backup, the weekly recomput
 The engine SHALL write a nightly online SQLite backup to a configured folder outside the data volume and keep a configured number of copies. A test SHALL restore a backup and pass integrity and foreign-key checks and an authenticated read.
 
 #### Scenario: Restore drill
-- **WHEN** the restore test opens a backup produced while the app was writing
+- **WHEN** the restore test opens a backup produced while the engine was writing
 - **THEN** `PRAGMA integrity_check` and `PRAGMA foreign_key_check` pass and a signed-in read returns data
 
 ### Requirement: Migration safety

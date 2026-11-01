@@ -1,14 +1,14 @@
 ## ADDED Requirements
 
 ### Requirement: One definition per operation
-Each operation SHALL be defined once with its name, input schema, output schema, handler, caller class and whether it needs an administrator. The caller class SHALL be either session only (a signed-in person in the app) or session and agent token. Every operation SHALL be served as an HTTP route; every operation an agent token may call SHALL also be served as an MCP tool with the same schemas. In version 1 an agent token may call every session-and-agent operation for its owner; there are no finer scopes. Every administrator operation is session only. A Home Assistant button press reaches an operation through the engine's MQTT handler, which acts for the person whose device the button belongs to (see the household trust rule in the Home Assistant spec).
+Each operation SHALL be defined once with its name, input schema, output schema, handler, caller class and whether it needs an administrator. The caller class SHALL be either session only (a signed-in person in the app) or session and agent token. Every operation SHALL be served as an HTTP route; every operation an agent token may call SHALL also be served as an MCP tool with the same schemas. In version 1 an agent token may call every session-and-agent operation for its owner; there are no finer scopes. Every administrator operation is session only.
 
 #### Scenario: Operation on both surfaces
 - **WHEN** a session-and-agent operation is added to the registry
 - **THEN** it is reachable as an HTTP route and listed as an MCP tool with the same schemas
 
 #### Scenario: Session-only operation
-- **WHEN** an agent token calls a session-only operation, such as day sign-off or token creation
+- **WHEN** an agent token calls a session-only operation, such as token creation
 - **THEN** the call is rejected with 403, and the operation is not listed as an MCP tool
 
 #### Scenario: Surfaces cannot drift

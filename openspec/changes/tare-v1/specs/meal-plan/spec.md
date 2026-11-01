@@ -38,7 +38,7 @@ Agents SHALL be able to place planned items, each an on-hand meal or a food with
 
 #### Scenario: Agent plans dinner
 - **WHEN** an agent places an on-hand meal in the dinner slot
-- **THEN** the app and Home Assistant show it as dinner's planned item
+- **THEN** reading today's plan returns it as dinner's planned item
 
 #### Scenario: Skip
 - **WHEN** a person skips a planned on-hand meal
