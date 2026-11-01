@@ -67,11 +67,35 @@ export function applyMigrations(
     "INSERT INTO schema_migrations (name, content_hash) VALUES (?, ?)",
   );
   for (const { name, content, hash } of migrations) {
+    if (applied.get(name)) continue;
+    runMigration(database, name, content, () => record.run(name, hash));
+  }
+}
+
+function runMigration(
+  database: Database.Database,
+  name: string,
+  content: string,
+  record: () => unknown,
+) {
+  const rebuild = content.split(/\r?\n/, 1)[0] === "-- tare:rebuild";
+  try {
+    if (rebuild) database.pragma("foreign_keys = OFF");
     database.transaction(() => {
-      if (applied.get(name)) return;
       database.exec(content);
-      record.run(name, hash);
+      record();
+      if (rebuild) {
+        const violation = database
+          .prepare<[], { table: string }>("PRAGMA foreign_key_check")
+          .get();
+        if (violation)
+          throw new Error(
+            `Migration ${name} violates a foreign key in table ${violation.table}`,
+          );
+      }
     })();
+  } finally {
+    if (rebuild) database.pragma("foreign_keys = ON");
   }
 }
 
