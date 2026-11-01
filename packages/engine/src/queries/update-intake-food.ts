@@ -2,6 +2,7 @@ import type { Database } from "better-sqlite3";
 
 export type UpdateIntakeFoodData = {
   food_id: number | null;
+  updated_at: string;
 };
 
 export type UpdateIntakeFoodParams = {
@@ -38,13 +39,13 @@ export function updateIntakeFood(
   params: UpdateIntakeFoodParams,
 ): UpdateIntakeFoodResult[] {
   const sql = `
-	UPDATE intake_entries SET food_id = ? WHERE user_id = ? AND id = ? RETURNING *;
+	UPDATE intake_entries SET food_id = ?, updated_at = ? WHERE user_id = ? AND id = ? RETURNING *;
 	
 	`;
   const rows = db
     .prepare(sql)
     .raw(true)
-    .all([data.food_id, params.user_id, params.id]);
+    .all([data.food_id, data.updated_at, params.user_id, params.id]);
 
   return rows.map((data) => mapArrayToUpdateIntakeFoodResult(data));
 }

@@ -298,6 +298,19 @@ describe("engine", () => {
     const connection = openDatabase(databasePath);
     try {
       assert.equal(existsSync(databasePath), true);
+      const tables = connection.database.pragma("table_list") as {
+        name: string;
+      }[];
+      for (const name of [
+        "users",
+        "source_foods",
+        "foods",
+        "intake_entries",
+        "weights",
+        "days",
+      ])
+        assert.ok(tables.some((table) => table.name === name));
+      assert.deepEqual(connection.database.pragma("foreign_key_check"), []);
       const user = insertUser(connection.database, sampleUser);
       assert.ok(user);
       assert.deepEqual(selectUser(connection.database, { id: user.id }), user);

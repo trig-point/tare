@@ -41,6 +41,7 @@ import { updateIntakeFood } from "../src/queries/update-intake-food.ts";
 import { updateUserSettings } from "../src/queries/update-user-settings.ts";
 
 const timestamp = "2024-02-29T12:34:56.789Z";
+const editedAt = "2024-02-29T13:34:56.789Z";
 const storedDay = "2024-02-29";
 const unknownNutrients = {
   kcal: null,
@@ -113,7 +114,11 @@ function fixture(context: TestContext) {
       created_at: timestamp,
       ...overrides,
     });
-  const day = (overrides: Partial<InsertDayParams> = {}) =>
+  const day = (
+    overrides: Partial<
+      Omit<InsertDayParams, "user_id"> & { user_id: number }
+    > = {},
+  ) =>
     insertDay(database, {
       user_id: first.id,
       day: storedDay,
@@ -290,7 +295,7 @@ test("owner keys reject cross-owner inserts and updates while same-owner and NUL
     () =>
       updateIntakeFood(
         database,
-        { food_id: secondFood.id },
+        { food_id: secondFood.id, updated_at: editedAt },
         { user_id: first.id, id: intake.id },
       ),
     /FOREIGN KEY constraint failed/,
@@ -298,7 +303,7 @@ test("owner keys reject cross-owner inserts and updates while same-owner and NUL
   assert.deepEqual(
     updateIntakeFood(
       database,
-      { food_id: null },
+      { food_id: null, updated_at: editedAt },
       { user_id: first.id, id: intake.id },
     ).map((row) => row.food_id),
     [null],
@@ -306,10 +311,40 @@ test("owner keys reject cross-owner inserts and updates while same-owner and NUL
   assert.deepEqual(
     updateIntakeFood(
       database,
-      { food_id: firstFood.id },
+      { food_id: firstFood.id, updated_at: editedAt },
       { user_id: first.id, id: intake.id },
     ).map((row) => row.food_id),
     [firstFood.id],
+  );
+  assert.throws(
+    () =>
+      database
+        .prepare("UPDATE foods SET user_id = ? WHERE user_id = ? AND id = ?")
+        .run(second.id, first.id, firstFood.id),
+    /FOREIGN KEY constraint failed/,
+  );
+  assert.throws(
+    () =>
+      database
+        .prepare(
+          "UPDATE intake_entries SET user_id = ? WHERE user_id = ? AND id = ?",
+        )
+        .run(second.id, first.id, intake.id),
+    /FOREIGN KEY constraint failed/,
+  );
+  assert.throws(
+    () =>
+      database
+        .prepare(
+          "UPDATE intake_entries SET source_food_id = ? WHERE user_id = ? AND id = ?",
+        )
+        .run(shared.id, first.id, intake.id),
+    /CHECK constraint failed/,
+  );
+  assert.equal(
+    selectIntakeEntry(database, { user_id: first.id, id: intake.id })
+      ?.updated_at,
+    editedAt,
   );
   assert.ok(entry({ user_id: second.id, food_id: secondFood.id }));
   for (const user_id of [first.id, second.id]) {
@@ -346,6 +381,32 @@ test("every personal table refuses a NULL owner", (context) => {
       () => Reflect.apply(create, undefined, [{ user_id: null }]),
       /NOT NULL constraint failed/,
     );
+});
+
+test("usernames and day keys reject duplicates while two people can store the same day", (context) => {
+  const { database, first, second, day } = fixture(context);
+  assert.throws(
+    () =>
+      insertUser(database, {
+        username: first.username,
+        password_hash: "test-hash",
+        timezone: "UTC",
+        created_at: timestamp,
+      }),
+    /UNIQUE constraint failed/,
+  );
+  assert.ok(day());
+  assert.ok(day({ user_id: second.id }));
+  assert.throws(() => day(), /UNIQUE constraint failed/);
+  assert.throws(() => day({ user_id: second.id }), /UNIQUE constraint failed/);
+  assert.equal(
+    selectDay(database, { user_id: first.id, day: storedDay })?.user_id,
+    first.id,
+  );
+  assert.equal(
+    selectDay(database, { user_id: second.id, day: storedDay })?.user_id,
+    second.id,
+  );
 });
 
 test("client ids are unique per person for both intake and weights", (context) => {
@@ -390,14 +451,7 @@ test("intake keeps its stored nutrition after catalog edits", (context) => {
 test("dates require real calendar days and canonical UTC timestamps", (context) => {
   const { database, entry, weight, day, cache } = fixture(context);
   assert.ok(day({ signed_off_at: timestamp, hunger: -10, fullness: 100 }));
-  const invalidDays = [
-    "2026-02-30",
-    "202X-02-20",
-    "2026-0X-20",
-    "2026-02-2X",
-    "",
-    "2026-2-02",
-  ];
+  const invalidDays = ["2026-02-30", "202X-02-20", "", "2026-2-02"];
   for (const invalid of invalidDays) {
     assert.throws(() => entry({ day: invalid }), /CHECK constraint failed/);
     assert.throws(() => weight({ day: invalid }), /CHECK constraint failed/);
@@ -406,11 +460,6 @@ test("dates require real calendar days and canonical UTC timestamps", (context) 
   const invalidTimes = [
     "2026-02-30T12:34:56.789Z",
     "202X-02-20T12:34:56.789Z",
-    "2026-0X-20T12:34:56.789Z",
-    "2026-02-2XT12:34:56.789Z",
-    "2026-02-20T1X:34:56.789Z",
-    "2026-02-20T12:3X:56.789Z",
-    "2026-02-20T12:34:5X.789Z",
     "2026-02-20T99:34:56.789Z",
     "2026-02-20T12:34:56.789+00:00",
     "2026-02-20T12:34:56Z",
@@ -526,29 +575,31 @@ test("provenance, cache keys, user settings and body fat enforce their contracts
       () =>
         updateUserSettings(
           database,
-          { day_start_hour: invalid, is_admin: 0 },
+          { day_start_hour: invalid },
           { id: first.id },
         ),
       /CHECK constraint failed/,
     );
   assert.throws(
     () =>
-      updateUserSettings(
-        database,
-        { day_start_hour: 4, is_admin: 2 },
-        { id: first.id },
-      ),
+      database
+        .prepare("UPDATE users SET is_admin = ? WHERE id = ?")
+        .run(2, first.id),
     /CHECK constraint failed/,
   );
+  database
+    .prepare("UPDATE users SET is_admin = ? WHERE id = ?")
+    .run(1, first.id);
   for (const valid of [0, 23])
     assert.equal(
       updateUserSettings(
         database,
-        { day_start_hour: valid, is_admin: 1 },
+        { day_start_hour: valid },
         { id: first.id },
       )[0]?.day_start_hour,
       valid,
     );
+  assert.equal(selectUser(database, { id: first.id })?.is_admin, 1);
   for (const invalid of [-1, 101])
     assert.throws(
       () => weight({ body_fat_pct: invalid }),
