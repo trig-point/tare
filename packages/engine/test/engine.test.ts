@@ -14,7 +14,8 @@ import { pathToFileURL } from "node:url";
 import { createApp } from "../src/app.ts";
 import { loadConfig } from "../src/config.ts";
 import { applyMigrations, openDatabase } from "../src/db.ts";
-import { selectFoundation } from "../src/queries/select-foundation.ts";
+import { insertUser } from "../src/queries/insert-user.ts";
+import { selectUser } from "../src/queries/select-user.ts";
 
 const migrations = new URL("../migrations/", import.meta.url);
 const realNames = readdirSync(migrations).filter((name) =>
@@ -28,6 +29,13 @@ const syntheticName = (offset: number, suffix: string) =>
 function copyMigrations(directory: string) {
   cpSync(migrations, directory, { recursive: true });
 }
+
+const sampleUser = {
+  username: "sample-user",
+  password_hash: "test-hash",
+  timezone: "UTC",
+  created_at: "2024-02-29T12:00:00.000Z",
+};
 
 describe("engine", () => {
   test("health returns 200 and ok", async () => {
@@ -189,7 +197,7 @@ describe("engine", () => {
   test("generated query returns null for a missing row", () => {
     const connection = openDatabase(":memory:");
     try {
-      assert.equal(selectFoundation(connection.database, { id: 999 }), null);
+      assert.equal(selectUser(connection.database, { id: 999 }), null);
     } finally {
       connection.close();
     }
@@ -290,26 +298,20 @@ describe("engine", () => {
     const connection = openDatabase(databasePath);
     try {
       assert.equal(existsSync(databasePath), true);
-      connection.database
-        .prepare("INSERT INTO foundation (id) VALUES (?)")
-        .run(3);
-      assert.deepEqual(selectFoundation(connection.database, { id: 3 }), {
-        id: 3,
-      });
+      const user = insertUser(connection.database, sampleUser);
+      assert.ok(user);
+      assert.deepEqual(selectUser(connection.database, { id: user.id }), user);
     } finally {
       connection.close();
     }
   });
 
-  test("migrations create the foundation table and generated query reads it", () => {
+  test("migrations create users and the generated query reads them", () => {
     const connection = openDatabase(":memory:");
     try {
-      connection.database
-        .prepare("INSERT INTO foundation (id) VALUES (?)")
-        .run(1);
-      assert.deepEqual(selectFoundation(connection.database, { id: 1 }), {
-        id: 1,
-      });
+      const user = insertUser(connection.database, sampleUser);
+      assert.ok(user);
+      assert.deepEqual(selectUser(connection.database, { id: user.id }), user);
     } finally {
       connection.close();
     }
@@ -318,13 +320,10 @@ describe("engine", () => {
   test("applying migrations twice preserves data and records the migration once", () => {
     const connection = openDatabase(":memory:");
     try {
-      connection.database
-        .prepare("INSERT INTO foundation (id) VALUES (?)")
-        .run(2);
+      const user = insertUser(connection.database, sampleUser);
+      assert.ok(user);
       applyMigrations(connection.database);
-      assert.deepEqual(selectFoundation(connection.database, { id: 2 }), {
-        id: 2,
-      });
+      assert.deepEqual(selectUser(connection.database, { id: user.id }), user);
       assert.deepEqual(
         connection.database
           .prepare("SELECT name FROM schema_migrations ORDER BY name")
