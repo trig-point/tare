@@ -2,6 +2,7 @@ export interface Config {
   databaseUrl: string;
   port: number;
   timezone: string;
+  firstUser: { username: string | undefined; password: string | undefined };
 }
 
 export function validateTimezone(timezone: string): string {
@@ -31,5 +32,15 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     throw new Error("PORT must be an integer between 1 and 65535");
   }
   const timezone = validateTimezone(env.TARE_TIMEZONE ?? "UTC");
-  return { databaseUrl, port, timezone };
+  const username = env.TARE_ADMIN_USERNAME?.trim();
+  const password = env.TARE_ADMIN_PASSWORD;
+  return {
+    databaseUrl,
+    port,
+    timezone,
+    firstUser: {
+      username: username === "" ? undefined : username,
+      password: password === "" ? undefined : password,
+    },
+  };
 }
