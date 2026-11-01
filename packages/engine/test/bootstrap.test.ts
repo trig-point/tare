@@ -3,7 +3,6 @@ import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test as runTest, type TestContext } from "node:test";
 import { ensureFirstUser } from "../src/auth/bootstrap.ts";
 import { hashPassword, verifyPassword } from "../src/auth/password.ts";
 import { loadConfig } from "../src/config.ts";
@@ -12,21 +11,13 @@ import { countUsers } from "../src/queries/count-users.ts";
 import { insertAccount } from "../src/queries/insert-account.ts";
 import { recordStart } from "../src/queries/jobs/record-start.ts";
 import { selectUser } from "../src/queries/select-user.ts";
+import { test } from "./support/hang-ceiling.ts";
 
 const clock = { now: () => new Date("2024-02-29T12:00:00.000Z") };
 const firstUser = {
   username: "  Example-Admin  ",
   password: "  invented-password  ",
 };
-
-const HANG_CEILING_MS = 60_000;
-
-function test(
-  name: string,
-  run: (context: TestContext) => void | Promise<void>,
-) {
-  return runTest(name, { timeout: HANG_CEILING_MS }, run);
-}
 
 test("an empty database creates one administrator with the exact password and install timezone", async (context) => {
   const connection = openDatabase(":memory:");

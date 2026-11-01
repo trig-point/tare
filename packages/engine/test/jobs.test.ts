@@ -2,24 +2,17 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test as runTest, type TestContext } from "node:test";
+import type { TestContext } from "node:test";
 import { setImmediate } from "node:timers/promises";
 import { scheduledJobs } from "croner";
 import { openDatabase } from "../src/db.ts";
 import { createJobRunner } from "../src/jobs.ts";
 import type { RecordFinishResult } from "../src/queries/jobs/record-finish.ts";
 import { recordStart } from "../src/queries/jobs/record-start.ts";
+import { HANG_CEILING_MS, test } from "./support/hang-ceiling.ts";
 
-const HANG_CEILING_MS = 60_000;
 const realSetTimeout = globalThis.setTimeout;
 const realClearTimeout = globalThis.clearTimeout;
-
-function test(
-  name: string,
-  run: (context: TestContext) => void | Promise<void>,
-) {
-  return runTest(name, { timeout: HANG_CEILING_MS }, run);
-}
 
 async function waitFor<Value>(
   promise: Promise<Value>,
