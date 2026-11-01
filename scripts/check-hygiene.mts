@@ -117,8 +117,10 @@ for (const file of files) {
   }
 }
 if (!failed) {
+  const presence =
+    !forkPullRequest && configured.length > 0 ? "present" : "absent";
   console.log(
-    `hygiene: scanned ${scanned} files, ${denied.length} deny entries`,
+    `hygiene: scanned ${scanned} files; configured deny list: ${presence}; generic patterns: ${generic.length}`,
   );
 }
 process.exitCode = failed ? 1 : 0;

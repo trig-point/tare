@@ -191,18 +191,30 @@ test("PR with missing head repository requires the CI secret", () => {
   assert.equal(result.output.includes("Warning:"), false);
 });
 
-test("success reports scanned files and deny entry counts without values", () => {
+test("success reports presence without the configured count", () => {
   const clean = check("clean");
   assert.equal(clean.status, 0);
-  assert.equal(clean.output, "hygiene: scanned 1 files, 1 deny entries\n");
+  assert.equal(
+    clean.output,
+    "hygiene: scanned 1 files; configured deny list: absent; generic patterns: 1\n",
+  );
   const configured = check("clean", {
     TARE_HYGIENE_DENY: "secret-host.invalid,other.invalid",
   });
   assert.equal(configured.status, 0);
-  assert.equal(configured.output, "hygiene: scanned 1 files, 3 deny entries\n");
+  assert.equal(
+    configured.output,
+    "hygiene: scanned 1 files; configured deny list: present; generic patterns: 1\n",
+  );
+  assert.equal(
+    configured.output,
+    check("clean", {
+      TARE_HYGIENE_DENY: "secret-host.invalid,other.invalid,third.invalid",
+    }).output,
+  );
   assert.equal(
     check("", {}, null).output,
-    "hygiene: scanned 0 files, 1 deny entries\n",
+    "hygiene: scanned 0 files; configured deny list: absent; generic patterns: 1\n",
   );
   const failed = check("secret-host.invalid", {
     TARE_HYGIENE_DENY: "secret-host.invalid",
