@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import {
-  copyFileSync,
+  cpSync,
   existsSync,
   mkdtempSync,
+  readdirSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -15,7 +16,20 @@ import { loadConfig } from "../src/config.ts";
 import { applyMigrations, openDatabase } from "../src/db.ts";
 import { selectFoundation } from "../src/queries/select-foundation.ts";
 
-describe("engine foundation", () => {
+const migrations = new URL("../migrations/", import.meta.url);
+const realNames = readdirSync(migrations).filter((name) =>
+  name.endsWith(".sql"),
+);
+const nextNumber =
+  Math.max(...realNames.map((name) => Number(name.split("_")[0]))) + 1;
+const syntheticName = (offset: number, suffix: string) =>
+  `${String(nextNumber + offset).padStart(4, "0")}_${suffix}`;
+
+function copyMigrations(directory: string) {
+  cpSync(migrations, directory, { recursive: true });
+}
+
+describe("engine", () => {
   test("health returns 200 and ok", async () => {
     const response = await createApp().request("/health");
     assert.equal(response.status, 200);
@@ -61,8 +75,9 @@ describe("engine foundation", () => {
   test("migration runner rejects an unnumbered SQL file", (context) => {
     const directory = mkdtempSync(join(tmpdir(), "tare-migration-name-"));
     context.after(() => rmSync(directory, { recursive: true, force: true }));
+    copyMigrations(directory);
     writeFileSync(
-      join(directory, "foundation.sql"),
+      join(directory, "invalid.sql"),
       "CREATE TABLE skipped (id INTEGER);",
     );
     const connection = openDatabase(":memory:");
@@ -70,7 +85,7 @@ describe("engine foundation", () => {
       assert.throws(
         () =>
           applyMigrations(connection.database, pathToFileURL(directory + sep)),
-        /Invalid migration filename: foundation.sql/,
+        /Invalid migration filename: invalid.sql/,
       );
     } finally {
       connection.close();
@@ -95,16 +110,13 @@ describe("engine foundation", () => {
   test("migration runner rejects duplicate numeric prefixes", (context) => {
     const directory = mkdtempSync(join(tmpdir(), "tare-migration-duplicate-"));
     context.after(() => rmSync(directory, { recursive: true, force: true }));
-    copyFileSync(
-      new URL("../migrations/0001_foundation.sql", import.meta.url),
-      join(directory, "0001_foundation.sql"),
-    );
+    copyMigrations(directory);
     writeFileSync(
-      join(directory, "2_first.sql"),
+      join(directory, `0${nextNumber}_first.sql`),
       "CREATE TABLE first_table (id INTEGER);",
     );
     writeFileSync(
-      join(directory, "0002_second.sql"),
+      join(directory, `${nextNumber}_second.sql`),
       "CREATE TABLE second_table (id INTEGER);",
     );
     const connection = openDatabase(":memory:");
@@ -119,16 +131,17 @@ describe("engine foundation", () => {
     }
   });
 
-  for (const name of ["0002_wrong.txt", "0002_missing", "0002"]) {
+  for (const name of [
+    `${nextNumber}_wrong.txt`,
+    `${nextNumber}_missing`,
+    `${nextNumber}`,
+  ]) {
     test(`migration runner rejects migration-like entry ${name}`, (context) => {
       const directory = mkdtempSync(
         join(tmpdir(), "tare-migration-extension-"),
       );
       context.after(() => rmSync(directory, { recursive: true, force: true }));
-      copyFileSync(
-        new URL("../migrations/0001_foundation.sql", import.meta.url),
-        join(directory, "0001_foundation.sql"),
-      );
+      copyMigrations(directory);
       writeFileSync(
         join(directory, name),
         "CREATE TABLE skipped (id INTEGER);",
@@ -152,11 +165,8 @@ describe("engine foundation", () => {
   test("migration runner rejects a missing previously applied file", (context) => {
     const directory = mkdtempSync(join(tmpdir(), "tare-migration-history-"));
     context.after(() => rmSync(directory, { recursive: true, force: true }));
-    copyFileSync(
-      new URL("../migrations/0001_foundation.sql", import.meta.url),
-      join(directory, "0001_foundation.sql"),
-    );
-    const extraMigration = join(directory, "0002_extra.sql");
+    copyMigrations(directory);
+    const extraMigration = join(directory, syntheticName(0, "extra.sql"));
     writeFileSync(extraMigration, "CREATE TABLE extra (id INTEGER);");
     const connection = openDatabase(":memory:");
     try {
@@ -165,7 +175,9 @@ describe("engine foundation", () => {
       assert.throws(
         () =>
           applyMigrations(connection.database, pathToFileURL(directory + sep)),
-        /Applied migration file is missing: 0002_extra.sql/,
+        {
+          message: `Applied migration file is missing: ${syntheticName(0, "extra.sql")}`,
+        },
       );
     } finally {
       connection.close();
@@ -203,12 +215,9 @@ describe("engine foundation", () => {
   test("a failing migration rolls back DDL and is not recorded", (context) => {
     const directory = mkdtempSync(join(tmpdir(), "tare-migration-failure-"));
     context.after(() => rmSync(directory, { recursive: true, force: true }));
-    copyFileSync(
-      new URL("../migrations/0001_foundation.sql", import.meta.url),
-      join(directory, "0001_foundation.sql"),
-    );
+    copyMigrations(directory);
     writeFileSync(
-      join(directory, "0002_bad.sql"),
+      join(directory, syntheticName(0, "bad.sql")),
       "CREATE TABLE partial (id INTEGER); INVALID SQL;",
     );
     const connection = openDatabase(":memory:");
@@ -227,7 +236,7 @@ describe("engine foundation", () => {
       assert.deepEqual(
         connection.database
           .prepare("SELECT name FROM schema_migrations WHERE name = ?")
-          .all("0002_bad.sql"),
+          .all(syntheticName(0, "bad.sql")),
         [],
       );
     } finally {
@@ -238,16 +247,16 @@ describe("engine foundation", () => {
   test("two migrations apply in numeric order", (context) => {
     const directory = mkdtempSync(join(tmpdir(), "tare-migration-order-"));
     context.after(() => rmSync(directory, { recursive: true, force: true }));
-    copyFileSync(
-      new URL("../migrations/0001_foundation.sql", import.meta.url),
-      join(directory, "0001_foundation.sql"),
-    );
+    copyMigrations(directory);
+    const digits = String(nextNumber).length + 1;
+    const createName = `${"9".repeat(digits)}_create.sql`;
+    const alterName = `1${"0".repeat(digits)}_alter.sql`;
     writeFileSync(
-      join(directory, "2_create.sql"),
+      join(directory, createName),
       "CREATE TABLE ordering (id INTEGER);",
     );
     writeFileSync(
-      join(directory, "10_alter.sql"),
+      join(directory, alterName),
       "ALTER TABLE ordering ADD COLUMN applied INTEGER;",
     );
     const connection = openDatabase(":memory:");
@@ -255,11 +264,10 @@ describe("engine foundation", () => {
       applyMigrations(connection.database, pathToFileURL(directory + sep));
       assert.deepEqual(
         connection.database
-          .prepare(
-            "SELECT name FROM schema_migrations WHERE name != ? ORDER BY rowid",
-          )
-          .all("0001_foundation.sql"),
-        [{ name: "2_create.sql" }, { name: "10_alter.sql" }],
+          .prepare("SELECT name FROM schema_migrations ORDER BY rowid")
+          .all()
+          .slice(realNames.length),
+        [{ name: createName }, { name: alterName }],
       );
       connection.database
         .prepare("INSERT INTO ordering (id, applied) VALUES (?, ?)")
@@ -316,8 +324,10 @@ describe("engine foundation", () => {
         id: 2,
       });
       assert.deepEqual(
-        connection.database.prepare("SELECT name FROM schema_migrations").all(),
-        [{ name: "0001_foundation.sql" }],
+        connection.database
+          .prepare("SELECT name FROM schema_migrations ORDER BY name")
+          .all(),
+        [...realNames].sort().map((name) => ({ name })),
       );
     } finally {
       connection.close();
@@ -328,10 +338,7 @@ describe("engine foundation", () => {
     const directory = mkdtempSync(join(tmpdir(), "tare-migration-edited-"));
     context.after(() => rmSync(directory, { recursive: true, force: true }));
     const migrationPath = join(directory, "0001_foundation.sql");
-    copyFileSync(
-      new URL("../migrations/0001_foundation.sql", import.meta.url),
-      migrationPath,
-    );
+    copyMigrations(directory);
     const connection = openDatabase(":memory:");
     try {
       assert.doesNotThrow(() =>
