@@ -278,3 +278,14 @@ test("pending rebuild inside a caller transaction fails naming the file", (conte
     assert.equal(database.pragma("foreign_keys", { simple: true }), 1);
   })();
 });
+
+test("clean rebuild restores disabled foreign-key enforcement", (context) => {
+  const { database, directory, folder } = fixture(context);
+  database.pragma("foreign_keys = OFF");
+  writeFileSync(join(directory, "0003_disabled.sql"), rebuild);
+  applyMigrations(database, folder);
+  assert.deepEqual(database.prepare("SELECT * FROM parent").all(), [
+    { id: 1, label: "Sample", added: null },
+  ]);
+  assert.equal(database.pragma("foreign_keys", { simple: true }), 0);
+});

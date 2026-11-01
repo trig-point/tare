@@ -96,6 +96,9 @@ function runMigration(
     throw new Error(
       `Cannot run rebuild migration ${name} inside a transaction`,
     );
+  const foreignKeys = rebuild
+    ? database.pragma("foreign_keys", { simple: true })
+    : undefined;
   try {
     if (rebuild) database.pragma("foreign_keys = OFF");
     database.transaction(() => {
@@ -113,7 +116,10 @@ function runMigration(
       }
     })();
   } finally {
-    if (rebuild) database.pragma("foreign_keys = ON");
+    if (rebuild)
+      database.pragma(
+        foreignKeys === 1 ? "foreign_keys = ON" : "foreign_keys = OFF",
+      );
   }
 }
 
