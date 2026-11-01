@@ -66,7 +66,10 @@ test("orphaned rebuild rolls back schema, rows and record and restores foreign k
     join(directory, pendingName("rebuild.sql")),
     `${rebuild}DELETE FROM parent;`,
   );
-  assert.throws(() => applyMigrations(database, folder), /rebuild.sql.*child/);
+  assert.throws(
+    () => applyMigrations(database, folder),
+    new RegExp(`${pendingName("rebuild.sql").replaceAll(".", "\\.")}.*child`),
+  );
   assert.deepEqual(
     database.prepare("SELECT name, sql FROM sqlite_schema ORDER BY name").all(),
     before,
@@ -239,7 +242,9 @@ for (const marker of [
     );
     assert.throws(
       () => applyMigrations(database, folder),
-      /Invalid rebuild marker.*marker.sql/,
+      new RegExp(
+        `Invalid rebuild marker.*${pendingName("marker.sql").replaceAll(".", "\\.")}`,
+      ),
     );
     assert.equal(
       database
@@ -270,7 +275,9 @@ test("pending rebuild inside a caller transaction fails naming the file", (conte
   database.transaction(() => {
     assert.throws(
       () => applyMigrations(database, folder),
-      /nested.sql.*inside.*transaction/,
+      new RegExp(
+        `${pendingName("nested.sql").replaceAll(".", "\\.")}.*inside.*transaction`,
+      ),
     );
     assert.equal(database.inTransaction, true);
     assert.deepEqual(database.prepare("SELECT * FROM parent").all(), [
