@@ -467,3 +467,25 @@ test("URL users and home paths do not match account segments", () => {
     assert.equal(check(content, { TARE_HYGIENE_DENY: "alice" }).status, 0);
   }
 });
+
+test("configured tilde account paths fail", () => {
+  const result = check("~alice/.ssh/config", { TARE_HYGIENE_DENY: "alice" });
+  assert.equal(result.status, 1);
+  assert.match(result.output, /denied-name/);
+  assert.equal(
+    check("folder/~alice/file", { TARE_HYGIENE_DENY: "alice" }).status,
+    0,
+  );
+});
+
+test("environment filenames beside punctuation pass", () => {
+  const filename = ["env", "local"].join(".");
+  for (const content of [
+    ...[",", ";", ":", ".", ")", "]"].map(
+      (punctuation) => `Use ${filename}${punctuation} then`,
+    ),
+    `(${filename})`,
+  ]) {
+    assert.equal(check(content).status, 0, content);
+  }
+});

@@ -126,10 +126,14 @@ for (const file of files) {
       accountCursor = url.end;
     }
     accountParts.push(lowerLine.slice(accountCursor));
-    const segments = accountParts
-      .join("")
-      .split(/[\\/]+/)
-      .filter(Boolean);
+    const accountLine = accountParts.join("");
+    for (const match of accountLine.matchAll(
+      /(?:^|[\s"'`=(])~([a-z0-9._-]+)/g,
+    )) {
+      const account = match[1]?.replace(/\.$/, "");
+      if (account !== undefined && names.has(account)) rules.add("denied-name");
+    }
+    const segments = accountLine.split(/[\\/]+/).filter(Boolean);
     for (const [segmentIndex, segment] of segments.entries()) {
       if (segment !== "users" && segment !== "home") continue;
       const account = segments[segmentIndex + 1]
@@ -160,8 +164,8 @@ for (const file of files) {
       const urlHost = prefix.endsWith("://") || prefix.endsWith("//");
       const pathSegment =
         !urlHost &&
-        (previous === undefined || /[\\/\s"'`]/.test(previous)) &&
-        (next === undefined || /[\\/\s"'`]/.test(next));
+        (previous === undefined || /[\\/\s"'`(]/.test(previous)) &&
+        (next === undefined || /[\\/\s"'`,;:.)\]]/.test(next));
       if (
         labels[0] === "env" &&
         labels[1] === "local" &&
