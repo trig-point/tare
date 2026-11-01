@@ -74,6 +74,12 @@ test("malformed stored hashes return false without throwing or deriving", async 
     false,
   );
   assert.equal(derivation.mock.callCount(), 1);
+  assert.deepEqual(derivation.mock.calls[0]?.arguments[3], {
+    N: 32768,
+    r: 8,
+    p: 3,
+    maxmem: 64 * 1024 * 1024,
+  });
 });
 
 test("shared input limits reject nonstrings and preserve valid inputs", () => {
