@@ -11,6 +11,7 @@ function check(
   content: string | Buffer,
   environment: Record<string, string | undefined> = {},
   filename = "sample.txt",
+  headRepository: string | null = "contributor/tare",
 ) {
   const directory = mkdtempSync(join(tmpdir(), "tare-hygiene-"));
   try {
@@ -20,7 +21,10 @@ function check(
       join(directory, "event.json"),
       JSON.stringify({
         pull_request: {
-          head: { repo: { full_name: "contributor/tare" } },
+          head: {
+            repo:
+              headRepository === null ? null : { full_name: headRepository },
+          },
           base: { repo: { full_name: "project/tare" } },
         },
       }),
@@ -210,4 +214,34 @@ test("lockfiles are scanned for home paths and denied hosts", () => {
     assert.equal(result.status, 1);
     assert.match(result.output, /pnpm-lock.yaml:1: (home-path|denied-host)/);
   }
+});
+
+test("same-repo PR requires the CI secret", () => {
+  const result = check(
+    "clean",
+    { CI: "true", GITHUB_EVENT_NAME: "pull_request" },
+    "sample.txt",
+    "project/tare",
+  );
+  assert.equal(result.status, 1);
+  assert.match(result.output, /TARE_HYGIENE_DENY is required in CI/);
+  assert.equal(result.output.includes("Warning:"), false);
+});
+
+test("push requires the CI secret", () => {
+  const result = check("clean", { CI: "true", GITHUB_EVENT_NAME: "push" });
+  assert.equal(result.status, 1);
+  assert.match(result.output, /TARE_HYGIENE_DENY is required in CI/);
+});
+
+test("PR with missing head repository requires the CI secret", () => {
+  const result = check(
+    "clean",
+    { CI: "true", GITHUB_EVENT_NAME: "pull_request" },
+    "sample.txt",
+    null,
+  );
+  assert.equal(result.status, 1);
+  assert.match(result.output, /TARE_HYGIENE_DENY is required in CI/);
+  assert.equal(result.output.includes("Warning:"), false);
 });

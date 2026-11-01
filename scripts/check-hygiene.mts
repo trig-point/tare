@@ -31,6 +31,7 @@ for (const [index, entry] of entries.entries()) {
 const configured = entries.filter(Boolean);
 let forkPullRequest = false;
 // GitHub's event payload identifies fork PRs by differing head and base repository names.
+// Missing repository metadata cannot prove a fork, so CI still requires the secret.
 if (
   process.env.GITHUB_EVENT_NAME === "pull_request" &&
   process.env.GITHUB_EVENT_PATH
