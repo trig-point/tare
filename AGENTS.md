@@ -2,7 +2,7 @@
 
 This repository is public. Never add personal data, including real weight, food or health data. Fixtures use made-up people. Never commit secrets; supply them through environment variables.
 
-Generic home paths are not checked; `TARE_HYGIENE_DENY` names match configured `users`/`home` or `~name` paths outside URLs, dotted host labels, or exact URL authority hosts; bare prose and URL path segments pass, and `pnpm hygiene` runs locally and in CI.
+Generic home paths are not checked. Dotless `TARE_HYGIENE_DENY` entries match account segments after `users`, `home` or leading `~`, exact URL hosts, and labels in dotted host tokens. Dotted entries match whole-label host suffixes. URL paths and bare names pass; env filenames are excluded from host tokens. `pnpm hygiene` checks every tracked file and path locally and in CI.
 
 Use TypeScript only. Tests run with `node --test`.
 

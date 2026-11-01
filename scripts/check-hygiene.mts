@@ -3,43 +3,6 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-function urlRanges(line: string) {
-  const ranges: Array<{
-    start: number;
-    end: number;
-    hostStart: number;
-    hostEnd: number;
-  }> = [];
-  let cursor = 0;
-  while (cursor < line.length) {
-    const marker = line.indexOf("://", cursor);
-    if (marker === -1) break;
-    let start = marker;
-    while (start > 0 && /[a-z0-9+.-]/.test(line.charAt(start - 1))) start -= 1;
-    if (!/[a-z]/.test(line.charAt(start))) {
-      cursor = marker + 3;
-      continue;
-    }
-    let end = marker + 3;
-    while (end < line.length && !/[\s"'`<>)\]]/.test(line.charAt(end)))
-      end += 1;
-    const remainder = line.slice(marker + 3, end);
-    const delimiter = remainder.search(/[/?#]/);
-    const authority =
-      delimiter === -1 ? remainder : remainder.slice(0, delimiter);
-    const hostOffset = authority.lastIndexOf("@") + 1;
-    const port = authority.indexOf(":", hostOffset);
-    ranges.push({
-      start,
-      end,
-      hostStart: marker + 3 + hostOffset,
-      hostEnd: marker + 3 + (port === -1 ? authority.length : port),
-    });
-    cursor = end;
-  }
-  return ranges;
-}
-
 const allowedHosts = new Set([
   "example.com",
   "example.org",
@@ -92,79 +55,68 @@ const generic = readFileSync(
 const denied = [...generic, ...(forkPullRequest ? [] : configured)]
   .map((value) => value.trim().toLowerCase())
   .filter(Boolean);
-const names = new Set(denied.filter((value) => !value.includes(".")));
-function findRules(line: string) {
+function pathNames(token: string): string[] {
+  const segments = token.replace(/\\([\\/])/g, "$1").split(/[\\/]+/);
+  const names: string[] = [];
+  if (segments[0]?.startsWith("~")) names.push(segments[0].slice(1));
+  for (const [index, segment] of segments.entries()) {
+    if (segment === "users" || segment === "home") {
+      const name = segments[index + 1];
+      if (name) names.push(name.replace(/\.$/, ""));
+    }
+  }
+  return names;
+}
+
+function hostLabels(token: string): string[] {
+  const basename = token.split(/[\\/]+/).at(-1) ?? token;
+  const host = basename.replace(/[.:]+$/, "");
+  if (host.startsWith(".") || /^env\.local(?:\.|$)/.test(host)) return [];
+  if (!host.includes(".")) return [];
+  return host
+    .split(".")
+    .every((label) => /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(label))
+    ? host.split(".")
+    : [];
+}
+
+function matchingRules(names: string[], hosts: string[]): Set<string> {
   const rules = new Set<string>();
-  const lowerLine = line.toLowerCase();
-  const urls = urlRanges(lowerLine);
-  const accountParts: string[] = [];
-  let accountCursor = 0;
-  for (const url of urls) {
-    accountParts.push(lowerLine.slice(accountCursor, url.start), " ");
-    accountCursor = url.end;
-  }
-  accountParts.push(lowerLine.slice(accountCursor));
-  const accountLine = accountParts.join("");
-  for (const match of accountLine.matchAll(/(?:^|[\s"'`=(])~([a-z0-9._-]+)/g)) {
-    const account = match[1]?.replace(/\.$/, "");
-    if (account !== undefined && names.has(account)) rules.add("denied-name");
-  }
-  const segments = accountLine.split(/[\\/]+/).filter(Boolean);
-  for (const [segmentIndex, segment] of segments.entries()) {
-    if (segment !== "users" && segment !== "home") continue;
-    const account = segments[segmentIndex + 1]
-      ?.match(/^[a-z0-9._-]+/i)?.[0]
-      .replace(/\.$/, "");
-    if (account !== undefined && names.has(account)) rules.add("denied-name");
-  }
-  let urlIndex = 0;
-  const hosts = lowerLine.matchAll(/[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?/g);
-  for (const match of hosts) {
-    let host = match[0];
-    let url = urls[urlIndex];
-    while (url && match.index >= url.end) {
-      urlIndex += 1;
-      url = urls[urlIndex];
-    }
-    if (
-      url &&
-      match.index >= url.start &&
-      (match.index < url.hostStart || match.index + host.length > url.hostEnd)
-    )
-      continue;
-    if (allowedHosts.has(host)) continue;
-    const labels = host.split(".");
-    const previous = lowerLine[match.index - 1];
-    const next = lowerLine[match.index + host.length];
-    const prefix = lowerLine.slice(Math.max(0, match.index - 3), match.index);
-    const urlHost = prefix.endsWith("://") || prefix.endsWith("//");
-    const pathSegment =
-      !urlHost &&
-      (previous === undefined || /[\\/\s"'`(]/.test(previous)) &&
-      (next === undefined || /[\\/\s"'`,;:.)\]]/.test(next));
-    if (
-      labels[0] === "env" &&
-      labels[1] === "local" &&
-      (previous === "." || pathSegment)
-    ) {
-      host = labels.slice(2).join(".");
-      if (!host) continue;
-    }
-    for (const value of denied) {
-      const authorityHost =
-        url !== undefined &&
-        match.index === url.hostStart &&
-        match.index + match[0].length === url.hostEnd;
-      if (!value.includes(".") && !match[0].includes(".") && !authorityHost)
-        continue;
-      const matches = value.startsWith(".")
-        ? host.endsWith(value)
-        : `.${host}.`.includes(`.${value}.`);
-      if (matches)
-        rules.add(value.includes(".") ? "denied-host" : "denied-name");
-    }
+  for (const value of denied) {
+    const suffix = value.replace(/^\./, "");
+    const dotted = value.includes(".");
+    const hostMatch = hosts.some((host) => {
+      if (allowedHosts.has(host)) return false;
+      return dotted
+        ? host === suffix || host.endsWith(`.${suffix}`)
+        : host.split(".").includes(value);
+    });
+    if (hostMatch || (!dotted && names.includes(value)))
+      rules.add(dotted ? "denied-host" : "denied-name");
   }
   return rules;
+}
+
+function findRules(line: string): Set<string> {
+  const hosts: string[] = [];
+  const names: string[] = [];
+  const remainder = line
+    .toLowerCase()
+    .replace(/[a-z][a-z0-9+.-]*:\/\/[^\s"'`<>)\]]*/g, (candidate) => {
+      try {
+        hosts.push(new URL(candidate).hostname.replace(/\.$/, ""));
+      } catch {
+        // Invalid URL candidates remain available to the ordinary token checks.
+        return candidate;
+      }
+      return " ";
+    });
+  for (const token of remainder.split(/[\s"'`()[\]{}<>,;=|]+/)) {
+    names.push(...pathNames(token));
+    const labels = hostLabels(token);
+    if (labels.length > 0) hosts.push(labels.join("."));
+  }
+  return matchingRules(names, hosts);
 }
 
 const files = execFileSync("git", ["ls-files", "-z"], { encoding: "utf8" })
