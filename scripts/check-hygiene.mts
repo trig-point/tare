@@ -59,7 +59,10 @@ for (const file of files) {
       /(?:\/(?:Users|home)\/([^/\s]+)\/|[A-Za-z]:[\\/]Users[\\/]([^\\/\s]+)[\\/])/g,
     );
     if (
-      [...homePaths].some((match) => !placeholders.has(match[1] ?? match[2]))
+      [...homePaths].some((match) => {
+        const username = match[1] ?? match[2];
+        return username !== undefined && !placeholders.has(username);
+      })
     ) {
       console.error(`${file}:${index + 1}: home-path`);
       failed = true;

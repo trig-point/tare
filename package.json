@@ -8,7 +8,7 @@
   "scripts": {
     "lint": "biome check .",
     "format": "biome check --write .",
-    "typecheck": "pnpm -r typecheck",
+    "typecheck": "tsc -p tsconfig.json && pnpm -r typecheck",
     "test": "node --test scripts/*.test.mts && pnpm -r test",
     "generate": "pnpm --filter @tare/engine generate",
     "hygiene": "node scripts/check-hygiene.mts"
