@@ -14,7 +14,17 @@ rmSync("./data/typesql.sqlite", { force: true });
 for (const name of files.filter((name) => name.endsWith(".sql"))) {
   rmSync(join(directory, `${name.slice(0, -4)}.ts`), { force: true });
 }
-openDatabase("./data/typesql.sqlite").close();
+const connection = openDatabase("./data/typesql.sqlite");
+try {
+  connection.database.exec(
+    readFileSync(
+      new URL("../test/fixtures/typesql-compat.sql", import.meta.url),
+      "utf8",
+    ),
+  );
+} finally {
+  connection.close();
+}
 const result = spawnSync("typesql", ["compile"], { stdio: "inherit" });
 if (result.error) throw result.error;
 if (result.status !== 0) process.exit(result.status ?? 1);
