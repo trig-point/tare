@@ -8,14 +8,14 @@ The project SHALL provide a container build (a Dockerfile and a compose example)
 - **THEN** migrations run and `/health` returns 200
 
 ### Requirement: Scheduled jobs
-The engine SHALL run its scheduled jobs (the nightly backup, the weekly recompute and the Oura sync) in-process on daily or weekly schedules in the install's configured timezone, run at most one instance of each job at a time, and record each job's last run and result.
+The engine SHALL run its scheduled jobs (the nightly backup, the weekly recompute and the Oura sync) in-process on daily or weekly schedules in the install's configured timezone, run at most one instance of each job at a time, and record each job's last run and result. Schedules and overrun protection SHALL come from croner.
 
 #### Scenario: Overlapping run
 - **WHEN** a job is still running when its next run is due
 - **THEN** the second run is skipped and recorded as skipped
 
 ### Requirement: Nightly backup with tested restore
-The engine SHALL write a nightly online SQLite backup to a configured folder outside the data volume and keep a configured number of copies. A test SHALL restore a backup and pass integrity and foreign-key checks and an authenticated read.
+The engine SHALL write a nightly online SQLite backup, through better-sqlite3's `backup()`, to a configured folder outside the data volume and keep a configured number of copies. A test SHALL restore a backup and pass integrity and foreign-key checks and an authenticated read.
 
 #### Scenario: Restore drill
 - **WHEN** the restore test opens a backup produced while the engine was writing
@@ -33,7 +33,7 @@ The migration runner SHALL record a checksum of each applied migration and fail 
 - **THEN** the foreign-key check fails, the transaction rolls back and foreign keys are on afterwards
 
 ### Requirement: Repository hygiene check
-CI SHALL fail when tracked source contains an absolute home path or a hostname or domain on the deny list. The deny list SHALL come from tracked generic patterns plus a CI variable, so personal values never enter the repository. A failure SHALL name only the file and line, never the matched value or the deny list, because CI logs on a public repository are public.
+CI SHALL fail when tracked source contains an absolute home path or a hostname or domain on the deny list. The deny list SHALL come from tracked generic patterns plus a CI variable, so personal values never enter the repository. A failure SHALL name only the file and line, never the matched value or the deny list, because CI logs on a public repository are public. The check SHALL be custom rules for the gitleaks job CI already runs, with redacted output.
 
 #### Scenario: Planted hostname
 - **WHEN** a pull request adds a denied hostname to a source file

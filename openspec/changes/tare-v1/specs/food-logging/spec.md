@@ -53,7 +53,7 @@ The app SHALL show today's totals and remaining budget, let a person log weight,
 - **THEN** one lookup runs against the external sources and only exact matches are offered
 
 ### Requirement: Barcode scanning
-The app SHALL scan EAN-13, UPC-A, EAN-8 and UPC-E barcodes with the browser's native detector when it supports them and with a self-hosted, precached WASM reader otherwise, and SHALL offer manual barcode entry.
+The app SHALL scan EAN-13, UPC-A, EAN-8 and UPC-E barcodes with the browser's native detector when it supports them and with a self-hosted, precached WASM reader otherwise, and SHALL offer manual barcode entry. Both readers SHALL come from the barcode-detector package, with its zxing-wasm file served by the engine.
 
 #### Scenario: Native detector missing
 - **WHEN** the browser has no barcode detector and the device is offline

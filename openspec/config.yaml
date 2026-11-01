@@ -42,6 +42,11 @@ rules:
       in its line and includes a two-user negative test built on the shared two-user test helper.
       Tasks that come before the helper exists name the later task that carries their test.
     - >-
+      Every task names the existing package or tool it builds on ("integrate <package>" or
+      "builds on <package>"), or says "no package" and why none fits. Search npm, GitHub and the
+      framework's own features before writing a task that builds a mechanism. A ticket without
+      that line is not ready.
+    - >-
       Annotate every task with (depends on: <ids>) when it has prerequisites, plus
       (complexity: mechanical|standard|judgment) and (gate: none). Mechanical: the task text fully
       determines the result. Standard: the approach is settled and tests or the diff can check it.

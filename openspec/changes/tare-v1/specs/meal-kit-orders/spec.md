@@ -56,7 +56,7 @@ The parser SHALL extract service, meals, chef where stated, quantities and deliv
 ### Requirement: Inbound order email endpoint
 The engine SHALL accept raw order emails over HTTP authenticated by a per-person inbound token, which is stored hashed, created and rotated through session-only operations, and allows nothing but posting emails. It SHALL reject emails over 5 MB, read only text and HTML parts, fetch nothing the email links to, and ignore an email the same person has already sent. Each service's sender domain and sender address SHALL come from install configuration. Each email SHALL be marked:
 
-- verified, when Tare checks a DKIM signature itself and it passes for the service's configured sender domain, either on the posted message or on the original attached as `message/rfc822`; Tare never trusts `Authentication-Results` or other headers for this;
+- verified, when Tare checks a DKIM signature itself with mailauth and it passes for the service's configured sender domain, either on the posted message or on the original attached as `message/rfc822`; Tare never trusts `Authentication-Results` or other headers for this;
 - sender-matched, when no signature verifies but the original sender is the service's configured sender address; the authenticated endpoint is then the trust boundary;
 - unverified, otherwise.
 

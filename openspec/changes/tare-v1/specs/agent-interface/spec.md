@@ -16,7 +16,7 @@ Each operation SHALL be defined once with its name, input schema, output schema,
 - **THEN** the contract test fails
 
 ### Requirement: MCP server
-The engine SHALL serve an MCP server over streamable HTTP at `/mcp`, authenticated by agent tokens. It SHALL reject a request whose `Origin` header is present and not on the configured allow list, and SHALL bind each MCP session to the person of the token that opened it.
+The engine SHALL serve an MCP server over streamable HTTP at `/mcp`, authenticated by agent tokens. It SHALL be built on the MCP TypeScript SDK and SHALL reject a request whose `Origin` header is present and not on the configured allow list (the SDK transport's `allowedOrigins`), and SHALL bind each MCP session to the person of the token that opened it.
 
 #### Scenario: Agent lists tools
 - **WHEN** an MCP client connects with a valid agent token
