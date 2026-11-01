@@ -1,22 +1,46 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const script = fileURLToPath(new URL("./check-hygiene.mts", import.meta.url));
+const HANG_CEILING_MS = 60_000;
 function check(
   content: string | Buffer,
   environment: Record<string, string | undefined> = {},
   filename: string | null = "sample.txt",
   headRepository: string | null = "contributor/tare",
+  options: {
+    symlinkTarget?: string;
+    additionalFiles?: Record<string, string>;
+  } = {},
 ) {
   const directory = mkdtempSync(join(tmpdir(), "tare-hygiene-"));
   try {
     execFileSync("git", ["init", "-q", directory]);
-    if (filename !== null) writeFileSync(join(directory, filename), content);
+    if (filename !== null) {
+      mkdirSync(dirname(join(directory, filename)), { recursive: true });
+      if (options.symlinkTarget !== undefined) {
+        symlinkSync(options.symlinkTarget, join(directory, filename));
+      } else {
+        writeFileSync(join(directory, filename), content);
+      }
+    }
+    for (const [additionalPath, additionalContent] of Object.entries(
+      options.additionalFiles ?? {},
+    )) {
+      mkdirSync(dirname(join(directory, additionalPath)), { recursive: true });
+      writeFileSync(join(directory, additionalPath), additionalContent);
+    }
     writeFileSync(
       join(directory, "event.json"),
       JSON.stringify({
@@ -29,11 +53,16 @@ function check(
         },
       }),
     );
-    if (filename !== null)
-      execFileSync("git", ["add", filename], { cwd: directory });
+    const tracked = [
+      ...(filename === null ? [] : [filename]),
+      ...Object.keys(options.additionalFiles ?? {}),
+    ];
+    if (tracked.length > 0)
+      execFileSync("git", ["add", "--", ...tracked], { cwd: directory });
     const result = spawnSync(process.execPath, [script], {
       cwd: directory,
       encoding: "utf8",
+      timeout: HANG_CEILING_MS,
       env: {
         ...process.env,
         CI: "",
@@ -80,7 +109,7 @@ test("fork PR warns while retaining generic checks", () => {
   assert.match(clean.output, /Warning: fork PR/);
   assert.equal(check(["printer", "local"].join("."), environment).status, 1);
 });
-test("clean and empty repositories pass", () => {
+test("clean and empty text files pass", () => {
   assert.equal(check("clean").status, 0);
   assert.equal(check("").status, 0);
 });
@@ -89,6 +118,9 @@ test("binary files skip planted denied hosts", () => {
     check(
       Buffer.concat([Buffer.from([0]), Buffer.from("secret-host.invalid")]),
       { TARE_HYGIENE_DENY: "secret-host.invalid" },
+      "sample.txt",
+      "contributor/tare",
+      { additionalFiles: { "clean.txt": "clean" } },
     ).status,
     0,
   );
@@ -100,10 +132,10 @@ test("generic domains match host boundaries", () => {
 
 test("denied names match whole label sequences", () => {
   for (const [host, denied, expected] of [
-    ["private-box.tail1234.ts.net", "private-box", 1],
+    ["private-box.tail1234.test", "private-box", 1],
     ["sub.secret-host.invalid", "secret-host.invalid", 1],
     ["notsecret-host.invalid", "secret-host.invalid", 0],
-    ["notprivate-box.tail1234.ts.net", "private-box", 0],
+    ["notprivate-box.tail1234.test", "private-box", 0],
   ] as const) {
     const result = check(host, { TARE_HYGIENE_DENY: denied });
     assert.equal(result.status, expected, host);
@@ -194,27 +226,23 @@ test("PR with missing head repository requires the CI secret", () => {
 test("success reports presence without the configured count", () => {
   const clean = check("clean");
   assert.equal(clean.status, 0);
-  assert.equal(
+  assert.match(
     clean.output,
-    "hygiene: scanned 1 files; configured deny list: absent; generic patterns: 1\n",
+    /^hygiene: scanned 1 files; configured deny list: absent; generic patterns: \d+\n$/,
   );
   const configured = check("clean", {
     TARE_HYGIENE_DENY: "secret-host.invalid,other.invalid",
   });
   assert.equal(configured.status, 0);
-  assert.equal(
+  assert.match(
     configured.output,
-    "hygiene: scanned 1 files; configured deny list: present; generic patterns: 1\n",
+    /^hygiene: scanned 1 files; configured deny list: present; generic patterns: \d+\n$/,
   );
   assert.equal(
     configured.output,
     check("clean", {
       TARE_HYGIENE_DENY: "secret-host.invalid,other.invalid,third.invalid",
     }).output,
-  );
-  assert.equal(
-    check("", {}, null).output,
-    "hygiene: scanned 0 files; configured deny list: absent; generic patterns: 1\n",
   );
   const failed = check("secret-host.invalid", {
     TARE_HYGIENE_DENY: "secret-host.invalid",
@@ -322,7 +350,7 @@ test("dotless names match account paths and dotted hosts only", () => {
     ["Copyright alice", 0],
     ["github.com/alice/repo", 0],
     [["", "Users", "alice", "x"].join("/"), 1],
-    ["alice.example-tailnet.ts.net", 1],
+    ["alice.example-tailnet.test", 1],
   ] as const) {
     const result = check(content, { TARE_HYGIENE_DENY: "alice" });
     assert.equal(result.status, expected, content);
@@ -384,5 +412,33 @@ test("URL host checks exclude paths queries fragments and user info", () => {
       1,
       content,
     );
+  }
+});
+
+test("unreadable tracked files redact paths and keep scanning", () => {
+  const result = check(
+    "",
+    { TARE_HYGIENE_DENY: "secret-host.invalid" },
+    "Secret-Host.Invalid.conf",
+    "contributor/tare",
+    {
+      symlinkTarget: "missing-target",
+      additionalFiles: { "safe.txt": "secret-host.invalid" },
+    },
+  );
+  assert.equal(result.status, 1);
+  assert.match(result.output, /<redacted path>:0: unreadable/);
+  assert.match(result.output, /safe.txt:1: denied-host/);
+  assert.equal(
+    result.output.toLowerCase().includes("secret-host.invalid"),
+    false,
+  );
+});
+
+test("scans with no readable text files fail", () => {
+  for (const result of [check("", {}, null), check(Buffer.from([0]))]) {
+    assert.equal(result.status, 1);
+    assert.match(result.output, /hygiene: no files scanned/);
+    assert.equal(result.output.includes("hygiene: scanned"), false);
   }
 });

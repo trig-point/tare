@@ -103,7 +103,14 @@ for (const file of files) {
   )
     ? "<redacted path>"
     : file;
-  const content = readFileSync(file);
+  let content: Buffer;
+  try {
+    content = readFileSync(file);
+  } catch {
+    console.error(`${reportedPath}:0: unreadable`);
+    failed = true;
+    continue;
+  }
   if (content.includes(0)) continue;
   scanned += 1;
   const lines = content.toString("utf8").split(/\r?\n/);
@@ -169,6 +176,10 @@ for (const file of files) {
       failed = true;
     }
   }
+}
+if (scanned === 0) {
+  console.error("hygiene: no files scanned");
+  failed = true;
 }
 if (!failed) {
   const presence =
