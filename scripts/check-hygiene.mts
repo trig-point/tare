@@ -65,9 +65,11 @@ const files = execFileSync("git", ["ls-files", "-z"], { encoding: "utf8" })
   .split("\0")
   .filter(Boolean);
 let failed = false;
+let scanned = 0;
 for (const file of files) {
   const content = readFileSync(file);
   if (content.includes(0)) continue;
+  scanned += 1;
   const lines = content.toString("utf8").split(/\r?\n/);
   for (const [index, line] of lines.entries()) {
     const homePaths = line.matchAll(
@@ -102,5 +104,10 @@ for (const file of files) {
       failed = true;
     }
   }
+}
+if (!failed) {
+  console.log(
+    `hygiene: scanned ${scanned} files, ${denied.length} deny entries`,
+  );
 }
 process.exitCode = failed ? 1 : 0;

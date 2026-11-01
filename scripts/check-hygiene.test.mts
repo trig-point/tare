@@ -10,13 +10,13 @@ const script = fileURLToPath(new URL("./check-hygiene.mts", import.meta.url));
 function check(
   content: string | Buffer,
   environment: Record<string, string | undefined> = {},
-  filename = "sample.txt",
+  filename: string | null = "sample.txt",
   headRepository: string | null = "contributor/tare",
 ) {
   const directory = mkdtempSync(join(tmpdir(), "tare-hygiene-"));
   try {
     execFileSync("git", ["init", "-q", directory]);
-    writeFileSync(join(directory, filename), content);
+    if (filename !== null) writeFileSync(join(directory, filename), content);
     writeFileSync(
       join(directory, "event.json"),
       JSON.stringify({
@@ -29,7 +29,8 @@ function check(
         },
       }),
     );
-    execFileSync("git", ["add", filename], { cwd: directory });
+    if (filename !== null)
+      execFileSync("git", ["add", filename], { cwd: directory });
     const result = spawnSync(process.execPath, [script], {
       cwd: directory,
       encoding: "utf8",
@@ -244,4 +245,22 @@ test("PR with missing head repository requires the CI secret", () => {
   assert.equal(result.status, 1);
   assert.match(result.output, /TARE_HYGIENE_DENY is required in CI/);
   assert.equal(result.output.includes("Warning:"), false);
+});
+
+test("success reports scanned files and deny entry counts without values", () => {
+  const clean = check("clean");
+  assert.equal(clean.status, 0);
+  assert.equal(clean.output, "hygiene: scanned 1 files, 1 deny entries\n");
+  const configured = check("clean", {
+    TARE_HYGIENE_DENY: "secret-host.invalid,other.invalid",
+  });
+  assert.equal(configured.status, 0);
+  assert.equal(configured.output, "hygiene: scanned 1 files, 3 deny entries\n");
+  assert.equal(
+    check("", {}, null).output,
+    "hygiene: scanned 0 files, 1 deny entries\n",
+  );
+  const failed = check(["", "home", "alice", "file"].join("/"));
+  assert.equal(failed.status, 1);
+  assert.equal(failed.output.includes("hygiene: scanned"), false);
 });
