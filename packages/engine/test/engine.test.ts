@@ -95,8 +95,6 @@ describe("engine", () => {
   test("migration runner rejects an empty migration folder", (context) => {
     const directory = mkdtempSync(join(tmpdir(), "tare-migration-empty-"));
     context.after(() => rmSync(directory, { recursive: true, force: true }));
-    copyMigrations(directory);
-    for (const name of realNames) rmSync(join(directory, name));
     const connection = openDatabase(":memory:");
     try {
       assert.throws(
@@ -114,7 +112,7 @@ describe("engine", () => {
     context.after(() => rmSync(directory, { recursive: true, force: true }));
     copyMigrations(directory);
     writeFileSync(
-      join(directory, syntheticName(0, "first.sql")),
+      join(directory, `0${nextNumber}_first.sql`),
       "CREATE TABLE first_table (id INTEGER);",
     );
     writeFileSync(
@@ -250,12 +248,15 @@ describe("engine", () => {
     const directory = mkdtempSync(join(tmpdir(), "tare-migration-order-"));
     context.after(() => rmSync(directory, { recursive: true, force: true }));
     copyMigrations(directory);
+    const digits = String(nextNumber).length + 1;
+    const createName = `${"9".repeat(digits)}_create.sql`;
+    const alterName = `1${"0".repeat(digits)}_alter.sql`;
     writeFileSync(
-      join(directory, syntheticName(0, "create.sql")),
+      join(directory, createName),
       "CREATE TABLE ordering (id INTEGER);",
     );
     writeFileSync(
-      join(directory, syntheticName(10, "alter.sql")),
+      join(directory, alterName),
       "ALTER TABLE ordering ADD COLUMN applied INTEGER;",
     );
     const connection = openDatabase(":memory:");
@@ -266,10 +267,7 @@ describe("engine", () => {
           .prepare("SELECT name FROM schema_migrations ORDER BY rowid")
           .all()
           .slice(realNames.length),
-        [
-          { name: syntheticName(0, "create.sql") },
-          { name: syntheticName(10, "alter.sql") },
-        ],
+        [{ name: createName }, { name: alterName }],
       );
       connection.database
         .prepare("INSERT INTO ordering (id, applied) VALUES (?, ?)")
@@ -329,7 +327,7 @@ describe("engine", () => {
         connection.database
           .prepare("SELECT name FROM schema_migrations ORDER BY name")
           .all(),
-        realNames.sort().map((name) => ({ name })),
+        [...realNames].sort().map((name) => ({ name })),
       );
     } finally {
       connection.close();
