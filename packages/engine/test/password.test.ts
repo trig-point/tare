@@ -87,9 +87,20 @@ test("shared input limits reject nonstrings and preserve valid inputs", () => {
   assert.equal(normalizeUsername("x".repeat(64)), "x".repeat(64));
 });
 
-test("invalid password lengths cannot be hashed or verified", async () => {
+test("invalid password lengths cannot be hashed or verified", async (context) => {
+  const candidate = "invented-test-password";
+  const stored = await hashPassword(candidate);
+  const derivation = context.mock.method(crypto, "scrypt");
+  syncBuiltinESMExports();
+  context.after(() => {
+    derivation.mock.restore();
+    syncBuiltinESMExports();
+  });
   for (const password of ["", "x".repeat(1025)]) {
     await assert.rejects(hashPassword(password), /Invalid password length/);
-    assert.equal(await verifyPassword(password, "invalid"), false);
+    assert.equal(await verifyPassword(password, stored), false);
+    assert.equal(derivation.mock.callCount(), 0);
   }
+  assert.equal(await verifyPassword(candidate, stored), true);
+  assert.equal(derivation.mock.callCount(), 1);
 });
