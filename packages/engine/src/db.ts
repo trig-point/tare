@@ -92,6 +92,10 @@ function runMigration(
   const rebuild = firstLine === "-- tare:rebuild";
   if (firstLine?.toLowerCase().includes("tare:rebuild") && !rebuild)
     throw new Error(`Invalid rebuild marker in migration ${name}`);
+  if (rebuild && database.inTransaction)
+    throw new Error(
+      `Cannot run rebuild migration ${name} inside a transaction`,
+    );
   try {
     if (rebuild) database.pragma("foreign_keys = OFF");
     database.transaction(() => {

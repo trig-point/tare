@@ -256,3 +256,25 @@ test("a rebuild marker on line two keeps ordinary foreign-key enforcement", (con
   ]);
   assert.equal(database.pragma("foreign_keys", { simple: true }), 1);
 });
+
+test("pending rebuild inside a caller transaction fails naming the file", (context) => {
+  const { database, directory, folder } = fixture(context);
+  writeFileSync(join(directory, "0003_nested.sql"), rebuild);
+  database.transaction(() => {
+    assert.throws(
+      () => applyMigrations(database, folder),
+      /0003_nested.sql.*inside.*transaction/,
+    );
+    assert.equal(database.inTransaction, true);
+    assert.deepEqual(database.prepare("SELECT * FROM parent").all(), [
+      { id: 1, label: "Sample" },
+    ]);
+    assert.equal(
+      database
+        .prepare("SELECT name FROM schema_migrations WHERE name = ?")
+        .get("0003_nested.sql"),
+      undefined,
+    );
+    assert.equal(database.pragma("foreign_keys", { simple: true }), 1);
+  })();
+});
