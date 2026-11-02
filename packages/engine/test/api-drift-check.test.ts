@@ -523,3 +523,18 @@ test("USDA detail whose nutrients all fail to parse is drift", async () => {
   assert.equal(results.usda.live.status, "drift");
   assert.match(results.usda.live.details.join(), /food\.foodNutrients/);
 });
+
+test("a response body that fails to read is unavailable, not drift", async () => {
+  const { options } = fixture();
+  options.fetch = async () =>
+    new Response(
+      new ReadableStream({
+        pull(controller) {
+          controller.error(new Error("connection reset"));
+        },
+      }),
+    );
+  const results = await runChecks(options);
+  assert.equal(results.off.live.status, "unavailable");
+  assert.deepEqual(results.off.live.details, ["Response read unavailable"]);
+});
