@@ -16,6 +16,7 @@ import { loadConfig } from "../src/config.ts";
 import { applyMigrations, openDatabase } from "../src/db.ts";
 import { insertUser } from "../src/queries/insert-user.ts";
 import { selectUser } from "../src/queries/select-user.ts";
+import { dummyHash } from "./auth-support.ts";
 
 const migrations = new URL("../migrations/", import.meta.url);
 const realNames = readdirSync(migrations).filter((name) =>
@@ -39,7 +40,19 @@ const sampleUser = {
 
 describe("engine", () => {
   test("health returns 200 and ok", async () => {
-    const response = await createApp().request("/health");
+    const connection = openDatabase(":memory:");
+    let response: Response;
+    try {
+      response = await createApp({
+        database: connection.database,
+        config: loadConfig({ DATABASE_URL: ":memory:" }),
+        clock: { now: () => new Date() },
+        dummyHash,
+        verifyPassword: async () => false,
+      }).request("/health");
+    } finally {
+      connection.close();
+    }
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), { status: "ok" });
   });
@@ -53,6 +66,8 @@ describe("engine", () => {
       databaseUrl: ":memory:",
       port: 3000,
       timezone: "UTC",
+      publicUrl: undefined,
+      sessionDays: 30,
       firstUser: { username: undefined, password: undefined },
     });
   });

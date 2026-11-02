@@ -1,10 +1,12 @@
+import { randomBytes } from "node:crypto";
 import { serve } from "@hono/node-server";
 import { createApp } from "./app.ts";
 import { ensureFirstUser } from "./auth/bootstrap.ts";
-import { hashPassword } from "./auth/password.ts";
+import { hashPassword, verifyPassword } from "./auth/password.ts";
 import { loadConfig } from "./config.ts";
 import { openDatabase } from "./db.ts";
 import { createJobRunner } from "./jobs.ts";
+import { deleteExpiredSessions } from "./queries/delete-expired-sessions.ts";
 
 const config = loadConfig(process.env);
 const connection = openDatabase(config.databaseUrl);
@@ -22,7 +24,12 @@ await ensureFirstUser(
   process.exitCode = 1;
 });
 
-function startEngine() {
+async function startEngine() {
+  const clock = { now: () => new Date() };
+  deleteExpiredSessions(connection.database, {
+    now: clock.now().toISOString(),
+  });
+  const dummyHash = await hashPassword(randomBytes(32).toString("base64url"));
   const runner = createJobRunner({
     database: connection.database,
     timezone: config.timezone,
@@ -30,7 +37,13 @@ function startEngine() {
     report: (code, jobName) => console.error(code, jobName),
   });
   runner.start();
-  const app = createApp();
+  const app = createApp({
+    database: connection.database,
+    config,
+    clock,
+    dummyHash,
+    verifyPassword,
+  });
   const server = serve({ port: config.port, fetch: app.fetch }, (address) => {
     console.info(`Engine listening on port ${address.port}`);
   });
