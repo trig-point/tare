@@ -24,63 +24,140 @@ type Options = {
   runOasdiff?: (base: string, revision: string) => Promise<unknown>;
 };
 
-export function readPropertyNames(...schemas: z.ZodType[]): Set<string> {
-  const names = new Set<string>();
-  function walk(schema: z.ZodType) {
+function join(path: string, segment: string) {
+  if (segment === "[]") return `${path}[]`;
+  return path ? `${path}.${segment}` : segment;
+}
+
+export function readPropertyPaths(...schemas: z.ZodType[]): Set<string> {
+  const paths = new Set<string>();
+  function walk(schema: z.ZodType, path: string) {
     if (schema instanceof z.ZodObject) {
       for (const [name, child] of Object.entries(schema.shape)) {
-        names.add(name);
-        walk(child as z.ZodType);
+        paths.add(join(path, name));
+        walk(child as z.ZodType, join(path, name));
       }
     } else if (schema instanceof z.ZodUnion) {
-      for (const option of schema.options) walk(option as z.ZodType);
+      for (const option of schema.options) walk(option as z.ZodType, path);
     } else if (schema instanceof z.ZodArray) {
-      walk(schema.element as z.ZodType);
+      paths.add(join(path, "[]"));
+      walk(schema.element as z.ZodType, join(path, "[]"));
     } else if (
       schema instanceof z.ZodOptional ||
       schema instanceof z.ZodNullable ||
       schema instanceof z.ZodCatch
     ) {
-      walk(schema.unwrap() as z.ZodType);
+      walk(schema.unwrap() as z.ZodType, path);
     }
   }
-  for (const schema of schemas) walk(schema);
-  return names;
+  for (const schema of schemas) walk(schema, "");
+  return paths;
 }
 
-export function filterReadChanges(diff: unknown, names: Set<string>): string[] {
+type ReadEndpoint = { match: RegExp; paths: Set<string> };
+const productPaths = readPropertyPaths(productResponseSchema);
+// The adapter parses each search.pl product with the lookup's product schema.
+export const offReadEndpoints: ReadEndpoint[] = [
+  { match: /^\/api\/v2\/product\//, paths: productPaths },
+  {
+    match: /^\/cgi\/search[.]pl$/,
+    paths: new Set(
+      [...productPaths]
+        .filter((path) => path === "product" || path.startsWith("product."))
+        .map((path) => `products[]${path.slice("product".length)}`)
+        .concat("products"),
+    ),
+  },
+];
+
+const diffObject = z.record(z.string(), z.unknown());
+const optionalObject = diffObject.default({});
+const nameList = z.array(z.string()).default([]);
+const entryList = z.array(z.unknown()).default([]);
+
+export function filterReadChanges(
+  diff: unknown,
+  endpoints: ReadEndpoint[],
+): string[] {
   const changes = new Set<string>();
-  function walk(value: unknown, path: string[], read = false) {
-    if (value === null || typeof value !== "object") {
-      if (read) changes.add(path.join("."));
-      return;
-    }
-    if (Array.isArray(value)) {
-      if (read && value.length > 0) changes.add(path.join("."));
-      return;
-    }
-    for (const [key, child] of Object.entries(value)) {
+  function walkSchema(
+    value: unknown,
+    path: string,
+    endpoint: string,
+    read: Set<string>,
+  ) {
+    const label = `${endpoint} ${path || "response"}`;
+    const holdsRead = (candidate: string) =>
+      candidate === "" ||
+      [...read].some(
+        (readPath) =>
+          readPath === candidate ||
+          readPath.startsWith(`${candidate}.`) ||
+          readPath.startsWith(`${candidate}[]`),
+      );
+    for (const [key, change] of Object.entries(diffObject.parse(value))) {
       if (key === "properties" || key === "required") {
-        if (child === null || typeof child !== "object")
-          throw new Error("Invalid property diff");
-        for (const [operation, fields] of Object.entries(child)) {
-          if (Array.isArray(fields)) {
-            for (const field of fields)
-              if (typeof field === "string" && names.has(field))
-                changes.add([...path, key, operation, field].join("."));
-          } else if (fields !== null && typeof fields === "object") {
-            for (const [field, change] of Object.entries(fields)) {
-              const fieldPath = [...path, key, operation, field];
-              if (operation !== "modified" && names.has(field))
-                changes.add(fieldPath.join("."));
-              else walk(change, fieldPath, names.has(field));
-            }
-          } else throw new Error("Invalid property diff");
-        }
-      } else walk(child, [...path, key], read);
+        const fields = diffObject.parse(change);
+        for (const operation of ["added", "deleted"])
+          for (const name of nameList.parse(fields[operation]))
+            if (read.has(join(path, name)))
+              changes.add(
+                `${endpoint} ${join(path, name)}: ${key} ${operation}`,
+              );
+        if (key === "properties")
+          for (const [name, child] of Object.entries(
+            optionalObject.parse(fields.modified),
+          ))
+            walkSchema(child, join(path, name), endpoint, read);
+      } else if (key === "items") {
+        walkSchema(change, join(path, "[]"), endpoint, read);
+      } else if (key === "allOf" || key === "anyOf" || key === "oneOf") {
+        const subschemas = diffObject.parse(change);
+        for (const operation of ["added", "deleted"])
+          if (
+            entryList.parse(subschemas[operation]).length > 0 &&
+            holdsRead(path)
+          )
+            changes.add(`${label}: ${key} subschema ${operation}`);
+        for (const entry of entryList.parse(subschemas.modified))
+          walkSchema(diffObject.parse(entry).diff, path, endpoint, read);
+      } else if (read.has(path)) {
+        changes.add(`${label}: ${key} changed`);
+      }
     }
   }
-  walk(z.record(z.string(), z.unknown()).parse(diff), []);
+  const readFor = (endpoint: string) =>
+    endpoints.find(({ match }) => match.test(endpoint))?.paths;
+  const paths = optionalObject.parse(diffObject.parse(diff).paths);
+  for (const endpoint of nameList.parse(paths.deleted))
+    if (readFor(endpoint)) changes.add(`${endpoint}: endpoint deleted`);
+  for (const [endpoint, change] of Object.entries(
+    optionalObject.parse(paths.modified),
+  )) {
+    const read = readFor(endpoint);
+    if (!read) continue;
+    const operations = optionalObject.parse(
+      diffObject.parse(change).operations,
+    );
+    if (nameList.parse(operations.deleted).includes("GET"))
+      changes.add(`${endpoint}: GET deleted`);
+    const get = optionalObject.parse(
+      optionalObject.parse(operations.modified).GET,
+    );
+    const responses = optionalObject.parse(get.responses);
+    if (nameList.parse(responses.deleted).includes("200"))
+      changes.add(`${endpoint}: 200 response deleted`);
+    const success = optionalObject.parse(
+      optionalObject.parse(responses.modified)["200"],
+    );
+    const content = optionalObject.parse(success.content);
+    if (nameList.parse(content.deleted).includes("application/json"))
+      changes.add(`${endpoint}: JSON response deleted`);
+    const json = optionalObject.parse(
+      optionalObject.parse(content.modified)["application/json"],
+    );
+    if (json.schema !== undefined) walkSchema(json.schema, "", endpoint, read);
+  }
   return [...changes].sort();
 }
 
@@ -205,7 +282,7 @@ export async function runChecks(options: Options): Promise<{
         });
       return filterReadChanges(
         await run(offSpec(options.baseline.offCommit), offSpec("main")),
-        readPropertyNames(productResponseSchema),
+        offReadEndpoints,
       );
     }),
     check(async () => {

@@ -3,7 +3,8 @@ import { createHash } from "node:crypto";
 import { test } from "node:test";
 import {
   filterReadChanges,
-  readPropertyNames,
+  offReadEndpoints,
+  readPropertyPaths,
   report,
   runChecks,
 } from "../scripts/api-drift-check.mts";
@@ -197,117 +198,159 @@ test("missing or empty USDA key uses DEMO_KEY in the header", async () => {
   }
 });
 
-test("schema shape walk unwraps unions, arrays, optional, nullable and catch", () => {
-  assert.deepEqual([...readPropertyNames(productResponseSchema)].sort(), [
-    "brands",
-    "carbohydrates_100g",
-    "code",
-    "energy-kcal_100g",
-    "fat_100g",
-    "fiber_100g",
-    "nutriments",
-    "nutrition_data_per",
+const productEndpoint = "/api/v2/product/{code}";
+const searchEndpoint = "/cgi/search.pl";
+
+function schemaAt(path: string[], leaf: unknown): unknown {
+  const [segment, ...rest] = path;
+  if (segment === undefined) return leaf;
+  if (segment === "[]") return { items: schemaAt(rest, leaf) };
+  return { properties: { modified: { [segment]: schemaAt(rest, leaf) } } };
+}
+
+const typeChange = { type: { added: ["integer"], deleted: ["string"] } };
+
+function endpointDiff(
+  endpoint: string,
+  get: unknown,
+  extra: Record<string, unknown> = {},
+) {
+  return {
+    paths: {
+      modified: { [endpoint]: { operations: { modified: { GET: get } } } },
+    },
+    ...extra,
+  };
+}
+
+function schemaDiff(endpoint: string, schema: unknown) {
+  return endpointDiff(endpoint, {
+    responses: {
+      modified: {
+        "200": {
+          content: { modified: { "application/json": { schema } } },
+        },
+      },
+    },
+  });
+}
+
+function composed(keyword: string, diff: unknown) {
+  return {
+    [keyword]: {
+      modified: [{ base: { index: 0 }, revision: { index: 0 }, diff }],
+    },
+  };
+}
+
+async function docsStatus(diff: unknown) {
+  return (await runChecks(fixture({ diff }).options)).off.docs;
+}
+
+test("schema shape walk returns read paths through unions, arrays, optional, nullable and catch", () => {
+  assert.deepEqual([...readPropertyPaths(productResponseSchema)].sort(), [
     "product",
-    "product_name",
-    "proteins_100g",
+    "product.brands",
+    "product.code",
+    "product.nutriments",
+    "product.nutriments.carbohydrates_100g",
+    "product.nutriments.energy-kcal_100g",
+    "product.nutriments.fat_100g",
+    "product.nutriments.fiber_100g",
+    "product.nutriments.proteins_100g",
+    "product.nutrition_data_per",
+    "product.product_name",
     "status",
   ]);
   assert.deepEqual(
-    [...readPropertyNames(usdaFoodSchema, usdaSearchSchema)].sort(),
+    [...readPropertyPaths(usdaFoodSchema, usdaSearchSchema)].sort(),
     [
-      "amount",
       "brandName",
       "brandOwner",
       "dataType",
       "description",
       "fdcId",
       "foodNutrients",
+      "foodNutrients[]",
+      "foodNutrients[].amount",
+      "foodNutrients[].nutrient",
+      "foodNutrients[].nutrient.id",
+      "foodNutrients[].nutrient.unitName",
+      "foodNutrients[].nutrientId",
+      "foodNutrients[].unitName",
+      "foodNutrients[].value",
       "foods",
+      "foods[]",
       "gtinUpc",
-      "id",
-      "nutrient",
-      "nutrientId",
       "servingSizeUnit",
-      "unitName",
-      "value",
     ],
   );
+  const search = offReadEndpoints.find(({ match }) =>
+    match.test("/cgi/search.pl"),
+  );
+  assert.ok(search?.paths.has("products[].code"));
+  assert.ok(search?.paths.has("products[].nutriments.energy-kcal_100g"));
+  assert.equal(search?.paths.has("products[].status"), false);
 });
 
-function propertyDiff(property: string) {
-  return {
-    paths: {
-      modified: {
-        "/api/v2/product/{barcode}": {
-          operations: {
-            modified: {
-              GET: {
-                responses: {
-                  modified: {
-                    "200": {
-                      content: {
-                        modified: {
-                          "application/json": {
-                            schema: {
-                              properties: {
-                                modified: {
-                                  nutriments: {
-                                    properties: {
-                                      modified: {
-                                        [property]: {
-                                          type: {
-                                            added: ["string"],
-                                            deleted: ["number"],
-                                          },
-                                        },
-                                      },
-                                    },
-                                  },
-                                },
-                              },
-                            },
-                          },
-                        },
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-  };
-}
-
 test("oasdiff drops unread fields on matched paths and keeps read fields", async () => {
-  const names = readPropertyNames(productResponseSchema);
-  assert.deepEqual(filterReadChanges({}, names), []);
-  assert.deepEqual(filterReadChanges(propertyDiff("unused"), names), []);
-  assert.ok(
-    filterReadChanges(propertyDiff("energy-kcal_100g"), names).length > 0,
+  assert.deepEqual(filterReadChanges({}, offReadEndpoints), []);
+  assert.deepEqual(
+    filterReadChanges(
+      schemaDiff(productEndpoint, schemaAt(["product", "unused"], typeChange)),
+      offReadEndpoints,
+    ),
+    [],
   );
   assert.ok(
     filterReadChanges(
-      { properties: { deleted: ["code", "unused"] } },
-      names,
-    )[0]?.endsWith("code"),
+      schemaDiff(
+        productEndpoint,
+        schemaAt(["product", "nutriments", "energy-kcal_100g"], typeChange),
+      ),
+      offReadEndpoints,
+    ).length > 0,
   );
   assert.deepEqual(
-    filterReadChanges({ required: { added: ["unused"] } }, names),
+    filterReadChanges(
+      schemaDiff(
+        productEndpoint,
+        schemaAt(["product"], { properties: { deleted: ["code", "unused"] } }),
+      ),
+      offReadEndpoints,
+    ),
+    ["/api/v2/product/{code} product.code: properties deleted"],
+  );
+  assert.deepEqual(
+    filterReadChanges(
+      schemaDiff(
+        productEndpoint,
+        schemaAt(["product"], { required: { added: ["unused"] } }),
+      ),
+      offReadEndpoints,
+    ),
     [],
   );
   const results = await runChecks(
-    fixture({ diff: propertyDiff("unused") }).options,
+    fixture({
+      diff: schemaDiff(
+        productEndpoint,
+        schemaAt(["product", "unused"], typeChange),
+      ),
+    }).options,
   );
   assert.equal(results.off.docs.status, "pass");
   assert.equal(report(results, "run").outputs.off_drift, "false");
   const changed = await runChecks(
-    fixture({ diff: propertyDiff("code") }).options,
+    fixture({
+      diff: schemaDiff(
+        productEndpoint,
+        schemaAt(["product", "code"], typeChange),
+      ),
+    }).options,
   );
   assert.equal(changed.off.docs.status, "drift");
-  assert.match(report(changed, "run").outputs.off_body ?? "", /code/);
+  assert.match(report(changed, "run").outputs.off_body ?? "", /product\.code/);
 });
 
 test("malformed JSON is drift; malformed diff output is unavailable", async () => {
@@ -329,4 +372,101 @@ test("unchanged USDA hash passes and a changed hash reports the spec URL", async
     changed.usda.docs.details.join(),
     /USDA spec changed: https:\/\/fdc.nal.usda.gov/,
   );
+});
+
+test("oasdiff drops a read field name under a parent the adapters never read", async () => {
+  for (const diff of [
+    schemaDiff(
+      productEndpoint,
+      schemaAt(["product", "ecoscore", "code"], typeChange),
+    ),
+    schemaDiff(
+      searchEndpoint,
+      schemaAt(["products", "[]", "ecoscore", "code"], typeChange),
+    ),
+    schemaDiff(productEndpoint, schemaAt(["code"], typeChange)),
+    {
+      components: {
+        schemas: {
+          modified: { Product: schemaAt(["product", "code"], typeChange) },
+        },
+      },
+    },
+  ]) {
+    const result = await docsStatus(diff);
+    assert.equal(result.status, "pass", result.details.join());
+  }
+});
+
+test("oasdiff keeps read paths inside oneOf, allOf and search products items", async () => {
+  const nested = await docsStatus(
+    schemaDiff(
+      productEndpoint,
+      composed(
+        "oneOf",
+        composed("allOf", schemaAt(["product", "code"], typeChange)),
+      ),
+    ),
+  );
+  assert.equal(nested.status, "drift");
+  assert.match(nested.details.join(), /product\.code/);
+  const search = await docsStatus(
+    schemaDiff(
+      searchEndpoint,
+      schemaAt(["products", "[]", "code"], typeChange),
+    ),
+  );
+  assert.equal(search.status, "drift");
+  assert.match(search.details.join(), /products\[\]\.code/);
+  const nutrient = await docsStatus(
+    schemaDiff(
+      productEndpoint,
+      schemaAt(["product", "nutriments", "energy-kcal_100g"], typeChange),
+    ),
+  );
+  assert.equal(nutrient.status, "drift");
+  for (const [required, status] of [
+    [{ added: ["ecoscore"] }, "pass"],
+    [{ deleted: ["code"] }, "drift"],
+  ] as const) {
+    const result = await docsStatus(
+      schemaDiff(searchEndpoint, schemaAt(["products", "[]"], { required })),
+    );
+    assert.equal(result.status, status, JSON.stringify(required));
+  }
+});
+
+test("oasdiff keeps removed endpoints, responses and subschemas the adapters read", async () => {
+  for (const [diff, status] of [
+    [{ paths: { deleted: [productEndpoint] } }, "drift"],
+    [
+      endpointDiff(productEndpoint, { responses: { deleted: ["200"] } }),
+      "drift",
+    ],
+    [endpointDiff(productEndpoint, { responses: { added: ["404"] } }), "pass"],
+    [
+      endpointDiff(productEndpoint, {
+        parameters: {
+          modified: { query: { fields: { required: { to: true } } } },
+        },
+      }),
+      "pass",
+    ],
+    [
+      schemaDiff(productEndpoint, { oneOf: { deleted: [{ index: 1 }] } }),
+      "drift",
+    ],
+    [
+      schemaDiff(
+        productEndpoint,
+        schemaAt(["product", "ecoscore"], {
+          allOf: { deleted: [{ index: 0 }] },
+        }),
+      ),
+      "pass",
+    ],
+  ] as const) {
+    const result = await docsStatus(diff);
+    assert.equal(result.status, status, JSON.stringify(diff));
+  }
 });
