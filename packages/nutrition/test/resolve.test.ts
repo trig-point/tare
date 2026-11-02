@@ -185,7 +185,12 @@ test("visited tiers validate every record and report all invalid indexes", () =>
   assert.throws(
     () =>
       resolveLookup(request, {
-        own: [food(), invalid, food({ sourceId: "" })],
+        own: [
+          food(),
+          invalid,
+          food({ sourceId: "" }),
+          food({ barcode: "not-a-code" }),
+        ],
       }),
     (error) => {
       assert.ok(error instanceof InvalidRecordError);
@@ -194,6 +199,7 @@ test("visited tiers validate every record and report all invalid indexes", () =>
       assert.deepEqual(error.issues, [
         { index: 1, issues: [{ code: "empty_name" }] },
         { index: 2, issues: [{ code: "empty_source_id" }] },
+        { index: 3, issues: [{ code: "invalid_barcode" }] },
       ]);
       return true;
     },
