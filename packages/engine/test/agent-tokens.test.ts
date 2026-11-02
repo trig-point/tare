@@ -21,16 +21,13 @@ test("agent mappings resolve only their owner, deny browser operations and revok
     name: " Agent A ",
   };
   const write = { method: "POST", body: JSON.stringify(body) };
-  const headers = assertionHeader(
-    await signAccessToken({ sub: "", common_name: " Invented-Agent-A " }),
-  );
-  const service = (path: string, method = "GET") =>
-    setup.app.request(path, { method, headers });
+  const agent = async (clientId: string) =>
+    assertionHeader(await signAccessToken({ sub: "", common_name: clientId }));
+  const headers = await agent(" Invented-Agent-A ");
+  const service = (path: string, method = "GET", credentials = headers) =>
+    setup.app.request(path, { method, headers: credentials });
   const create = (value: unknown) =>
-    admin.request(tokenPath, {
-      method: "POST",
-      body: JSON.stringify(value),
-    });
+    admin.request(tokenPath, { method: "POST", body: JSON.stringify(value) });
   const list = async (person = admin) => {
     const response = await person.request(tokenPath);
     assert.equal(response.status, 200);
@@ -91,9 +88,12 @@ test("agent mappings resolve only their owner, deny browser operations and revok
     });
   }
   setup.setNow("2026-01-01T00:00:20.000Z");
-  assert.equal((await service("/api/me")).status, 200);
-  assert.equal((await list())[0].last_used_at, "2026-01-01T00:00:20.000Z");
-  assert.equal((await list(member))[0].last_used_at, null);
+  const memberAgent = await agent("Invented-Agent-B");
+  const asMember = await service("/api/me", "GET", memberAgent);
+  assert.deepEqual(await publicUser(asMember), member.user);
+  const usedAt = async (person = admin) => (await list(person))[0].last_used_at;
+  assert.equal(await usedAt(), "2026-01-01T00:00:10.000Z");
+  assert.equal(await usedAt(member), "2026-01-01T00:00:20.000Z");
   const deleted = await remove();
   assert.equal(deleted.status, 204);
   assert.equal(deleted.headers.get("Cache-Control"), "no-store");
@@ -131,9 +131,7 @@ test("agent mappings resolve only their owner, deny browser operations and revok
     );
   for (const id of ["missing", "999"])
     await rejection(
-      await admin.request(`${tokenPath}/${id}`, {
-        method: "DELETE",
-      }),
+      await admin.request(`${tokenPath}/${id}`, { method: "DELETE" }),
       404,
       "not_found",
     );
