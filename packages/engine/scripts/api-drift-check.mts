@@ -380,10 +380,15 @@ export async function runChecks(options: Options): Promise<{
       );
       if (detail.fdcId !== identifier)
         return ["food.fdcId: does not match the search result"];
-      // Unreadable nutrient entries parse as null, so a reshaped list would otherwise pass.
-      return detail.foodNutrients.some((nutrient) => nutrient !== null)
+      // Unreadable entries parse as null and the adapter skips entries without an amount.
+      return detail.foodNutrients.some(
+        (nutrient) =>
+          nutrient !== null &&
+          ("nutrient" in nutrient ? nutrient.amount : nutrient.value) !==
+            undefined,
+      )
         ? []
-        : ["food.foodNutrients: expected at least one readable nutrient"];
+        : ["food.foodNutrients: expected at least one nutrient amount"];
     }),
     check(async () => {
       const spec = await (await response(usdaSpec)).arrayBuffer();

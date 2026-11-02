@@ -527,13 +527,18 @@ test("OFF parse failures name fields without a leading dot", async () => {
   ]);
 });
 
-test("USDA detail whose nutrients all fail to parse is drift", async () => {
-  const results = await runChecks(
-    fixture({ detail: { ...food, foodNutrients: [{ renamed: 1008 }] } })
-      .options,
-  );
-  assert.equal(results.usda.live.status, "drift");
-  assert.match(results.usda.live.details.join(), /food\.foodNutrients/);
+test("USDA detail with no nutrient amount the adapter can read is drift", async () => {
+  for (const foodNutrients of [
+    [{ renamed: 1008 }],
+    [{ nutrient: { id: 1008, unitName: "KCAL" } }],
+    [{ nutrientId: 1008, unitName: "KCAL" }],
+  ]) {
+    const results = await runChecks(
+      fixture({ detail: { ...food, foodNutrients } }).options,
+    );
+    assert.equal(results.usda.live.status, "drift");
+    assert.match(results.usda.live.details.join(), /food\.foodNutrients/);
+  }
 });
 
 test("a response body that fails to read is unavailable, not drift", async () => {
