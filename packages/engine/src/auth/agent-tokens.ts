@@ -1,50 +1,55 @@
-import type { Hono } from "hono";
-import { bodyLimit } from "hono/body-limit";
-import { z } from "zod";
+import { z as zod } from "zod";
+import {
+  defineOperation,
+  OperationError,
+  operationPerson,
+} from "../operations/registry.ts";
 import { deleteAgentToken } from "../queries/delete-agent-token.ts";
 import { insertAgentToken } from "../queries/insert-agent-token.ts";
 import { selectAgentTokens } from "../queries/select-agent-tokens.ts";
 import { selectUser } from "../queries/select-user.ts";
-import {
-  type AuthEnv,
-  authenticatedPerson,
-  currentPerson,
-  requireAdmin,
-  requireRequestedWith,
-} from "./middleware.ts";
-import type { AppOptions } from "./routes.ts";
+import { emptyInput } from "./routes.ts";
 
-const mappingBody = z.object({
-  client_id: z.string().trim().min(1).max(256),
-  user_id: z.number().int().positive(),
-  name: z.string().trim().min(1).max(64),
+const mappingBody = zod.object({
+  client_id: zod.string().trim().min(1).max(256),
+  user_id: zod.number().int().positive(),
+  name: zod.string().trim().min(1).max(64),
 });
 
-export function mountAgentTokenRoutes(app: Hono<AuthEnv>, options: AppOptions) {
-  const { database, clock } = options;
-  app.post(
-    "/api/agent-tokens",
-    authenticatedPerson,
-    requireRequestedWith,
-    requireAdmin(database),
-    bodyLimit({
-      maxSize: 8192,
-      onError: (context) =>
-        context.json({ error: { code: "body_too_large" } }, 413),
-    }),
-    async (context) => {
-      const body = mappingBody.safeParse(
-        await context.req.json().catch(() => null),
-      );
-      if (!body.success || !selectUser(database, { id: body.data.user_id }))
-        return context.json({ error: { code: "invalid_request" } }, 400);
+const mappingOutput = zod.strictObject({
+  id: zod.number(),
+  user_id: zod.number(),
+  client_id: zod.string(),
+  name: zod.string(),
+  created_at: zod.string(),
+  last_used_at: zod.string().nullable(),
+});
+const browserOperation = {
+  modes: ["access"] as "access"[],
+  callerClass: "browser" as const,
+  admin: false,
+};
+
+export const agentTokenOperations = [
+  defineOperation({
+    ...browserOperation,
+    name: "create_agent_token",
+    method: "POST",
+    path: "/api/agent-tokens",
+    admin: true,
+    bodyLimit: 8192,
+    input: mappingBody,
+    output: zod.strictObject({ agent_token: mappingOutput }),
+    async handler(body, { database, clock }) {
+      if (!selectUser(database, { id: body.user_id }))
+        throw new OperationError(400, "invalid_request");
       try {
         const mapping = insertAgentToken(database, {
-          ...body.data,
+          ...body,
           created_at: clock.now().toISOString(),
         });
         if (!mapping) throw new Error("Could not create agent mapping");
-        return context.json({ agent_token: mapping }, 201);
+        return { status: 201, body: { agent_token: mapping } };
       } catch (error) {
         if (
           error instanceof Error &&
@@ -52,32 +57,50 @@ export function mountAgentTokenRoutes(app: Hono<AuthEnv>, options: AppOptions) {
           error.code === "SQLITE_CONSTRAINT_UNIQUE" &&
           error.message === "UNIQUE constraint failed: agent_tokens.client_id"
         )
-          return context.json({ error: { code: "client_id_taken" } }, 409);
+          throw new OperationError(409, "client_id_taken");
         throw error;
       }
     },
-  );
-  app.get("/api/agent-tokens", authenticatedPerson, (context) =>
-    context.json({
-      agent_tokens: selectAgentTokens(database, {
-        user_id: currentPerson(context).id,
-      }),
+  }),
+  defineOperation({
+    ...browserOperation,
+    name: "list_agent_tokens",
+    method: "GET",
+    path: "/api/agent-tokens",
+    noStoreSubpaths: true,
+    input: emptyInput,
+    output: zod.strictObject({ agent_tokens: zod.array(mappingOutput) }),
+    handler: (_input, context) => ({
+      status: 200,
+      body: {
+        agent_tokens: selectAgentTokens(context.database, {
+          user_id: operationPerson(context).id,
+        }),
+      },
     }),
-  );
-  app.delete(
-    "/api/agent-tokens/:id",
-    authenticatedPerson,
-    requireRequestedWith,
-    (context) => {
-      const id = Number(context.req.param("id"));
+  }),
+  defineOperation({
+    ...browserOperation,
+    name: "delete_agent_token",
+    method: "DELETE",
+    path: "/api/agent-tokens/:id",
+    input: zod.object({
+      id: zod
+        .string()
+        .transform(Number)
+        .refine((id) => Number.isSafeInteger(id) && id > 0),
+    }),
+    inputError: "not_found",
+    output: zod.never(),
+    handler({ id }, context) {
       if (
-        !Number.isSafeInteger(id) ||
-        id < 1 ||
-        deleteAgentToken(database, { user_id: currentPerson(context).id, id })
-          .length === 0
+        deleteAgentToken(context.database, {
+          user_id: operationPerson(context).id,
+          id,
+        }).length === 0
       )
-        return context.json({ error: { code: "not_found" } }, 404);
-      return context.body(null, 204);
+        throw new OperationError(404, "not_found");
+      return { status: 204 };
     },
-  );
-}
+  }),
+];

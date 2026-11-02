@@ -1,26 +1,22 @@
 import { Hono } from "hono";
 import { createRemoteJWKSet } from "jose";
 import { createAccessVerifier } from "./auth/access.ts";
-import {
-  type AuthEnv,
-  accessAuth,
-  restrictServiceRoutes,
-} from "./auth/middleware.ts";
+import { type AuthEnv, accessAuth } from "./auth/middleware.ts";
 import { type AppOptions, mountAuthRoutes } from "./auth/routes.ts";
+import { mountOperations, operationGuards } from "./operations/http.ts";
+import { operations } from "./operations/index.ts";
+import { OperationError } from "./operations/registry.ts";
 
 export function createApp(options: AppOptions) {
   const app = new Hono<AuthEnv>();
-  app.use("*", async (context, next) => {
-    if (
-      ["/api/session", "/api/users", "/api/me", "/api/agent-tokens"].includes(
-        context.req.path,
-      ) ||
-      context.req.path.startsWith("/api/agent-tokens/")
-    )
-      context.header("Cache-Control", "no-store");
-    await next();
-  });
+  const guards = operationGuards(operations, options.config.identity.mode);
+  app.use("*", guards.noStore);
   app.onError((error, context) => {
+    if (error instanceof OperationError) {
+      for (const [name, value] of Object.entries(error.headers))
+        context.header(name, value);
+      return context.json({ error: { code: error.code } }, error.status);
+    }
     // Name only: messages can carry request data, which stays out of logs.
     console.error("request_failed", error.name);
     return context.json({ error: { code: "internal" } }, 500);
@@ -46,8 +42,12 @@ export function createApp(options: AppOptions) {
         options.clock,
       ),
     );
-    app.use("*", restrictServiceRoutes);
+    app.use("*", guards.serviceRoutes);
   }
+  mountOperations(app, operations, {
+    ...options,
+    signInLimiter: { waiting: 0 },
+  });
   mountAuthRoutes(app, options);
   return app;
 }
