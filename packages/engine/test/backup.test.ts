@@ -17,16 +17,17 @@ for (const behavior of ["restore", "retention"])
     const options = { database, clock, timezone: "UTC", report: assert.fail };
     const runner = createJobRunner(options);
     runner.register(createBackupJob({ ...options, directory, keep: 2 }));
+    let day = 0;
     const backup = database.backup.bind(database);
     const write = database.prepare("UPDATE users SET day_start_hour = ?");
     context.mock.method(database, "backup", (file: string) =>
-      backup(file, { progress: () => write.run(4).changes }),
+      backup(file, { progress: () => write.run(day + 4).changes }),
     );
     runner.start();
     context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
     context.after(() => runner.stop());
     fs.writeFileSync(join(directory, "note"), "keep");
-    for (const day of [1, 2, 3]) {
+    for (day of [1, 2, 3]) {
       clock.now = () => new Date(Date.UTC(2026, 0, day));
       assert.equal((await runner.runNow("backup")).status, "ok");
     }
@@ -38,8 +39,7 @@ for (const behavior of ["restore", "retention"])
       ]);
     const file = join(directory, "tare-20260103T000000000Z.sqlite");
     async function check() {
-      const restored = openDatabase(file);
-      const db = restored.database;
+      const { database: db, close } = openDatabase(file);
       try {
         assert.equal(db.pragma("integrity_check", { simple: true }), "ok");
         assert.deepEqual(db.pragma("foreign_key_check"), []);
@@ -47,9 +47,9 @@ for (const behavior of ["restore", "retention"])
         const headers = { Cookie: session };
         const response = await app.request("/api/session", { headers });
         assert.equal(response.status, 200);
-        assert.equal((await response.json()).user.day_start_hour, 4);
+        assert.equal((await response.json()).user.day_start_hour, day + 4);
       } finally {
-        restored.close();
+        close();
       }
     }
     await check();
