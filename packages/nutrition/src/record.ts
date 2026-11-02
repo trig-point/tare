@@ -38,6 +38,11 @@ export interface NutritionValues {
   readonly basis: ServingBasis | null;
   readonly nutrients: Nutrients;
 }
+export interface MealKitKey {
+  readonly service: string;
+  readonly mealName: string;
+  readonly chef: string | null;
+}
 export interface NutritionRecord extends NutritionValues {
   readonly sourceId: string;
   readonly name: string;
@@ -45,6 +50,7 @@ export interface NutritionRecord extends NutritionValues {
   readonly barcode: string | null;
   readonly labelSource: string | null;
   readonly retrievedAt: string | null;
+  readonly mealKit: MealKitKey | null;
 }
 export type RecordIssue =
   | {
@@ -59,7 +65,9 @@ export type RecordIssue =
         | "invalid_retrieved_at"
         | "invalid_barcode"
         | "empty_source_id"
-        | "empty_name";
+        | "empty_name"
+        | "meal_kit_source"
+        | "empty_meal_kit_field";
     };
 
 export function checkValues(values: NutritionValues): readonly RecordIssue[] {
@@ -94,6 +102,16 @@ export function checkRecord(record: NutritionRecord): readonly RecordIssue[] {
   if (record.name.trim() === "") issues.push({ code: "empty_name" });
   if (record.barcode !== null && !/^\d{8,14}$/.test(record.barcode))
     issues.push({ code: "invalid_barcode" });
+  if (record.mealKit !== null) {
+    if (record.source !== "own") issues.push({ code: "meal_kit_source" });
+    const { service, mealName, chef } = record.mealKit;
+    if (
+      service.trim() === "" ||
+      mealName.trim() === "" ||
+      (chef !== null && chef.trim() === "")
+    )
+      issues.push({ code: "empty_meal_kit_field" });
+  }
   if (record.source !== "own") {
     const timestamp = record.retrievedAt;
     if (

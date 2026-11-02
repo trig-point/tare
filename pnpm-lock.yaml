@@ -43,7 +43,11 @@ importers:
         specifier: 0.24.0
         version: 0.24.0(@types/node@22.20.5)
 
-  packages/nutrition: {}
+  packages/nutrition:
+    dependencies:
+      unicode-case-folding:
+        specifier: 1.1.2
+        version: 1.1.2
 
 packages:
 
@@ -569,6 +573,9 @@ packages:
   undici-types@6.21.0:
     resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==}
 
+  unicode-case-folding@1.1.2:
+    resolution: {integrity: sha512-03vMM1kVkJbiSIPDW1D0hu42prq3Pe000yC5PaNMjhBJQxDuhAfh+R1V4TXXL21adjBqj7fUtBjZuWCRmiOQQQ==}
+
   util-deprecate@1.0.2:
     resolution: {integrity: sha512-EPD5q1uXyFxJpCrLnCc1nHnq3gOa6DZBocAIiI2TaSCA7VCJ1UJDMagCzIkXNsUYfD1daK//LTEQ8xiIbrHtcw==}
 
@@ -1069,6 +1076,8 @@ snapshots:
       - '@types/node'
 
   undici-types@6.21.0: {}
+
+  unicode-case-folding@1.1.2: {}
 
   util-deprecate@1.0.2: {}
 
