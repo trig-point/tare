@@ -18,10 +18,11 @@ import {
   usdaSearchSchema,
 } from "../src/sources/usda.ts";
 
-const off: OffProductResponse = {
-  status: 1,
-  product: { code: "3017624010701", nutriments: { "energy-kcal_100g": 539 } },
+const offProduct = {
+  code: "3017624010701",
+  nutriments: { "energy-kcal_100g": 539 },
 };
+const off: OffProductResponse = { status: 1, product: offProduct };
 const food: UsdaFood = {
   dataType: "Branded",
   fdcId: 2095236,
@@ -37,6 +38,7 @@ const baseline = {
 function fixture(
   overrides: {
     off?: unknown;
+    offSearch?: unknown;
     search?: unknown;
     detail?: unknown;
     httpStatus?: number;
@@ -57,9 +59,9 @@ function fixture(
         return new Response(overrides.spec ?? "spec");
       return Response.json(
         url.hostname === "world.openfoodfacts.org"
-          ? overrides.off === undefined
-            ? off
-            : overrides.off
+          ? url.pathname === "/cgi/search.pl"
+            ? (overrides.offSearch ?? { products: [offProduct] })
+            : (overrides.off ?? off)
           : url.pathname.endsWith("search")
             ? overrides.search === undefined
               ? { foods: [food] }
@@ -285,12 +287,6 @@ test("schema shape walk returns read paths through unions, arrays, optional, nul
       "servingSizeUnit",
     ],
   );
-  const search = offReadEndpoints.find(({ match }) =>
-    match.test("/cgi/search.pl"),
-  );
-  assert.ok(search?.paths.has("products[].code"));
-  assert.ok(search?.paths.has("products[].nutriments.energy-kcal_100g"));
-  assert.equal(search?.paths.has("products[].status"), false);
 });
 
 test("oasdiff drops unread fields on matched paths and keeps read fields", async () => {
@@ -398,7 +394,7 @@ test("oasdiff drops a read field name under a parent the adapters never read", a
   }
 });
 
-test("oasdiff keeps read paths inside oneOf, allOf and search products items", async () => {
+test("oasdiff keeps read paths inside oneOf and allOf", async () => {
   const nested = await docsStatus(
     schemaDiff(
       productEndpoint,
@@ -410,14 +406,6 @@ test("oasdiff keeps read paths inside oneOf, allOf and search products items", a
   );
   assert.equal(nested.status, "drift");
   assert.match(nested.details.join(), /product\.code/);
-  const search = await docsStatus(
-    schemaDiff(
-      searchEndpoint,
-      schemaAt(["products", "[]", "code"], typeChange),
-    ),
-  );
-  assert.equal(search.status, "drift");
-  assert.match(search.details.join(), /products\[\]\.code/);
   const nutrient = await docsStatus(
     schemaDiff(
       productEndpoint,
@@ -430,7 +418,7 @@ test("oasdiff keeps read paths inside oneOf, allOf and search products items", a
     [{ deleted: ["code"] }, "drift"],
   ] as const) {
     const result = await docsStatus(
-      schemaDiff(searchEndpoint, schemaAt(["products", "[]"], { required })),
+      schemaDiff(productEndpoint, schemaAt(["product"], { required })),
     );
     assert.equal(result.status, status, JSON.stringify(required));
   }
@@ -495,7 +483,6 @@ test("captured oasdiff output keeps read-path changes and drops unread and annot
       "/api/v2/product/{code} product.brands: properties added",
       "/api/v2/product/{code} product.code: properties deleted",
       "/api/v2/product/{code} response: allOf subschema deleted",
-      "/cgi/search.pl: endpoint deleted",
     ],
     rootRefactor: [
       "/api/v2/product/{code} product: properties added",
@@ -562,4 +549,26 @@ test("a response body that fails to read is unavailable, not drift", async () =>
   const results = await runChecks(options);
   assert.equal(results.off.live.status, "unavailable");
   assert.deepEqual(results.off.live.details, ["Response read unavailable"]);
+});
+
+test("OFF search sends the adapter's query and reports a malformed product as drift", async () => {
+  const { options, requests } = fixture();
+  assert.equal((await runChecks(options)).off.live.status, "pass");
+  const search = requests.find(({ url }) => url.pathname === "/cgi/search.pl");
+  assert.equal(search?.url.searchParams.get("search_simple"), "1");
+  assert.equal(
+    search?.url.searchParams.get("fields"),
+    "code,product_name,brands,nutrition_data_per,nutriments",
+  );
+  for (const [offSearch, field] of [
+    [
+      { products: [offProduct, { product_name: "Spread" }] },
+      /search\.products\.1\.code/,
+    ],
+    [{ products: [] }, /search\.products: expected at least one product/],
+  ] as const) {
+    const results = await runChecks(fixture({ offSearch }).options);
+    assert.equal(results.off.live.status, "drift");
+    assert.match(results.off.live.details.join(), field);
+  }
 });

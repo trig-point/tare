@@ -23,7 +23,7 @@ const origin = "https://world.openfoodfacts.org";
 
 // The slice of Open Food Facts responses the adapter reads; other fields are ignored.
 const nutrientAmount = z.number().optional();
-const productSchema = z.object({
+export const productSchema = z.object({
   code: z.string(),
   product_name: z.string().nullish(),
   brands: z.string().nullish(),
@@ -43,7 +43,9 @@ export const productResponseSchema = z.union([
   z.object({ status: z.literal(1), product: productSchema }),
 ]);
 // Products are checked one by one, so a single malformed product cannot fail a search.
-const searchResponseSchema = z.object({ products: z.array(z.unknown()) });
+export const searchResponseSchema = z.object({
+  products: z.array(z.unknown()),
+});
 
 export type OffProduct = z.input<typeof productSchema>;
 export type OffProductResponse = z.input<typeof productResponseSchema>;

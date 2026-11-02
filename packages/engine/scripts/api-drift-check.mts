@@ -5,7 +5,11 @@ import { appendFile, readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { z } from "zod";
-import { productResponseSchema } from "../src/sources/off.ts";
+import {
+  productResponseSchema,
+  productSchema,
+  searchResponseSchema,
+} from "../src/sources/off.ts";
 import { usdaFoodSchema, usdaSearchSchema } from "../src/sources/usda.ts";
 
 const offSpec = (revision: string) =>
@@ -55,18 +59,11 @@ export function readPropertyPaths(...schemas: z.ZodType[]): Set<string> {
 }
 
 type ReadEndpoint = { match: RegExp; paths: Set<string> };
-const productPaths = readPropertyPaths(productResponseSchema);
-// The adapter parses each search.pl product with the lookup's product schema.
+// The OFF spec does not document /cgi/search.pl, so the live check covers search.
 export const offReadEndpoints: ReadEndpoint[] = [
-  { match: /^\/api\/v2\/product\//, paths: productPaths },
   {
-    match: /^\/cgi\/search[.]pl$/,
-    paths: new Set(
-      [...productPaths]
-        .filter((path) => path === "product" || path.startsWith("product."))
-        .map((path) => `products[]${path.slice("product".length)}`)
-        .concat("products"),
-    ),
+    match: /^\/api\/v2\/product\//,
+    paths: readPropertyPaths(productResponseSchema),
   },
 ];
 
@@ -285,14 +282,15 @@ export async function runChecks(options: Options): Promise<{
   }
   const [offLive, offDocs, usdaLive, usdaDocs] = await Promise.all([
     check(async () => {
+      const headers = {
+        "User-Agent": "Tare-Api-Drift/1.0 (https://github.com/trig-point/tare)",
+      };
+      const fields = "code,product_name,brands,nutrition_data_per,nutriments";
       const product = parse(
         productResponseSchema,
         await json(
-          "https://world.openfoodfacts.org/api/v2/product/3017624010701.json",
-          {
-            "User-Agent":
-              "Tare-Api-Drift/1.0 (https://github.com/trig-point/tare)",
-          },
+          `https://world.openfoodfacts.org/api/v2/product/3017624010701.json?fields=${fields}`,
+          headers,
         ),
         "",
       );
@@ -300,6 +298,28 @@ export async function runChecks(options: Options): Promise<{
         return ["status: expected 1 for the known product"];
       if (typeof product.product.nutriments?.["energy-kcal_100g"] !== "number")
         return ["product.nutriments.energy-kcal_100g: expected a number"];
+      // Same query parameters as the adapter's searchName.
+      const query = new URLSearchParams({
+        action: "process",
+        search_simple: "1",
+        search_terms: "nutella",
+        json: "1",
+        page_size: "20",
+        fields,
+      });
+      const search = parse(
+        searchResponseSchema,
+        await json(
+          `https://world.openfoodfacts.org/cgi/search.pl?${query}`,
+          headers,
+        ),
+        "search",
+      );
+      if (search.products.length === 0)
+        return ["search.products: expected at least one product"];
+      search.products.forEach((item, index) =>
+        parse(productSchema, item, `search.products.${index}`),
+      );
       return [];
     }),
     check(async () => {
@@ -316,7 +336,7 @@ export async function runChecks(options: Options): Promise<{
               base,
               revision,
               "--match-path",
-              "^(/api/v2/product/|/cgi/search[.]pl$)",
+              "^/api/v2/product/",
               "--format",
               "json",
             ],
