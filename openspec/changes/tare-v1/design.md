@@ -7,13 +7,13 @@ Constraints that shape every decision below:
 - Nutrition numbers are deterministic. A model may read an email to find meal names and quantities; it never produces calories or macros.
 - Every nutrition value carries a provenance: `verified` (USDA lab data), `label` (a manufacturer or provider panel, including one a person typed in), or `estimated` (anything else).
 - The repository is public. No personal data, hostnames, home paths or secrets in source, fixtures or docs.
-- The reference install sits behind an identity-aware proxy (Cloudflare Access with a one-time PIN for browsers). Tare also has its own login, so it works without one.
+- Cloudflare Access is Tare's identity: the reference install sits behind it, and Tare verifies its signed token on every request. Tare keeps its own password login only as a fallback for installs without Access, with no agent access in that mode.
 
 ## Goals / Non-Goals
 
 **Goals:**
 
-- Several people on one install, each with their own data, login, agent tokens and Home Assistant device.
+- Several people on one install, each with their own data, Access identity, agent service tokens and Home Assistant device.
 - Logging from the PWA, from an AI agent over MCP, from a barcode, from a forwarded meal-kit email, and from a Bluetooth scale through Home Assistant.
 - A daily target that starts from a formula and becomes adaptive once there is enough clean data.
 - A meal plan of slots that agents fill and Tare tracks, usable without an MQTT broker.
@@ -26,22 +26,32 @@ Constraints that shape every decision below:
 - Feeding activity data into the calorie target (version 1 shows it beside intake only).
 - Offline editing and deleting; the version 1 offline queue holds new entries only.
 - Code that reads any meal-kit or delivery provider's website. Agents outside this repository may supply values over MCP.
-- Deleting a person, changing a password, and finer agent-token scopes (post version 1).
+- Deleting a person, changing a password, finer agent scopes, agent access without Cloudflare Access, and switching a populated install between identity modes (post version 1).
 - A screen for editing meal-plan templates and day types; version 1 sets them through operations, which agents can call.
 
 ## Decisions
 
 ### Operations are defined once
 
-Each operation (name, input and output schema, handler, caller class, administrator flag) lives in one registry. The caller class is either session only or session and agent token. Every operation becomes an HTTP route; agent-callable ones also become MCP tools. A contract test fails if an agent-callable operation is missing from either surface or a session-only one is listed as a tool. Session-only operations include day sign-off, creating or revoking tokens, and every administrator operation such as adding a user, so a leaked agent token cannot mint more tokens, create a login or close a day. The session and token routes built before the registry move into it in task 1.7. Version 1 has no finer scopes. Home Assistant presses arrive through the engine's MQTT handler, which acts for the person whose device the button belongs to. Alternative considered: hand-written routes with an MCP wrapper. Rejected because the two surfaces would drift.
+Each operation (name, input and output schema, handler, caller class, administrator flag) lives in one registry. The caller class is public (fallback sign-in only), browser only, or browser and agent. Every operation becomes an HTTP route; agent-callable ones also become MCP tools. A contract test fails if an agent-callable operation is missing from either surface or a browser-only one is listed as a tool. Browser-only operations include day sign-off, mapping or removing agent service tokens, and every administrator operation such as adding a user, so a leaked service token cannot map more tokens, create a login or close a day. The identity routes built before the registry move into it in task 1.7. Version 1 has no finer scopes. Home Assistant presses arrive through the engine's MQTT handler, which acts for the person whose device the button belongs to. Alternative considered: hand-written routes with an MCP wrapper. Rejected because the two surfaces would drift.
 
 ### Provenance comes from the source, not the caller
 
 A write that references a food takes the food's provenance and rejects a different one. A write with caller-supplied numbers may claim `label` only with a source naming where the label was read (a `label` claim without one is rejected), and numbers with no claim are `estimated`. A regular meal is a person-owned food whose baseline source sets its provenance the same way. No caller can store `verified` numbers it made up: `verified` exists only on USDA Foundation and SR Legacy rows in the source cache. An agent answering a meal-kit nutrition question from the provider's page therefore writes `label` with that page as its source.
 
-### Two credentials at the proxy, one identity in Tare
+### Cloudflare Access is the identity; Tare's own login is the fallback
 
-Browsers pass the proxy with its one-time PIN. Agents pass it with a proxy service token (two headers) and then present a Tare agent token, which decides which person they act for. The PWA sends `X-Requested-With: XMLHttpRequest`; Cloudflare Access documents that it then answers an expired session with 401 instead of a login page. That is a claim about the proxy, so an early probe on the real proxy records it before the MCP and offline-queue tasks start, and the client treats any 401, redirect or non-JSON response as "sign in again" either way. The probe runs the container (engine, app shell and sign-in API) and sends each agent client's service-token headers to `/mcp`; the engine's own 404 there proves the headers passed the proxy before the MCP server exists. The reference install then runs a client smoke test once the MCP server and the logging screens exist. Home Assistant and the inbound email sender reach Tare on the local network. Alternatives considered: exempting `/api` and `/mcp` from the proxy, or no proxy. The operator chose to keep the whole host behind the proxy.
+The operator already runs other projects behind Cloudflare Access, so Tare uses it as the identity instead of keeping a second login layer behind it. Configuration picks the mode at startup: with the Access team domain and the application's AUD tag both set, Tare is in Access mode; with neither, it is in fallback mode with the password login that task 1.5 built (PRs #12, #15 and #17); with only one, startup fails.
+
+In Access mode every request except the health check and the inbound email endpoint (which has its own token and comes from the local network) must carry the `Cf-Access-Jwt-Assertion` header. Tare verifies it with `jose`: `createRemoteJWKSet` on `<team domain>/cdn-cgi/access/certs` and `jwtVerify` with the team domain as issuer and the AUD tag as audience, which is the validation Cloudflare documents for Node. Tare validates even behind a Cloudflare Tunnel, because the engine's HTTP port stays reachable on the local network for the mail rule without passing Access, so an unverified header could be forged there. The cookie is not accepted in place of the header (Cloudflare recommends the header). The verifier takes its key set and clock as arguments, so tests sign tokens with a local key and step time.
+
+A token with an empty `sub` and a `common_name` is always treated as a service token; any other token with an `email` claim is a person in a browser, and a token of any other shape gets 401. Tare maps a browser email to the user whose stored Access email equals it; Access emails are stored trimmed and lowercased on every write, so the unique constraint and the match both ignore letter case. There is no automatic sign-up, so an Access policy that admits more people than the household does not create Tare users, and an unknown email gets 403 `not_a_member`. Tare keys on the email instead of the token's `sub`, because Cloudflare documents that `sub` changes when a person is removed and re-added to the Zero Trust organization, and an administrator knows the email before the person ever signs in. The first administrator comes from configuration (a username and an Access email); an administrator adds people the same way. A new migration rebuilds `users` with a nullable `password_hash` and a unique nullable `access_email`, because an Access-mode user has no password; the fallback sign-in treats a missing hash like a wrong password. A session cookie never authenticates in Access mode. Switching a populated install between modes is not supported in version 1: startup fails when no user can sign in under the configured mode.
+
+A token with an empty `sub` and a `common_name` is an agent's service token; `common_name` is the token's Client ID. An administrator maps a Client ID to a person in the app, and from then on that agent acts for that person on the API and on `/mcp`. Each person sees their mappings with a last-used time and can remove them; removing one stops the agent at once, and the Cloudflare side can revoke the token too. Mapping is administrator only, because service tokens are created in the Cloudflare dashboard and a person who could map any Client ID could point another person's agent at their own account. No Tare agent tokens exist; fallback mode has no agent access, and `/mcp` answers 404 there.
+
+The PWA sends `X-Requested-With: XMLHttpRequest`; Cloudflare Access documents that it then answers an expired session with 401 instead of a login page. That is a claim about Access, so an early probe on the real install records it before the MCP and offline-queue tasks start, and the client treats any 401, redirect or non-JSON response as "sign in again" either way. Browser writes still need that header in Access mode, because the browser carries Access's cookie on a cross-site request and Access would pass it. The probe also records the claims of a real browser token and a real service token, and whether each agent client can send the service-token headers. The reference install then runs a client smoke test once the MCP server and the logging screens exist.
+
+Alternatives considered: keeping Tare's own login and agent tokens behind Access (the original plan) was rejected by the operator, because it puts two login layers in front of one person and Tare agent tokens duplicate Access service tokens. `@hono/cloudflare-access` 0.4.0 was rejected because failures return `text/plain` (probed under Node 22: `401 text/plain`, "Authentication error: Missing bearer token") rather than JSON with a stable code, it reads `Date.now()` with no clock to inject, its audience check is optional, and it accepts the cookie as well as the header. Full authentication libraries such as `better-auth` are unnecessary once Access holds the identity. Exempting `/api` and `/mcp` from Access was rejected; the whole host stays behind it.
 
 ### The offline queue never silently drops an entry
 
@@ -67,7 +77,7 @@ The endpoint takes a per-person inbound token that can only post emails, and tha
 
 ### A day counts only after the person signs it off
 
-Each user has a timezone and a day-start hour (default 4 AM). An entry's day is computed from its eaten-at time when it is written and stored, so a late snack lands in the right day and a later timezone change does not move history. Closing a day is a screen in the PWA that shows the day's ledger and takes hunger, fullness and notes; sign-off is a session-only operation, so agent tokens cannot sign off, though they can add notes. A database trigger clears a day's sign-off whenever its intake is created, edited or deleted, and clears both days when an edit moves an entry to another day, so every write path (an agent, a meal action, the importer, the person) invalidates the review. The day must then be signed off again before it counts. The adaptive TDEE uses signed-off days only and keeps the formula target until enough exist. Imported days arrive unsigned and appear in the list of unsigned past days.
+Each user has a timezone and a day-start hour (default 4 AM). An entry's day is computed from its eaten-at time when it is written and stored, so a late snack lands in the right day and a later timezone change does not move history. Closing a day is a screen in the PWA that shows the day's ledger and takes hunger, fullness and notes; sign-off is a browser-only operation, so agents cannot sign off, though they can add notes. A database trigger clears a day's sign-off whenever its intake is created, edited or deleted, and clears both days when an edit moves an entry to another day, so every write path (an agent, a meal action, the importer, the person) invalidates the review. The day must then be signed off again before it counts. The adaptive TDEE uses signed-off days only and keeps the formula target until enough exist. Imported days arrive unsigned and appear in the list of unsigned past days.
 
 ### Adaptive TDEE is energy balance over clean days
 
@@ -95,7 +105,9 @@ A person's calendar feed URL is a secret and a server-side fetch target, so the 
 
 ## Risks / Trade-offs
 
-- [Proxy behavior differs from the docs] → The early proxy probe records real responses before the MCP and offline-queue tasks start, and the reference install's client smoke test proves the finished clients.
+- [Access behavior differs from the docs] → The early probe records real responses and token claims before the MCP and offline-queue tasks start, and the reference install's client smoke test proves the finished clients.
+- [Access signing keys rotate] → Keys are read from the team's published key set, never stored; Cloudflare rotates every six weeks and keeps the previous key valid for seven days, and `jose` refetches on an unknown key id.
+- [An install depends on Cloudflare for agent access] → Accepted by the operator; fallback mode keeps the app usable without Access, without agents.
 - [TypeSQL misses a needed SQL shape] → The compatibility file finds it before the first schema task; the fallback is a hand-typed wrapper.
 - [Meal-kit email layouts change] → Evidence excerpts and schema validation turn a changed layout into questions rather than wrong data.
 - [Unknown meals pile up as questions] → Answers are stored by meal and chef, so each meal asks each person once; agents can answer over MCP.
@@ -112,4 +124,4 @@ There is no installed base. The scaffold's `0001_foundation.sql` creates a place
 ## Open Questions
 
 - Which Bluetooth scale variant the reference install uses, and how its readings reach MQTT; the scale task starts by capturing a real payload, kept outside the repository, and commits only a made-up fixture in its shape.
-- Whether Codex's MCP client can send the proxy's service-token headers; the early proxy probe answers it.
+- Whether each agent client (Codex, Claude) can send the service-token headers to `/mcp`; the early probe answers it.

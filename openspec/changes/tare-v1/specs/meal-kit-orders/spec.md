@@ -62,7 +62,7 @@ The parser SHALL extract service, meals, chef where stated, quantities and deliv
 - **THEN** the email is stored and a question asks the person to enter the order
 
 ### Requirement: Inbound order email endpoint
-The engine SHALL accept order emails over HTTP authenticated by a per-person inbound token, which is stored hashed, created and rotated through session-only operations, and allows nothing but posting emails. That token is the trust boundary. The engine SHALL reject a posted email over 5 MB, fetch nothing an email links to, and ignore an email the same person has already sent, judged by the subject message's `Message-ID`, or a hash of its bytes when it has none.
+The engine SHALL accept order emails over HTTP authenticated by a per-person inbound token, which is stored hashed, created and rotated through browser-only operations, and allows nothing but posting emails. That token is the trust boundary. The engine SHALL reject a posted email over 5 MB, fetch nothing an email links to, and ignore an email the same person has already sent, judged by the subject message's `Message-ID`, or a hash of its bytes when it has none.
 
 The subject message SHALL be the original attached as `message/rfc822` when the posted email has exactly one such part, and otherwise the posted email itself. Tare SHALL read only the subject message's text and HTML parts. Install configuration SHALL give each service its sender addresses and its accepted DKIM signing domains; an accepted signing domain is one the service controls, never a mail provider's shared domain. Each email SHALL be marked from its subject message alone:
 
