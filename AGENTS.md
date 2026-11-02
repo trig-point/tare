@@ -48,6 +48,10 @@ TypeSQL generation uses an ignored local database at `packages/engine/data/types
 
 `TARE_SESSION_DAYS` sets the absolute session lifetime in days (default: `30`, integer from 1 to 365). Empty counts as unset.
 
+`TARE_BACKUP_DIR` enables daily backups at 3:00 AM in `TARE_TIMEZONE`. Empty or unset disables backups. Relative paths resolve from the engine process working directory. The backup folder must be outside the database folder; startup rejects the database folder itself and its subfolders. Use separate storage to protect against loss of the data volume.
+
+`TARE_BACKUP_KEEP` sets the number of backup copies to keep (default: `7`, integer from 1 to 365). Surrounding whitespace is trimmed; empty counts as unset. Copies use `tare-<compact UTC timestamp>.sqlite`; retention leaves other files alone.
+
 `TARE_ACCESS_TEAM_DOMAIN` is the Cloudflare Access HTTPS origin, with no path or trailing slash. Set it with `TARE_ACCESS_AUD` to use Access; leave both unset for password login. Switching a populated install between modes is unsupported.
 
 `TARE_ACCESS_AUD` is the Access application's audience tag. Setting only one Access option prevents startup.

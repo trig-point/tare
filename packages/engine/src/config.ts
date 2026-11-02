@@ -1,3 +1,4 @@
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { normalizeAccessEmail } from "./auth/access.ts";
 
 export interface Config {
@@ -6,6 +7,8 @@ export interface Config {
   timezone: string;
   publicUrl: string | undefined;
   sessionDays: number;
+  backupDir: string | undefined;
+  backupKeep: number;
   usdaApiKey: string | undefined;
   offUserAgent: string | undefined;
   identity:
@@ -74,6 +77,20 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
   const sessionDays = Number(sessionDaysText);
   if (!/^\d+$/.test(sessionDaysText) || sessionDays < 1 || sessionDays > 365)
     throw new Error("TARE_SESSION_DAYS must be an integer between 1 and 365");
+  const backupDirText = env.TARE_BACKUP_DIR?.trim();
+  const backupDir = backupDirText ? resolve(backupDirText) : undefined;
+  if (backupDir !== undefined && databaseUrl !== ":memory:") {
+    const fromDatabase = relative(dirname(resolve(databaseUrl)), backupDir);
+    if (
+      fromDatabase === "" ||
+      (!isAbsolute(fromDatabase) && fromDatabase.split(sep)[0] !== "..")
+    )
+      throw new Error("TARE_BACKUP_DIR must be outside the database folder");
+  }
+  const backupKeepText = env.TARE_BACKUP_KEEP?.trim() || "7";
+  const backupKeep = Number(backupKeepText);
+  if (!/^\d+$/.test(backupKeepText) || backupKeep < 1 || backupKeep > 365)
+    throw new Error("TARE_BACKUP_KEEP must be an integer between 1 and 365");
   const username = env.TARE_ADMIN_USERNAME?.trim();
   const password = env.TARE_ADMIN_PASSWORD;
   const teamDomain = env.TARE_ACCESS_TEAM_DOMAIN?.trim() || undefined;
@@ -103,6 +120,8 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     timezone,
     publicUrl,
     sessionDays,
+    backupDir,
+    backupKeep,
     usdaApiKey: env.TARE_USDA_API_KEY?.trim() || undefined,
     offUserAgent: validateOffUserAgent(env.TARE_OFF_USER_AGENT),
     identity:
