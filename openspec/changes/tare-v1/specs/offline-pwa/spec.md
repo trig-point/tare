@@ -39,7 +39,7 @@ Queue requests SHALL use `redirect: "manual"`. When a replay gets a 401, a redir
 
 #### Scenario: Sign in again from the installed app
 - **WHEN** the proxy session has expired and the person taps "Sign in again" in the installed app
-- **THEN** the proxy's sign-in page opens, and after signing in the person is back in the app and the queued entries replay
+- **THEN** Cloudflare Access's sign-in page opens in Access mode, or Tare's sign-in screen in fallback mode, and after signing in the person is back in the app and the queued entries replay
 
 ### Requirement: Rejected entries
 Responses SHALL be classified in this order: any 5xx, 408 or 429 is retried later; a 401, a redirect or a non-JSON body is sign-in needed; only then does any other JSON 4xx error reject the entry. When an entry is rejected, the queue SHALL mark it rejected with the error code, keep it visible, and continue with later entries. The person SHALL be able to edit and resend a rejected entry or discard it.
