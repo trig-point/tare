@@ -74,7 +74,7 @@ const diffObject = z.record(z.string(), z.unknown());
 const optionalObject = diffObject.default({});
 const nameList = z.array(z.string()).default([]);
 const entryList = z.array(z.unknown()).default([]);
-// Documentation-only keys; patternProperties stays because OFF documents nutrients through it.
+// Documentation-only keys that cannot change what the adapters parse.
 const annotationKeys = new Set([
   "description",
   "title",
@@ -83,6 +83,18 @@ const annotationKeys = new Set([
   "externalDocs",
   "extensions",
 ]);
+
+// An unparseable pattern counts as matching, so it is reported rather than dropped.
+function matches(pattern: string, name: string) {
+  try {
+    return new RegExp(pattern).test(name);
+  } catch {
+    return true;
+  }
+}
+
+const isJson = (mediaType: string) =>
+  mediaType.split(";")[0]?.trim().toLowerCase() === "application/json";
 
 export function filterReadChanges(
   diff: unknown,
@@ -104,8 +116,27 @@ export function filterReadChanges(
           readPath.startsWith(`${candidate}.`) ||
           readPath.startsWith(`${candidate}[]`),
       );
+    const readChildren = (pattern: string) =>
+      [...read].flatMap((readPath) => {
+        const prefix = path ? `${path}.` : "";
+        const name = readPath.startsWith(prefix)
+          ? readPath.slice(prefix.length).split(/[.[]/)[0]
+          : "";
+        return name && matches(pattern, name) ? [name] : [];
+      });
     for (const [key, change] of Object.entries(diffObject.parse(value))) {
-      if (key === "properties" || key === "required") {
+      if (key === "patternProperties") {
+        const patterns = diffObject.parse(change);
+        for (const operation of ["added", "deleted"])
+          for (const pattern of nameList.parse(patterns[operation]))
+            if (readChildren(pattern).length > 0)
+              changes.add(`${label}: ${key} ${pattern} ${operation}`);
+        for (const [pattern, child] of Object.entries(
+          optionalObject.parse(patterns.modified),
+        ))
+          for (const name of new Set(readChildren(pattern)))
+            walkSchema(child, join(path, name), endpoint, read);
+      } else if (key === "properties" || key === "required") {
         const fields = diffObject.parse(change);
         for (const operation of ["added", "deleted"])
           for (const name of nameList.parse(fields[operation]))
@@ -160,12 +191,16 @@ export function filterReadChanges(
       optionalObject.parse(responses.modified)["200"],
     );
     const content = optionalObject.parse(success.content);
-    if (nameList.parse(content.deleted).includes("application/json"))
+    if (nameList.parse(content.deleted).some(isJson))
       changes.add(`${endpoint}: JSON response deleted`);
-    const json = optionalObject.parse(
-      optionalObject.parse(content.modified)["application/json"],
-    );
-    if (json.schema !== undefined) walkSchema(json.schema, "", endpoint, read);
+    // oasdiff keys a renamed media type (adding a charset) by its new name.
+    for (const [mediaType, media] of Object.entries(
+      optionalObject.parse(content.modified),
+    )) {
+      const { schema } = optionalObject.parse(media);
+      if (isJson(mediaType) && schema !== undefined)
+        walkSchema(schema, "", endpoint, read);
+    }
   }
   return [...changes].sort();
 }

@@ -479,6 +479,13 @@ const capturedOasdiff = {
   rootRefactor: `{"paths":{"modified":{"/api/v2/product/{code}":{"operations":{"modified":{"GET":{"responses":{"modified":{"200":{"content":{"modified":{"application/json":{"schema":{"allOf":{"deleted":[{"index":0}]},"type":{"added":["object"]},"description":{"from":"old","to":"new"},"properties":{"added":["product"]}}}}}}}}}}}}}}}`,
   schemaDeleted: `{"paths":{"modified":{"/api/v2/product/{code}":{"operations":{"modified":{"GET":{"responses":{"modified":{"200":{"content":{"modified":{"application/json":{"schema":{"schemaDeleted":true}}}}}}}}}}}}}}`,
   annotations: `{"paths":{"modified":{"/api/v2/product/{code}":{"operations":{"modified":{"GET":{"responses":{"modified":{"200":{"content":{"modified":{"application/json":{"schema":{"allOf":{"modified":[{"base":{"index":0},"revision":{"index":0},"diff":{"properties":{"modified":{"product":{"description":{"from":"p old","to":"p new"},"patternProperties":{"modified":{"^x_":{"type":{"added":["integer"],"deleted":["string"]}}}}}}}}}]},"description":{"from":"old","to":"new"}}}}}}}}}}}}}}}`,
+  mediaRename: `{"paths":{"modified":{"/api/v2/product/{code}":{"operations":{"modified":{"GET":{"responses":{"modified":{"200":{"content":{"modified":{"application/json; charset=utf-8":{"schema":{"properties":{"modified":{"product":{"properties":{"modified":{"code":{"type":{"added":["integer"],"deleted":["string"]}}}}}}}},"name":{"name":{"from":"application/json","to":"application/json; charset=utf-8"},"parameters":{"added":["charset"]}}}}}}}}}}}}}}}`,
+  jsonDeleted: `{"paths":{"modified":{"/api/v2/product/{code}":{"operations":{"modified":{"GET":{"responses":{"modified":{"200":{"content":{"added":["text/html"],"deleted":["application/json"]}}}}}}}}}}}`,
+  okDeleted: `{"paths":{"modified":{"/api/v2/product/{code}":{"operations":{"modified":{"GET":{"responses":{"added":["201"],"deleted":["200"]}}}}}}}}`,
+  getDeleted: `{"paths":{"modified":{"/api/v2/product/{code}":{"operations":{"added":["POST"],"deleted":["GET"]}}}}}`,
+  patternTypeChanged: String.raw`{"paths":{"modified":{"/api/v2/product/{code}":{"operations":{"modified":{"GET":{"responses":{"modified":{"200":{"content":{"modified":{"application/json":{"schema":{"properties":{"modified":{"product":{"properties":{"modified":{"nutriments":{"patternProperties":{"modified":{"(?<nutrient>[\\w-]+)_100g":{"type":{"added":["string"],"deleted":["number"]}}}}}}}}}}}}}}}}}}}}}}}}`,
+  patternAnnotationAndUnread: String.raw`{"paths":{"modified":{"/api/v2/product/{code}":{"operations":{"modified":{"GET":{"responses":{"modified":{"200":{"content":{"modified":{"application/json":{"schema":{"properties":{"modified":{"product":{"properties":{"modified":{"nutriments":{"patternProperties":{"modified":{"(?<nutrient>[\\w-]+)_100g":{"description":{"from":"per 100 g","to":"amount per 100 g"}},"(?<nutrient>[\\w-]+)_unit":{"type":{"added":["integer"],"deleted":["string"]}}}}}}}}}}}}}}}}}}}}}}}}`,
+  patternDeleted: String.raw`{"paths":{"modified":{"/api/v2/product/{code}":{"operations":{"modified":{"GET":{"responses":{"modified":{"200":{"content":{"modified":{"application/json":{"schema":{"properties":{"modified":{"product":{"properties":{"modified":{"nutriments":{"patternProperties":{"deleted":["(?<nutrient>[\\w-]+)_100g"]}}}}}}}}}}}}}}}}}}}}}`,
 };
 
 test("captured oasdiff output keeps read-path changes and drops unread and annotation edits", () => {
@@ -496,7 +503,25 @@ test("captured oasdiff output keeps read-path changes and drops unread and annot
       "/api/v2/product/{code} response: type changed",
     ],
     schemaDeleted: ["/api/v2/product/{code} response: schemaDeleted changed"],
-    annotations: ["/api/v2/product/{code} product: patternProperties changed"],
+    annotations: [],
+    mediaRename: ["/api/v2/product/{code} product.code: type changed"],
+    jsonDeleted: ["/api/v2/product/{code}: JSON response deleted"],
+    okDeleted: ["/api/v2/product/{code}: 200 response deleted"],
+    getDeleted: ["/api/v2/product/{code}: GET deleted"],
+    patternTypeChanged: [
+      "carbohydrates_100g",
+      "energy-kcal_100g",
+      "fat_100g",
+      "fiber_100g",
+      "proteins_100g",
+    ].map(
+      (name) =>
+        `/api/v2/product/{code} product.nutriments.${name}: type changed`,
+    ),
+    patternAnnotationAndUnread: [],
+    patternDeleted: [
+      String.raw`/api/v2/product/{code} product.nutriments: patternProperties (?<nutrient>[\w-]+)_100g deleted`,
+    ],
   };
   for (const [name, output] of Object.entries(capturedOasdiff))
     assert.deepEqual(
