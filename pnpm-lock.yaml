@@ -35,6 +35,9 @@ importers:
       hono:
         specifier: 4.13.14
         version: 4.13.14
+      rate-limiter-flexible:
+        specifier: 11.2.3
+        version: 11.2.3
     devDependencies:
       '@types/better-sqlite3':
         specifier: 9.6.0
@@ -482,6 +485,9 @@ packages:
 
   pump@3.0.4:
     resolution: {integrity: sha512-VS7sjc6KR7e1ukRFhQSY5LM2uBWAUPiOPa/A3mkKmiMwSmRFUITt0xuj+/lesgnCv+dPIEYlkzrcyXgquIHMcA==}
+
+  rate-limiter-flexible@11.2.3:
+    resolution: {integrity: sha512-w4HX4toAsEbu1VksOauZwI9d6URb6/4WqJJ5Hg1bESihMt2KJfQ2iTwvDkhIg+y2HetLh65DGu/8xIkUz/xNPA==}
 
   rc@1.2.8:
     resolution: {integrity: sha512-y3bGgqKj3QBdxLbLkomlohkvsA8gdAiUQlSBJnBhfn+BPxg4bc62d8TcBW15wavDfgexCgccckhcZvywyQYPOw==}
@@ -970,6 +976,8 @@ snapshots:
     dependencies:
       end-of-stream: 1.4.5
       once: 1.4.0
+
+  rate-limiter-flexible@11.2.3: {}
 
   rc@1.2.8:
     dependencies:

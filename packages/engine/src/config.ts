@@ -4,7 +4,24 @@ export interface Config {
   timezone: string;
   publicUrl: string | undefined;
   sessionDays: number;
+  offUserAgent: string | undefined;
   firstUser: { username: string | undefined; password: string | undefined };
+}
+
+export function validateOffUserAgent(
+  value: string | undefined,
+): string | undefined {
+  const userAgent = value?.trim();
+  if (!userAgent) return undefined;
+  if (
+    !/^[A-Za-z][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._+-]* \([^\s()@]+@[^\s()@]+\.[^\s()@]+\)$/.test(
+      userAgent,
+    )
+  )
+    throw new Error(
+      "TARE_OFF_USER_AGENT must be AppName/Version (ContactEmail)",
+    );
+  return userAgent;
 }
 
 export function validateTimezone(timezone: string): string {
@@ -55,6 +72,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     timezone,
     publicUrl,
     sessionDays,
+    offUserAgent: validateOffUserAgent(env.TARE_OFF_USER_AGENT),
     firstUser: {
       username: username === "" ? undefined : username,
       password: password === "" ? undefined : password,

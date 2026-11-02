@@ -14,7 +14,8 @@
     "@tare/nutrition": "workspace:*",
     "better-sqlite3": "13.0.3",
     "croner": "11.0.0",
-    "hono": "4.13.14"
+    "hono": "4.13.14",
+    "rate-limiter-flexible": "11.2.3"
   },
   "devDependencies": {
     "@types/better-sqlite3": "9.6.0",
