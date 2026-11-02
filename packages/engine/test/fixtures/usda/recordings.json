@@ -1,0 +1,51 @@
+{
+  "capturedAt": "2026-11-02T04:03:05.411Z",
+  "source": "https://api.nal.usda.gov/fdc/v1/",
+  "searches": [
+    {
+      "file": "search-branded.json",
+      "query": "cheddar cheese",
+      "dataType": "Foundation,SR Legacy,Branded",
+      "pageSize": 3
+    },
+    {
+      "file": "search-foundation.json",
+      "query": "cheddar cheese",
+      "dataType": "Foundation",
+      "pageSize": 1
+    },
+    {
+      "file": "search-legacy.json",
+      "query": "cheddar cheese",
+      "dataType": "SR Legacy",
+      "pageSize": 1
+    },
+    {
+      "file": "search-volume.json",
+      "query": "whole milk",
+      "dataType": "Branded",
+      "pageSize": 1
+    }
+  ],
+  "foods": [
+    {
+      "file": "food-branded.json",
+      "fdcId": 2095236
+    },
+    {
+      "file": "food-foundation.json",
+      "fdcId": 328637
+    },
+    {
+      "file": "food-legacy.json",
+      "fdcId": 169901
+    },
+    {
+      "file": "food-volume.json",
+      "fdcId": 2616918
+    }
+  ],
+  "omitted": {
+    "food-foundation.json": ["foodNutrients[].nutrientAnalysisDetails"]
+  }
+}

@@ -1,0 +1,515 @@
+{
+  "discontinuedDate": "",
+  "foodComponents": [],
+  "foodAttributes": [
+    {
+      "id": 3139690,
+      "value": 5,
+      "name": "Nutrient Added",
+      "foodAttributeType": {
+        "id": 998,
+        "name": "Update Log",
+        "description": "Changes that were made to this food"
+      }
+    },
+    {
+      "id": 3139691,
+      "value": 6,
+      "name": "Nutrient Removed",
+      "foodAttributeType": {
+        "id": 998,
+        "name": "Update Log",
+        "description": "Changes that were made to this food"
+      }
+    }
+  ],
+  "foodPortions": [],
+  "fdcId": 2616918,
+  "description": "WHOLE MILK",
+  "publicationDate": "8/31/2023",
+  "foodNutrients": [
+    {
+      "type": "FoodNutrient",
+      "nutrient": {
+        "id": 1106,
+        "number": "320",
+        "name": "Vitamin A, RAE",
+        "rank": 7420,
+        "unitName": "µg"
+      },
+      "foodNutrientDerivation": {
+        "id": 70,
+        "code": "LCCS",
+        "description": "Calculated from value per serving size measure",
+        "foodNutrientSource": {
+          "id": 9,
+          "code": "12",
+          "description": "Manufacturer's analytical; partial documentation"
+        }
+      },
+      "id": 32698566,
+      "amount": 46
+    },
+    {
+      "type": "FoodNutrient",
+      "nutrient": {
+        "id": 1093,
+        "number": "307",
+        "name": "Sodium, Na",
+        "rank": 5800,
+        "unitName": "mg"
+      },
+      "foodNutrientDerivation": {
+        "id": 70,
+        "code": "LCCS",
+        "description": "Calculated from value per serving size measure",
+        "foodNutrientSource": {
+          "id": 9,
+          "code": "12",
+          "description": "Manufacturer's analytical; partial documentation"
+        }
+      },
+      "id": 32698560,
+      "amount": 48
+    },
+    {
+      "type": "FoodNutrient",
+      "nutrient": {
+        "id": 1008,
+        "number": "208",
+        "name": "Energy",
+        "rank": 300,
+        "unitName": "kcal"
+      },
+      "foodNutrientDerivation": {
+        "id": 70,
+        "code": "LCCS",
+        "description": "Calculated from value per serving size measure",
+        "foodNutrientSource": {
+          "id": 9,
+          "code": "12",
+          "description": "Manufacturer's analytical; partial documentation"
+        }
+      },
+      "id": 32698554,
+      "amount": 62
+    },
+    {
+      "type": "FoodNutrient",
+      "nutrient": {
+        "id": 1087,
+        "number": "301",
+        "name": "Calcium, Ca",
+        "rank": 5300,
+        "unitName": "mg"
+      },
+      "foodNutrientDerivation": {
+        "id": 70,
+        "code": "LCCS",
+        "description": "Calculated from value per serving size measure",
+        "foodNutrientSource": {
+          "id": 9,
+          "code": "12",
+          "description": "Manufacturer's analytical; partial documentation"
+        }
+      },
+      "id": 32698557,
+      "amount": 112
+    },
+    {
+      "type": "FoodNutrient",
+      "nutrient": {
+        "id": 1004,
+        "number": "204",
+        "name": "Total lipid (fat)",
+        "rank": 800,
+        "unitName": "g"
+      },
+      "foodNutrientDerivation": {
+        "id": 70,
+        "code": "LCCS",
+        "description": "Calculated from value per serving size measure",
+        "foodNutrientSource": {
+          "id": 9,
+          "code": "12",
+          "description": "Manufacturer's analytical; partial documentation"
+        }
+      },
+      "id": 32698552,
+      "amount": 3.33
+    },
+    {
+      "type": "FoodNutrient",
+      "nutrient": {
+        "id": 1253,
+        "number": "601",
+        "name": "Cholesterol",
+        "rank": 15700,
+        "unitName": "mg"
+      },
+      "foodNutrientDerivation": {
+        "id": 70,
+        "code": "LCCS",
+        "description": "Calculated from value per serving size measure",
+        "foodNutrientSource": {
+          "id": 9,
+          "code": "12",
+          "description": "Manufacturer's analytical; partial documentation"
+        }
+      },
+      "id": 32698563,
+      "amount": 10
+    },
+    {
+      "type": "FoodNutrient",
+      "nutrient": {
+        "id": 1114,
+        "number": "328",
+        "name": "Vitamin D (D2 + D3)",
+        "rank": 8700,
+        "unitName": "µg"
+      },
+      "foodNutrientDerivation": {
+        "id": 70,
+        "code": "LCCS",
+        "description": "Calculated from value per serving size measure",
+        "foodNutrientSource": {
+          "id": 9,
+          "code": "12",
+          "description": "Manufacturer's analytical; partial documentation"
+        }
+      },
+      "id": 32698561,
+      "amount": 1
+    },
+    {
+      "type": "FoodNutrient",
+      "nutrient": {
+        "id": 1257,
+        "number": "605",
+        "name": "Fatty acids, total trans",
+        "rank": 15400,
+        "unitName": "g"
+      },
+      "foodNutrientDerivation": {
+        "id": 70,
+        "code": "LCCS",
+        "description": "Calculated from value per serving size measure",
+        "foodNutrientSource": {
+          "id": 9,
+          "code": "12",
+          "description": "Manufacturer's analytical; partial documentation"
+        }
+      },
+      "id": 32698564,
+      "amount": 0
+    },
+    {
+      "type": "FoodNutrient",
+      "nutrient": {
+        "id": 1089,
+        "number": "303",
+        "name": "Iron, Fe",
+        "rank": 5400,
+        "unitName": "mg"
+      },
+      "foodNutrientDerivation": {
+        "id": 70,
+        "code": "LCCS",
+        "description": "Calculated from value per serving size measure",
+        "foodNutrientSource": {
+          "id": 9,
+          "code": "12",
+          "description": "Manufacturer's analytical; partial documentation"
+        }
+      },
+      "id": 32698558,
+      "amount": 0
+    },
+    {
+      "type": "FoodNutrient",
+      "nutrient": {
+        "id": 1079,
+        "number": "291",
+        "name": "Fiber, total dietary",
+        "rank": 1200,
+        "unitName": "g"
+      },
+      "foodNutrientDerivation": {
+        "id": 70,
+        "code": "LCCS",
+        "description": "Calculated from value per serving size measure",
+        "foodNutrientSource": {
+          "id": 9,
+          "code": "12",
+          "description": "Manufacturer's analytical; partial documentation"
+        }
+      },
+      "id": 32698556,
+      "amount": 0
+    },
+    {
+      "type": "FoodNutrient",
+      "nutrient": {
+        "id": 1258,
+        "number": "606",
+        "name": "Fatty acids, total saturated",
+        "rank": 9700,
+        "unitName": "g"
+      },
+      "foodNutrientDerivation": {
+        "id": 70,
+        "code": "LCCS",
+        "description": "Calculated from value per serving size measure",
+        "foodNutrientSource": {
+          "id": 9,
+          "code": "12",
+          "description": "Manufacturer's analytical; partial documentation"
+        }
+      },
+      "id": 32698565,
+      "amount": 1.88
+    },
+    {
+      "type": "FoodNutrient",
+      "nutrient": {
+        "id": 2000,
+        "number": "269",
+        "name": "Total Sugars",
+        "rank": 1510,
+        "unitName": "g"
+      },
+      "foodNutrientDerivation": {
+        "id": 70,
+        "code": "LCCS",
+        "description": "Calculated from value per serving size measure",
+        "foodNutrientSource": {
+          "id": 9,
+          "code": "12",
+          "description": "Manufacturer's analytical; partial documentation"
+        }
+      },
+      "id": 32698555,
+      "amount": 5
+    },
+    {
+      "type": "FoodNutrient",
+      "nutrient": {
+        "id": 1003,
+        "number": "203",
+        "name": "Protein",
+        "rank": 600,
+        "unitName": "g"
+      },
+      "foodNutrientDerivation": {
+        "id": 70,
+        "code": "LCCS",
+        "description": "Calculated from value per serving size measure",
+        "foodNutrientSource": {
+          "id": 9,
+          "code": "12",
+          "description": "Manufacturer's analytical; partial documentation"
+        }
+      },
+      "id": 32698551,
+      "amount": 3.33
+    },
+    {
+      "type": "FoodNutrient",
+      "nutrient": {
+        "id": 1235,
+        "number": "539",
+        "name": "Sugars, added",
+        "rank": 1540,
+        "unitName": "g"
+      },
+      "foodNutrientDerivation": {
+        "id": 70,
+        "code": "LCCS",
+        "description": "Calculated from value per serving size measure",
+        "foodNutrientSource": {
+          "id": 9,
+          "code": "12",
+          "description": "Manufacturer's analytical; partial documentation"
+        }
+      },
+      "id": 32698562,
+      "amount": 0
+    },
+    {
+      "type": "FoodNutrient",
+      "nutrient": {
+        "id": 1092,
+        "number": "306",
+        "name": "Potassium, K",
+        "rank": 5700,
+        "unitName": "mg"
+      },
+      "foodNutrientDerivation": {
+        "id": 70,
+        "code": "LCCS",
+        "description": "Calculated from value per serving size measure",
+        "foodNutrientSource": {
+          "id": 9,
+          "code": "12",
+          "description": "Manufacturer's analytical; partial documentation"
+        }
+      },
+      "id": 32698559,
+      "amount": 133
+    },
+    {
+      "type": "FoodNutrient",
+      "nutrient": {
+        "id": 1005,
+        "number": "205",
+        "name": "Carbohydrate, by difference",
+        "rank": 1110,
+        "unitName": "g"
+      },
+      "foodNutrientDerivation": {
+        "id": 70,
+        "code": "LCCS",
+        "description": "Calculated from value per serving size measure",
+        "foodNutrientSource": {
+          "id": 9,
+          "code": "12",
+          "description": "Manufacturer's analytical; partial documentation"
+        }
+      },
+      "id": 32698553,
+      "amount": 5
+    }
+  ],
+  "dataType": "Branded",
+  "foodClass": "Branded",
+  "shortDescription": "",
+  "modifiedDate": "6/23/2023",
+  "availableDate": "6/23/2023",
+  "brandOwner": "Upstate Niagara Cooperative, Inc.",
+  "brandName": "UPSTATE FARMS",
+  "dataSource": "LI",
+  "brandedFoodCategory": "Cream",
+  "gtinUpc": "0078800112100",
+  "householdServingFullText": "1 cup (240mL)",
+  "ingredients": "MILK, VITAMIN D3",
+  "marketCountry": "United States",
+  "servingSize": 240,
+  "servingSizeUnit": "MLT",
+  "packageWeight": "0.5 gal",
+  "foodUpdateLog": [
+    {
+      "discontinuedDate": "",
+      "foodAttributes": [],
+      "fdcId": 2616918,
+      "description": "WHOLE MILK",
+      "publicationDate": "8/31/2023",
+      "dataType": "Branded",
+      "foodClass": "Branded",
+      "shortDescription": "",
+      "modifiedDate": "6/23/2023",
+      "availableDate": "6/23/2023",
+      "brandOwner": "Upstate Niagara Cooperative, Inc.",
+      "brandName": "UPSTATE FARMS",
+      "dataSource": "LI",
+      "brandedFoodCategory": "Cream",
+      "gtinUpc": "0078800112100",
+      "householdServingFullText": "1 cup (240mL)",
+      "ingredients": "MILK, VITAMIN D3",
+      "marketCountry": "United States",
+      "servingSize": 240,
+      "servingSizeUnit": "MLT",
+      "packageWeight": "0.5 gal"
+    },
+    {
+      "discontinuedDate": "",
+      "foodAttributes": [],
+      "fdcId": 2599056,
+      "description": "WHOLE MILK",
+      "publicationDate": "7/13/2023",
+      "dataType": "Branded",
+      "foodClass": "Branded",
+      "shortDescription": "",
+      "modifiedDate": "6/23/2023",
+      "availableDate": "6/23/2023",
+      "brandOwner": "Upstate Niagara Cooperative, Inc.",
+      "brandName": "UPSTATE FARMS",
+      "dataSource": "LI",
+      "brandedFoodCategory": "Cream",
+      "gtinUpc": "0078800112100",
+      "householdServingFullText": "1 cup (240mL)",
+      "ingredients": "MILK, VITAMIN D3",
+      "marketCountry": "United States",
+      "servingSize": 240,
+      "servingSizeUnit": "MLT",
+      "packageWeight": "0.5 gal"
+    },
+    {
+      "discontinuedDate": "",
+      "foodAttributes": [],
+      "modifiedDate": "5/23/2023",
+      "availableDate": "5/23/2023",
+      "brandOwner": "Upstate Niagara Cooperative, Inc.",
+      "dataSource": "LI",
+      "gpcCategoryGroup": "Cream",
+      "gtinUpc": "0078800112100",
+      "householdServingFullText": "1 cup (240mL)",
+      "ingredients": "MILK, VITAMIN D3",
+      "marketCountry": "United States",
+      "servingSize": 240,
+      "servingSizeUnit": "MLT",
+      "fdcId": 2589623,
+      "description": "WHOLE MILK",
+      "publicationDate": "6/29/2023",
+      "dataType": "Branded",
+      "foodClass": "Branded"
+    }
+  ],
+  "labelNutrients": {
+    "fat": {
+      "value": 7.99
+    },
+    "saturatedFat": {
+      "value": 4.51
+    },
+    "transFat": {
+      "value": 0
+    },
+    "cholesterol": {
+      "value": 24
+    },
+    "sodium": {
+      "value": 115
+    },
+    "carbohydrates": {
+      "value": 12
+    },
+    "fiber": {
+      "value": 0
+    },
+    "sugars": {
+      "value": 12
+    },
+    "protein": {
+      "value": 7.99
+    },
+    "vitaminD": {
+      "value": 2.4
+    },
+    "calcium": {
+      "value": 269
+    },
+    "iron": {
+      "value": 0
+    },
+    "potassium": {
+      "value": 319
+    },
+    "addedSugar": {
+      "value": 0
+    },
+    "calories": {
+      "value": 149
+    }
+  }
+}

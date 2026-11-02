@@ -4,6 +4,7 @@ export interface Config {
   timezone: string;
   publicUrl: string | undefined;
   sessionDays: number;
+  usdaApiKey: string | undefined;
   firstUser: { username: string | undefined; password: string | undefined };
 }
 
@@ -55,6 +56,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     timezone,
     publicUrl,
     sessionDays,
+    usdaApiKey: env.TARE_USDA_API_KEY?.trim() || undefined,
     firstUser: {
       username: username === "" ? undefined : username,
       password: password === "" ? undefined : password,
