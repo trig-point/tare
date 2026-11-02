@@ -336,6 +336,44 @@ test("a malformed barcode drops only the barcode", async () => {
   assert.equal(result.records[0]?.nutrients.kcal?.amount, 432);
 });
 
+test("a malformed nutrient entry or non-text barcode costs only that value", async () => {
+  const result = await adapterFor({
+    foods: [
+      {
+        ...searchFoods.branded,
+        gtinUpc: 828653282457,
+        foodNutrients: [
+          ...searchFoods.branded.foodNutrients.filter(
+            (nutrient) => nutrient.nutrientId !== 1003,
+          ),
+          { nutrientId: 1003, value: "25", unitName: "G" },
+        ],
+      },
+    ],
+  }).search("cheddar");
+  assert.equal(result.status, "ok");
+  if (result.status !== "ok") return;
+  assert.equal(result.rejected, 0);
+  assert.equal(result.records[0]?.barcode, null);
+  assert.equal(result.records[0]?.nutrients.protein_g, null);
+  assert.equal(result.records[0]?.nutrients.kcal?.amount, 432);
+});
+
+test("a timeout while reading the body is a network error", async () => {
+  const stalled = new ReadableStream({
+    start(controller) {
+      controller.error(new DOMException("stalled", "TimeoutError"));
+    },
+  });
+  const adapter = createUsdaAdapter(config, {
+    fetch: async () => new Response(stalled),
+  });
+  assert.deepEqual(await adapter.search("cheddar"), {
+    status: "error",
+    reason: "network",
+  });
+});
+
 test("a food detail missing foodNutrients is an invalid response", async () => {
   const { foodNutrients: _omitted, ...withoutNutrients } = detailFoods.branded;
   assert.deepEqual(await adapterFor(withoutNutrients).fetchById("2095236"), {

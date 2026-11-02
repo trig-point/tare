@@ -22,20 +22,24 @@ const usdaFoodSchema = z.object({
   description: z.string(),
   brandName: optionalText,
   brandOwner: optionalText,
-  gtinUpc: optionalText,
+  gtinUpc: optionalText.catch(null),
   servingSizeUnit: optionalText,
   foodNutrients: z.array(
-    z.union([
-      z.object({
-        nutrient: z.object({ id: z.number(), unitName: z.string() }),
-        amount: z.number().optional(),
-      }),
-      z.object({
-        nutrientId: z.number(),
-        unitName: z.string(),
-        value: z.number().optional(),
-      }),
-    ]),
+    z
+      .union([
+        z.object({
+          nutrient: z.object({ id: z.number(), unitName: z.string() }),
+          amount: z.number().optional(),
+        }),
+        z.object({
+          nutrientId: z.number(),
+          unitName: z.string(),
+          value: z.number().optional(),
+        }),
+      ])
+      // A malformed entry leaves that nutrient unknown instead of rejecting the food.
+      .nullable()
+      .catch(null),
   ),
 });
 
@@ -79,6 +83,7 @@ function recordFor(
     food.dataType === "Branded" ? "label" : "verified";
   const nutrients = new Map<number, { amount: number; unit: string }>();
   for (const entry of food.foodNutrients) {
+    if (!entry) continue;
     const [nutrientId, amount] =
       "nutrient" in entry
         ? [entry.nutrient.id, entry.amount]
@@ -155,8 +160,13 @@ export function createUsdaAdapter(
     let body: unknown;
     try {
       body = await response.json();
-    } catch {
-      return { status: "error", reason: "invalid_response" };
+    } catch (error) {
+      const timedOut =
+        error instanceof DOMException && error.name === "TimeoutError";
+      return {
+        status: "error",
+        reason: timedOut ? "network" : "invalid_response",
+      };
     }
     let foods: ReturnType<typeof usdaFoodSchema.safeParse>[];
     if (query !== undefined) {
