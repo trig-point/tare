@@ -251,13 +251,18 @@ test("JSON rejection paths preserve rows and skip verification", async (context)
 
 test("unexpected handler errors return JSON without exposing details or changing state", async (context) => {
   const setup = fixture(context);
+  const logged = context.mock.method(console, "error", () => {});
   setup.app.put("/api/session", () => {
-    throw new Error("private-handler-message");
+    throw new TypeError("private-handler-message");
   });
   await rejection(
     await setup.app.request("/api/session", { method: "PUT" }),
     500,
     "internal",
+  );
+  assert.deepEqual(
+    logged.mock.calls.map((call) => call.arguments),
+    [["request_failed", "TypeError"]],
   );
   assert.deepEqual(setup.rows(), []);
   assert.deepEqual(setup.calls, []);

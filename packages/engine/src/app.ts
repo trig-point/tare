@@ -9,9 +9,11 @@ export function createApp(options: AppOptions) {
       context.header("Cache-Control", "no-store");
     await next();
   });
-  app.onError((_error, context) =>
-    context.json({ error: { code: "internal" } }, 500),
-  );
+  app.onError((error, context) => {
+    // Name only: messages can carry request data, which stays out of logs.
+    console.error("request_failed", error.name);
+    return context.json({ error: { code: "internal" } }, 500);
+  });
   app.notFound((context) =>
     context.json({ error: { code: "not_found" } }, 404),
   );
