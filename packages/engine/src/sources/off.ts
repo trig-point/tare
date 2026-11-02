@@ -38,7 +38,7 @@ const productSchema = z.object({
     })
     .nullish(),
 });
-const productResponseSchema = z.union([
+export const productResponseSchema = z.union([
   z.object({ status: z.literal(0) }),
   z.object({ status: z.literal(1), product: productSchema }),
 ]);

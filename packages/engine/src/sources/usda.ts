@@ -16,7 +16,7 @@ const REQUEST_TIMEOUT_MS = 10_000;
 const optionalText = z.string().nullish();
 
 /** Only the slice of a USDA food the adapter reads; other fields are ignored. */
-const usdaFoodSchema = z.object({
+export const usdaFoodSchema = z.object({
   dataType: z.string(),
   fdcId: z.int().positive(),
   description: z.string(),
@@ -43,7 +43,7 @@ const usdaFoodSchema = z.object({
   ),
 });
 
-const usdaSearchSchema = z.object({ foods: z.array(z.unknown()) });
+export const usdaSearchSchema = z.object({ foods: z.array(z.unknown()) });
 
 export type UsdaFood = z.input<typeof usdaFoodSchema>;
 
