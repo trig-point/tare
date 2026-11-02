@@ -23,14 +23,14 @@ Each person SHALL have a timezone and a day-start hour, defaulting to 4 AM. Each
 - **THEN** entries already written keep their stored day, and new entries use the new timezone
 
 ### Requirement: Day sign-off
-A person SHALL be able to close a day by reviewing its ledger and recording hunger, fullness and notes. Only a signed-in person, not an agent token, SHALL mark a day complete. Any create, edit or delete of a signed-off day's intake, by any path, SHALL clear that day's sign-off until the person signs it off again; an edit that moves an entry to another day SHALL clear the sign-off of both days. Operations SHALL read one day's ledger and list the past days that are not signed off, and the app SHALL use them so the person can review those days in turn.
+A person SHALL be able to close a day by reviewing its ledger and recording hunger, fullness and notes. Only a person in the app (a browser identity), not an agent, SHALL mark a day complete. Any create, edit or delete of a signed-off day's intake, by any path, SHALL clear that day's sign-off until the person signs it off again; an edit that moves an entry to another day SHALL clear the sign-off of both days. Operations SHALL read one day's ledger and list the past days that are not signed off, and the app SHALL use them so the person can review those days in turn.
 
 #### Scenario: Close a day
 - **WHEN** a person reviews a day and signs it off
 - **THEN** the day is marked complete with the time of sign-off
 
 #### Scenario: Agent tries to sign off
-- **WHEN** an agent token calls the sign-off operation
+- **WHEN** an agent service token calls the sign-off operation
 - **THEN** the call is rejected with 403; agents may add notes but not complete the day
 
 #### Scenario: Intake changed after sign-off

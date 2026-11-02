@@ -5,7 +5,7 @@ The engine SHALL serve a web app with a manifest, icons and a service worker so 
 
 #### Scenario: Install on a phone
 - **WHEN** a person opens the app in a supporting mobile browser
-- **THEN** the browser offers to install it and the installed app opens to the sign-in screen, or to its home screen when signed in
+- **THEN** the browser offers to install it, and the installed app opens to its home screen for a person with a valid identity, through Access in Access mode or after Tare's sign-in screen in fallback mode
 
 #### Scenario: Proxy login page
 - **WHEN** an identity proxy in front of the app returns its own HTML login page
@@ -27,7 +27,7 @@ New intake and weight entries SHALL be written to on-device storage first, each 
 - **THEN** the server assigns it to a day from its eaten-at time, not from the time it arrived
 
 ### Requirement: Sign-in-needed state
-Queue requests SHALL use `redirect: "manual"`. When a replay gets a 401, a redirect (which `redirect: "manual"` returns as an `opaqueredirect` response with status 0, not as a network error) or a response that is not JSON, the queue SHALL keep its entries, show that sign-in is needed, and resume after the person signs in. API requests SHALL send `X-Requested-With: XMLHttpRequest`, which an identity proxy that honors it (Cloudflare Access documents this) answers with 401 instead of a login page; the early proxy probe records the real response on the reference install. Signing in again SHALL be a top-level navigation to a sign-in path that the service worker never answers from its cache, so the request reaches the identity proxy and the proxy can show its own sign-in page; the engine answers that path by sending the person back to the app, where the queue resumes.
+Queue requests SHALL use `redirect: "manual"`. When a replay gets a 401, a redirect (which `redirect: "manual"` returns as an `opaqueredirect` response with status 0, not as a network error) or a response that is not JSON, the queue SHALL keep its entries, show that sign-in is needed, and resume after the person signs in. API requests SHALL send `X-Requested-With: XMLHttpRequest`, which an identity proxy that honors it (Cloudflare Access documents this) answers with 401 instead of a login page; the early proxy probe records the real response on the reference install. Signing in again SHALL be a top-level navigation to a sign-in path that the service worker never answers from its cache, so in Access mode the request reaches Cloudflare Access, which shows its own sign-in page, and in fallback mode it opens Tare's sign-in screen; after signing in, the engine answers that path by sending the person back to the app, where the queue resumes.
 
 #### Scenario: Proxy session expired
 - **WHEN** queued entries are replayed after the proxy session expired

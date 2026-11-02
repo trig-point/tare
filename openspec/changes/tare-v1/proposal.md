@@ -4,7 +4,7 @@ Tare exists to close the loop between what a person eats and what their weight d
 
 ## What Changes
 
-- Accounts for several people on one install: password login, per-user agent tokens, and every personal row scoped to its owner.
+- Accounts for several people on one install: Cloudflare Access as the identity (browser sign-in and agent service tokens mapped to a person), Tare's own password login as a fallback for installs without Access, and every personal row scoped to its owner.
 - One definition per operation (log food, log weight, today, find food, and the rest), served as HTTP routes and as an MCP server so AI agents can log on a person's behalf.
 - A web app installed as a PWA: today view, food search, barcode scanning, day sign-off, and an offline queue that never drops an entry.
 - A nutrition source chain that only accepts exact matches: the person's own foods and a shared cache automatically, USDA FoodData Central and Open Food Facts when the person asks, and a question when an order's meal is unknown. Every value records where it came from, and callers cannot claim lab-verified numbers.
@@ -19,7 +19,7 @@ Tare exists to close the loop between what a person eats and what their weight d
 
 ### New Capabilities
 
-- `accounts-and-access`: users, sessions, agent tokens, tenant isolation, adding a second user.
+- `accounts-and-access`: identity mode, Cloudflare Access identity, fallback password login, agent service tokens, tenant isolation, adding a second user.
 - `agent-interface`: the operation registry, HTTP routes, the MCP server, and the provenance argument on writes.
 - `offline-pwa`: the installable app shell, the offline write queue, and its sign-in-needed state.
 - `deployment-and-backup`: container image, backups and restore, migration safety, and the repository hygiene check.
