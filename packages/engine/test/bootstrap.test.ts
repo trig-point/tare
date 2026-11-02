@@ -41,12 +41,15 @@ test("an empty database creates one administrator with the exact password and in
       id: 1,
       username: "Example-Admin",
       password_hash: undefined,
+      access_email: null,
       timezone: "Asia/Kolkata",
       day_start_hour: 4,
       is_admin: 1,
       created_at: clock.now().toISOString(),
     },
   );
+  assert.equal(typeof account.password_hash, "string");
+  assert.ok(account.password_hash);
   assert.equal(
     await verifyPassword(firstUser.password, account.password_hash),
     true,
@@ -63,6 +66,7 @@ test("existing users bypass absent, half-set and invalid settings without hashin
   const account = insertAccount(connection.database, {
     username: "existing-example",
     password_hash: "invented-test-hash",
+    access_email: null,
     timezone: "UTC",
     is_admin: 0,
     created_at: clock.now().toISOString(),

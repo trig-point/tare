@@ -11,11 +11,12 @@ export type UpdateUserSettingsParams = {
 export type UpdateUserSettingsResult = {
   id: number;
   username: string;
-  password_hash: string;
+  password_hash: string | null;
   timezone: string;
   day_start_hour: number;
   is_admin: number;
   created_at: string;
+  access_email: string | null;
 };
 
 export function updateUserSettings(
@@ -41,6 +42,7 @@ function mapArrayToUpdateUserSettingsResult(data: any) {
     day_start_hour: data[4],
     is_admin: data[5],
     created_at: data[6],
+    access_email: data[7],
   };
   return result;
 }

@@ -37,10 +37,15 @@ test("nutrition mapping crosses SQLite source_foods and new own foods without lo
       fiber_g: null,
     },
   };
+  assert.ok(record.source === "usda" || record.source === "off");
   const mapped = toStoredNutrition(record, "source_food");
   assert.ok(mapped.ok);
+  assert.ok(
+    mapped.row.provenance === "verified" || mapped.row.provenance === "label",
+  );
   const inserted = insertSourceFood(database, {
     ...mapped.row,
+    provenance: mapped.row.provenance,
     source: record.source,
     source_key: record.sourceId,
     name: record.name,

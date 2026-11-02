@@ -58,7 +58,11 @@ test("first user settings trim only the username and preserve password spaces", 
       TARE_ADMIN_USERNAME: "  Example-Admin  ",
       TARE_ADMIN_PASSWORD: "  invented-password  ",
     }).firstUser,
-    { username: "Example-Admin", password: "  invented-password  " },
+    {
+      accessEmail: undefined,
+      username: "Example-Admin",
+      password: "  invented-password  ",
+    },
   );
 });
 
@@ -70,7 +74,7 @@ test("first user settings carry absent, empty and half-set values without valida
   ]) {
     assert.deepEqual(
       loadConfig({ DATABASE_URL: ":memory:", ...settings }).firstUser,
-      { username: undefined, password: undefined },
+      { accessEmail: undefined, username: undefined, password: undefined },
     );
   }
   assert.deepEqual(
@@ -78,12 +82,12 @@ test("first user settings carry absent, empty and half-set values without valida
       DATABASE_URL: ":memory:",
       TARE_ADMIN_USERNAME: "Example-Admin",
     }).firstUser,
-    { username: "Example-Admin", password: undefined },
+    { accessEmail: undefined, username: "Example-Admin", password: undefined },
   );
   assert.deepEqual(
     loadConfig({ DATABASE_URL: ":memory:", TARE_ADMIN_PASSWORD: " " })
       .firstUser,
-    { username: undefined, password: " " },
+    { accessEmail: undefined, username: undefined, password: " " },
   );
   assert.deepEqual(
     loadConfig({
@@ -91,7 +95,11 @@ test("first user settings carry absent, empty and half-set values without valida
       TARE_ADMIN_USERNAME: "x".repeat(65),
       TARE_ADMIN_PASSWORD: "x".repeat(1025),
     }).firstUser,
-    { username: "x".repeat(65), password: "x".repeat(1025) },
+    {
+      accessEmail: undefined,
+      username: "x".repeat(65),
+      password: "x".repeat(1025),
+    },
   );
 });
 

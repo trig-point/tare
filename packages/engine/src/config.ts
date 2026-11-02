@@ -1,3 +1,5 @@
+import { normalizeAccessEmail } from "./auth/access.ts";
+
 export interface Config {
   databaseUrl: string;
   port: number;
@@ -6,7 +8,14 @@ export interface Config {
   sessionDays: number;
   usdaApiKey: string | undefined;
   offUserAgent: string | undefined;
-  firstUser: { username: string | undefined; password: string | undefined };
+  identity:
+    | { mode: "access"; teamDomain: string; audience: string }
+    | { mode: "fallback" };
+  firstUser: {
+    username: string | undefined;
+    password: string | undefined;
+    accessEmail?: string;
+  };
 }
 
 export function validateOffUserAgent(
@@ -67,6 +76,27 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     throw new Error("TARE_SESSION_DAYS must be an integer between 1 and 365");
   const username = env.TARE_ADMIN_USERNAME?.trim();
   const password = env.TARE_ADMIN_PASSWORD;
+  const teamDomain = env.TARE_ACCESS_TEAM_DOMAIN?.trim() || undefined;
+  const audience = env.TARE_ACCESS_AUD?.trim() || undefined;
+  if (teamDomain !== undefined) {
+    try {
+      const url = new URL(teamDomain);
+      if (url.protocol !== "https:" || url.origin !== teamDomain)
+        throw new Error("HTTPS origin required");
+    } catch {
+      throw new Error(
+        "TARE_ACCESS_TEAM_DOMAIN must be an https origin with no path",
+      );
+    }
+    if (audience === undefined)
+      throw new Error(
+        "TARE_ACCESS_AUD must be set when TARE_ACCESS_TEAM_DOMAIN is set",
+      );
+  } else if (audience !== undefined)
+    throw new Error(
+      "TARE_ACCESS_TEAM_DOMAIN must be set when TARE_ACCESS_AUD is set",
+    );
+  const accessEmail = normalizeAccessEmail(env.TARE_ADMIN_ACCESS_EMAIL ?? "");
   return {
     databaseUrl,
     port,
@@ -75,9 +105,14 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     sessionDays,
     usdaApiKey: env.TARE_USDA_API_KEY?.trim() || undefined,
     offUserAgent: validateOffUserAgent(env.TARE_OFF_USER_AGENT),
+    identity:
+      teamDomain !== undefined && audience !== undefined
+        ? { mode: "access", teamDomain, audience }
+        : { mode: "fallback" },
     firstUser: {
       username: username === "" ? undefined : username,
       password: password === "" ? undefined : password,
+      accessEmail: accessEmail ?? undefined,
     },
   };
 }

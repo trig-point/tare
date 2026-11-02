@@ -2,7 +2,8 @@ import type { Database } from "better-sqlite3";
 
 export type InsertAccountParams = {
   username: string;
-  password_hash: string;
+  password_hash: string | null;
+  access_email: string | null;
   timezone: string;
   is_admin: number;
   created_at: string;
@@ -22,8 +23,8 @@ export function insertAccount(
   params: InsertAccountParams,
 ): InsertAccountResult | null {
   const sql = `
-	INSERT INTO users (username, password_hash, timezone, is_admin, created_at)
-	VALUES (?, ?, ?, ?, ?)
+	INSERT INTO users (username, password_hash, access_email, timezone, is_admin, created_at)
+	VALUES (?, ?, ?, ?, ?, ?)
 	RETURNING id, username, timezone, day_start_hour, is_admin, created_at;
 	
 	`;
@@ -33,6 +34,7 @@ export function insertAccount(
     .get([
       params.username,
       params.password_hash,
+      params.access_email,
       params.timezone,
       params.is_admin,
       params.created_at,

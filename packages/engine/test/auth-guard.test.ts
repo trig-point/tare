@@ -15,7 +15,7 @@ test("guard fails closed with unset credentials and uses the credential actually
   let effects = 0;
   app.use("/mixed", async (context, next) => {
     if (context.req.header("Authorization") === "Bearer example-test-token") {
-      context.set("credential", "token");
+      context.set("credential", "service");
       await next();
     } else
       return sessionAuth(setup.database, {

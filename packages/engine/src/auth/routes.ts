@@ -2,12 +2,15 @@ import type { Database } from "better-sqlite3";
 import type { Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
+import type { JWTVerifyGetKey } from "jose";
 import { type Config, validateTimezone } from "../config.ts";
 import { deleteSession } from "../queries/delete-session.ts";
 import { insertAccount } from "../queries/insert-account.ts";
 import { selectUserByUsername } from "../queries/select-user-by-username.ts";
 import {
   type AuthEnv,
+  authenticatedPerson,
+  currentPerson,
   hasRequestedWith,
   requireAdmin,
   requireRequestedWith,
@@ -25,6 +28,7 @@ export interface AppOptions {
   config: Config;
   clock: { now(): Date };
   dummyHash: string;
+  accessKeySet?: JWTVerifyGetKey;
   verifyPassword(password: string, stored: string): Promise<boolean>;
 }
 
@@ -74,7 +78,14 @@ export function mountAuthRoutes(app: Hono<AuthEnv>, options: AppOptions) {
     onError: (context) =>
       context.json({ error: { code: "body_too_large" } }, 413),
   });
-  const authenticate = sessionAuth(database, clock);
+  const authenticate =
+    config.identity.mode === "access"
+      ? authenticatedPerson
+      : sessionAuth(database, clock);
+  app.get("/api/session", authenticate, (context) =>
+    context.json({ user: toPublicUser(currentPerson(context)) }),
+  );
+  if (config.identity.mode === "access") return;
   let waiting = 0;
 
   app.post(
@@ -101,7 +112,7 @@ export function mountAuthRoutes(app: Hono<AuthEnv>, options: AppOptions) {
         const person = selectUserByUsername(database, {
           username: body.username,
         });
-        if (!person) {
+        if (!person || person.password_hash === null) {
           await verifyPassword(body.password, dummyHash);
           return context.json({ error: { code: "invalid_credentials" } }, 401);
         }
@@ -122,9 +133,6 @@ export function mountAuthRoutes(app: Hono<AuthEnv>, options: AppOptions) {
     },
   );
 
-  app.get("/api/session", authenticate, (context) =>
-    context.json({ user: toPublicUser(context.get("person")) }),
-  );
   app.delete("/api/session", authenticate, requireRequestedWith, (context) => {
     const token = getCookie(context, "tare_session");
     if (token === undefined)
@@ -150,7 +158,7 @@ export function mountAuthRoutes(app: Hono<AuthEnv>, options: AppOptions) {
       let timezone: string;
       try {
         timezone = validateTimezone(
-          body.timezone ?? context.get("person").timezone,
+          body.timezone ?? currentPerson(context).timezone,
         );
       } catch {
         return context.json({ error: { code: "invalid_request" } }, 400);
@@ -160,6 +168,7 @@ export function mountAuthRoutes(app: Hono<AuthEnv>, options: AppOptions) {
         const person = insertAccount(database, {
           username: body.username,
           password_hash: passwordHash,
+          access_email: null,
           timezone,
           is_admin: 0,
           created_at: clock.now().toISOString(),

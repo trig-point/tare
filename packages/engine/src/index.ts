@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { serve } from "@hono/node-server";
 import { createApp } from "./app.ts";
-import { ensureFirstUser } from "./auth/bootstrap.ts";
+import { ensureFirstUser, ensureSignInCapableUsers } from "./auth/bootstrap.ts";
 import { hashPassword, verifyPassword } from "./auth/password.ts";
 import { loadConfig } from "./config.ts";
 import { openDatabase } from "./db.ts";
@@ -16,13 +16,18 @@ await ensureFirstUser(
   config.timezone,
   { now: () => new Date() },
   hashPassword,
-).then(startEngine, (error: unknown) => {
-  console.error(
-    error instanceof Error ? error.message : "First administrator setup failed",
-  );
-  connection.close();
-  process.exitCode = 1;
-});
+  config.identity,
+)
+  .then(() => ensureSignInCapableUsers(connection.database, config.identity))
+  .then(startEngine, (error: unknown) => {
+    console.error(
+      error instanceof Error
+        ? error.message
+        : "First administrator setup failed",
+    );
+    connection.close();
+    process.exitCode = 1;
+  });
 
 async function startEngine() {
   const clock = { now: () => new Date() };
