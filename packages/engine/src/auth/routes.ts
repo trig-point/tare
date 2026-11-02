@@ -2,16 +2,22 @@ import type { Database } from "better-sqlite3";
 import type { Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
-import type { Config } from "../config.ts";
+import { type Config, validateTimezone } from "../config.ts";
 import { deleteSession } from "../queries/delete-session.ts";
+import { insertAccount } from "../queries/insert-account.ts";
 import { selectUserByUsername } from "../queries/select-user-by-username.ts";
 import {
   type AuthEnv,
   hasRequestedWith,
+  requireAdmin,
   requireRequestedWith,
   sessionAuth,
 } from "./middleware.ts";
-import { isValidPassword, normalizeUsername } from "./password.ts";
+import {
+  hashPassword,
+  isValidPassword,
+  normalizeUsername,
+} from "./password.ts";
 import { createSession, hashToken } from "./sessions.ts";
 
 export interface AppOptions {
@@ -46,7 +52,7 @@ async function readJsonBody(context: Context<AuthEnv>) {
     const fields = body as Record<string, unknown>;
     const username = normalizeUsername(fields.username);
     if (username === null || !isValidPassword(fields.password)) return null;
-    return { username, password: fields.password };
+    return { username, password: fields.password, timezone: fields.timezone };
   } catch {
     return null;
   }
@@ -127,4 +133,48 @@ export function mountAuthRoutes(app: Hono<AuthEnv>, options: AppOptions) {
     deleteCookie(context, "tare_session", cookieOptions);
     return context.body(null, 204);
   });
+
+  app.post(
+    "/api/users",
+    authenticate,
+    requireRequestedWith,
+    requireAdmin(database),
+    limit,
+    async (context) => {
+      const body = await readJsonBody(context);
+      if (
+        !body ||
+        (body.timezone !== undefined && typeof body.timezone !== "string")
+      )
+        return context.json({ error: { code: "invalid_request" } }, 400);
+      let timezone: string;
+      try {
+        timezone = validateTimezone(
+          body.timezone ?? context.get("person").timezone,
+        );
+      } catch {
+        return context.json({ error: { code: "invalid_request" } }, 400);
+      }
+      const passwordHash = await hashPassword(body.password);
+      try {
+        const person = insertAccount(database, {
+          username: body.username,
+          password_hash: passwordHash,
+          timezone,
+          is_admin: 0,
+          created_at: clock.now().toISOString(),
+        });
+        if (!person) throw new Error("Could not create user");
+        return context.json({ user: toPublicUser(person) }, 201);
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          "code" in error &&
+          error.code === "SQLITE_CONSTRAINT_UNIQUE"
+        )
+          return context.json({ error: { code: "username_taken" } }, 409);
+        throw error;
+      }
+    },
+  );
 }

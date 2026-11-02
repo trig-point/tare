@@ -5,7 +5,7 @@ import { type AppOptions, mountAuthRoutes } from "./auth/routes.ts";
 export function createApp(options: AppOptions) {
   const app = new Hono<AuthEnv>();
   app.use("*", async (context, next) => {
-    if (context.req.path === "/api/session")
+    if (["/api/session", "/api/users"].includes(context.req.path))
       context.header("Cache-Control", "no-store");
     await next();
   });

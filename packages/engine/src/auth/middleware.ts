@@ -2,6 +2,7 @@ import type { Database } from "better-sqlite3";
 import type { Context, MiddlewareHandler } from "hono";
 import { getCookie } from "hono/cookie";
 import { selectSessionUser } from "../queries/select-session-user.ts";
+import { selectUser } from "../queries/select-user.ts";
 import { hashToken } from "./sessions.ts";
 
 export type SessionPerson = NonNullable<ReturnType<typeof selectSessionUser>>;
@@ -43,6 +44,15 @@ export function sessionAuth(
       return context.json({ error: { code: "unauthenticated" } }, 401);
     context.set("person", person);
     context.set("credential", "session");
+    await next();
+  };
+}
+
+export function requireAdmin(database: Database): MiddlewareHandler<AuthEnv> {
+  return async (context, next) => {
+    const person = context.get("person");
+    if (!person || !selectUser(database, { id: person.id })?.is_admin)
+      return context.json({ error: { code: "forbidden" } }, 403);
     await next();
   };
 }
