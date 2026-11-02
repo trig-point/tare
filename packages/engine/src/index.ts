@@ -3,6 +3,7 @@ import { serve } from "@hono/node-server";
 import { createApp } from "./app.ts";
 import { ensureFirstUser, ensureSignInCapableUsers } from "./auth/bootstrap.ts";
 import { hashPassword, verifyPassword } from "./auth/password.ts";
+import { createBackupJob } from "./backup.ts";
 import { loadConfig } from "./config.ts";
 import { openDatabase } from "./db.ts";
 import { createJobRunner } from "./jobs.ts";
@@ -38,9 +39,19 @@ async function startEngine() {
   const runner = createJobRunner({
     database: connection.database,
     timezone: config.timezone,
-    clock: { now: () => new Date() },
+    clock,
     report: (code, jobName) => console.error(code, jobName),
   });
+  if (config.backupDir !== undefined) {
+    runner.register(
+      createBackupJob({
+        database: connection.database,
+        directory: config.backupDir,
+        keep: config.backupKeep,
+        clock,
+      }),
+    );
+  } else console.info("Backups disabled");
   runner.start();
   const app = createApp({
     database: connection.database,
