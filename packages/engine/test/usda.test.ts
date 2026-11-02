@@ -113,6 +113,10 @@ test("fetch by id maps recorded details without using label-serving totals", asy
       assert.equal(record.brand, "AMISH CLASSICS");
       assert.equal(record.barcode, "828653282457");
       assert.equal(record.nutrients.kcal?.amount, 432);
+      assert.deepEqual(record.nutrients.carbs_g, {
+        amount: 0,
+        provenance: "label",
+      });
     }
     if (name === "foundation") assert.equal(record.nutrients.fiber_g, null);
     assert.deepEqual(checkRecord(record), []);
@@ -148,6 +152,29 @@ test("energy in kJ converts to kcal and absent nutrients stay unknown", async ()
     fat_g: null,
     fiber_g: null,
   });
+});
+
+test("Atwater energy is used when the standard energy entry is absent", async () => {
+  const body = fixture("search-foundation");
+  const withoutEnergy = body.foods[0].foodNutrients.filter(
+    (nutrient: { nutrientId: number }) =>
+      nutrient.nutrientId !== 1008 && nutrient.nutrientId !== 1062,
+  );
+  const general = { nutrientId: 2047, value: 410, unitName: "KCAL" };
+  const specific = { nutrientId: 2048, value: 405, unitName: "KCAL" };
+  for (const [entries, calories] of [
+    [[general, specific], 405],
+    [[general], 410],
+  ] as const) {
+    body.foods[0].foodNutrients = [...withoutEnergy, ...entries];
+    const result = await adapterFor(body).search("cheddar");
+    assert.equal(result.status, "ok");
+    if (result.status !== "ok") return;
+    assert.deepEqual(result.records[0]?.nutrients.kcal, {
+      amount: calories,
+      provenance: "verified",
+    });
+  }
 });
 
 test("empty results differ from malformed responses and rejected records are counted", async () => {

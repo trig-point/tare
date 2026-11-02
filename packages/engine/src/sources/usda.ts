@@ -62,8 +62,8 @@ function recordFor(
   const provenance: Provenance =
     food.dataType === "Branded" ? "label" : "verified";
   const nutrients = new Map<number, { amount: number; unit: string }>();
-  for (const value of food.foodNutrients) {
-    const entry = object(value);
+  for (const item of food.foodNutrients) {
+    const entry = object(item);
     if (!entry) continue;
     const nutrient = object(entry.nutrient);
     const nutrientId = nutrient ? nutrient.id : entry.nutrientId;
