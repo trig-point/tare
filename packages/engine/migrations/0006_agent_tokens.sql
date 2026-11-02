@@ -4,6 +4,6 @@ CREATE TABLE agent_tokens (
   client_id TEXT NOT NULL UNIQUE,
   name TEXT NOT NULL,
   created_at TEXT NOT NULL CHECK (strftime('%Y-%m-%dT%H:%M:%fZ', created_at, '+0 seconds') IS created_at),
-  last_used_at TEXT,
+  last_used_at TEXT CHECK (last_used_at IS NULL OR strftime('%Y-%m-%dT%H:%M:%fZ', last_used_at, '+0 seconds') IS last_used_at),
   UNIQUE(user_id, id)
 ) STRICT;
