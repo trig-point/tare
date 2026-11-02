@@ -20,7 +20,7 @@ test("session migration upgrades the prior schema and enforces expiry, ownership
   const connection = openDatabase(":memory:");
   context.after(connection.close);
   connection.database.exec(
-    "DROP TABLE sessions; DELETE FROM schema_migrations WHERE name IN ('0004_sessions.sql', '0005_access_identity.sql')",
+    "DROP TABLE agent_tokens; DROP TABLE sessions; DELETE FROM schema_migrations WHERE name IN ('0004_sessions.sql', '0005_access_identity.sql', '0006_agent_tokens.sql')",
   );
   applyMigrations(connection.database, pathToFileURL(directory + sep));
   applyMigrations(connection.database);

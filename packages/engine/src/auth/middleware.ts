@@ -1,9 +1,11 @@
 import type { Database } from "better-sqlite3";
 import type { Context, MiddlewareHandler } from "hono";
 import { getCookie } from "hono/cookie";
+import { selectPerson } from "../queries/select-person.ts";
 import { selectSessionUser } from "../queries/select-session-user.ts";
 import { selectUser } from "../queries/select-user.ts";
 import { selectUserByAccessEmail } from "../queries/select-user-by-access-email.ts";
+import { useAgentToken } from "../queries/use-agent-token.ts";
 import { type AccessIdentity, normalizeAccessEmail } from "./access.ts";
 import { hashToken } from "./sessions.ts";
 
@@ -35,6 +37,7 @@ export const authenticatedPerson: MiddlewareHandler<AuthEnv> = async (
 export function accessAuth(
   database: Database,
   verify: (token: string) => Promise<AccessIdentity | null>,
+  clock: { now(): Date },
 ): MiddlewareHandler<AuthEnv> {
   const exemptPaths = ["/health"];
   return async (context, next) => {
@@ -43,8 +46,21 @@ export function accessAuth(
     const identity = token ? await verify(token) : null;
     if (!identity)
       return context.json({ error: { code: "unauthenticated" } }, 401);
-    if (identity.kind === "service")
-      return context.json({ error: { code: "unknown_agent" } }, 403);
+    if (identity.kind === "service") {
+      const [mapping] = useAgentToken(
+        database,
+        { now: clock.now().toISOString() },
+        { client_id: identity.commonName.trim() },
+      );
+      const person = mapping
+        ? selectPerson(database, { id: mapping.user_id })
+        : null;
+      if (!person)
+        return context.json({ error: { code: "unknown_agent" } }, 403);
+      context.set("person", person);
+      context.set("credential", "service");
+      return next();
+    }
     const email = normalizeAccessEmail(identity.email);
     if (email === null)
       return context.json({ error: { code: "unauthenticated" } }, 401);
@@ -55,6 +71,18 @@ export function accessAuth(
     await next();
   };
 }
+
+export const restrictServiceRoutes: MiddlewareHandler<AuthEnv> = async (
+  context,
+  next,
+) => {
+  if (
+    context.get("credential") === "service" &&
+    !(context.req.method === "GET" && context.req.path === "/api/me")
+  )
+    return context.json({ error: { code: "forbidden" } }, 403);
+  await next();
+};
 
 export const hasRequestedWith = (context: Context<AuthEnv>): boolean =>
   context.req.header("X-Requested-With") === "XMLHttpRequest";
