@@ -132,6 +132,10 @@ export async function executeOperation(
   });
   if (result.status === 204) return { status: 204, effects: result.effects };
   const output = operation.output.safeParse(result.body);
-  if (!output.success) throw new OperationError(500, "internal");
+  if (!output.success) {
+    // Name only: the rejected body can hold private fields.
+    console.error("operation_output_rejected", operation.name);
+    throw new OperationError(500, "internal");
+  }
   return { ...result, body: output.data };
 }

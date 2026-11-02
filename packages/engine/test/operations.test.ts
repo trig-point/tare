@@ -280,6 +280,7 @@ test("HTTP output enforcement withholds extra fields and cookie effects and pres
   context.after(() => {
     whoami.handler = original;
   });
+  const logged = context.mock.method(console, "error", () => {});
   for (const extra of [{ password_hash: "private-value" }, {}]) {
     whoami.handler = () => ({
       status: 200,
@@ -300,6 +301,13 @@ test("HTTP output enforcement withholds extra fields and cookie effects and pres
       "internal",
     );
   }
+  assert.deepEqual(
+    logged.mock.calls.map((call) => call.arguments),
+    [
+      ["operation_output_rejected", "whoami"],
+      ["operation_output_rejected", "whoami"],
+    ],
+  );
   whoami.handler = () => {
     throw new OperationError(503, "busy", { "Retry-After": "1" });
   };
