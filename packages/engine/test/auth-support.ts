@@ -114,11 +114,12 @@ export const accessConfig = loadConfig({
 });
 export const issuedAt = new Date("2026-01-01T00:00:00.000Z");
 const keys = await generateKeyPair("RS256");
-export const keySet = createLocalJWKSet({
-  keys: [
-    { ...(await exportJWK(keys.publicKey)), kid: "example-key", alg: "RS256" },
-  ],
-});
+export const accessPublicJwk = {
+  ...(await exportJWK(keys.publicKey)),
+  kid: "example-key",
+  alg: "RS256",
+};
+export const keySet = createLocalJWKSet({ keys: [accessPublicJwk] });
 
 export async function signAccessToken(
   payload: JWTPayload = { email: "admin@example.com" },
@@ -137,11 +138,11 @@ export const assertionHeader = (token: string) => ({
   "Cf-Access-Jwt-Assertion": token,
 });
 
-export function accessFixture(context: TestContext) {
-  const setup = fixture(context, {
-    config: accessConfig,
-    accessKeySet: keySet,
-  });
+export function accessFixture(
+  context: TestContext,
+  accessKeySet: AppOptions["accessKeySet"] = keySet,
+) {
+  const setup = fixture(context, { config: accessConfig, accessKeySet });
   setup.database
     .prepare("UPDATE users SET access_email = ? WHERE id = ?")
     .run("admin@example.com", setup.admin.id);

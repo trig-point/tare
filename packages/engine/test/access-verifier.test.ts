@@ -1,14 +1,20 @@
 import assert from "node:assert/strict";
-import { generateKeyPair, type JWTPayload, SignJWT } from "jose";
+import {
+  createLocalJWKSet,
+  exportJWK,
+  generateKeyPair,
+  type JWTPayload,
+  SignJWT,
+} from "jose";
 import { normalizeAccessEmail } from "../src/auth/access.ts";
 import { countUsers } from "../src/queries/count-users.ts";
 import {
   accessFixture,
+  accessPublicJwk,
   assertionHeader,
   issuedAt,
   publicUser,
   rejection,
-  signAccessToken,
 } from "./auth-support.ts";
 import { test } from "./support/hang-ceiling.ts";
 
@@ -91,20 +97,35 @@ test("verifier requires expiry and rejects expired tokens on a stepped clock", a
   await rejection(await setup.session(), 401, "unauthenticated");
 });
 
-test("verifier rejects malformed signatures and pins RS256", async (context) => {
-  const setup = accessFixture(context);
-  const otherKeys = await generateKeyPair("ES256");
-  const otherAlgorithm = await new SignJWT({ email: "admin@example.com" })
-    .setProtectedHeader({ alg: "ES256", kid: "example-key" })
+const signAs = (privateKey: CryptoKey, alg: string) =>
+  new SignJWT({ email: "admin@example.com" })
+    .setProtectedHeader({ alg, kid: "example-key" })
     .setIssuer("https://example-team.cloudflareaccess.com")
     .setAudience("example-audience")
     .setExpirationTime(issuedAt.getTime() / 1000 + 60)
-    .sign(otherKeys.privateKey);
+    .sign(privateKey);
+
+test("verifier rejects malformed and forged signatures and pins RS256", async (context) => {
+  const forger = await generateKeyPair("RS256");
+  const ellipticKeys = await generateKeyPair("ES256");
+  // The EC key shares the kid so only the RS256 pin can reject the ES256 token.
+  const withEllipticKey = createLocalJWKSet({
+    keys: [
+      accessPublicJwk,
+      {
+        ...(await exportJWK(ellipticKeys.publicKey)),
+        kid: "example-key",
+        alg: "ES256",
+      },
+    ],
+  });
+  const setup = accessFixture(context, withEllipticKey);
+  assert.equal((await setup.session()).status, 200);
   for (const [name, token] of [
     ["empty", ""],
     ["malformed", "malformed"],
-    ["bad signature", `${await signAccessToken()}invalid`],
-    ["ES256", otherAlgorithm],
+    ["forged signature", await signAs(forger.privateKey, "RS256")],
+    ["ES256", await signAs(ellipticKeys.privateKey, "ES256")],
   ]) {
     await context.test(name as string, async () => {
       await rejection(

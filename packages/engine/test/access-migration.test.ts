@@ -87,6 +87,24 @@ test("Access rebuild preserves every user field, child row, session and foreign 
     41,
   );
   assert.deepEqual(database.pragma("foreign_key_check"), []);
+  const userKeys = (table: string) =>
+    (
+      database.pragma(`foreign_key_list(${table})`) as {
+        table: string;
+        from: string;
+        to: string;
+        on_delete: string;
+      }[]
+    )
+      .filter((key) => key.table === "users")
+      .map(({ from, to, on_delete }) => ({ from, to, on_delete }));
+  for (const table of ["foods", "intake_entries", "weights", "days"])
+    assert.deepEqual(userKeys(table), [
+      { from: "user_id", to: "id", on_delete: "NO ACTION" },
+    ]);
+  assert.deepEqual(userKeys("sessions"), [
+    { from: "user_id", to: "id", on_delete: "CASCADE" },
+  ]);
   assert.equal(database.pragma("foreign_keys", { simple: true }), 1);
   const account = {
     username: "access-example",
@@ -106,6 +124,22 @@ test("Access rebuild preserves every user field, child row, session and foreign 
     assert.ok(
       insertAccount(database, { ...account, username, access_email: null }),
     );
+  const sessionOnly = insertAccount(database, {
+    ...account,
+    username: "session-only",
+    access_email: null,
+  });
+  assert.ok(sessionOnly);
+  insertSession(database, {
+    token_hash: "session-only-digest",
+    user_id: sessionOnly.id,
+    created_at: timestamp,
+    expires_at: "2026-01-02T00:00:00.000Z",
+  });
+  database.prepare("DELETE FROM users WHERE id = ?").run(sessionOnly.id);
+  assert.deepEqual(database.prepare("SELECT token_hash FROM sessions").all(), [
+    { token_hash: "example-token-digest" },
+  ]);
   database.prepare("DELETE FROM sessions WHERE user_id = ?").run(41);
   assert.throws(
     () => database.prepare("DELETE FROM users WHERE id = ?").run(41),
