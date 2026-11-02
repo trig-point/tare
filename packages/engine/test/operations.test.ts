@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { Hono } from "hono";
+import type { AuthEnv } from "../src/auth/middleware.ts";
 import { toPublicUser } from "../src/auth/routes.ts";
 import { loadConfig } from "../src/config.ts";
 import { mountOperations } from "../src/operations/http.ts";
@@ -10,6 +12,7 @@ import {
   OperationError,
 } from "../src/operations/registry.ts";
 import {
+  accessConfig,
   accessFixture,
   assertionHeader,
   cookie,
@@ -28,9 +31,10 @@ const browser = operations.find(
 assert.ok(browser);
 const whoami = agentOperations[0];
 assert.ok(whoami);
+const fallbackConfig = loadConfig({ DATABASE_URL: ":memory:" });
 const dependencies = (database: ReturnType<typeof fixture>["database"]) => ({
   database,
-  config: loadConfig({ DATABASE_URL: ":memory:" }),
+  config: fallbackConfig,
   clock: { now: () => issuedAt },
   dummyHash,
   verifyPassword: async () => false,
@@ -53,10 +57,8 @@ test("registry constrains public and administrator operations and inventories ev
   assert.throws(() => defineOperation({ ...browser, callerClass: "public" }));
   assert.throws(() => defineOperation({ ...whoami, admin: true }));
   for (const mode of ["access", "fallback"] as const) {
-    const setup = mode === "access" ? accessFixture(context) : fixture(context);
-    const registered = operations
-      .filter((operation) => operation.modes.includes(mode))
-      .map((operation) => `${operation.method} ${operation.path}`);
+    const makeSetup = mode === "access" ? accessFixture : fixture;
+    const setup = makeSetup(context);
     // MHA-214 moves the two fallback session routes into the registry.
     const infrastructure = [
       "GET /health",
@@ -64,13 +66,38 @@ test("registry constrains public and administrator operations and inventories ev
         ? ["POST /api/session", "DELETE /api/session"]
         : []),
     ];
-    const mounted = setup.app.routes
-      .filter((route) => route.method !== "ALL")
-      .map((route) => `${route.method} ${route.path}`);
-    assert.deepEqual(
-      [...new Set(mounted)].sort(),
-      [...registered, ...infrastructure].sort(),
-    );
+    const registryApp = new Hono<AuthEnv>();
+    mountOperations(registryApp, operations, {
+      ...dependencies(setup.database),
+      config: mode === "access" ? accessConfig : fallbackConfig,
+    });
+    // One entry per handler, so a second handler on a registered route counts.
+    const inventory = (app: Hono<AuthEnv>) =>
+      app.routes
+        .filter((route) => route.method !== "ALL" || route.path !== "/*")
+        .map((route) => `${route.method} ${route.path}`)
+        .sort();
+    const assertInventory = (app: Hono<AuthEnv>) => {
+      const handMounted = inventory(app).filter((route) =>
+        infrastructure.includes(route),
+      );
+      assert.deepEqual(
+        inventory(app),
+        [...inventory(registryApp), ...handMounted].sort(),
+      );
+      assert.deepEqual([...new Set(handMounted)], [...infrastructure].sort());
+    };
+    assertInventory(setup.app);
+    for (const mountExtra of [
+      (app: Hono<AuthEnv>) =>
+        app.all("/api/extra", (honoContext) => honoContext.body(null)),
+      (app: Hono<AuthEnv>) =>
+        app.get("/api/me", (honoContext) => honoContext.body(null)),
+    ]) {
+      const extra = makeSetup(context);
+      mountExtra(extra.app);
+      assert.throws(() => assertInventory(extra.app));
+    }
     assert.throws(() =>
       mountOperations(
         setup.app,
