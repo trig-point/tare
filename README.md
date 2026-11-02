@@ -10,5 +10,6 @@ Set `TARE_BACKUP_DIR` to a folder on separate storage from the database volume. 
 To restore:
 
 1. Stop the engine.
-2. Copy a completed backup over the file named by `DATABASE_URL`. If SQLite `-wal` or `-shm` files remain beside the database after shutdown, remove those sidecar files before replacing it.
-3. Start the engine with the same configuration. Verify `GET /health`, then sign in and inspect your data.
+2. Remove any `-journal`, `-wal`, or `-shm` files beside the file named by `DATABASE_URL`. A leftover journal can corrupt the restored database.
+3. Copy a completed backup over the file named by `DATABASE_URL`.
+4. Start the engine with the same configuration. Verify `GET /health`, then sign in and inspect your data.
