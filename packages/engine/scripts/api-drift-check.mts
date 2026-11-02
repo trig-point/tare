@@ -190,7 +190,7 @@ function parse<Schema extends z.ZodType>(
     for (const issue of issues) {
       if (issue.code === "invalid_union") {
         for (const branch of issue.errors) collect(branch);
-      } else fields.add([prefix, ...issue.path].join("."));
+      } else fields.add([prefix, ...issue.path].filter(Boolean).join("."));
     }
   }
   collect(parsed.error.issues);

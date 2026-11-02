@@ -505,3 +505,12 @@ test("captured oasdiff output keeps read-path changes and drops unread and annot
       name,
     );
 });
+
+test("OFF parse failures name fields without a leading dot", async () => {
+  const results = await runChecks(
+    fixture({ off: { status: 1, product: {} } }).options,
+  );
+  assert.deepEqual(results.off.live.details, [
+    "Invalid response: status, product.code",
+  ]);
+});
