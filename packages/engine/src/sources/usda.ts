@@ -5,12 +5,43 @@ import {
   type Provenance,
   type ServingBasis,
 } from "@tare/nutrition";
+import { z } from "zod";
 import type { Config } from "../config.ts";
 
 const DATA_TYPES = ["Foundation", "SR Legacy", "Branded"] as const;
 const API_URL = "https://api.nal.usda.gov/fdc/v1/";
 // Bounds an explicit lookup so a stalled USDA call falls through to Open Food Facts.
 const REQUEST_TIMEOUT_MS = 10_000;
+
+const optionalText = z.string().nullish();
+
+/** Only the slice of a USDA food the adapter reads; other fields are ignored. */
+const usdaFoodSchema = z.object({
+  dataType: z.string(),
+  fdcId: z.int().positive(),
+  description: z.string(),
+  brandName: optionalText,
+  brandOwner: optionalText,
+  gtinUpc: optionalText,
+  servingSizeUnit: optionalText,
+  foodNutrients: z.array(
+    z.union([
+      z.object({
+        nutrient: z.object({ id: z.number(), unitName: z.string() }),
+        amount: z.number().optional(),
+      }),
+      z.object({
+        nutrientId: z.number(),
+        unitName: z.string(),
+        value: z.number().optional(),
+      }),
+    ]),
+  ),
+});
+
+const usdaSearchSchema = z.object({ foods: z.array(z.unknown()) });
+
+export type UsdaFood = z.input<typeof usdaFoodSchema>;
 
 export type UsdaResult =
   | { status: "ok"; records: NutritionRecord[]; rejected: number }
@@ -21,20 +52,10 @@ export type UsdaResult =
       statusCode?: number;
     };
 
-function object(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-function text(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-function basisFor(food: Record<string, unknown>): ServingBasis | null {
+function basisFor(food: z.output<typeof usdaFoodSchema>): ServingBasis | null {
   if (food.dataType !== "Branded")
     return { dimension: "mass", amount: 100, unit: "g" };
-  const unit = text(food.servingSizeUnit)?.toLowerCase();
+  const unit = food.servingSizeUnit?.trim().toLowerCase();
   if (unit === "g" || unit === "grm")
     return { dimension: "mass", amount: 100, unit: "g" };
   if (unit === "ml" || unit === "mlt")
@@ -42,38 +63,28 @@ function basisFor(food: Record<string, unknown>): ServingBasis | null {
   return null;
 }
 
+function presentText(value: string | null | undefined): string | null {
+  return value?.trim() || null;
+}
+
 function recordFor(
-  value: unknown,
+  food: z.output<typeof usdaFoodSchema>,
   retrievedAt: string,
 ): NutritionRecord | null {
-  const food = object(value);
-  if (
-    !food ||
-    !DATA_TYPES.some((dataType) => dataType === food.dataType) ||
-    typeof food.fdcId !== "number" ||
-    !Number.isSafeInteger(food.fdcId) ||
-    food.fdcId <= 0 ||
-    !Array.isArray(food.foodNutrients)
-  )
-    return null;
-  const name = text(food.description);
+  const name = presentText(food.description);
   const basis = basisFor(food);
+  if (!DATA_TYPES.some((dataType) => dataType === food.dataType)) return null;
   if (!name || !basis) return null;
   const provenance: Provenance =
     food.dataType === "Branded" ? "label" : "verified";
   const nutrients = new Map<number, { amount: number; unit: string }>();
-  for (const item of food.foodNutrients) {
-    const entry = object(item);
-    if (!entry) continue;
-    const nutrient = object(entry.nutrient);
-    const nutrientId = nutrient ? nutrient.id : entry.nutrientId;
-    const amount = nutrient ? entry.amount : entry.value;
-    const unit = text(nutrient ? nutrient.unitName : entry.unitName);
-    if (
-      typeof nutrientId === "number" &&
-      typeof amount === "number" &&
-      unit !== null
-    )
+  for (const entry of food.foodNutrients) {
+    const [nutrientId, amount] =
+      "nutrient" in entry
+        ? [entry.nutrient.id, entry.amount]
+        : [entry.nutrientId, entry.value];
+    const unit = "nutrient" in entry ? entry.nutrient.unitName : entry.unitName;
+    if (amount !== undefined)
       nutrients.set(nutrientId, { amount, unit: unit.toLowerCase() });
   }
   function nutrientValue(identifiers: number[], energy = false): NutrientValue {
@@ -87,12 +98,14 @@ function recordFor(
     }
     return null;
   }
+  const barcode = presentText(food.gtinUpc);
   const record: NutritionRecord = {
     source: "usda",
     sourceId: String(food.fdcId),
     name,
-    brand: text(food.brandName) ?? text(food.brandOwner),
-    barcode: text(food.gtinUpc),
+    brand: presentText(food.brandName) ?? presentText(food.brandOwner),
+    // A malformed vendor barcode costs only the barcode, not the food.
+    barcode: barcode && /^\d{8,14}$/.test(barcode) ? barcode : null,
     labelSource: null,
     retrievedAt,
     mealKit: null,
@@ -145,15 +158,22 @@ export function createUsdaAdapter(
     } catch {
       return { status: "error", reason: "invalid_response" };
     }
-    const payload = object(body);
-    if (!payload || (query !== undefined && !Array.isArray(payload.foods)))
-      return { status: "error", reason: "invalid_response" };
-    const foods: unknown[] =
-      query !== undefined ? (payload.foods as unknown[]) : [payload];
+    let foods: ReturnType<typeof usdaFoodSchema.safeParse>[];
+    if (query !== undefined) {
+      const search = usdaSearchSchema.safeParse(body);
+      if (!search.success)
+        return { status: "error", reason: "invalid_response" };
+      foods = search.data.foods.map((food) => usdaFoodSchema.safeParse(food));
+    } else {
+      const detail = usdaFoodSchema.safeParse(body);
+      if (!detail.success)
+        return { status: "error", reason: "invalid_response" };
+      foods = [detail];
+    }
     const records: NutritionRecord[] = [];
     const retrievedAt = now().toISOString();
     for (const food of foods) {
-      const record = recordFor(food, retrievedAt);
+      const record = food.success ? recordFor(food.data, retrievedAt) : null;
       if (record && (query !== undefined || path === `food/${record.sourceId}`))
         records.push(record);
     }
@@ -162,15 +182,11 @@ export function createUsdaAdapter(
 
   return {
     async search(query: string): Promise<UsdaResult> {
-      if (apiKey && !query.trim())
-        return { status: "error", reason: "invalid_request" };
+      if (!query.trim()) return { status: "error", reason: "invalid_request" };
       return lookup("foods/search", query.trim());
     },
     async fetchById(fdcId: string): Promise<UsdaResult> {
-      if (
-        apiKey &&
-        (!/^[1-9]\d*$/.test(fdcId) || !Number.isSafeInteger(Number(fdcId)))
-      )
+      if (!/^[1-9]\d*$/.test(fdcId) || !Number.isSafeInteger(Number(fdcId)))
         return { status: "error", reason: "invalid_request" };
       return lookup(`food/${fdcId}`);
     },
