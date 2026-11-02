@@ -8,6 +8,7 @@ import { deleteSession } from "../queries/delete-session.ts";
 import { insertAccount } from "../queries/insert-account.ts";
 import { selectUserByUsername } from "../queries/select-user-by-username.ts";
 import { normalizeAccessEmail } from "./access.ts";
+import { mountAgentTokenRoutes } from "./agent-tokens.ts";
 import {
   type AuthEnv,
   authenticatedPerson,
@@ -33,7 +34,7 @@ export interface AppOptions {
   verifyPassword(password: string, stored: string): Promise<boolean>;
 }
 
-function toPublicUser(person: {
+export function toPublicUser(person: {
   id: number;
   username: string;
   timezone: string;
@@ -95,6 +96,10 @@ export function mountAuthRoutes(app: Hono<AuthEnv>, options: AppOptions) {
           logout_url: `${config.identity.teamDomain}/cdn-cgi/access/logout`,
         }
       : { mode: "fallback" as const };
+  app.get("/api/me", authenticate, (context) =>
+    context.json({ user: toPublicUser(currentPerson(context)) }),
+  );
+  if (config.identity.mode === "access") mountAgentTokenRoutes(app, options);
   app.get("/api/session", authenticate, (context) =>
     context.json({
       user: toPublicUser(currentPerson(context)),

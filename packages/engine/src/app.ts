@@ -1,13 +1,22 @@
 import { Hono } from "hono";
 import { createRemoteJWKSet } from "jose";
 import { createAccessVerifier } from "./auth/access.ts";
-import { type AuthEnv, accessAuth } from "./auth/middleware.ts";
+import {
+  type AuthEnv,
+  accessAuth,
+  restrictServiceRoutes,
+} from "./auth/middleware.ts";
 import { type AppOptions, mountAuthRoutes } from "./auth/routes.ts";
 
 export function createApp(options: AppOptions) {
   const app = new Hono<AuthEnv>();
   app.use("*", async (context, next) => {
-    if (["/api/session", "/api/users"].includes(context.req.path))
+    if (
+      ["/api/session", "/api/users", "/api/me", "/api/agent-tokens"].includes(
+        context.req.path,
+      ) ||
+      context.req.path.startsWith("/api/agent-tokens/")
+    )
       context.header("Cache-Control", "no-store");
     await next();
   });
@@ -34,8 +43,10 @@ export function createApp(options: AppOptions) {
             createRemoteJWKSet(new URL("/cdn-cgi/access/certs", teamDomain)),
           now: () => options.clock.now(),
         }),
+        options.clock,
       ),
     );
+    app.use("*", restrictServiceRoutes);
   }
   mountAuthRoutes(app, options);
   return app;
