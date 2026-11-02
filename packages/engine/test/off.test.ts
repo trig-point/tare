@@ -349,6 +349,27 @@ test("a response missing product or products is invalid rather than a miss", asy
   );
 });
 
+test("a malformed search product is dropped and counted while valid products return", async () => {
+  const valid = offProduct("3017620422003", "Nutella", "Nutella, Ferrero", {
+    ...nutellaValues,
+    fiber_100g: 0,
+  });
+  const peer = network({
+    products: [{ ...valid, code: 3017620422003 }, valid],
+  });
+  const result = await createOffAdapter({
+    userAgent,
+    fetch: peer.fetchResponse,
+  }).searchName("Nutella");
+  assert.equal(result.status, "ok");
+  assert.ok(result.status === "ok");
+  assert.deepEqual(
+    result.records.map((record) => record.sourceId),
+    ["3017620422003"],
+  );
+  assert.equal(result.rejected, 1);
+});
+
 test("over-limit product reads and the eleventh search make no request, including concurrent calls, then reset", async (context) => {
   context.mock.timers.enable({
     apis: ["Date", "setTimeout"],
