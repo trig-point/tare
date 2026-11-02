@@ -53,8 +53,6 @@ export function fixture(
     });
   const rows = () =>
     database.prepare("SELECT * FROM sessions ORDER BY token_hash").all();
-  const userCount = () =>
-    database.prepare("SELECT count(*) AS count FROM users").get();
   return {
     app,
     database,
@@ -62,7 +60,6 @@ export function fixture(
     calls,
     signIn,
     rows,
-    userCount,
     setNow: (value: string) => {
       now = new Date(value);
     },

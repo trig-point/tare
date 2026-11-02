@@ -46,7 +46,7 @@ async function readJsonBody(context: Context<AuthEnv>) {
     const fields = body as Record<string, unknown>;
     const username = normalizeUsername(fields.username);
     if (username === null || !isValidPassword(fields.password)) return null;
-    return { fields, username, password: fields.password };
+    return { username, password: fields.password };
   } catch {
     return null;
   }
