@@ -1,5 +1,7 @@
 import { Hono } from "hono";
-import type { AuthEnv } from "./auth/middleware.ts";
+import { createRemoteJWKSet } from "jose";
+import { createAccessVerifier } from "./auth/access.ts";
+import { type AuthEnv, accessAuth } from "./auth/middleware.ts";
 import { type AppOptions, mountAuthRoutes } from "./auth/routes.ts";
 
 export function createApp(options: AppOptions) {
@@ -18,6 +20,23 @@ export function createApp(options: AppOptions) {
     context.json({ error: { code: "not_found" } }, 404),
   );
   app.get("/health", (context) => context.json({ status: "ok" }));
+  if (options.config.identity.mode === "access") {
+    const { teamDomain, audience } = options.config.identity;
+    app.use(
+      "*",
+      accessAuth(
+        options.database,
+        createAccessVerifier({
+          teamDomain,
+          audience,
+          keySet:
+            options.accessKeySet ??
+            createRemoteJWKSet(new URL("/cdn-cgi/access/certs", teamDomain)),
+          now: () => options.clock.now(),
+        }),
+      ),
+    );
+  }
   mountAuthRoutes(app, options);
   return app;
 }

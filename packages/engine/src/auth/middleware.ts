@@ -3,12 +3,58 @@ import type { Context, MiddlewareHandler } from "hono";
 import { getCookie } from "hono/cookie";
 import { selectSessionUser } from "../queries/select-session-user.ts";
 import { selectUser } from "../queries/select-user.ts";
+import { selectUserByAccessEmail } from "../queries/select-user-by-access-email.ts";
+import { type AccessIdentity, normalizeAccessEmail } from "./access.ts";
 import { hashToken } from "./sessions.ts";
 
-export type SessionPerson = NonNullable<ReturnType<typeof selectSessionUser>>;
+export type Person = Omit<
+  NonNullable<ReturnType<typeof selectSessionUser>>,
+  "expires_at"
+>;
 export type AuthEnv = {
-  Variables: { person: SessionPerson; credential: string | undefined };
+  Variables: {
+    person: Person;
+    credential: "session" | "access" | "service" | undefined;
+  };
 };
+
+export function currentPerson(context: Context<AuthEnv>): Person {
+  const person = context.get("person");
+  if (!person) throw new Error("Authenticated person missing");
+  return person;
+}
+
+export const authenticatedPerson: MiddlewareHandler<AuthEnv> = async (
+  context,
+  next,
+) => {
+  currentPerson(context);
+  await next();
+};
+
+export function accessAuth(
+  database: Database,
+  verify: (token: string) => Promise<AccessIdentity | null>,
+): MiddlewareHandler<AuthEnv> {
+  const exemptPaths = ["/health"];
+  return async (context, next) => {
+    if (exemptPaths.includes(context.req.path)) return next();
+    const token = context.req.header("Cf-Access-Jwt-Assertion");
+    const identity = token ? await verify(token) : null;
+    if (!identity)
+      return context.json({ error: { code: "unauthenticated" } }, 401);
+    if (identity.kind === "service")
+      return context.json({ error: { code: "unknown_agent" } }, 403);
+    const email = normalizeAccessEmail(identity.email);
+    if (email === null)
+      return context.json({ error: { code: "unauthenticated" } }, 401);
+    const person = selectUserByAccessEmail(database, { access_email: email });
+    if (!person) return context.json({ error: { code: "not_a_member" } }, 403);
+    context.set("person", person);
+    context.set("credential", "access");
+    await next();
+  };
+}
 
 export const hasRequestedWith = (context: Context<AuthEnv>): boolean =>
   context.req.header("X-Requested-With") === "XMLHttpRequest";
@@ -21,7 +67,7 @@ export const requireRequestedWith: MiddlewareHandler<AuthEnv> = async (
   const credential = context.get("credential");
   if (
     !["GET", "HEAD", "OPTIONS"].includes(context.req.method) &&
-    (credential === undefined || credential === "session") &&
+    credential !== "service" &&
     !hasRequestedWith(context)
   )
     return context.json({ error: { code: "requested_with_required" } }, 403);
@@ -42,7 +88,8 @@ export function sessionAuth(
       : null;
     if (!person)
       return context.json({ error: { code: "unauthenticated" } }, 401);
-    context.set("person", person);
+    const { expires_at: _expiresAt, ...authenticated } = person;
+    context.set("person", authenticated);
     context.set("credential", "session");
     await next();
   };
@@ -50,8 +97,8 @@ export function sessionAuth(
 
 export function requireAdmin(database: Database): MiddlewareHandler<AuthEnv> {
   return async (context, next) => {
-    const person = context.get("person");
-    if (!person || !selectUser(database, { id: person.id })?.is_admin)
+    const person = currentPerson(context);
+    if (!selectUser(database, { id: person.id })?.is_admin)
       return context.json({ error: { code: "forbidden" } }, 403);
     await next();
   };

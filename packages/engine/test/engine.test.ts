@@ -70,7 +70,12 @@ describe("engine", () => {
       sessionDays: 30,
       usdaApiKey: undefined,
       offUserAgent: undefined,
-      firstUser: { username: undefined, password: undefined },
+      identity: { mode: "fallback" },
+      firstUser: {
+        username: undefined,
+        password: undefined,
+        accessEmail: undefined,
+      },
     });
   });
 

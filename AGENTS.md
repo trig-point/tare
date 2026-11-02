@@ -47,13 +47,19 @@ TypeSQL generation uses an ignored local database at `packages/engine/data/types
 
 `TARE_SESSION_DAYS` sets the absolute session lifetime in days (default: `30`, integer from 1 to 365). Empty counts as unset.
 
+`TARE_ACCESS_TEAM_DOMAIN` is the Cloudflare Access HTTPS origin, with no path or trailing slash. Set it with `TARE_ACCESS_AUD` to use Access; leave both unset for password login. Switching a populated install between modes is unsupported.
+
+`TARE_ACCESS_AUD` is the Access application's audience tag. Setting only one Access option prevents startup.
+
+`TARE_ADMIN_ACCESS_EMAIL` creates the first administrator in Access mode with `TARE_ADMIN_USERNAME`. Emails are trimmed and lowercased. Access mode uses no administrator password; fallback mode requires `TARE_ADMIN_PASSWORD`.
+
 `TARE_USDA_API_KEY` enables USDA FoodData Central lookups; it is trimmed, and empty or unset skips USDA.
 
 `TARE_OFF_USER_AGENT` must follow `AppName/Version (ContactEmail)`; leaving it empty or unset disables Open Food Facts requests.
 
 Product data from [Open Food Facts](https://world.openfoodfacts.org/) is licensed under the [Open Database License (ODbL)](https://opendatacommons.org/licenses/odbl/1-0/). Attribute Open Food Facts when using its data; ODbL share-alike terms apply to derived databases.
 
-`TARE_ADMIN_USERNAME` and `TARE_ADMIN_PASSWORD` create the first administrator in the install timezone. The system reads them only while the database has no users, and you can remove them after the first start. The username is trimmed; the password is kept exactly as set.
+`TARE_ADMIN_USERNAME` and the mode's administrator credential create the first administrator in the install timezone. The system reads them only while the database has no users, and you can remove them after the first start. The username is trimmed; the password is kept exactly as set.
 
 Keep comments short and focused on why. Use descriptive identifiers, never single-letter names. Keep personal data and secrets out of logs as well as source and fixtures.
 

@@ -6,7 +6,7 @@ export type SelectSourceFoodParams = {
 
 export type SelectSourceFoodResult = {
   id: number;
-  source: string;
+  source: "usda" | "off";
   source_key: string;
   name: string;
   brand: string | null;
@@ -17,7 +17,7 @@ export type SelectSourceFoodResult = {
   carbs_g: number | null;
   fat_g: number | null;
   fiber_g: number | null;
-  provenance: string;
+  provenance: "verified" | "label";
   fetched_at: string;
 };
 

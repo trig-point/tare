@@ -554,14 +554,17 @@ test("provenance, cache keys, user settings and body fat enforce their contracts
   const { database, first, food, entry, cache, weight } = fixture(context);
   for (const create of [food, entry, cache])
     assert.throws(
-      () => create({ provenance: "unknown" }),
+      () => create({ provenance: "unknown" as never }),
       /CHECK constraint failed/,
     );
   assert.throws(
-    () => cache({ provenance: "estimated" }),
+    () => cache({ provenance: "estimated" as never }),
     /CHECK constraint failed/,
   );
-  assert.throws(() => cache({ source: "other" }), /CHECK constraint failed/);
+  assert.throws(
+    () => cache({ source: "other" as never }),
+    /CHECK constraint failed/,
+  );
   assert.ok(cache({ source_key: "shared-key" }));
   assert.throws(
     () => cache({ source_key: "shared-key" }),

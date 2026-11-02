@@ -7,7 +7,7 @@ export type SelectUserByUsernameParams = {
 export type SelectUserByUsernameResult = {
   id: number;
   username: string;
-  password_hash: string;
+  password_hash: string | null;
   timezone: string;
   day_start_hour: number;
   is_admin: number;

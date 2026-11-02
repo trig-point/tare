@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
 import type { TestContext } from "node:test";
+import {
+  createLocalJWKSet,
+  exportJWK,
+  generateKeyPair,
+  type JWTPayload,
+  SignJWT,
+} from "jose";
 import { createApp } from "../src/app.ts";
 import { hashPassword } from "../src/auth/password.ts";
 import type { AppOptions } from "../src/auth/routes.ts";
@@ -25,6 +32,7 @@ export function fixture(
   const admin = insertAccount(database, {
     username: credentials.username,
     password_hash: "example-hash",
+    access_email: null,
     timezone: "Asia/Kolkata",
     is_admin: 1,
     created_at: now.toISOString(),
@@ -97,4 +105,50 @@ export async function publicUser(response: Response) {
   ]);
   assert.equal(typeof user.is_admin, "boolean");
   return user;
+}
+
+export const accessConfig = loadConfig({
+  DATABASE_URL: ":memory:",
+  TARE_ACCESS_TEAM_DOMAIN: "https://example-team.cloudflareaccess.com",
+  TARE_ACCESS_AUD: "example-audience",
+});
+export const issuedAt = new Date("2026-01-01T00:00:00.000Z");
+const keys = await generateKeyPair("RS256");
+export const accessPublicJwk = {
+  ...(await exportJWK(keys.publicKey)),
+  kid: "example-key",
+  alg: "RS256",
+};
+export const keySet = createLocalJWKSet({ keys: [accessPublicJwk] });
+
+export async function signAccessToken(
+  payload: JWTPayload = { email: "admin@example.com" },
+  expiry = true,
+) {
+  const token = new SignJWT({
+    iss: "https://example-team.cloudflareaccess.com",
+    aud: "example-audience",
+    ...(expiry ? { exp: issuedAt.getTime() / 1000 + 60 } : {}),
+    ...payload,
+  }).setProtectedHeader({ alg: "RS256", kid: "example-key" });
+  return token.sign(keys.privateKey);
+}
+
+export const assertionHeader = (token: string) => ({
+  "Cf-Access-Jwt-Assertion": token,
+});
+
+export function accessFixture(
+  context: TestContext,
+  accessKeySet: AppOptions["accessKeySet"] = keySet,
+) {
+  const setup = fixture(context, { config: accessConfig, accessKeySet });
+  setup.database
+    .prepare("UPDATE users SET access_email = ? WHERE id = ?")
+    .run("admin@example.com", setup.admin.id);
+  const session = async (payload?: JWTPayload, expiry = true) =>
+    setup.app.request("/api/session", {
+      headers: assertionHeader(await signAccessToken(payload, expiry)),
+    });
+  return { ...setup, session };
 }

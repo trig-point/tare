@@ -1,7 +1,7 @@
 import type { Database } from "better-sqlite3";
 
 export type InsertSourceFoodParams = {
-  source: string;
+  source: "usda" | "off";
   source_key: string;
   name: string;
   brand: string | null;
@@ -12,13 +12,13 @@ export type InsertSourceFoodParams = {
   carbs_g: number | null;
   fat_g: number | null;
   fiber_g: number | null;
-  provenance: string;
+  provenance: "verified" | "label";
   fetched_at: string;
 };
 
 export type InsertSourceFoodResult = {
   id: number;
-  source: string;
+  source: "usda" | "off";
   source_key: string;
   name: string;
   brand: string | null;
@@ -29,7 +29,7 @@ export type InsertSourceFoodResult = {
   carbs_g: number | null;
   fat_g: number | null;
   fiber_g: number | null;
-  provenance: string;
+  provenance: "verified" | "label";
   fetched_at: string;
 };
 
