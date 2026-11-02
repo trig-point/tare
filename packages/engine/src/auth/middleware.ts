@@ -72,18 +72,6 @@ export function accessAuth(
   };
 }
 
-export const restrictServiceRoutes: MiddlewareHandler<AuthEnv> = async (
-  context,
-  next,
-) => {
-  if (
-    context.get("credential") === "service" &&
-    !(context.req.method === "GET" && context.req.path === "/api/me")
-  )
-    return context.json({ error: { code: "forbidden" } }, 403);
-  await next();
-};
-
 export const hasRequestedWith = (context: Context<AuthEnv>): boolean =>
   context.req.header("X-Requested-With") === "XMLHttpRequest";
 
