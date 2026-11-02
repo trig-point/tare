@@ -3,6 +3,22 @@ import { test } from "node:test";
 import { loadConfig } from "../src/config.ts";
 import { test as authTest } from "./support/hang-ceiling.ts";
 
+test("USDA API key is optional, trimmed, and empty counts as unset", () => {
+  for (const value of [undefined, "", "   "])
+    assert.equal(
+      loadConfig({ DATABASE_URL: ":memory:", TARE_USDA_API_KEY: value })
+        .usdaApiKey,
+      undefined,
+    );
+  assert.equal(
+    loadConfig({
+      DATABASE_URL: ":memory:",
+      TARE_USDA_API_KEY: "  fixture-key  ",
+    }).usdaApiKey,
+    "fixture-key",
+  );
+});
+
 authTest(
   "session config validates lifetime and URL and treats empty values as unset",
   () => {

@@ -47,6 +47,8 @@ TypeSQL generation uses an ignored local database at `packages/engine/data/types
 
 `TARE_SESSION_DAYS` sets the absolute session lifetime in days (default: `30`, integer from 1 to 365). Empty counts as unset.
 
+`TARE_USDA_API_KEY` enables USDA FoodData Central lookups; it is trimmed, and empty or unset skips USDA.
+
 `TARE_OFF_USER_AGENT` must follow `AppName/Version (ContactEmail)`; leaving it empty or unset disables Open Food Facts requests.
 
 Product data from [Open Food Facts](https://world.openfoodfacts.org/) is licensed under the [Open Database License (ODbL)](https://opendatacommons.org/licenses/odbl/1-0/). Attribute Open Food Facts when using its data; ODbL share-alike terms apply to derived databases.
