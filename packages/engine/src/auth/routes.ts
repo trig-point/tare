@@ -24,6 +24,7 @@ import {
   hashPassword,
   isValidPassword,
   normalizeUsername,
+  USERNAME_MAX_LENGTH,
 } from "./password.ts";
 import { createSession, hashToken } from "./sessions.ts";
 
@@ -133,7 +134,7 @@ export const authOperations = [
     admin: true,
     bodyLimit: 8192,
     input: zod.object({
-      username: zod.string().trim().min(1).max(64),
+      username: zod.string().trim().min(1).max(USERNAME_MAX_LENGTH),
       password: zod.unknown().optional(),
       email: zod.unknown().optional(),
       timezone: zod.string().optional(),
