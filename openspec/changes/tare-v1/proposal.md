@@ -39,7 +39,7 @@ None. No specs exist yet.
 
 - `packages/engine`: new migrations, queries, operations, routes, MCP server and jobs.
 - New packages: `packages/nutrition`, `packages/order-parser`, `packages/health-sources`, and `apps/web` (the PWA).
-- New runtime dependencies, each named by the task that adds it: zod and @hono/zod-validator, @hono/mcp with the MCP TypeScript SDK, croner, rate-limiter-flexible, mailauth, mailparser, oauth4webapi, async-mutex, request-filtering-agent, node-ical and mqtt (mqtt.js) in the engine; the openai SDK in packages/order-parser; vite-plugin-pwa (Workbox), TanStack Router and TanStack Query, idb, barcode-detector and uPlot in the PWA.
+- New runtime dependencies, each named by the task that adds it: jose, zod and @hono/zod-validator, @hono/mcp with the MCP TypeScript SDK, croner, rate-limiter-flexible, mailauth, mailparser, oauth4webapi, async-mutex, request-filtering-agent, node-ical and mqtt (mqtt.js) in the engine; unicode-case-folding in packages/nutrition; the openai SDK in packages/order-parser; vite-plugin-pwa (Workbox), TanStack Router and TanStack Query, idb, barcode-detector and uPlot in the PWA.
 - External services, each optional and configured by the operator: an OpenAI-compatible model endpoint, USDA FoodData Central (API key), Open Food Facts (no key, rate limited), Oura (an OAuth app per install), and an MQTT broker.
 - Out of this repository: agent skills that use the MCP interface (meal-kit picking and nutrition answering) live in the operator's own agent configuration and are tracked separately.
 - Post version 1, not specified here: a pantry (Grocy) and a pantry-aware meal solver, a CLI, a HACS package, more health sources, paid nutrition providers, and image-based logging.

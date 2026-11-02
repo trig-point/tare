@@ -4,7 +4,7 @@
 Each operation SHALL be defined once with its name, input schema, output schema, handler, caller class and whether it needs an administrator. The caller class SHALL be public, browser only (a person in the app: an Access browser identity, or a session in fallback mode) or browser and agent (adds an Access agent service token). Public SHALL be used for fallback sign-in only: it needs no identity, is served only as an HTTP route and is never an MCP tool. Every operation SHALL be served as an HTTP route; every operation an agent may call SHALL also be served as an MCP tool with the same schemas. In version 1 an agent service token may call every browser-and-agent operation for its person; there are no finer scopes. Every administrator operation is browser only.
 
 #### Scenario: Operation on both surfaces
-- **WHEN** a session-and-agent operation is added to the registry
+- **WHEN** a browser-and-agent operation is added to the registry
 - **THEN** it is reachable as an HTTP route and listed as an MCP tool with the same schemas
 
 #### Scenario: Browser-only operation
@@ -27,7 +27,7 @@ The engine SHALL serve an MCP server over streamable HTTP at `/mcp`, built on th
 - **THEN** it can list and call every agent-callable operation for the token's person
 
 #### Scenario: Missing token
-- **WHEN** an MCP client reaches `/mcp` without a valid Access token
+- **WHEN** an MCP client reaches `/mcp` in Access mode without a valid Access token
 - **THEN** the server rejects the request with 401
 
 #### Scenario: Browser identity on MCP
