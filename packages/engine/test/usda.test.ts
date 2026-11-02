@@ -47,6 +47,7 @@ test("search maps recorded data types to provenance and requests only supported 
           new Headers(init?.headers).get("X-Api-Key"),
           "fixture-key",
         );
+        assert.ok(init?.signal instanceof AbortSignal);
         return Response.json(fixture(`search-${name}`));
       },
     });
@@ -188,10 +189,11 @@ test("empty results differ from malformed responses and rejected records are cou
 test("HTTP failures and transport or JSON errors return sanitized errors without retries", async () => {
   for (const statusCode of [429, 500, 503]) {
     let calls = 0;
+    const response = new Response("fixture-key", { status: statusCode });
     const adapter = createUsdaAdapter(config, {
       fetch: async () => {
         calls += 1;
-        return new Response("fixture-key", { status: statusCode });
+        return response;
       },
     });
     assert.deepEqual(await adapter.search("cheddar"), {
@@ -200,6 +202,7 @@ test("HTTP failures and transport or JSON errors return sanitized errors without
       statusCode,
     });
     assert.equal(calls, 1);
+    assert.equal(response.bodyUsed, true);
   }
   const failing = createUsdaAdapter(config, {
     fetch: async () => {

@@ -9,6 +9,8 @@ import type { Config } from "../config.ts";
 
 const DATA_TYPES = ["Foundation", "SR Legacy", "Branded"] as const;
 const API_URL = "https://api.nal.usda.gov/fdc/v1/";
+// Bounds an explicit lookup so a stalled USDA call falls through to Open Food Facts.
+const REQUEST_TIMEOUT_MS = 10_000;
 
 export type UsdaResult =
   | { status: "ok"; records: NutritionRecord[]; rejected: number }
@@ -126,12 +128,17 @@ export function createUsdaAdapter(
     }
     let response: Response;
     try {
-      response = await request(url, { headers: { "X-Api-Key": apiKey } });
+      response = await request(url, {
+        headers: { "X-Api-Key": apiKey },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
     } catch {
       return { status: "error", reason: "network" };
     }
-    if (!response.ok)
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
       return { status: "error", reason: "http", statusCode: response.status };
+    }
     let body: unknown;
     try {
       body = await response.json();
