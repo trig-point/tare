@@ -68,6 +68,7 @@ describe("engine", () => {
       timezone: "UTC",
       publicUrl: undefined,
       sessionDays: 30,
+      usdaApiKey: undefined,
       firstUser: { username: undefined, password: undefined },
     });
   });

@@ -1,0 +1,379 @@
+{
+  "discontinuedDate": "",
+  "foodComponents": [],
+  "foodAttributes": [
+    {
+      "id": 2299147,
+      "value": 9,
+      "name": "Added Package Weight",
+      "foodAttributeType": {
+        "id": 998,
+        "name": "Update Log",
+        "description": "Changes that were made to this food"
+      }
+    }
+  ],
+  "foodPortions": [],
+  "fdcId": 2095236,
+  "description": "CHEDDAR CHEESE",
+  "publicationDate": "10/28/2021",
+  "foodNutrients": [
+    {
+      "type": "FoodNutrient",
+      "nutrient": {
+        "id": 1258,
+        "number": "606",
+        "name": "Fatty acids, total saturated",
+        "rank": 9700,
+        "unitName": "g"
+      },
+      "foodNutrientDerivation": {
+        "id": 70,
+        "code": "LCCS",
+        "description": "Calculated from value per serving size measure",
+        "foodNutrientSource": {
+          "id": 9,
+          "code": "12",
+          "description": "Manufacturer's analytical; partial documentation"
+        }
+      },
+      "id": 25502451,
+      "amount": 21.43
+    },
+    {
+      "type": "FoodNutrient",
+      "nutrient": {
+        "id": 1093,
+        "number": "307",
+        "name": "Sodium, Na",
+        "rank": 5800,
+        "unitName": "mg"
+      },
+      "foodNutrientDerivation": {
+        "id": 70,
+        "code": "LCCS",
+        "description": "Calculated from value per serving size measure",
+        "foodNutrientSource": {
+          "id": 9,
+          "code": "12",
+          "description": "Manufacturer's analytical; partial documentation"
+        }
+      },
+      "id": 25502448,
+      "amount": 686
+    },
+    {
+      "type": "FoodNutrient",
+      "nutrient": {
+        "id": 1008,
+        "number": "208",
+        "name": "Energy",
+        "rank": 300,
+        "unitName": "kcal"
+      },
+      "foodNutrientDerivation": {
+        "id": 70,
+        "code": "LCCS",
+        "description": "Calculated from value per serving size measure",
+        "foodNutrientSource": {
+          "id": 9,
+          "code": "12",
+          "description": "Manufacturer's analytical; partial documentation"
+        }
+      },
+      "id": 25502445,
+      "amount": 432
+    },
+    {
+      "type": "FoodNutrient",
+      "nutrient": {
+        "id": 1004,
+        "number": "204",
+        "name": "Total lipid (fat)",
+        "rank": 800,
+        "unitName": "g"
+      },
+      "foodNutrientDerivation": {
+        "id": 70,
+        "code": "LCCS",
+        "description": "Calculated from value per serving size measure",
+        "foodNutrientSource": {
+          "id": 9,
+          "code": "12",
+          "description": "Manufacturer's analytical; partial documentation"
+        }
+      },
+      "id": 25502443,
+      "amount": 35.71
+    },
+    {
+      "type": "FoodNutrient",
+      "nutrient": {
+        "id": 1257,
+        "number": "605",
+        "name": "Fatty acids, total trans",
+        "rank": 15400,
+        "unitName": "g"
+      },
+      "foodNutrientDerivation": {
+        "id": 70,
+        "code": "LCCS",
+        "description": "Calculated from value per serving size measure",
+        "foodNutrientSource": {
+          "id": 9,
+          "code": "12",
+          "description": "Manufacturer's analytical; partial documentation"
+        }
+      },
+      "id": 25502450,
+      "amount": 0
+    },
+    {
+      "type": "FoodNutrient",
+      "nutrient": {
+        "id": 1253,
+        "number": "601",
+        "name": "Cholesterol",
+        "rank": 15700,
+        "unitName": "mg"
+      },
+      "foodNutrientDerivation": {
+        "id": 70,
+        "code": "LCCS",
+        "description": "Calculated from value per serving size measure",
+        "foodNutrientSource": {
+          "id": 9,
+          "code": "12",
+          "description": "Manufacturer's analytical; partial documentation"
+        }
+      },
+      "id": 25502449,
+      "amount": 107
+    },
+    {
+      "type": "FoodNutrient",
+      "nutrient": {
+        "id": 1003,
+        "number": "203",
+        "name": "Protein",
+        "rank": 600,
+        "unitName": "g"
+      },
+      "foodNutrientDerivation": {
+        "id": 70,
+        "code": "LCCS",
+        "description": "Calculated from value per serving size measure",
+        "foodNutrientSource": {
+          "id": 9,
+          "code": "12",
+          "description": "Manufacturer's analytical; partial documentation"
+        }
+      },
+      "id": 25502442,
+      "amount": 25
+    },
+    {
+      "type": "FoodNutrient",
+      "nutrient": {
+        "id": 2000,
+        "number": "269",
+        "name": "Total Sugars",
+        "rank": 1510,
+        "unitName": "g"
+      },
+      "foodNutrientDerivation": {
+        "id": 70,
+        "code": "LCCS",
+        "description": "Calculated from value per serving size measure",
+        "foodNutrientSource": {
+          "id": 9,
+          "code": "12",
+          "description": "Manufacturer's analytical; partial documentation"
+        }
+      },
+      "id": 25502446,
+      "amount": 0
+    },
+    {
+      "type": "FoodNutrient",
+      "nutrient": {
+        "id": 1005,
+        "number": "205",
+        "name": "Carbohydrate, by difference",
+        "rank": 1110,
+        "unitName": "g"
+      },
+      "foodNutrientDerivation": {
+        "id": 75,
+        "code": "LCCD",
+        "description": "Calculated from a daily value percentage per serving size measure",
+        "foodNutrientSource": {
+          "id": 9,
+          "code": "12",
+          "description": "Manufacturer's analytical; partial documentation"
+        }
+      },
+      "id": 25502444,
+      "amount": 0
+    },
+    {
+      "type": "FoodNutrient",
+      "nutrient": {
+        "id": 1079,
+        "number": "291",
+        "name": "Fiber, total dietary",
+        "rank": 1200,
+        "unitName": "g"
+      },
+      "foodNutrientDerivation": {
+        "id": 70,
+        "code": "LCCS",
+        "description": "Calculated from value per serving size measure",
+        "foodNutrientSource": {
+          "id": 9,
+          "code": "12",
+          "description": "Manufacturer's analytical; partial documentation"
+        }
+      },
+      "id": 25502447,
+      "amount": 0
+    }
+  ],
+  "dataType": "Branded",
+  "foodClass": "Branded",
+  "modifiedDate": "2/3/2018",
+  "availableDate": "2/3/2018",
+  "brandOwner": "MDS Foods Inc.",
+  "brandName": "AMISH CLASSICS",
+  "dataSource": "LI",
+  "brandedFoodCategory": "Cheese",
+  "gtinUpc": "828653282457",
+  "householdServingFullText": "1 ONZ",
+  "ingredients": "MILK, CHEESE CULTURES, SALT, ENZYMES AND ANNATTO COLOR IF NECESSARY.",
+  "marketCountry": "United States",
+  "servingSize": 28,
+  "servingSizeUnit": "g",
+  "packageWeight": "8 oz/227 g",
+  "foodUpdateLog": [
+    {
+      "discontinuedDate": "",
+      "foodAttributes": [],
+      "fdcId": 2095236,
+      "description": "CHEDDAR CHEESE",
+      "publicationDate": "10/28/2021",
+      "dataType": "Branded",
+      "foodClass": "Branded",
+      "modifiedDate": "2/3/2018",
+      "availableDate": "2/3/2018",
+      "brandOwner": "MDS Foods Inc.",
+      "brandName": "AMISH CLASSICS",
+      "dataSource": "LI",
+      "brandedFoodCategory": "Cheese",
+      "gtinUpc": "828653282457",
+      "householdServingFullText": "1 ONZ",
+      "ingredients": "MILK, CHEESE CULTURES, SALT, ENZYMES AND ANNATTO COLOR IF NECESSARY.",
+      "marketCountry": "United States",
+      "servingSize": 28,
+      "servingSizeUnit": "g",
+      "packageWeight": "8 oz/227 g"
+    },
+    {
+      "discontinuedDate": "",
+      "foodAttributes": [],
+      "fdcId": 1606749,
+      "description": "CHEDDAR CHEESE",
+      "publicationDate": "3/19/2021",
+      "dataType": "Branded",
+      "foodClass": "Branded",
+      "modifiedDate": "2/3/2018",
+      "availableDate": "2/3/2018",
+      "brandOwner": "MDS Foods Inc.",
+      "brandName": "AMISH CLASSICS",
+      "dataSource": "LI",
+      "brandedFoodCategory": "Cheese",
+      "gtinUpc": "828653282457",
+      "householdServingFullText": "1 ONZ",
+      "ingredients": "MILK, CHEESE CULTURES, SALT, ENZYMES AND ANNATTO COLOR IF NECESSARY.",
+      "marketCountry": "United States",
+      "servingSize": 28,
+      "servingSizeUnit": "g"
+    },
+    {
+      "discontinuedDate": "",
+      "foodAttributes": [],
+      "fdcId": 1314630,
+      "description": "CHEDDAR CHEESE",
+      "publicationDate": "2/26/2021",
+      "dataType": "Branded",
+      "foodClass": "Branded",
+      "modifiedDate": "2/3/2018",
+      "availableDate": "2/3/2018",
+      "brandOwner": "MDS Foods Inc.",
+      "brandName": "AMISH CLASSICS",
+      "subbrandName": "",
+      "dataSource": "LI",
+      "brandedFoodCategory": "Cheese",
+      "gtinUpc": "828653282457",
+      "householdServingFullText": "1 ONZ",
+      "ingredients": "MILK, CHEESE CULTURES, SALT, ENZYMES AND ANNATTO COLOR IF NECESSARY.",
+      "marketCountry": "United States",
+      "servingSize": 28,
+      "servingSizeUnit": "g",
+      "packageWeight": "",
+      "notaSignificantSourceOf": ""
+    },
+    {
+      "discontinuedDate": "",
+      "foodAttributes": [],
+      "modifiedDate": "2/3/2018",
+      "availableDate": "2/3/2018",
+      "brandOwner": "MDS Foods Inc.",
+      "dataSource": "LI",
+      "gpcCategoryGroup": "Cheese",
+      "gtinUpc": "828653282457",
+      "householdServingFullText": "1 ONZ",
+      "ingredients": "MILK, CHEESE CULTURES, SALT, ENZYMES AND ANNATTO COLOR IF NECESSARY.",
+      "marketCountry": "United States",
+      "servingSize": 28,
+      "servingSizeUnit": "g",
+      "fdcId": 516832,
+      "description": "CHEDDAR CHEESE",
+      "publicationDate": "4/1/2019",
+      "workingFoodId": 45269141,
+      "dataType": "Branded",
+      "foodClass": "Branded"
+    }
+  ],
+  "labelNutrients": {
+    "fat": {
+      "value": 10
+    },
+    "saturatedFat": {
+      "value": 6
+    },
+    "transFat": {
+      "value": 0
+    },
+    "cholesterol": {
+      "value": 30
+    },
+    "sodium": {
+      "value": 192
+    },
+    "carbohydrates": {
+      "value": 0
+    },
+    "fiber": {
+      "value": 0
+    },
+    "sugars": {
+      "value": 0
+    },
+    "protein": {
+      "value": 7
+    },
+    "calories": {
+      "value": 121
+    }
+  }
+}
