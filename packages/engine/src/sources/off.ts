@@ -9,7 +9,7 @@ import { z } from "zod";
 import { validateOffUserAgent } from "../config.ts";
 
 export type OffResult =
-  | { status: "ok"; records: readonly NutritionRecord[] }
+  | { status: "ok"; records: readonly NutritionRecord[]; rejected: number }
   | { status: "unconfigured" | "invalid_input" }
   | { status: "rate_limited"; retryAfterMs: number }
   | {
@@ -42,7 +42,8 @@ const productResponseSchema = z.union([
   z.object({ status: z.literal(0) }),
   z.object({ status: z.literal(1), product: productSchema }),
 ]);
-const searchResponseSchema = z.object({ products: z.array(productSchema) });
+// Products are checked one by one, so a single malformed product cannot fail a search.
+const searchResponseSchema = z.object({ products: z.array(z.unknown()) });
 
 export type OffProduct = z.input<typeof productSchema>;
 export type OffProductResponse = z.input<typeof productResponseSchema>;
@@ -146,7 +147,7 @@ export function createOffAdapter(options: {
       return { status: "rate_limited", retryAfterMs };
     }
     if (kind === "product" && response.status === 404)
-      return { status: "ok", records: [] };
+      return { status: "ok", records: [], rejected: 0 };
     if (!response.ok)
       return {
         status: "unavailable",
@@ -159,25 +160,34 @@ export function createOffAdapter(options: {
     } catch {
       return { status: "unavailable", reason: "invalid_response" };
     }
-    let products: z.output<typeof productSchema>[];
+    let products: ReturnType<typeof productSchema.safeParse>[];
     if (kind === "product") {
       const parsed = productResponseSchema.safeParse(body);
       if (!parsed.success)
         return { status: "unavailable", reason: "invalid_response" };
-      products = parsed.data.status === 1 ? [parsed.data.product] : [];
+      products =
+        parsed.data.status === 1
+          ? [{ success: true, data: parsed.data.product }]
+          : [];
     } else {
       const parsed = searchResponseSchema.safeParse(body);
       if (!parsed.success)
         return { status: "unavailable", reason: "invalid_response" };
-      products = parsed.data.products;
+      products = parsed.data.products.map((product) =>
+        productSchema.safeParse(product),
+      );
     }
     const retrievedAt = new Date().toISOString();
+    const records = products.flatMap((product) => {
+      const record = product.success
+        ? recordFrom(product.data, retrievedAt)
+        : null;
+      return record ? [record] : [];
+    });
     return {
       status: "ok",
-      records: products.flatMap((product) => {
-        const record = recordFrom(product, retrievedAt);
-        return record ? [record] : [];
-      }),
+      records,
+      rejected: products.length - records.length,
     };
   }
 
@@ -191,7 +201,7 @@ export function createOffAdapter(options: {
       const result = await request("product", url);
       return result.status === "ok"
         ? {
-            status: "ok",
+            ...result,
             records: result.records.filter(
               (record) => record.barcode === barcode,
             ),
@@ -214,7 +224,7 @@ export function createOffAdapter(options: {
       const result = await request("search", url);
       return result.status === "ok"
         ? {
-            status: "ok",
+            ...result,
             records: result.records.filter(
               (record) =>
                 sameName(name, record.name) &&
