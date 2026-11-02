@@ -68,6 +68,8 @@ describe("engine", () => {
       timezone: "UTC",
       publicUrl: undefined,
       sessionDays: 30,
+      backupDir: undefined,
+      backupKeep: 7,
       usdaApiKey: undefined,
       offUserAgent: undefined,
       identity: { mode: "fallback" },
