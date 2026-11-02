@@ -5,6 +5,7 @@ import {
   sameName,
 } from "@tare/nutrition";
 import { RateLimiterMemory, RateLimiterRes } from "rate-limiter-flexible";
+import { z } from "zod";
 import { validateOffUserAgent } from "../config.ts";
 
 export type OffResult =
@@ -20,29 +21,49 @@ export type OffResult =
 const fields = "code,product_name,brands,nutrition_data_per,nutriments";
 const origin = "https://world.openfoodfacts.org";
 
+// The slice of Open Food Facts responses the adapter reads; other fields are ignored.
+const nutrientAmount = z.number().optional();
+const productSchema = z.object({
+  code: z.string(),
+  product_name: z.string().nullish(),
+  brands: z.string().nullish(),
+  nutrition_data_per: z.string().nullish(),
+  nutriments: z
+    .object({
+      "energy-kcal_100g": nutrientAmount,
+      proteins_100g: nutrientAmount,
+      carbohydrates_100g: nutrientAmount,
+      fat_100g: nutrientAmount,
+      fiber_100g: nutrientAmount,
+    })
+    .nullish(),
+});
+const productResponseSchema = z.union([
+  z.object({ status: z.literal(0) }),
+  z.object({ status: z.literal(1), product: productSchema }),
+]);
+const searchResponseSchema = z.object({ products: z.array(productSchema) });
+
+export type OffProduct = z.input<typeof productSchema>;
+export type OffProductResponse = z.input<typeof productResponseSchema>;
+export type OffSearchResponse = z.input<typeof searchResponseSchema>;
+
 export function normalizeBarcode(code: string): string {
   if (!/^\d{8,14}$/.test(code)) throw new Error("Invalid barcode");
   return code.length === 12 ? `0${code}` : code;
 }
 
-function object(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-function text(value: unknown): string | null {
-  return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
+function text(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
 }
 
 function recordFrom(
-  value: unknown,
+  product: z.output<typeof productSchema>,
   retrievedAt: string,
 ): NutritionRecord | null {
-  const product = object(value);
-  if (!product) return null;
-  const code = text(product.code);
-  if (!code || !/^\d{8,14}$/.test(code)) return null;
+  const code = product.code.trim();
+  if (!/^\d{8,14}$/.test(code)) return null;
   const basis =
     product.nutrition_data_per === "100g"
       ? ({ dimension: "mass", amount: 100, unit: "g" } as const)
@@ -50,11 +71,9 @@ function recordFrom(
         ? ({ dimension: "volume", amount: 100, unit: "ml" } as const)
         : null;
   if (!basis) return null;
-  const nutrients = object(product.nutriments);
-  const nutrient = (key: string): NutrientValue => {
-    const amount = nutrients?.[`${key}_100g`];
-    return typeof amount === "number" ? { amount, provenance: "label" } : null;
-  };
+  const nutrient = (amount: number | undefined): NutrientValue =>
+    amount === undefined ? null : { amount, provenance: "label" };
+  const nutriments = product.nutriments ?? {};
   const barcode = normalizeBarcode(code);
   const record: NutritionRecord = {
     source: "off",
@@ -67,11 +86,11 @@ function recordFrom(
     mealKit: null,
     basis,
     nutrients: {
-      kcal: nutrient("energy-kcal"),
-      protein_g: nutrient("proteins"),
-      carbs_g: nutrient("carbohydrates"),
-      fat_g: nutrient("fat"),
-      fiber_g: nutrient("fiber"),
+      kcal: nutrient(nutriments["energy-kcal_100g"]),
+      protein_g: nutrient(nutriments.proteins_100g),
+      carbs_g: nutrient(nutriments.carbohydrates_100g),
+      fat_g: nutrient(nutriments.fat_100g),
+      fiber_g: nutrient(nutriments.fiber_100g),
     },
   };
   return checkRecord(record).length === 0 ? record : null;
@@ -134,21 +153,24 @@ export function createOffAdapter(options: {
         reason: "http",
         httpStatus: response.status,
       };
-    let payload: Record<string, unknown> | null;
+    let body: unknown;
     try {
-      payload = object(await response.json());
+      body = await response.json();
     } catch {
       return { status: "unavailable", reason: "invalid_response" };
     }
-    if (!payload) return { status: "unavailable", reason: "invalid_response" };
-    if (kind === "product" && payload.status === 0)
-      return { status: "ok", records: [] };
-    const products = kind === "product" ? [payload.product] : payload.products;
-    if (
-      !Array.isArray(products) ||
-      (kind === "product" && !object(payload.product))
-    )
-      return { status: "unavailable", reason: "invalid_response" };
+    let products: z.output<typeof productSchema>[];
+    if (kind === "product") {
+      const parsed = productResponseSchema.safeParse(body);
+      if (!parsed.success)
+        return { status: "unavailable", reason: "invalid_response" };
+      products = parsed.data.status === 1 ? [parsed.data.product] : [];
+    } else {
+      const parsed = searchResponseSchema.safeParse(body);
+      if (!parsed.success)
+        return { status: "unavailable", reason: "invalid_response" };
+      products = parsed.data.products;
+    }
     const retrievedAt = new Date().toISOString();
     return {
       status: "ok",
