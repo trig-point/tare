@@ -7,6 +7,7 @@ import { type Config, validateTimezone } from "../config.ts";
 import { deleteSession } from "../queries/delete-session.ts";
 import { insertAccount } from "../queries/insert-account.ts";
 import { selectUserByUsername } from "../queries/select-user-by-username.ts";
+import { normalizeAccessEmail } from "./access.ts";
 import {
   type AuthEnv,
   authenticatedPerson,
@@ -55,8 +56,13 @@ async function readJsonBody(context: Context<AuthEnv>) {
       return null;
     const fields = body as Record<string, unknown>;
     const username = normalizeUsername(fields.username);
-    if (username === null || !isValidPassword(fields.password)) return null;
-    return { username, password: fields.password, timezone: fields.timezone };
+    if (username === null) return null;
+    return {
+      username,
+      password: fields.password,
+      email: fields.email,
+      timezone: fields.timezone,
+    };
   } catch {
     return null;
   }
@@ -82,8 +88,78 @@ export function mountAuthRoutes(app: Hono<AuthEnv>, options: AppOptions) {
     config.identity.mode === "access"
       ? authenticatedPerson
       : sessionAuth(database, clock);
+  const sessionIdentity =
+    config.identity.mode === "access"
+      ? {
+          mode: "access" as const,
+          logout_url: `${config.identity.teamDomain}/cdn-cgi/access/logout`,
+        }
+      : { mode: "fallback" as const };
   app.get("/api/session", authenticate, (context) =>
-    context.json({ user: toPublicUser(currentPerson(context)) }),
+    context.json({
+      user: toPublicUser(currentPerson(context)),
+      ...sessionIdentity,
+    }),
+  );
+  app.post(
+    "/api/users",
+    authenticate,
+    requireRequestedWith,
+    requireAdmin(database),
+    limit,
+    async (context) => {
+      const body = await readJsonBody(context);
+      if (
+        !body ||
+        (body.timezone !== undefined && typeof body.timezone !== "string")
+      )
+        return context.json({ error: { code: "invalid_request" } }, 400);
+      let timezone: string;
+      try {
+        timezone = validateTimezone(
+          body.timezone ?? currentPerson(context).timezone,
+        );
+      } catch {
+        return context.json({ error: { code: "invalid_request" } }, 400);
+      }
+      let accessEmail: string | null = null;
+      let passwordHash: string | null = null;
+      if (config.identity.mode === "access") {
+        if (typeof body.email !== "string")
+          return context.json({ error: { code: "invalid_request" } }, 400);
+        accessEmail = normalizeAccessEmail(body.email);
+        if (accessEmail === null || accessEmail.length > 320)
+          return context.json({ error: { code: "invalid_request" } }, 400);
+      } else {
+        if (!isValidPassword(body.password))
+          return context.json({ error: { code: "invalid_request" } }, 400);
+        passwordHash = await hashPassword(body.password);
+      }
+      try {
+        const person = insertAccount(database, {
+          username: body.username,
+          password_hash: passwordHash,
+          access_email: accessEmail,
+          timezone,
+          is_admin: 0,
+          created_at: clock.now().toISOString(),
+        });
+        if (!person) throw new Error("Could not create user");
+        return context.json({ user: toPublicUser(person) }, 201);
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          "code" in error &&
+          error.code === "SQLITE_CONSTRAINT_UNIQUE"
+        ) {
+          if (error.message === "UNIQUE constraint failed: users.access_email")
+            return context.json({ error: { code: "email_taken" } }, 409);
+          if (error.message === "UNIQUE constraint failed: users.username")
+            return context.json({ error: { code: "username_taken" } }, 409);
+        }
+        throw error;
+      }
+    },
   );
   if (config.identity.mode === "access") return;
   let waiting = 0;
@@ -101,7 +177,7 @@ export function mountAuthRoutes(app: Hono<AuthEnv>, options: AppOptions) {
     limit,
     async (context) => {
       const body = await readJsonBody(context);
-      if (!body)
+      if (!body || !isValidPassword(body.password))
         return context.json({ error: { code: "invalid_request" } }, 400);
       if (waiting >= 8) {
         context.header("Retry-After", "1");
@@ -141,49 +217,4 @@ export function mountAuthRoutes(app: Hono<AuthEnv>, options: AppOptions) {
     deleteCookie(context, "tare_session", cookieOptions);
     return context.body(null, 204);
   });
-
-  app.post(
-    "/api/users",
-    authenticate,
-    requireRequestedWith,
-    requireAdmin(database),
-    limit,
-    async (context) => {
-      const body = await readJsonBody(context);
-      if (
-        !body ||
-        (body.timezone !== undefined && typeof body.timezone !== "string")
-      )
-        return context.json({ error: { code: "invalid_request" } }, 400);
-      let timezone: string;
-      try {
-        timezone = validateTimezone(
-          body.timezone ?? currentPerson(context).timezone,
-        );
-      } catch {
-        return context.json({ error: { code: "invalid_request" } }, 400);
-      }
-      const passwordHash = await hashPassword(body.password);
-      try {
-        const person = insertAccount(database, {
-          username: body.username,
-          password_hash: passwordHash,
-          access_email: null,
-          timezone,
-          is_admin: 0,
-          created_at: clock.now().toISOString(),
-        });
-        if (!person) throw new Error("Could not create user");
-        return context.json({ user: toPublicUser(person) }, 201);
-      } catch (error) {
-        if (
-          error instanceof Error &&
-          "code" in error &&
-          error.code === "SQLITE_CONSTRAINT_UNIQUE"
-        )
-          return context.json({ error: { code: "username_taken" } }, 409);
-        throw error;
-      }
-    },
-  );
 }

@@ -53,7 +53,6 @@ test("Access authenticates unknown paths, accepts only the header, and disables 
   for (const [path, method] of [
     ["/api/session", "POST"],
     ["/api/session", "DELETE"],
-    ["/api/users", "POST"],
   ] as const)
     await rejection(
       await setup.app.request(path, {

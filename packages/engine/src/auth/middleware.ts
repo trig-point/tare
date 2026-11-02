@@ -97,6 +97,9 @@ export function sessionAuth(
 
 export function requireAdmin(database: Database): MiddlewareHandler<AuthEnv> {
   return async (context, next) => {
+    const credential = context.get("credential");
+    if (credential !== "session" && credential !== "access")
+      return context.json({ error: { code: "forbidden" } }, 403);
     const person = currentPerson(context);
     if (!selectUser(database, { id: person.id })?.is_admin)
       return context.json({ error: { code: "forbidden" } }, 403);
