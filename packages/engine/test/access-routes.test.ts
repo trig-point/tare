@@ -11,6 +11,7 @@ import { countUsers } from "../src/queries/count-users.ts";
 import {
   accessFixture,
   assertionHeader,
+  dummyHash,
   fixture,
   issuedAt,
   rejection,
@@ -109,7 +110,13 @@ test("Access browser writes need Requested-With and currentPerson fails when abs
 });
 
 test("null-hash fallback user rejects even the dummy password like any wrong password", async (context) => {
-  const setup = fixture(context, { verifyPassword });
+  const verifiedHashes: string[] = [];
+  const setup = fixture(context, {
+    verifyPassword: (password, stored) => {
+      verifiedHashes.push(stored);
+      return verifyPassword(password, stored);
+    },
+  });
   setup.database
     .prepare("UPDATE users SET password_hash = NULL WHERE id = ?")
     .run(setup.admin.id);
@@ -126,5 +133,6 @@ test("null-hash fallback user rejects even the dummy password like any wrong pas
     401,
     "invalid_credentials",
   );
+  assert.deepEqual(verifiedHashes, [dummyHash, dummyHash]);
   assert.deepEqual(setup.rows(), []);
 });
