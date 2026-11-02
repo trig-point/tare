@@ -49,6 +49,10 @@ TypeSQL generation uses an ignored local database at `packages/engine/data/types
 
 `TARE_USDA_API_KEY` enables USDA FoodData Central lookups; it is trimmed, and empty or unset skips USDA.
 
+`TARE_OFF_USER_AGENT` must follow `AppName/Version (ContactEmail)`; leaving it empty or unset disables Open Food Facts requests.
+
+Product data from [Open Food Facts](https://world.openfoodfacts.org/) is licensed under the [Open Database License (ODbL)](https://opendatacommons.org/licenses/odbl/1-0/). Attribute Open Food Facts when using its data; ODbL share-alike terms apply to derived databases.
+
 `TARE_ADMIN_USERNAME` and `TARE_ADMIN_PASSWORD` create the first administrator in the install timezone. The system reads them only while the database has no users, and you can remove them after the first start. The username is trimmed; the password is kept exactly as set.
 
 Keep comments short and focused on why. Use descriptive identifiers, never single-letter names. Keep personal data and secrets out of logs as well as source and fixtures.
