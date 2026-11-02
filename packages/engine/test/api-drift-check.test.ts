@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { test } from "node:test";
 import {
   filterReadChanges,
   offReadEndpoints,
@@ -17,6 +16,7 @@ import {
   usdaFoodSchema,
   usdaSearchSchema,
 } from "../src/sources/usda.ts";
+import { test } from "./support/hang-ceiling.ts";
 
 const offProduct = {
   code: "3017624010701",

@@ -239,7 +239,12 @@ async function check(run: () => Promise<string[]>): Promise<Result> {
   } catch (error) {
     return error instanceof CheckFailure
       ? { status: error.status, details: [error.message] }
-      : { status: "unavailable", details: ["Check unavailable"] };
+      : {
+          status: "unavailable",
+          details: [
+            `Check unavailable (${error instanceof Error ? error.name : "unknown error"})`,
+          ],
+        };
   }
 }
 
