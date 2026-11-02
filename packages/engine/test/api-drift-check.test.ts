@@ -514,3 +514,12 @@ test("OFF parse failures name fields without a leading dot", async () => {
     "Invalid response: status, product.code",
   ]);
 });
+
+test("USDA detail whose nutrients all fail to parse is drift", async () => {
+  const results = await runChecks(
+    fixture({ detail: { ...food, foodNutrients: [{ renamed: 1008 }] } })
+      .options,
+  );
+  assert.equal(results.usda.live.status, "drift");
+  assert.match(results.usda.live.details.join(), /food\.foodNutrients/);
+});

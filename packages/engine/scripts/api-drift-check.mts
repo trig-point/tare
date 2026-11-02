@@ -318,9 +318,12 @@ export async function runChecks(options: Options): Promise<{
         ),
         "food",
       );
-      return detail.fdcId === identifier
+      if (detail.fdcId !== identifier)
+        return ["food.fdcId: does not match the search result"];
+      // Unreadable nutrient entries parse as null, so a reshaped list would otherwise pass.
+      return detail.foodNutrients.some((nutrient) => nutrient !== null)
         ? []
-        : ["food.fdcId: does not match the search result"];
+        : ["food.foodNutrients: expected at least one readable nutrient"];
     }),
     check(async () => {
       const spec = await (await response(usdaSpec)).arrayBuffer();
