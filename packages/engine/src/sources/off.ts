@@ -83,6 +83,8 @@ export function createOffAdapter(options: {
 }) {
   const userAgent = validateOffUserAgent(options.userAgent);
   const fetchResponse = options.fetch ?? fetch;
+  // Fixed windows start at the first request, so a burst across a reset can
+  // reach twice the limit in a rolling minute; the 429 backoff absorbs that.
   const limiters = {
     product: new RateLimiterMemory({ points: 100, duration: 60 }),
     search: new RateLimiterMemory({ points: 10, duration: 60 }),
