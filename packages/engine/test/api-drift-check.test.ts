@@ -470,3 +470,38 @@ test("oasdiff keeps removed endpoints, responses and subschemas the adapters rea
     assert.equal(result.status, status, JSON.stringify(diff));
   }
 });
+
+// Captured verbatim from the checksum-verified oasdiff 1.35.0 release binary,
+// diffing small synthetic specs, so these pin the real output shape.
+const capturedOasdiff = {
+  nestedAndSearch: `{"paths":{"modified":{"/api/v2/product/{code}":{"operations":{"modified":{"GET":{"responses":{"modified":{"200":{"content":{"modified":{"application/json":{"schema":{"oneOf":{"modified":[{"base":{"index":0,"component":"Resp"},"revision":{"index":0,"component":"Resp"},"diff":{"properties":{"modified":{"product":{"properties":{"modified":{"ecoscore":{"properties":{"modified":{"code":{"type":{"added":["integer"],"deleted":["string"]}}}}}}}}}}}},{"base":{"index":1},"revision":{"index":1},"diff":{"allOf":{"modified":[{"base":{"index":1},"revision":{"index":1},"diff":{"properties":{"modified":{"product":{"properties":{"modified":{"code":{"type":{"added":["integer"],"deleted":["string"]}}}}}}}}}]}}}]}}}}}}}}}}}},"/cgi/search.pl":{"operations":{"modified":{"GET":{"responses":{"modified":{"200":{"content":{"modified":{"application/json":{"schema":{"properties":{"modified":{"products":{"items":{"required":{"added":["ecoscore"]},"properties":{"modified":{"ecoscore":{"properties":{"modified":{"code":{"type":{"added":["integer"],"deleted":["string"]}}}}}}}}}}}}}}}}}}}}}}}},"components":{"schemas":{"modified":{"Resp":{"properties":{"modified":{"product":{"properties":{"modified":{"ecoscore":{"properties":{"modified":{"code":{"type":{"added":["integer"],"deleted":["string"]}}}}}}}}}}}}}}}`,
+  removals: `{"paths":{"deleted":["/cgi/search.pl"],"modified":{"/api/v2/product/{code}":{"operations":{"modified":{"GET":{"responses":{"modified":{"200":{"content":{"modified":{"application/json":{"schema":{"oneOf":{"modified":[{"base":{"index":0,"component":"Resp"},"revision":{"index":0,"component":"Resp"},"diff":{"properties":{"modified":{"product":{"properties":{"added":["brands"],"deleted":["code"]}}}}}},{"base":{"index":1},"revision":{"index":1},"diff":{"allOf":{"deleted":[{"index":0}]}}}]}}}}}}}}}}}}}},"components":{"schemas":{"modified":{"Resp":{"properties":{"modified":{"product":{"properties":{"added":["brands"],"deleted":["code"]}}}}}}}}}`,
+  rootRefactor: `{"paths":{"modified":{"/api/v2/product/{code}":{"operations":{"modified":{"GET":{"responses":{"modified":{"200":{"content":{"modified":{"application/json":{"schema":{"allOf":{"deleted":[{"index":0}]},"type":{"added":["object"]},"description":{"from":"old","to":"new"},"properties":{"added":["product"]}}}}}}}}}}}}}}}`,
+  schemaDeleted: `{"paths":{"modified":{"/api/v2/product/{code}":{"operations":{"modified":{"GET":{"responses":{"modified":{"200":{"content":{"modified":{"application/json":{"schema":{"schemaDeleted":true}}}}}}}}}}}}}}`,
+  annotations: `{"paths":{"modified":{"/api/v2/product/{code}":{"operations":{"modified":{"GET":{"responses":{"modified":{"200":{"content":{"modified":{"application/json":{"schema":{"allOf":{"modified":[{"base":{"index":0},"revision":{"index":0},"diff":{"properties":{"modified":{"product":{"description":{"from":"p old","to":"p new"},"patternProperties":{"modified":{"^x_":{"type":{"added":["integer"],"deleted":["string"]}}}}}}}}}]},"description":{"from":"old","to":"new"}}}}}}}}}}}}}}}`,
+};
+
+test("captured oasdiff output keeps read-path changes and drops unread and annotation edits", () => {
+  const expected: Record<keyof typeof capturedOasdiff, string[]> = {
+    nestedAndSearch: ["/api/v2/product/{code} product.code: type changed"],
+    removals: [
+      "/api/v2/product/{code} product.brands: properties added",
+      "/api/v2/product/{code} product.code: properties deleted",
+      "/api/v2/product/{code} response: allOf subschema deleted",
+      "/cgi/search.pl: endpoint deleted",
+    ],
+    rootRefactor: [
+      "/api/v2/product/{code} product: properties added",
+      "/api/v2/product/{code} response: allOf subschema deleted",
+      "/api/v2/product/{code} response: type changed",
+    ],
+    schemaDeleted: ["/api/v2/product/{code} response: schemaDeleted changed"],
+    annotations: ["/api/v2/product/{code} product: patternProperties changed"],
+  };
+  for (const [name, output] of Object.entries(capturedOasdiff))
+    assert.deepEqual(
+      filterReadChanges(JSON.parse(output), offReadEndpoints),
+      expected[name as keyof typeof capturedOasdiff],
+      name,
+    );
+});

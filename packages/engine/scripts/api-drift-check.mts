@@ -74,6 +74,15 @@ const diffObject = z.record(z.string(), z.unknown());
 const optionalObject = diffObject.default({});
 const nameList = z.array(z.string()).default([]);
 const entryList = z.array(z.unknown()).default([]);
+// Documentation-only keys; patternProperties stays because OFF documents nutrients through it.
+const annotationKeys = new Set([
+  "description",
+  "title",
+  "example",
+  "examples",
+  "externalDocs",
+  "extensions",
+]);
 
 export function filterReadChanges(
   diff: unknown,
@@ -121,7 +130,7 @@ export function filterReadChanges(
             changes.add(`${label}: ${key} subschema ${operation}`);
         for (const entry of entryList.parse(subschemas.modified))
           walkSchema(diffObject.parse(entry).diff, path, endpoint, read);
-      } else if (read.has(path)) {
+      } else if (holdsRead(path) && !annotationKeys.has(key)) {
         changes.add(`${label}: ${key} changed`);
       }
     }
