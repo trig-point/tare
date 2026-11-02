@@ -17,6 +17,8 @@ const goldenFolds = [
   ["İ", "i\u0307"],
   ["ı", "ı"],
   ["Cafe\u0301", "café"],
+  ["\u01f0", "\u01f0"],
+  ["\u0390", "\u0390"],
   ["  Chicken Bowl\u00a0", "chicken bowl"],
   ["", ""],
   [" \u00a0", ""],

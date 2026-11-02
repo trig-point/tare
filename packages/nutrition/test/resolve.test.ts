@@ -49,6 +49,7 @@ const count = { dimension: "count", amount: 1, unit: "meal" } as const;
 const volume = { dimension: "volume", amount: 250, unit: "ml" } as const;
 const usda = food({ source: "usda" });
 const off = food({ source: "off" });
+const secondUsda = food({ source: "usda", sourceId: "43" });
 const kitKey = {
   service: "example kitchen",
   mealName: "CLOUD BOWL",
@@ -326,7 +327,10 @@ test("a supplied meal chef matches only that folded chef, service and meal name"
 
 test("ambiguous cached barcodes stop before reading either external tier", () => {
   assert.deepEqual(
-    resolveLookup(request, unread({ cache: [usda, usda, off] }, "usda", "off")),
+    resolveLookup(
+      request,
+      unread({ cache: [usda, secondUsda, off] }, "usda", "off"),
+    ),
     miss("ambiguous", ["cache"], ["cache"], true),
   );
 });
@@ -387,6 +391,13 @@ test("cache basis failures still visit an external tier already supplied", () =>
     "usda",
     usda,
   );
+  assert.deepEqual(
+    resolveLookup(request, {
+      cache: [food({ ...off, basis: null })],
+      usda: [food({ ...usda, basis: null })],
+    }),
+    miss("basis_mismatch", ["cache", "usda"], ["cache", "usda"], true),
+  );
 });
 
 test("caller fetches nothing after repeat barcode hits and fetches USDA then OFF after a cache miss", () => {
@@ -407,10 +418,16 @@ test("caller fetches nothing after repeat barcode hits and fetches USDA then OFF
     fetched.push(tier);
     return tier === "usda" ? [food({ ...usda, basis: null })] : [off];
   };
-  for (const cache of [[food({ ...off, basis: null })], [off], [off, off]]) {
-    lookup({ own: [], cache }, fetcher);
-    assert.deepEqual(fetched, []);
-  }
+  assert.deepEqual(
+    lookup({ own: [], cache: [food({ ...off, basis: null })] }, fetcher),
+    miss("basis_mismatch", ["own", "cache"], ["cache"], true),
+  );
+  match(lookup({ own: [], cache: [off] }, fetcher), "cache", off);
+  assert.deepEqual(
+    lookup({ own: [], cache: [usda, secondUsda] }, fetcher),
+    miss("ambiguous", ["own", "cache"], ["cache"], true),
+  );
+  assert.deepEqual(fetched, []);
   match(lookup({ own: [], cache: [] }, fetcher), "off", off);
   assert.deepEqual(fetched, ["usda", "off"]);
 });
