@@ -26,7 +26,7 @@ const food: UsdaFood = {
   fdcId: 2095236,
   description: "CHEDDAR CHEESE",
   servingSizeUnit: "g",
-  foodNutrients: [{ nutrientId: 1008, unitName: "KCAL", value: 403 }],
+  foodNutrients: [{ nutrientId: 1008, unitName: "KCAL", value: 432 }],
 };
 const baseline = {
   offCommit: "a".repeat(40),
