@@ -85,6 +85,16 @@ for (const publicUrl of [
     });
     assert.equal(check.status, 200);
     assert.equal((await publicUser(check)).id, setup.admin.id);
+    const liveRows = setup.rows();
+    await rejection(
+      await setup.app.request("/api/session", {
+        method: "DELETE",
+        headers: { Cookie: sessionCookie },
+      }),
+      403,
+      "requested_with_required",
+    );
+    assert.deepEqual(setup.rows(), liveRows);
     const signedOut = await setup.app.request("/api/session", {
       method: "DELETE",
       headers: { ...requestedWith, Cookie: sessionCookie },
