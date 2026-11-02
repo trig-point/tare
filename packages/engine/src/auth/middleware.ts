@@ -1,6 +1,7 @@
 import type { Database } from "better-sqlite3";
 import type { Context, MiddlewareHandler } from "hono";
 import { getCookie } from "hono/cookie";
+import { selectPerson } from "../queries/select-person.ts";
 import { selectSessionUser } from "../queries/select-session-user.ts";
 import { selectUser } from "../queries/select-user.ts";
 import { selectUserByAccessEmail } from "../queries/select-user-by-access-email.ts";
@@ -52,7 +53,7 @@ export function accessAuth(
         { client_id: identity.commonName.trim() },
       );
       const person = mapping
-        ? selectUser(database, { id: mapping.user_id })
+        ? selectPerson(database, { id: mapping.user_id })
         : null;
       if (!person)
         return context.json({ error: { code: "unknown_agent" } }, 403);
