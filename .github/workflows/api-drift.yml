@@ -1,0 +1,44 @@
+name: API drift
+on:
+  schedule:
+    - cron: "0 13 * * 1"
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: api-drift
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Check vendor APIs
+        id: drift
+        env:
+          USDA_API_KEY: ${{ secrets.USDA_API_KEY }}
+        run: node packages/engine/scripts/api-drift-check.mts
+      - name: Report Open Food Facts drift
+        if: ${{ failure() && steps.drift.outputs.off_drift == 'true' }}
+        uses: ovsds/create-or-update-unique-issue-action@e5d7437e9f6acd688d3b09834d0494a732d87d2d
+        with:
+          title: "[api-drift] Open Food Facts"
+          unique-title-includes: "[api-drift] Open Food Facts"
+          body: ${{ steps.drift.outputs.off_body }}
+      - name: Report USDA drift
+        if: ${{ failure() && steps.drift.outputs.usda_drift == 'true' }}
+        uses: ovsds/create-or-update-unique-issue-action@e5d7437e9f6acd688d3b09834d0494a732d87d2d
+        with:
+          title: "[api-drift] USDA FoodData Central"
+          unique-title-includes: "[api-drift] USDA FoodData Central"
+          body: ${{ steps.drift.outputs.usda_body }}
