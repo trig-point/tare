@@ -27,6 +27,7 @@ test("nutrition mapping crosses SQLite source_foods and new own foods without lo
     barcode: null,
     labelSource: null,
     retrievedAt: timestamp,
+    mealKit: null,
     basis: { dimension: "mass", amount: 100, unit: "g" },
     nutrients: {
       kcal: { amount: 0, provenance: "verified" },
@@ -92,6 +93,7 @@ test("nutrition mapping crosses SQLite source_foods and new own foods without lo
     barcode: null,
     labelSource: null,
     retrievedAt: null,
+    mealKit: null,
   };
   assert.deepEqual(checkRecord(identified), []);
   const selected = selectFood(database, { user_id: user.id, id: food.id });

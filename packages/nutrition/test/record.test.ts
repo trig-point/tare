@@ -25,6 +25,7 @@ export const record: NutritionRecord = {
   barcode: "0012345678901",
   labelSource: null,
   retrievedAt: "2024-02-29T12:34:56.789Z",
+  mealKit: null,
   basis: { dimension: "mass", amount: 100, unit: "g" },
   nutrients: { ...unknown, kcal: { amount: 0, provenance: "verified" } },
 };
@@ -135,4 +136,31 @@ test("basis requires a positive finite amount and nonempty unreserved count unit
     { dimension: "count", amount: 1, unit: "bar" },
   ] satisfies (ServingBasis | null)[])
     assert.deepEqual(checkRecord({ ...record, basis }), []);
+});
+
+test("meal kits belong to own foods and require nonempty identity fields", () => {
+  const mealKit = {
+    service: "Example Kitchen",
+    mealName: "Cloud Bowl",
+    chef: null,
+  };
+  assert.deepEqual(checkRecord({ ...record, mealKit }), [
+    { code: "meal_kit_source" },
+  ]);
+  const own: NutritionRecord = {
+    ...record,
+    source: "own",
+    mealKit,
+    nutrients: { ...unknown, kcal: { amount: 1, provenance: "label" } },
+  };
+  assert.deepEqual(checkRecord(own), []);
+  for (const invalid of [
+    { ...mealKit, service: " " },
+    { ...mealKit, mealName: "" },
+    { ...mealKit, chef: "" },
+    { ...mealKit, chef: "\u00a0" },
+  ])
+    assert.deepEqual(checkRecord({ ...own, mealKit: invalid }), [
+      { code: "empty_meal_kit_field" },
+    ]);
 });
