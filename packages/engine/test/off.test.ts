@@ -1,25 +1,93 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { checkRecord } from "@tare/nutrition";
 import {
   createOffAdapter,
   normalizeBarcode,
+  type OffProduct,
+  type OffProductResponse,
   type OffResult,
+  type OffSearchResponse,
 } from "../src/sources/off.ts";
 import { test } from "./support/hang-ceiling.ts";
 
 const userAgent = "Tare/1.0 (support@example.com)";
 const code = "3017624010701";
-const fixture = (name: string) =>
-  JSON.parse(
-    readFileSync(
-      new URL(`./fixtures/off/${name}.json`, import.meta.url),
-      "utf8",
+
+// Values copied from Open Food Facts responses captured on 2026-11-02.
+const nutellaValues = {
+  "energy-kcal_100g": 539,
+  proteins_100g: 6.3,
+  carbohydrates_100g: 57.5,
+  fat_100g: 30.9,
+};
+function offProduct(
+  productCode: string,
+  name: string,
+  brands: string,
+  nutriments: OffProduct["nutriments"],
+  per = "100g",
+): OffProduct {
+  return {
+    code: productCode,
+    product_name: name,
+    brands,
+    nutrition_data_per: per,
+    nutriments,
+  };
+}
+const nutella = offProduct(code, "Nutella", "Ferrero", nutellaValues);
+const product: OffProductResponse = { status: 1, product: nutella };
+const beverage: OffProductResponse = {
+  status: 1,
+  product: offProduct(
+    "0049000028911",
+    "Diet Coke Soft Drink",
+    "Coke",
+    {
+      "energy-kcal_100g": 0,
+      proteins_100g: 0,
+      carbohydrates_100g: 0,
+      fat_100g: 0,
+    },
+    "100ml",
+  ),
+};
+const search: OffSearchResponse = {
+  products: [
+    offProduct("3017620422003", "Nutella", "Nutella, Ferrero", {
+      ...nutellaValues,
+      fiber_100g: 0,
+    }),
+    offProduct(
+      "3017620425035",
+      "Nutella",
+      "Nutella, FERRERO FRANCE COMMERCIALE",
+      nutellaValues,
     ),
-  ).response;
-const product = fixture("product");
-const beverage = fixture("beverage");
-const search = fixture("search");
+    offProduct("8000500426494", "Nutella Plant-Based", "Ferrero, Nutella", {
+      "energy-kcal_100g": 534,
+      proteins_100g: 6.8,
+      carbohydrates_100g: 53.4,
+      fat_100g: 31.8,
+    }),
+    offProduct("80176800", "Nutella", "Ferrero", {
+      "energy-kcal_100g": 533.33,
+      proteins_100g: 6,
+      carbohydrates_100g: 57.33,
+      fat_100g: 30.67,
+      fiber_100g: 0,
+    }),
+    offProduct("59032823", "nutella", "Nutella, Ferrero, Nutellagg", {
+      ...nutellaValues,
+      fiber_100g: 3.5,
+    }),
+    offProduct("8000500179864", "Nutella", "Ferrero", {
+      ...nutellaValues,
+      carbohydrates_100g: 57.2,
+      fiber_100g: 3,
+    }),
+  ],
+};
 
 function network(
   payload: unknown = product,
@@ -40,7 +108,7 @@ function records(result: OffResult) {
   return result.records;
 }
 
-test("recorded barcode lookup sends User-Agent and fields and preserves label values and unknown fiber", async () => {
+test("barcode lookup sends User-Agent and fields and preserves label values and unknown fiber", async () => {
   const peer = network();
   const adapter = createOffAdapter({ userAgent, fetch: peer.fetchResponse });
   const [record] = records(await adapter.lookupBarcode(code));
@@ -78,7 +146,7 @@ test("recorded barcode lookup sends User-Agent and fields and preserves label va
   assert.equal(new Headers(request.init?.headers).get("User-Agent"), userAgent);
 });
 
-test("leading-zero UPC-A and EAN-13 look up the same recorded beverage with a volume basis and known zero", async () => {
+test("leading-zero UPC-A and EAN-13 look up the same beverage with a volume basis and known zero", async () => {
   const peer = network(beverage);
   const adapter = createOffAdapter({ userAgent, fetch: peer.fetchResponse });
   for (const barcode of ["049000028911", "0049000028911"]) {
@@ -109,21 +177,13 @@ test("barcode normalization is idempotent and UPC-A equals its zero-padded EAN-1
     assert.throws(() => normalizeBarcode(barcode), /Invalid barcode/);
 });
 
-test("explicit recorded name search runs once, sends User-Agent and returns only exact name and optional brand matches", async () => {
+test("explicit name search runs once, sends User-Agent and returns only exact name and optional brand matches", async () => {
   const peer = network(search);
   const adapter = createOffAdapter({ userAgent, fetch: peer.fetchResponse });
   const matches = records(await adapter.searchName(" NUTELLA "));
   assert.deepEqual(
     matches.map((record) => record.sourceId),
-    [
-      "3017620422003",
-      "3017620425035",
-      "3017620429484",
-      "80176800",
-      "59032823",
-      "8000500179864",
-      "8000500082379",
-    ],
+    ["3017620422003", "3017620425035", "80176800", "59032823", "8000500179864"],
   );
   assert.ok(
     matches.every(
@@ -180,19 +240,19 @@ test("missing products, empty searches and invalid records return no match witho
     { status: 0 },
     {
       status: 1,
-      product: { ...product.product, nutrition_data_per: undefined },
+      product: { ...nutella, nutrition_data_per: undefined },
     },
     {
       status: 1,
-      product: { ...product.product, nutrition_data_per: "serving" },
+      product: { ...nutella, nutrition_data_per: "serving" },
     },
-    { status: 1, product: { ...product.product, nutriments: {} } },
+    { status: 1, product: { ...nutella, nutriments: {} } },
     {
       status: 1,
-      product: { ...product.product, nutriments: { "energy-kcal_100g": -1 } },
+      product: { ...nutella, nutriments: { "energy-kcal_100g": -1 } },
     },
-    { status: 1, product: { ...product.product, product_name: "" } },
-    { status: 1, product: { ...product.product, code: "1234567890123" } },
+    { status: 1, product: { ...nutella, product_name: "" } },
+    { status: 1, product: { ...nutella, code: "1234567890123" } },
   ]) {
     const peer = network(payload);
     assert.deepEqual(
@@ -265,6 +325,25 @@ test("network, HTTP and malformed responses are unavailable rather than a succes
     await createOffAdapter({
       userAgent,
       fetch: wrongShape.fetchResponse,
+    }).searchName("Nutella"),
+    { status: "unavailable", reason: "invalid_response" },
+  );
+});
+
+test("a response missing product or products is invalid rather than a miss", async () => {
+  const productPeer = network({ status: 1, status_verbose: "product found" });
+  assert.deepEqual(
+    await createOffAdapter({
+      userAgent,
+      fetch: productPeer.fetchResponse,
+    }).lookupBarcode(code),
+    { status: "unavailable", reason: "invalid_response" },
+  );
+  const searchPeer = network({ count: 0, page: 1 });
+  assert.deepEqual(
+    await createOffAdapter({
+      userAgent,
+      fetch: searchPeer.fetchResponse,
     }).searchName("Nutella"),
     { status: "unavailable", reason: "invalid_response" },
   );
