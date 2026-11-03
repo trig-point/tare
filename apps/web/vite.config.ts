@@ -11,6 +11,8 @@ export default defineConfig({
     VitePWA({
       registerType: "prompt",
       includeAssets: ["apple-touch-icon.png"],
+      // Browsers fetch the manifest without cookies by default, but Access requires its cookie.
+      useCredentials: true,
       manifest: {
         name: "Tare",
         short_name: "Tare",
