@@ -68,7 +68,7 @@ function standaloneQuantity(
   const digits = String(quantity);
   if (!/^\d+$/.test(digits)) return false;
   const number = new RegExp(
-    `(?<![\\p{L}\\p{N}_.+\\p{Pd}])(?<!\\p{N}[,/])${digits}(?![\\p{L}\\p{N}_+\\p{Pd}]|[.,/]\\p{N})`,
+    `(?<![\\p{L}\\p{N}_.+\\p{Pd}])(?<!\\p{N}[,/])${digits}(?![\\p{L}\\p{N}_.+\\p{Pd}]|[,/]\\p{N})`,
     "gu",
   );
   const names = occurrences(line, mealName);

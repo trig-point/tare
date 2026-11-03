@@ -1,6 +1,7 @@
 import { z as zod } from "zod";
 
-const text = zod.string().max(200);
+// A refinement, because strict structured output does not list maxLength as supported.
+const text = zod.string().refine((value) => value.length <= 200);
 const field = <Value extends zod.ZodType>(value: Value) =>
   zod.strictObject({
     value: value.nullable(),
