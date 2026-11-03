@@ -219,6 +219,9 @@ test("JSON rejection paths preserve rows and skip verification", async (context)
       "{}",
       '{"username":1,"password":"x"}',
       '{"username":"x","password":false}',
+      JSON.stringify({ ...credentials, password: "" }),
+      JSON.stringify({ ...credentials, password: "p".repeat(1025) }),
+      JSON.stringify({ ...credentials, username: "u".repeat(65) }),
     ])
       await rejection(
         await setup.app.request(route, { method: "POST", headers, body }),
