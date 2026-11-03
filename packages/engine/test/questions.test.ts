@@ -76,8 +76,12 @@ test("questions validate, apply and close atomically over HTTP", async (context)
   await auth.rejection(await answer(ownerless.id, false), 500, "internal");
   assert.deepEqual(rows(), open);
   assert.deepEqual(subject(database), { value: 1 });
+  const oversized = await answer(ownerless.id, "x".repeat(8192));
+  await auth.rejection(oversized, 413, "body_too_large");
+  assert.equal((await answer(ownerless.id)).status, 200);
+  const unsupported = seed(database, registry, null);
   registry.clear();
-  await auth.rejection(await answer(ownerless.id), 409, "kind_not_supported");
+  await auth.rejection(await answer(unsupported.id), 409, "kind_not_supported");
 });
 
 test("browser and MCP identities isolate owners and ownerless questions", async (context) => {
