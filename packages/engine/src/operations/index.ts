@@ -4,6 +4,7 @@ import { dayReadOperations } from "../days/operations.ts";
 import { daySignOffOperations } from "../days/sign-off.ts";
 import { loggingOperations } from "../logging/operations.ts";
 import { lookupOperations } from "../lookup/operations.ts";
+import { orderOperations } from "../orders/operations.ts";
 import { questionOperations } from "../questions/operations.ts";
 import { signalOperations } from "../signals/operations.ts";
 import { weightHistory } from "../trend/operations.ts";
@@ -19,6 +20,7 @@ export const operations: Operation[] = [
   ...lookupOperations,
   ...questionOperations,
   ...signalOperations,
+  ...orderOperations,
 ];
 export const agentOperations = operations.filter(
   (operation) => operation.callerClass === "browser_and_agent",
