@@ -80,22 +80,39 @@ test("acceptance table, nutrient uncertainty and seeded budget laws", () => {
     return seed;
   };
   for (let sample = 0; sample < 40; sample++) {
-    const entries = slots.map((slot) =>
-      entry((next() % 20000) / 10, slot.position),
+    const entries = slots.flatMap((slot) =>
+      [0, 1].map(() =>
+        entry((next() % 20000) / 10, slot.position, (next() % 3000) / 10),
+      ),
     );
     const before = structuredClone(entries);
-    target.kcal = target.protein_g = next() % 4000;
+    target.kcal = next() % 4000;
+    target.protein_g = next() % 300;
     const rows = calculate(entries, sample % 24);
     target.kcal += 200;
     target.protein_g += 200;
     const changed = calculate(entries, sample % 24);
+    assert.deepEqual(
+      rows.map((row) => row.ended),
+      slots.map(
+        (slot, index) =>
+          index < slots.length - 1 && (sample % 24) * 60 >= slot.end_minute,
+      ),
+    );
     for (const key of nutrientKeys) {
       const ended = rows.filter((row) => row.ended),
         open = rows.filter((row) => !row.ended);
       for (const row of ended)
         assert.deepEqual(
           [row[key].budget, changed[row.position]?.[key].budget],
-          [Math.round(entries[row.position]?.[key] as number), row[key].intake],
+          [
+            Math.round(
+              entries
+                .filter((value) => value.slot_position === row.position)
+                .reduce((sum, value) => sum + (value[key] as number), 0),
+            ),
+            row[key].intake,
+          ],
         );
       assert.ok(
         open.every(
