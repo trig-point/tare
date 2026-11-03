@@ -96,6 +96,9 @@ Relative filesystem paths resolve from `/app/packages/engine` in the image.
 | `TARE_TDEE_MIN_WEIGH_IN_DAYS` | `8` | Days with a weigh-in needed for an adaptive estimate, integer from 1 to the window length. Trimmed; empty uses the default. |
 | `TARE_TDEE_MIN_SPAN_DAYS` | `14` | Elapsed days of weight trend needed for an adaptive estimate, integer from 1 to the window length. Trimmed; empty uses the default. |
 | `TARE_TDEE_DEFAULT_RANGE` | `0.25` | Range applied to estimated intake without stored low and high values, from 0 to 0.9. Trimmed; empty uses the default. |
+| `TARE_ORDER_MODEL_BASE_URL` | Unset (order parsing disabled) | HTTP or HTTPS base URL of an OpenAI-compatible model. May include a path, but not credentials, a query or a fragment. Trimmed; empty counts as unset. Set all three order model settings or none. |
+| `TARE_ORDER_MODEL` | Unset (order parsing disabled) | Model name sent to the endpoint. Trimmed; empty counts as unset. Set all three order model settings or none. |
+| `TARE_ORDER_MODEL_API_KEY` | Unset (order parsing disabled) | API key for the endpoint. This is a secret: supply it through the environment, never in a file you commit. A keyless local endpoint needs a placeholder. Trimmed; empty counts as unset. Set all three order model settings or none. |
 | `TARE_PUBLIC_URL` | Unset | HTTP or HTTPS URL. Empty counts as unset. Set the external HTTPS URL to enable `Secure` session cookies. |
 | `TARE_SESSION_DAYS` | `30` | Absolute session lifetime, integer from 1 to 365. Trimmed; empty uses the default. |
 | `TARE_BACKUP_DIR` | Unset (disabled); image: `/backups` | Trimmed backup folder, outside the database folder and its descendants. Empty disables backups. `/data/backups` is invalid for the default database. |
