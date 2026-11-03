@@ -1,6 +1,8 @@
 import type { Database } from "better-sqlite3";
 
 export type UpdateIntakeData = {
+  slot_template_id: number | null;
+  slot_position: number | null;
   name: string | null;
   servings: number | null;
   eaten_at: string;
@@ -45,6 +47,8 @@ export type UpdateIntakeResult = {
   created_at: string;
   updated_at: string;
   name: string | null;
+  slot_template_id: number | null;
+  slot_position: number | null;
 };
 
 export function updateIntake(
@@ -53,13 +57,15 @@ export function updateIntake(
   params: UpdateIntakeParams,
 ): UpdateIntakeResult[] {
   const sql = `
-	UPDATE intake_entries SET name = ?, servings = ?, eaten_at = ?, day = ?, kcal = ?, protein_g = ?, carbs_g = ?, fat_g = ?, fiber_g = ?, kcal_low = ?, kcal_high = ?, provenance = ?, source = ?, portion_note = ?, updated_at = ? WHERE user_id = ? AND id = ? RETURNING *;
+	UPDATE intake_entries SET slot_template_id = ?, slot_position = ?, name = ?, servings = ?, eaten_at = ?, day = ?, kcal = ?, protein_g = ?, carbs_g = ?, fat_g = ?, fiber_g = ?, kcal_low = ?, kcal_high = ?, provenance = ?, source = ?, portion_note = ?, updated_at = ? WHERE user_id = ? AND id = ? RETURNING *;
 	
 	`;
   const rows = db
     .prepare(sql)
     .raw(true)
     .all([
+      data.slot_template_id,
+      data.slot_position,
       data.name,
       data.servings,
       data.eaten_at,
@@ -105,6 +111,8 @@ function mapArrayToUpdateIntakeResult(data: any) {
     created_at: data[18],
     updated_at: data[19],
     name: data[20],
+    slot_template_id: data[21],
+    slot_position: data[22],
   };
   return result;
 }

@@ -127,6 +127,15 @@ test("meal actions scale labels, replay before revisions and roll back rejected 
   const beforeReplay = state();
   assert.deepEqual(await (await send(action(meal.id))).json(), result);
   assert.deepEqual(state(), beforeReplay);
+  const legacy = structuredClone(result);
+  delete legacy.entry.slot_template_id;
+  delete legacy.entry.slot_position;
+  const receipt = database.prepare(
+    "UPDATE meal_actions SET result = ? WHERE user_id = ? AND mutation_id = ?",
+  );
+  receipt.run(JSON.stringify(legacy), admin.user.id, "example-mutation");
+  assert.deepEqual(await (await send(action(meal.id))).json(), legacy);
+  receipt.run(JSON.stringify(result), admin.user.id, "example-mutation");
   await reject(action(meal.id, "stale-mutation"), "stale_revision");
   await reject({ ...action(meal.id), action: "ate" }, "mutation_conflict");
   await reject(action(meal.id), "meal_not_found", member, 404);

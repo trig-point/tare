@@ -150,6 +150,10 @@ const editIntake = defineOperation({
           ? stored.day
           : localDay(merged.eaten_at, person.timezone, person.day_start_hour);
       merged.updated_at = context.clock.now().toISOString();
+      if (merged.eaten_at !== stored.eaten_at) {
+        merged.slot_template_id = null;
+        merged.slot_position = null;
+      }
       const updated = updateIntake(context.database, merged, owner)[0];
       if (!updated) throw new Error("Intake update returned no entry");
       return updated;
