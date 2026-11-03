@@ -87,8 +87,8 @@ export const daySignOffOperations = [
       rejectFuture(input.day, context);
       const body = writeTransaction(context.database, () => {
         const result = appendDayNote(context.database, {
-          user_id: operationPerson(context).id,
           ...input,
+          user_id: operationPerson(context).id,
         });
         if (!result) throw new Error("Day note returned no row");
         return result;
