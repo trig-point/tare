@@ -267,6 +267,7 @@ test("fresh replay creates strict tables, defaults, typed reads and missing-row 
     "intake_entries",
     "weights",
     "days",
+    "regular_meals",
   ])
     assert.equal(tables.find((table) => table.name === name)?.strict, 1);
   for (const row of [sourceFood, ownedFood, intake]) {
