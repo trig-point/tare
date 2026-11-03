@@ -152,7 +152,7 @@ const saveRegularMeal = defineOperation({
         });
         if (!inserted) throw new Error("Meal insert returned no row");
       } else {
-        if (!updateRegularMealFood(context.database, values, owner))
+        if (!updateRegularMealFood(context.database, values, owner)[0])
           throw new Error("Meal food update returned no row");
         if (!updateRegularMeal(context.database, metadata, owner)[0])
           throw new Error("Meal update returned no row");
