@@ -22,6 +22,7 @@ export interface Config {
   backupKeep: number;
   usdaApiKey: string | undefined;
   offUserAgent: string | undefined;
+  orderModel: { baseURL: string; model: string; apiKey: string } | null;
   identity:
     | { mode: "access"; teamDomain: string; audience: string }
     | { mode: "fallback" };
@@ -57,6 +58,40 @@ export function validateTimezone(timezone: string): string {
     throw new Error("TARE_TIMEZONE must be an IANA timezone");
   }
   return timezone;
+}
+
+function parseOrderModel(
+  env: Record<string, string | undefined>,
+): Config["orderModel"] {
+  const settings = [
+    "TARE_ORDER_MODEL_BASE_URL",
+    "TARE_ORDER_MODEL",
+    "TARE_ORDER_MODEL_API_KEY",
+  ] as const;
+  const values = settings.map((setting) => env[setting]?.trim());
+  if (!values.some(Boolean)) return null;
+  for (const [index, setting] of settings.entries()) {
+    if (!values[index])
+      throw new Error(
+        `${setting} must be set when an order model is configured`,
+      );
+  }
+  const [baseURL, model, apiKey] = values as [string, string, string];
+  try {
+    const url = new URL(baseURL);
+    // The SDK appends paths to the base URL, and fetch rejects embedded credentials.
+    if (
+      !["http:", "https:"].includes(url.protocol) ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash
+    )
+      throw new Error("Unsupported URL");
+  } catch {
+    throw new Error("TARE_ORDER_MODEL_BASE_URL must be an HTTP or HTTPS URL");
+  }
+  return { baseURL, model, apiKey };
 }
 
 function parseMcpAllowedOrigins(value: string | undefined): string[] {
@@ -199,6 +234,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     backupKeep,
     usdaApiKey: env.TARE_USDA_API_KEY?.trim() || undefined,
     offUserAgent: validateOffUserAgent(env.TARE_OFF_USER_AGENT),
+    orderModel: parseOrderModel(env),
     identity:
       teamDomain !== undefined && audience !== undefined
         ? { mode: "access", teamDomain, audience }

@@ -1,0 +1,47 @@
+{
+  "email": {
+    "subject": "Cedar Spoon order processed",
+    "text": "Your order is processed.\nGarden Bowl 2\nSmoky Beans 3"
+  },
+  "reply": {
+    "service": {
+      "value": "Cedar Spoon",
+      "excerpt": "Cedar Spoon order processed",
+      "uncertain": false
+    },
+    "delivery_date": { "value": null, "excerpt": null, "uncertain": false },
+    "kind": {
+      "value": "processed",
+      "excerpt": "Your order is processed.",
+      "uncertain": false
+    },
+    "meals": [
+      {
+        "name": {
+          "value": "Garden Bowl",
+          "excerpt": "Garden Bowl 2",
+          "uncertain": false
+        },
+        "chef": { "value": null, "excerpt": null, "uncertain": false },
+        "quantity": {
+          "value": 2,
+          "excerpt": "Garden Bowl 2",
+          "uncertain": false
+        }
+      },
+      {
+        "name": {
+          "value": "Smoky Beans",
+          "excerpt": "Smoky Beans 3",
+          "uncertain": false
+        },
+        "chef": { "value": null, "excerpt": null, "uncertain": false },
+        "quantity": {
+          "value": 3,
+          "excerpt": "Smoky Beans 3",
+          "uncertain": false
+        }
+      }
+    ]
+  }
+}

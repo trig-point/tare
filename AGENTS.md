@@ -76,6 +76,8 @@ Each minimum must be an integer from 1 to the configured window length. Invalid 
 
 `TARE_USDA_API_KEY` enables USDA FoodData Central lookups; it is trimmed, and empty or unset skips USDA.
 
+`TARE_ORDER_MODEL_BASE_URL`, `TARE_ORDER_MODEL` and `TARE_ORDER_MODEL_API_KEY` configure order-email parsing through an OpenAI-compatible model. Set all three or leave all three unset. Values are trimmed; empty values count as unset. The base URL must use HTTP or HTTPS and may include a path, but not credentials, a query or a fragment. A keyless local endpoint requires a placeholder API key. With no model configured, the parser returns `no_model` for the engine to turn into a question.
+
 `TARE_OFF_USER_AGENT` must follow `AppName/Version (ContactEmail)`; leaving it empty or unset disables Open Food Facts requests.
 
 Product data from [Open Food Facts](https://world.openfoodfacts.org/) is licensed under the [Open Database License (ODbL)](https://opendatacommons.org/licenses/odbl/1-0/). Attribute Open Food Facts when using its data; ODbL share-alike terms apply to derived databases.
