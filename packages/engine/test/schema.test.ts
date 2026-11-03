@@ -100,6 +100,7 @@ function fixture(context: TestContext) {
       portion_note: null,
       created_at: timestamp,
       updated_at: timestamp,
+      name: null,
       ...overrides,
     });
   const weight = (overrides: Partial<InsertWeightParams> = {}) =>
@@ -410,14 +411,21 @@ test("usernames and day keys reject duplicates while two people can store the sa
 });
 
 test("client ids are unique per person for both intake and weights", (context) => {
-  const { first, second, entry, weight } = fixture(context);
+  const { database, first, second, entry, weight } = fixture(context);
   for (const create of [entry, weight]) {
     const initial = create({ user_id: first.id, client_id: "same-request" });
     const other = create({ user_id: second.id, client_id: "same-request" });
     assert.ok(initial && other);
     assert.notEqual(initial.id, other.id);
     assert.throws(
-      () => create({ user_id: first.id, client_id: "same-request" }),
+      () =>
+        database
+          .prepare(
+            create === entry
+              ? "INSERT INTO intake_entries (user_id, client_id, eaten_at, day, provenance, created_at, updated_at) SELECT user_id, client_id, eaten_at, day, provenance, created_at, updated_at FROM intake_entries WHERE id = ?"
+              : "INSERT INTO weights (user_id, client_id, measured_at, day, weight_kg, created_at) SELECT user_id, client_id, measured_at, day, weight_kg, created_at FROM weights WHERE id = ?",
+          )
+          .run(initial.id),
       /UNIQUE constraint failed/,
     );
   }
