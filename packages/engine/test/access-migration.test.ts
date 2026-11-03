@@ -31,6 +31,9 @@ test("Access rebuild preserves every user field, child row, session and foreign 
     )
     .run(41, 12, "Example meal", "estimated");
   database
+    .prepare("INSERT INTO days (user_id, day) VALUES (?, ?)")
+    .run(41, "2026-01-01");
+  database
     .prepare(
       "INSERT INTO intake_entries (user_id, client_id, food_id, eaten_at, day, provenance, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     )
@@ -49,9 +52,6 @@ test("Access rebuild preserves every user field, child row, session and foreign 
       "INSERT INTO weights (user_id, client_id, measured_at, day, weight_kg, created_at) VALUES (?, ?, ?, ?, ?, ?)",
     )
     .run(41, "example-weight", timestamp, "2026-01-01", 70, timestamp);
-  database
-    .prepare("INSERT INTO days (user_id, day) VALUES (?, ?)")
-    .run(41, "2026-01-01");
   insertSession(database, {
     token_hash: "example-token-digest",
     user_id: 41,
