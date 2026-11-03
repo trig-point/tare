@@ -226,7 +226,7 @@ test("import waits for a different process to release its write lock", async (co
   const file = join(directory, "weight.jsonl");
   writeFileSync(file, JSON.stringify(weight));
   const start = () =>
-    fork(new URL("./support/import-lock.mts", import.meta.url), [path], {
+    fork(new URL("./support/import-lock.ts", import.meta.url), [path], {
       stdio: ["ignore", "inherit", "inherit", "ipc"],
     });
   const writer = start();
