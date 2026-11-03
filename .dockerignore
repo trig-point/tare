@@ -6,4 +6,5 @@
 **/*.sqlite
 **/*.sqlite-*
 **/*.db
+**/*.db-*
 .git
