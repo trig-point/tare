@@ -8,6 +8,7 @@ import { createBackupJob } from "./backup.ts";
 import { loadConfig } from "./config.ts";
 import { openDatabase } from "./db.ts";
 import { createJobRunner } from "./jobs.ts";
+import { createOrderMaintenanceJob } from "./orders/maintenance.ts";
 import { deleteExpiredSessions } from "./queries/delete-expired-sessions.ts";
 
 const config = loadConfig(process.env);
@@ -53,6 +54,9 @@ async function startEngine() {
       }),
     );
   } else console.info("Backups disabled");
+  runner.register(
+    createOrderMaintenanceJob({ database: connection.database, clock }),
+  );
   runner.start();
   const app = createApp({
     database: connection.database,

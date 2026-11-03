@@ -1,10 +1,14 @@
 import { agentTokenOperations } from "../auth/agent-tokens.ts";
 import { authOperations } from "../auth/routes.ts";
 import { dayReadOperations } from "../days/operations.ts";
+import { daySignOffOperations } from "../days/sign-off.ts";
 import { loggingOperations } from "../logging/operations.ts";
 import { lookupOperations } from "../lookup/operations.ts";
+import { orderOperations } from "../orders/operations.ts";
+import { profileOperations } from "../profile/operations.ts";
 import { questionOperations } from "../questions/operations.ts";
 import { regularMealOperations } from "../regular-meals/operations.ts";
+import { signalOperations } from "../signals/operations.ts";
 import { weightHistory } from "../trend/operations.ts";
 import type { Operation } from "./registry.ts";
 
@@ -13,9 +17,13 @@ export const operations: Operation[] = [
   ...agentTokenOperations,
   ...loggingOperations,
   ...dayReadOperations,
+  ...daySignOffOperations,
   weightHistory,
   ...lookupOperations,
   ...questionOperations,
+  ...signalOperations,
+  ...orderOperations,
+  ...profileOperations,
   ...regularMealOperations,
 ];
 export const agentOperations = operations.filter(
