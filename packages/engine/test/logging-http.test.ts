@@ -236,6 +236,11 @@ test("logging HTTP writes preserve snapshots, replay, ownership and patch semant
         ["Example revised portion", "Example revised box", 360],
       );
   }
+  assert.deepEqual(
+    (await send(`/api/intake/${label.entry.id}`, { source: "Box" }, "PATCH"))
+      .error,
+    { code: "invalid_request" },
+  );
   for (const patch of [
     { kcal_low: 200 },
     { kcal_low: 200, kcal_high: 100 },
