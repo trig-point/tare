@@ -13,8 +13,8 @@ test("session migration upgrades the prior schema and enforces expiry, ownership
   const directory = mkdtempSync(join(tmpdir(), "tare-session-migration-"));
   context.after(() => rmSync(directory, { recursive: true, force: true }));
   const folder = new URL("../migrations/", import.meta.url);
-  for (const name of readdirSync(folder).filter((name) =>
-    /^000[123]_/.test(name),
+  for (const name of readdirSync(folder).filter(
+    (name) => name.endsWith(".sql") && !/^000[456]_/.test(name),
   ))
     cpSync(new URL(name, folder), join(directory, name));
   const connection = openDatabase(":memory:");

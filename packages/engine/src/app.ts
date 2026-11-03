@@ -7,9 +7,21 @@ import { mountMcp } from "./mcp/server.ts";
 import { mountOperations, operationGuards } from "./operations/http.ts";
 import { operations } from "./operations/index.ts";
 import { OperationError } from "./operations/registry.ts";
+import { createOffAdapter } from "./sources/off.ts";
+import { createUsdaAdapter } from "./sources/usda.ts";
 import { mountWeb } from "./web.ts";
 
 export function createApp(options: AppOptions & { webRoot?: string }) {
+  const dependencies = {
+    ...options,
+    lookup: options.lookup ?? {
+      usda: createUsdaAdapter(options.config, {
+        now: () => options.clock.now(),
+      }),
+      off: createOffAdapter({ userAgent: options.config.offUserAgent }),
+    },
+    signInLimiter: { waiting: 0 },
+  };
   const app = new Hono<AuthEnv>();
   const guards = operationGuards(
     operations,
@@ -52,12 +64,8 @@ export function createApp(options: AppOptions & { webRoot?: string }) {
     );
     app.use("*", guards.serviceRoutes);
   }
-  mountOperations(app, operations, {
-    ...options,
-    signInLimiter: { waiting: 0 },
-  });
-  if (options.config.identity.mode === "access")
-    mountMcp(app, { ...options, signInLimiter: { waiting: 0 } });
+  mountOperations(app, operations, dependencies);
+  if (options.config.identity.mode === "access") mountMcp(app, dependencies);
   mountWeb(app, options.webRoot);
   return app;
 }
