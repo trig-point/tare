@@ -1,6 +1,8 @@
 import type { Person } from "../auth/middleware.ts";
 import { scopeDatabase, type WriteScope } from "../db.ts";
 import { OperationError } from "../operations/registry.ts";
+import { selectedTemplate } from "../plan/reader.ts";
+import { assignSlot, minuteOfDay } from "../plan/slots.ts";
 import { insertIntakeEntry } from "../queries/insert-intake-entry.ts";
 import { selectFood } from "../queries/select-food.ts";
 import { selectIntakeByClient } from "../queries/select-intake-by-client.ts";
@@ -22,6 +24,7 @@ export type IntakeInput = {
   client_id: string;
   eaten_at?: string;
   portion_note?: string | null;
+  slot?: { template_id: number; position: number };
 } & (
   | { reference: Reference; servings: number; claim: Pick<Claim, "provenance"> }
   | { name: string; numbers: Numbers; claim: Claim }
@@ -96,6 +99,18 @@ export function insertIntake(
     };
     if (!snapshot.name) throw new OperationError(400, "invalid_request");
   }
+  const day = localDay(eaten_at, person.timezone, person.day_start_hour);
+  const plan = selectedTemplate(database, person, day);
+  const slot =
+    input.slot === undefined
+      ? assignSlot(plan.slots, minuteOfDay(eaten_at, person))
+      : plan.slots.find(
+          (slot) =>
+            slot.template_id === input.slot?.template_id &&
+            slot.position === input.slot.position,
+        );
+  if (input.slot !== undefined && !slot)
+    throw new OperationError(400, "slot_not_found");
   const inserted = insertIntakeEntry(database, {
     ...snapshot,
     user_id: person.id,
@@ -110,7 +125,9 @@ export function insertIntake(
         : null,
     servings: "reference" in input ? input.servings : null,
     eaten_at,
-    day: localDay(eaten_at, person.timezone, person.day_start_hour),
+    day,
+    slot_template_id: slot?.template_id ?? null,
+    slot_position: slot?.position ?? null,
     portion_note: input.portion_note ?? null,
     created_at: now,
     updated_at: now,

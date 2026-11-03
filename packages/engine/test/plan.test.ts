@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { writeTransaction } from "../src/db.ts";
+import { insertIntake } from "../src/logging/intake.ts";
+import { numbersFrom } from "../src/logging/schemas.ts";
 import { selectedTemplate } from "../src/plan/reader.ts";
 import { test } from "./support/hang-ceiling.ts";
 import { twoUsers } from "./support/two-users.ts";
@@ -56,7 +59,7 @@ for (const mode of ["fallback", "access"] as const) {
   });
 
   test(`${mode}: template CRUD, manual and default plans, rollback and owner isolation`, async (context) => {
-    const { admin, member, database } = await twoUsers(context, mode);
+    const { admin, member, database, setNow } = await twoUsers(context, mode);
     const send = async (
       person: typeof admin,
       path: string,
@@ -95,6 +98,7 @@ for (const mode of ["fallback", "access"] as const) {
       day_type: null,
       template: null,
       slots: [],
+      budgets: { status: "no_day_type", target: null, slots: [] },
     };
     assert.deepEqual(await send(admin, "today"), empty);
     const first = await createTemplate();
@@ -110,6 +114,7 @@ for (const mode of ["fallback", "access"] as const) {
       day: empty.day,
       day_type: firstType,
       ...first,
+      budgets: { status: "needs_profile", target: null, slots: [] },
     });
     const second = await createTemplate(slots([33.33, 33.33, 33.34]));
     assert.deepEqual(
@@ -129,6 +134,7 @@ for (const mode of ["fallback", "access"] as const) {
       day: empty.day,
       day_type: secondType,
       ...second,
+      budgets: { status: "needs_profile", target: null, slots: [] },
     };
     assert.deepEqual(await send(admin, "today"), selected);
     await send(admin, "day-type", {
@@ -295,5 +301,136 @@ for (const mode of ["fallback", "access"] as const) {
       "not_found",
     );
     assert.deepEqual(database.pragma("foreign_key_check"), []);
+    if (mode !== "fallback") return;
+    database
+      .prepare("UPDATE users SET timezone = 'UTC', day_start_hour = 0")
+      .run();
+    database.prepare("DELETE FROM day_type_choices").run();
+    database.prepare("DELETE FROM default_day_types").run();
+    setNow("2026-01-01T15:00:00.000Z");
+    const api = async (
+      path: string,
+      body?: unknown,
+      method = "POST",
+      person = admin,
+    ) => {
+      const response = await person.request(
+        `/api/${path}`,
+        body === undefined ? {} : { method, body: JSON.stringify(body) },
+      );
+      assert.ok(response.ok, path);
+      return response.json();
+    };
+    const next = () => api("plan/next-slot");
+    const read = async () => (await send(admin, "today")).budgets;
+    const patch = (id: number, change: unknown) =>
+      api(`intake/${id}`, change, "PATCH");
+    const windows = slots()
+      .map((slot, position) => ({
+        ...slot,
+        start_minute: 420 + position * 240,
+        end_minute: 540 + position * 240,
+      }))
+      .toReversed();
+    const planned = await createTemplate(windows);
+    const plannedType = (await createType(planned.template.id)).day_type;
+    const profile = {
+      height_cm: 180,
+      birth_date: "1986-01-01",
+      sex: "male",
+      activity_level: "moderate",
+      goal_rate_kg_week: -0.5,
+    };
+    const weight = { client_id: "example-weight", weight_kg: 80 };
+    for (const [path, body, status] of [
+      [null, null, "no_day_type"],
+      ["plan/day-type", { day_type_id: plannedType.id }, "needs_profile"],
+      ["profile", profile, "needs_weigh_in"],
+      ["weights", weight, "ready"],
+    ] as const) {
+      if (path) await api(path, body);
+      assert.deepEqual(
+        [(await next()).status, (await read()).status],
+        [status, status],
+      );
+    }
+    const food = (client_id: string, hour: number, kcal = 100) => ({
+      client_id,
+      eaten_at: `2026-01-01T${String(hour).padStart(2, "0")}:00:00.000Z`,
+      name: "Example meal",
+      kcal,
+      protein_g: 20,
+    });
+    const breakfast = (await api("intake", food("breakfast", 8, 400))).entry;
+    const gap = (await api("intake", food("gap", 14))).entry,
+      late = (await api("intake", food("late", 23))).entry;
+    assert.deepEqual(
+      [breakfast.slot_position, gap.slot_position, late.slot_position],
+      [3, 1, 0],
+    );
+    const owner = { ...admin.user, timezone: "UTC", day_start_hour: 0 };
+    const insert = (position: number, person = owner) =>
+      writeTransaction(database, (scope) =>
+        insertIntake(
+          scope,
+          person,
+          {
+            ...food("explicit", 18),
+            numbers: numbersFrom({ kcal: 100 }),
+            claim: {},
+            slot: { template_id: planned.template.id, position },
+          },
+          { now: () => new Date("2026-01-01T15:00:00.000Z") },
+        ),
+      );
+    assert.equal(insert(0).entry.slot_position, 0);
+    assert.deepEqual(
+      [insert(3).created, insert(3).entry.slot_position],
+      [false, 0],
+    );
+    const count = () =>
+      database.prepare("SELECT count(*) FROM intake_entries").get();
+    const entryCount = count();
+    assert.throws(
+      () => insert(0, { ...member.user, timezone: "UTC", day_start_hour: 0 }),
+      { status: 400, code: "slot_not_found" },
+    );
+    assert.deepEqual(count(), entryCount);
+    await send(member, "day-type", { day_type_id: otherType.id });
+    await api("profile", profile, "POST", member);
+    await api("weights", weight, "POST", member);
+    assert.equal((await send(member, "today")).budgets.slots[0].kcal.intake, 0);
+    database
+      .prepare("DELETE FROM intake_entries WHERE id != ?")
+      .run(breakfast.id);
+    const lunch = (await api("intake", food("lunch", 12, 300))).entry,
+      originalNext = await next();
+    await patch(lunch.id, { kcal: 900 });
+    assert.ok((await next()).slot.kcal.budget < originalNext.slot.kcal.budget);
+    const moved = await patch(breakfast.id, {
+      eaten_at: food("time", 16).eaten_at,
+    });
+    assert.equal(moved.entry.slot_position, null);
+    assert.equal((await read()).slots[2].kcal.intake, 400);
+    await patch(breakfast.id, { eaten_at: food("time", 8).eaten_at });
+    await send(admin, "templates", {
+      action: "update",
+      id: first.template.id,
+      name: "Example changed day",
+      slots: windows,
+    });
+    await send(admin, "day-type", { day_type_id: firstType.id });
+    assert.deepEqual(
+      (await read()).slots
+        .slice(0, 2)
+        .map((row: { kcal: { intake: number } }) => row.kcal.intake),
+      [400, 900],
+    );
+    await patch(lunch.id, { kcal: 300 });
+    await patch(breakfast.id, { kcal: null });
+    const unknown = (await next()).slot.kcal;
+    assert.deepEqual([unknown.budget, unknown.remaining], [null, null]);
+    assert.equal((await read()).slots[0].kcal.complete, false);
+    assert.equal((await read()).slots[1].kcal.known_subtotal, 300);
   });
 }
