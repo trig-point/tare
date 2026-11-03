@@ -106,6 +106,7 @@ test("moved quantities, shared rows and non-standalone numbers are dropped", asy
     ["Garden Bowl 2\nSmoky Beans 3", undefined, 3],
     ["Garden Bowl 2-3"],
     ["Garden Bowl 1/2"],
+    ["Garden Bowl 1,200", undefined, 200],
     ["Garden Bowl 20", "Garden Bowl 2"],
   ] as const) {
     const { reply } = fixture();
@@ -137,7 +138,10 @@ test("moved quantities, shared rows and non-standalone numbers are dropped", asy
         quantity: { value, excerpt: "3 Bean Chili 1", uncertain: false },
       },
     ];
-    const email = { subject: "Cedar Spoon scheduling", text: "3 Bean Chili 1" };
+    const email = {
+      subject: "Cedar Spoon scheduling",
+      text: "3 Bean Chili 1.",
+    };
     const result = parsed(await parse(reply, email));
     assert.equal(result.meals[0]?.quantity.value, kept ? value : null);
   }
@@ -204,6 +208,14 @@ test("dates are derived from exactly one supported expression", async () => {
     assert.equal(result.uncertain.includes("delivery_date"), uncertain);
     assert.equal(result.kind.value, "scheduling");
   }
+  const cut = fixture().reply;
+  cut.delivery_date = {
+    value: "2026-11-05",
+    excerpt: "5 Nov 2026",
+    uncertain: false,
+  };
+  const cutEmail = { subject: "s", text: "Delivery 15 Nov 2026" };
+  assert.equal(parsed(await parse(cut, cutEmail)).delivery_date.value, null);
   const { email, reply } = fixture("processed");
   email.text += "\nDelivery: 2026-11-12";
   reply.delivery_date = fixture().reply.delivery_date;
