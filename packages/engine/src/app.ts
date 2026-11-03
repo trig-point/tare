@@ -4,6 +4,7 @@ import { createAccessVerifier } from "./auth/access.ts";
 import { type AuthEnv, accessAuth } from "./auth/middleware.ts";
 import type { AppOptions } from "./auth/routes.ts";
 import { mountMcp } from "./mcp/server.ts";
+import { mealNutritionKinds } from "./meal-nutrition/index.ts";
 import { mountOperations, operationGuards } from "./operations/http.ts";
 import { operations } from "./operations/index.ts";
 import { OperationError } from "./operations/registry.ts";
@@ -14,7 +15,7 @@ import { mountWeb } from "./web.ts";
 export function createApp(options: AppOptions & { webRoot?: string }) {
   const dependencies = {
     ...options,
-    questionKinds: options.questionKinds ?? new Map(),
+    questionKinds: options.questionKinds ?? mealNutritionKinds,
     lookup: options.lookup ?? {
       usda: createUsdaAdapter(options.config, {
         now: () => options.clock.now(),
