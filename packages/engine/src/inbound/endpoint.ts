@@ -13,11 +13,12 @@ import { selectMessage } from "./message.ts";
 import { heldEmailKind } from "./questions.ts";
 
 // Subject and From are sender-controlled, and ";" separates the prompt's fields.
+// Keeping only visible characters and plain spaces drops controls, bidi and line separators.
 function promptField(text: string, limit: number) {
-  return text
-    .replace(/[\p{Cc}\p{Cf}]/gu, "")
-    .replaceAll(";", ",")
-    .slice(0, limit);
+  const visible = text
+    .replace(/[^\p{L}\p{M}\p{N}\p{P}\p{S}\p{Zs}]/gu, "")
+    .replaceAll(";", ",");
+  return Array.from(visible).slice(0, limit).join("");
 }
 
 export function mountInboundEmail(
