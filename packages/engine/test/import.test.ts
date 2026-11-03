@@ -91,11 +91,12 @@ for (const kind of ["intake", "weight", "days"] as const)
       ...(kind === "days"
         ? [{ ...row, notes: " " }]
         : [
-            {
-              ...row,
-              [kind === "intake" ? "eaten_at" : "measured_at"]:
-                "0026-01-01T00:00:00Z",
-            },
+            ...["0026-01-01T00:00:00Z", "2026-01-02T00:00:01Z"].map(
+              (instant) => ({
+                ...row,
+                [kind === "intake" ? "eaten_at" : "measured_at"]: instant,
+              }),
+            ),
           ]),
     ];
     const result = await run(kind, rows);
@@ -107,7 +108,9 @@ for (const kind of ["intake", "weight", "days"] as const)
       errors: [
         { line: 2, code: "invalid_row" },
         { line: 3, code: "invalid_row" },
-        { line: 4, code: kind === "days" ? "invalid_row" : "invalid_time" },
+        ...(kind === "days"
+          ? [{ line: 4, code: "invalid_row" }]
+          : [4, 5].map((line) => ({ line, code: "invalid_time" }))),
       ],
     });
     if (kind === "intake") {
@@ -165,10 +168,14 @@ test("days conflicts are atomic and preserve sign-off; writer failures skip only
     (await run("days", [{ day: days.day, fullness: 4 }]))?.applied,
     1,
   );
-  assert.equal(
-    selectDay(database, { user_id: 1, day: days.day })?.signed_off_at,
-    null,
-  );
+  assert.deepEqual(selectDay(database, { user_id: 1, day: days.day }), {
+    user_id: 1,
+    day: days.day,
+    signed_off_at: null,
+    hunger: days.hunger,
+    fullness: 4,
+    notes: days.notes,
+  });
   const result = await run("intake", [
     { ...intake, provenance: "label" },
     intake,
