@@ -66,6 +66,7 @@ export const questionOperations = [
     name: "answer_question",
     method: "POST",
     path: "/api/questions/answer",
+    bodyLimit: 8192,
     input: zod.strictObject({
       id: zod.number().int().positive(),
       answer: zod.unknown(),
