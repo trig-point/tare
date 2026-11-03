@@ -85,6 +85,7 @@ function fixture(context: TestContext) {
     });
   const entry = (overrides: Partial<InsertIntakeEntryParams> = {}) =>
     insertIntakeEntry(database, {
+      ...{ slot_template_id: null, slot_position: null },
       user_id: first.id,
       client_id: `intake-${++sequence}`,
       food_id: null,
