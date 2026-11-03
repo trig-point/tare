@@ -52,6 +52,8 @@ test("registry constrains public and administrator operations and inventories ev
       "edit_weight",
       "delete_intake",
       "delete_weight",
+      "today",
+      "find_food",
     ],
   );
   assert.deepEqual(
