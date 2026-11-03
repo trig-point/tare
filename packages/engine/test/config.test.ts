@@ -30,7 +30,12 @@ test("order model settings are all-or-none, trimmed, and validate the URL", () =
       () => config({ ...configured, [setting]: "" }),
       new RegExp(`${setting} must be set`),
     );
-  for (const value of ["bad-url", "ftp://model.example.test"])
+  for (const value of [
+    "bad-url",
+    "ftp://model.example.test",
+    "https://name@model.example.test/v1",
+    "https://model.example.test/v1?version=1",
+  ])
     assert.throws(
       () => config({ ...configured, TARE_ORDER_MODEL_BASE_URL: value }),
       /TARE_ORDER_MODEL_BASE_URL/,

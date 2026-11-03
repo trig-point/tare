@@ -106,6 +106,7 @@ test("moved quantities, shared rows and non-standalone numbers are dropped", asy
     ["Garden Bowl 2\nSmoky Beans 3", undefined, 3],
     ["Garden Bowl 2-3"],
     ["Garden Bowl 1/2"],
+    ["Garden Bowl 2\u20133"],
     ["Garden Bowl 1,200", undefined, 200],
     ["Garden Bowl 20", "Garden Bowl 2"],
   ] as const) {
