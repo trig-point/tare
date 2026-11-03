@@ -447,8 +447,11 @@ test("intake keeps its stored nutrition after catalog edits", (context) => {
   });
   assert.ok(intake);
   assert.equal(
-    updateFoodKcal(database, { kcal: 200 }, { user_id: first.id, id: owned.id })
-      ?.kcal,
+    updateFoodKcal(
+      database,
+      { kcal: 200 },
+      { user_id: first.id, id: owned.id },
+    )[0]?.kcal,
     200,
   );
   assert.deepEqual(
