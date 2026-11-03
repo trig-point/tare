@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { createRemoteJWKSet } from "jose";
 import { createAccessVerifier } from "./auth/access.ts";
 import { type AuthEnv, accessAuth } from "./auth/middleware.ts";
-import { type AppOptions, mountAuthRoutes } from "./auth/routes.ts";
+import type { AppOptions } from "./auth/routes.ts";
 import { mountMcp } from "./mcp/server.ts";
 import { mountOperations, operationGuards } from "./operations/http.ts";
 import { operations } from "./operations/index.ts";
@@ -55,7 +55,6 @@ export function createApp(options: AppOptions) {
     ...options,
     signInLimiter: { waiting: 0 },
   });
-  mountAuthRoutes(app, options);
   if (options.config.identity.mode === "access")
     mountMcp(app, { ...options, signInLimiter: { waiting: 0 } });
   return app;
