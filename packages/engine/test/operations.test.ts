@@ -72,6 +72,11 @@ test("registry constrains public and administrator operations and inventories ev
       "read_profile",
       "save_regular_meal",
       "log_regular_meal",
+      "save_day_template",
+      "save_day_type",
+      "set_default_day_type",
+      "set_day_type",
+      "read_day_plan",
     ],
   );
   assert.deepEqual(
