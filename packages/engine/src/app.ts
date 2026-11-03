@@ -14,6 +14,7 @@ import { mountWeb } from "./web.ts";
 export function createApp(options: AppOptions & { webRoot?: string }) {
   const dependencies = {
     ...options,
+    questionKinds: options.questionKinds ?? new Map(),
     lookup: options.lookup ?? {
       usda: createUsdaAdapter(options.config, {
         now: () => options.clock.now(),

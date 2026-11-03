@@ -11,6 +11,7 @@ import {
 import { deleteSession } from "../queries/delete-session.ts";
 import { insertAccount } from "../queries/insert-account.ts";
 import { selectUserByUsername } from "../queries/select-user-by-username.ts";
+import type { QuestionKind } from "../questions/kinds.ts";
 import { normalizeAccessEmail } from "./access.ts";
 import {
   hashPassword,
@@ -26,6 +27,7 @@ export interface AppOptions {
   clock: { now(): Date };
   dummyHash: string;
   accessKeySet?: JWTVerifyGetKey;
+  questionKinds?: ReadonlyMap<string, QuestionKind>;
   lookup?: LookupAdapters;
   verifyPassword(password: string, stored: string): Promise<boolean>;
 }
