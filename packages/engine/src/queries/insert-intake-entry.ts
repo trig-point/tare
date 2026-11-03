@@ -20,6 +20,7 @@ export type InsertIntakeEntryParams = {
   portion_note: string | null;
   created_at: string;
   updated_at: string;
+  name: string | null;
 };
 
 export type InsertIntakeEntryResult = {
@@ -43,6 +44,7 @@ export type InsertIntakeEntryResult = {
   portion_note: string | null;
   created_at: string;
   updated_at: string;
+  name: string | null;
 };
 
 export function insertIntakeEntry(
@@ -50,8 +52,8 @@ export function insertIntakeEntry(
   params: InsertIntakeEntryParams,
 ): InsertIntakeEntryResult | null {
   const sql = `
-	INSERT INTO intake_entries (user_id, client_id, food_id, source_food_id, servings, eaten_at, day, kcal, protein_g, carbs_g, fat_g, fiber_g, kcal_low, kcal_high, provenance, source, portion_note, created_at, updated_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *;
+	INSERT INTO intake_entries (user_id, client_id, food_id, source_food_id, servings, eaten_at, day, kcal, protein_g, carbs_g, fat_g, fiber_g, kcal_low, kcal_high, provenance, source, portion_note, created_at, updated_at, name)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (user_id, client_id) DO NOTHING RETURNING *;
 	
 	`;
   const res = db
@@ -77,6 +79,7 @@ export function insertIntakeEntry(
       params.portion_note,
       params.created_at,
       params.updated_at,
+      params.name,
     ]);
 
   return res ? mapArrayToInsertIntakeEntryResult(res) : null;
@@ -104,6 +107,7 @@ function mapArrayToInsertIntakeEntryResult(data: any) {
     portion_note: data[17],
     created_at: data[18],
     updated_at: data[19],
+    name: data[20],
   };
   return result;
 }

@@ -38,7 +38,7 @@ Biome handles linting and formatting for the workspace. TypeScript runs in stric
 
 ## Configuration
 
-`DATABASE_URL` is required and is a SQLite file path, or `:memory:` for an ephemeral database. Surrounding whitespace is trimmed. Relative paths resolve from the engine process working directory (`packages/engine` when using the workspace command). Parent directories are created automatically. Startup applies migrations before listening.
+`DATABASE_URL` is required and is a SQLite file path, or `:memory:` for an ephemeral database. Surrounding whitespace is trimmed. Relative paths resolve from the engine process working directory (`packages/engine` when using the workspace command). Parent directories are created automatically. Startup applies migrations before listening. File databases use WAL; every connection sets a 5000 ms busy timeout.
 
 `PORT` defaults to `3000` and must be an integer from 1 to 65535. `.env.example` lists the configuration variables with safe local values. The startup command loads the root `.env` file if it exists; process environment variables can override it. Set the required variables in the process environment when running without a file.
 

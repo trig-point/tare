@@ -29,7 +29,7 @@ export function insertWeight(
 ): InsertWeightResult | null {
   const sql = `
 	INSERT INTO weights (user_id, client_id, measured_at, day, weight_kg, body_fat_pct, source, created_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING *;
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (user_id, client_id) DO NOTHING RETURNING *;
 	
 	`;
   const res = db
