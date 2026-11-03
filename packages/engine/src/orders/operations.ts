@@ -20,6 +20,7 @@ export const orderOperations = [
     name: "mark_delivery",
     method: "POST",
     path: "/api/orders/mark-delivery",
+    bodyLimit: 8192,
     input: zod.strictObject({ order_id: zod.number().int().positive() }),
     output: zod.strictObject({
       order_id: zod.number().int(),
