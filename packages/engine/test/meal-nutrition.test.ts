@@ -98,6 +98,7 @@ test("orders ask once, store whole-meal labels and isolate owners", async (conte
     ...label,
     provenance: "label",
     user_id: admin.user.id,
+    name: "Example bowl",
     service: "example meals",
     meal_name: "example bowl",
     chef: "example chef",

@@ -13,6 +13,7 @@ import { insertMealFood } from "../queries/insert-meal-food.ts";
 import { selectMealFoodByKey } from "../queries/select-meal-food-by-key.ts";
 import { selectMealFoodCandidates } from "../queries/select-meal-food-candidates.ts";
 import { selectOpenMealQuestion } from "../queries/select-open-meal-question.ts";
+import { selectOrderMealNames } from "../queries/select-order-meal-names.ts";
 import { createQuestion, type QuestionKind } from "../questions/kinds.ts";
 
 type Meal = { service: string; name: string; chef: string | null };
@@ -71,10 +72,15 @@ export const mealNutritionKind: QuestionKind = {
       "food",
     );
     if (!stored.ok) throw new OperationError(400, "invalid_nutrition");
+    // Identity stays folded; the display name keeps the casing the person ordered.
+    const ordered = selectOrderMealNames(database, {
+      user_id: question.user_id,
+    }).find((row) => mealKey(row) === question.subject_ref);
     if (
       !insertMealFood(database, {
         ...stored.row,
         ...meal,
+        name: ordered?.name.trim() ?? name,
         user_id: question.user_id,
         meal_name: name,
         meal_key: question.subject_ref,
