@@ -1,6 +1,8 @@
 import type { Database } from "better-sqlite3";
 
 export type InsertIntakeEntryParams = {
+  slot_template_id: number | null;
+  slot_position: number | null;
   user_id: number;
   client_id: string;
   food_id: number | null;
@@ -45,6 +47,8 @@ export type InsertIntakeEntryResult = {
   created_at: string;
   updated_at: string;
   name: string | null;
+  slot_template_id: number | null;
+  slot_position: number | null;
 };
 
 export function insertIntakeEntry(
@@ -52,14 +56,16 @@ export function insertIntakeEntry(
   params: InsertIntakeEntryParams,
 ): InsertIntakeEntryResult | null {
   const sql = `
-	INSERT INTO intake_entries (user_id, client_id, food_id, source_food_id, servings, eaten_at, day, kcal, protein_g, carbs_g, fat_g, fiber_g, kcal_low, kcal_high, provenance, source, portion_note, created_at, updated_at, name)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (user_id, client_id) DO NOTHING RETURNING *;
+	INSERT INTO intake_entries (slot_template_id, slot_position, user_id, client_id, food_id, source_food_id, servings, eaten_at, day, kcal, protein_g, carbs_g, fat_g, fiber_g, kcal_low, kcal_high, provenance, source, portion_note, created_at, updated_at, name)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (user_id, client_id) DO NOTHING RETURNING *;
 	
 	`;
   const res = db
     .prepare(sql)
     .raw(true)
     .get([
+      params.slot_template_id,
+      params.slot_position,
       params.user_id,
       params.client_id,
       params.food_id,
@@ -108,6 +114,8 @@ function mapArrayToInsertIntakeEntryResult(data: any) {
     created_at: data[18],
     updated_at: data[19],
     name: data[20],
+    slot_template_id: data[21],
+    slot_position: data[22],
   };
   return result;
 }
