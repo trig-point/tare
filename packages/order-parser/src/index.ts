@@ -49,7 +49,7 @@ function occurrences(text: string, part: string): number[] {
 
 // A date excerpt cut mid-token ("5 Nov" from "15 Nov") would change its value.
 function wholeTokens(text: string, excerpt: string): boolean {
-  const joined = /[\p{L}\p{N}_/-]/u;
+  const joined = /[\p{L}\p{N}_/\p{Pd}]/u;
   return occurrences(text, excerpt).some(
     (start) =>
       !joined.test(text[start - 1] ?? "") &&
@@ -68,7 +68,7 @@ function standaloneQuantity(
   const digits = String(quantity);
   if (!/^\d+$/.test(digits)) return false;
   const number = new RegExp(
-    `(?<![\\p{L}\\p{N}_.+\\-])(?<!\\p{N}[,/])${digits}(?![\\p{L}\\p{N}_+\\-]|[.,/]\\p{N})`,
+    `(?<![\\p{L}\\p{N}_.+\\p{Pd}])(?<!\\p{N}[,/])${digits}(?![\\p{L}\\p{N}_+\\p{Pd}]|[.,/]\\p{N})`,
     "gu",
   );
   const names = occurrences(line, mealName);
