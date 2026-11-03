@@ -119,6 +119,7 @@ for (const mode of ["fallback", "access"] as const)
     for (const body of [
       {},
       { ...activity, kind: " " },
+      { ...activity, client_id: "nul", kind: "\u0000walk" },
       { ...activity, duration_minutes: 0 },
       { ...activity, duration_minutes: 1.5 },
       { ...activity, calories: -1 },
