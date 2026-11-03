@@ -2,12 +2,14 @@ import type { Database } from "better-sqlite3";
 import type { Person } from "../auth/middleware.ts";
 import { scopeDatabase, type WriteScope } from "../db.ts";
 import { localDay } from "../logging/day.ts";
+import { askMealNutrition } from "../meal-nutrition/index.ts";
 import { insertOrder } from "../queries/orders/insert-order.ts";
 import { insertOrderMeal } from "../queries/orders/insert-order-meal.ts";
 import { listMealCandidates } from "../queries/orders/list-meal-candidates.ts";
 import { recordOrderDelivery } from "../queries/orders/record-order-delivery.ts";
 import { selectOrderMeal } from "../queries/orders/select-order-meal.ts";
 import { updateOrderMeal } from "../queries/orders/update-order-meal.ts";
+import type { QuestionKind } from "../questions/kinds.ts";
 
 type MealInput = { name: string; chef: string | null; quantity: number };
 type DueOrder = { delivered_at: string | null; delivery_date: string };
@@ -46,6 +48,7 @@ export function createOrder(
     status: "scheduled" | "processed";
     meals: MealInput[];
   },
+  questionKinds: ReadonlyMap<string, QuestionKind>,
   now = new Date().toISOString(),
 ) {
   const database = scopeDatabase(scope);
@@ -67,6 +70,13 @@ export function createOrder(
       })
     )
       throw new Error("Meal insert returned no row");
+    askMealNutrition(
+      database,
+      person.id,
+      { ...meal, service: input.service },
+      now,
+      questionKinds,
+    );
   }
   return order;
 }

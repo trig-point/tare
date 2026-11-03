@@ -25,23 +25,27 @@ export type UpdateFoodKcalResult = {
   provenance: string;
   source: string | null;
   source_food_id: number | null;
+  service: string | null;
+  meal_name: string | null;
+  chef: string | null;
+  meal_key: string | null;
 };
 
 export function updateFoodKcal(
   db: Database,
   data: UpdateFoodKcalData,
   params: UpdateFoodKcalParams,
-): UpdateFoodKcalResult | null {
+): UpdateFoodKcalResult[] {
   const sql = `
 	UPDATE foods SET kcal = ? WHERE user_id = ? AND id = ? RETURNING *;
 	
 	`;
-  const res = db
+  const rows = db
     .prepare(sql)
     .raw(true)
-    .get([data.kcal, params.user_id, params.id]);
+    .all([data.kcal, params.user_id, params.id]);
 
-  return res ? mapArrayToUpdateFoodKcalResult(res) : null;
+  return rows.map((data) => mapArrayToUpdateFoodKcalResult(data));
 }
 
 function mapArrayToUpdateFoodKcalResult(data: any) {
@@ -61,6 +65,10 @@ function mapArrayToUpdateFoodKcalResult(data: any) {
     provenance: data[12],
     source: data[13],
     source_food_id: data[14],
+    service: data[15],
+    meal_name: data[16],
+    chef: data[17],
+    meal_key: data[18],
   };
   return result;
 }
