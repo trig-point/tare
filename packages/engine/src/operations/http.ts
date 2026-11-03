@@ -113,9 +113,18 @@ export function mountOperations(
           ]),
       async (context) => {
         let rawInput: unknown = context.req.param();
-        if (operation.method === "POST") {
+        if (operation.method === "POST" || operation.method === "PATCH") {
           try {
             rawInput = await context.req.json();
+            if (operation.method === "PATCH") {
+              if (
+                !rawInput ||
+                typeof rawInput !== "object" ||
+                Array.isArray(rawInput)
+              )
+                throw new OperationError(400, "invalid_request");
+              rawInput = { ...rawInput, ...context.req.param() };
+            }
           } catch {
             throw new OperationError(400, "invalid_request");
           }

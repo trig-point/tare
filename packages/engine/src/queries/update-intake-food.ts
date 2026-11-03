@@ -31,6 +31,7 @@ export type UpdateIntakeFoodResult = {
   portion_note: string | null;
   created_at: string;
   updated_at: string;
+  name: string | null;
 };
 
 export function updateIntakeFood(
@@ -72,6 +73,7 @@ function mapArrayToUpdateIntakeFoodResult(data: any) {
     portion_note: data[17],
     created_at: data[18],
     updated_at: data[19],
+    name: data[20],
   };
   return result;
 }

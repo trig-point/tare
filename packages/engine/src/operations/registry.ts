@@ -42,7 +42,7 @@ export class OperationError extends Error {
 
 export interface Operation<Input extends zod.ZodType = zod.ZodType> {
   name: string;
-  method: "GET" | "POST" | "DELETE";
+  method: "GET" | "POST" | "PATCH" | "DELETE";
   path: string;
   modes: ("access" | "fallback")[];
   callerClass: "public" | "browser" | "browser_and_agent";
