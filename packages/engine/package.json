@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "node --env-file-if-exists=../../.env src/index.ts",
     "start": "node --env-file-if-exists=../../.env src/index.ts",
+    "import": "node --env-file-if-exists=../../.env scripts/import.mts",
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --test test/*.test.ts",
     "generate": "node scripts/generate.mts && biome check --write --no-errors-on-unmatched src/queries"
