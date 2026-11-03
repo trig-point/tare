@@ -9,6 +9,7 @@ import {
 import { selectProfile } from "../queries/select-profile.ts";
 import { upsertProfile } from "../queries/upsert-profile.ts";
 import { ageYears } from "../target/formula.ts";
+import { recomputeTarget } from "../target/recompute.ts";
 import { profileInput, profileSchema } from "./schema.ts";
 
 const shared = {
@@ -36,14 +37,22 @@ export const profileOperations = [
       // The formula is an adult equation.
       if (age < 18 || age > 120)
         throw new OperationError(400, "invalid_request");
-      const profile = writeTransaction(context.database, () =>
-        upsertProfile(context.database, {
+      const profile = writeTransaction(context.database, (scope) => {
+        const profile = upsertProfile(context.database, {
           ...input,
           user_id: person.id,
           updated_at: now,
-        }),
-      );
-      if (!profile) throw new Error("Profile save returned no row");
+        });
+        if (!profile) throw new Error("Profile save returned no row");
+        recomputeTarget(
+          scope,
+          person,
+          new Date(now),
+          context.config.tdee,
+          "profile",
+        );
+        return profile;
+      });
       return { status: 200, body: { profile } };
     },
   }),

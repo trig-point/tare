@@ -90,6 +90,7 @@ Relative filesystem paths resolve from `/app/packages/engine` in the image.
 | `DATABASE_URL` | Required; image: `/data/tare.sqlite` | Trimmed SQLite path, or `:memory:` for ephemeral use. Parent directories are created. Use `/data` for persistence. |
 | `PORT` | `3000` | Integer from 1 to 65535. An empty value is invalid. |
 | `TARE_TIMEZONE` | `UTC` | IANA timezone for scheduled jobs and the first administrator. Empty or invalid values prevent startup. |
+| `TARE_TARGET_WEEKDAY` | `monday` | Weekly target recompute day at 3:00 AM in `TARE_TIMEZONE`. English weekday names, trimmed and case-insensitive; empty uses the default. Invalid values prevent startup. |
 | `TARE_TDEE_WINDOW_DAYS` | `28` | Adaptive TDEE window in days, integer from 14 to 90. Trimmed; empty uses the default. |
 | `TARE_TDEE_ENERGY_DENSITY` | `7700` | Energy per kilogram of body weight change in kcal, from 5000 to 10000. Trimmed; empty uses the default. |
 | `TARE_TDEE_MIN_SIGNED_DAYS` | `14` | Signed-off days needed for an adaptive estimate, integer from 1 to the window length. Trimmed; empty uses the default. |

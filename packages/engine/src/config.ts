@@ -15,6 +15,7 @@ export interface Config {
   databaseUrl: string;
   port: number;
   timezone: string;
+  targetWeekday: number;
   publicUrl: string | undefined;
   mcpAllowedOrigins: string[];
   sessionDays: number;
@@ -172,6 +173,17 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     throw new Error("PORT must be an integer between 1 and 65535");
   }
   const timezone = validateTimezone(env.TARE_TIMEZONE ?? "UTC");
+  const targetWeekday = [
+    "sunday",
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+  ].indexOf(env.TARE_TARGET_WEEKDAY?.trim().toLowerCase() || "monday");
+  if (targetWeekday === -1)
+    throw new Error("TARE_TARGET_WEEKDAY must be an English weekday name");
   const publicUrl = env.TARE_PUBLIC_URL?.trim() || undefined;
   if (publicUrl !== undefined) {
     try {
@@ -227,6 +239,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     databaseUrl,
     port,
     timezone,
+    targetWeekday,
     publicUrl,
     mcpAllowedOrigins: parseMcpAllowedOrigins(env.TARE_MCP_ALLOWED_ORIGINS),
     sessionDays,

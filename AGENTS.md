@@ -47,6 +47,8 @@ TypeSQL generation uses an ignored local database at `packages/engine/data/types
 
 `TARE_TIMEZONE` sets the install's IANA timezone for scheduled jobs (default: `UTC`) independently of the process `TZ`. Invalid or empty values prevent startup.
 
+`TARE_TARGET_WEEKDAY` sets the weekly target recompute day at 3:00 AM in `TARE_TIMEZONE` (default: `monday`). It accepts the seven English weekday names, trimmed and case-insensitive. Empty counts as unset; invalid values prevent startup.
+
 Adaptive TDEE settings treat empty values as unset:
 
 - `TARE_TDEE_WINDOW_DAYS`: window length, default 28, integer from 14 to 90.

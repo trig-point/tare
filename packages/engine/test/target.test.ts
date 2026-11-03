@@ -148,6 +148,7 @@ for (const mode of ["fallback", "access"] as const)
     });
     const expected = {
       status: "ready",
+      basis: "live_formula",
       adaptive,
       kcal: 2130,
       protein_g: 128,
@@ -182,13 +183,17 @@ for (const mode of ["fallback", "access"] as const)
     });
     assert.deepEqual((await today(member)).target, {
       status: "ready",
+      basis: "live_formula",
       adaptive,
       kcal: 2030,
       protein_g: 160,
       trend_kg: 80,
     });
     await send(member, "/api/profile", profile);
-    assert.deepEqual((await today(member)).target, expected);
+    assert.deepEqual((await today(member)).target, {
+      ...expected,
+      basis: "weekly_formula",
+    });
     assert.deepEqual((await today(member)).remaining, {
       kcal: 2130,
       protein_g: 128,
