@@ -13,7 +13,12 @@ import { selectSignals } from "../queries/select-signals.ts";
 import { upsertSignal } from "../queries/upsert-signal.ts";
 import { metricName, signalVocabulary, withUnit } from "./vocabulary.ts";
 
-const text = zod.string().trim().min(1);
+// SQLite length() stops at NUL, so the nonblank CHECK would fail as a 500.
+const text = zod
+  .string()
+  .trim()
+  .min(1)
+  .refine((value) => !value.includes("\u0000"));
 const signalFields = {
   metric: metricName,
   value: zod.number(),
