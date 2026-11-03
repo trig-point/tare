@@ -2,7 +2,11 @@ import { z as zod } from "zod";
 import { OperationError } from "../operations/registry.ts";
 
 export const identifier = zod.number().int().positive();
-const name = zod.string().trim().min(1);
+const name = zod
+  .string()
+  .trim()
+  .min(1)
+  .refine((value) => !value.includes("\u0000"));
 const minute = zod.number().int().min(0).max(1440);
 const slotInput = zod
   .strictObject({

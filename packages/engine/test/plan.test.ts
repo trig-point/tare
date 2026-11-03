@@ -29,6 +29,10 @@ for (const mode of ["fallback", "access"] as const) {
         "slot_windows_overlap",
       ],
       [[], "invalid_request"],
+      [
+        [{ ...original[0], name: "\u0000Example" }, ...original.slice(1)],
+        "invalid_request",
+      ],
       [[{ ...original[0], share: 100.001 }], "invalid_request"],
       [[{ ...original[0], start_minute: -1 }], "invalid_request"],
       [[{ ...original[0], end_minute: 0 }], "invalid_request"],
