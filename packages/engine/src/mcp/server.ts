@@ -51,7 +51,7 @@ export function mountMcp(app: Hono<AuthEnv>, deps: OperationDependencies) {
     const server = new McpServer({ name: "tare", version: "1.0.0" });
     const transport = new StreamableHTTPTransport({
       sessionIdGenerator: randomUUID,
-      enableJsonResponse: true,
+      // @hono/mcp 0.3.5 never frees request state in JSON-response mode.
       enableDnsRebindingProtection: false,
       onsessioninitialized: (id) => {
         sessions.set(id, session);

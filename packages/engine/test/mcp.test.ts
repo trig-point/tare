@@ -14,6 +14,8 @@ const rpc = (method: string, params = {}) =>
 const list = rpc("tools/list");
 const call = (name = "whoami", args = {}) =>
   rpc("tools/call", { name, arguments: args });
+const parse = async (response: Response) =>
+  JSON.parse((await response.text()).split("data: ").at(-1) ?? "");
 async function setupMcp(context: TestContext) {
   const setup = await twoUsers(context, "access");
   const agents: Record<string, string>[] = [];
@@ -43,7 +45,7 @@ async function setupMcp(context: TestContext) {
       },
     });
   const result = async (body: string, id: string) =>
-    (await (await request(body, id)).json()).result;
+    (await parse(await request(body, id))).result;
   const initialize = async () => {
     const params = {
       protocolVersion: "2025-11-25",
@@ -55,7 +57,7 @@ async function setupMcp(context: TestContext) {
     assert.equal(response.headers.get("Cache-Control"), "no-store");
     const id = response.headers.get("mcp-session-id");
     assert.ok(id);
-    await response.json();
+    await response.text();
     const notification =
       '{"jsonrpc":"2.0","method":"notifications/initialized"}';
     assert.equal((await request(notification, id)).status, 202);
@@ -92,7 +94,7 @@ test("MCP HTTP boundary enforces Access, Origin, body size and protocol errors",
   ] as const) {
     const actual = await send();
     assert.equal(actual.status, status);
-    assert.equal((await actual.json()).error?.code, code);
+    assert.equal((await parse(actual)).error?.code, code);
   }
 });
 
