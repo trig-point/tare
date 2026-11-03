@@ -11,7 +11,7 @@ export interface QuestionKind {
     database: Database,
     question: SelectQuestionResult,
     answer: unknown,
-  ): void;
+  ): undefined;
 }
 
 export function createQuestion(
