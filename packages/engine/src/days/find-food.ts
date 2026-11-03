@@ -65,7 +65,10 @@ export function findFood(
         barcode: null,
         labelSource: row.source,
         retrievedAt: null,
-        mealKit: null,
+        mealKit:
+          row.service !== null && row.meal_name !== null
+            ? { service: row.service, mealName: row.meal_name, chef: row.chef }
+            : null,
       };
       references.set(record, {
         reference: { kind: "food", id: row.id },
