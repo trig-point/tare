@@ -73,6 +73,8 @@ test("registry constrains public and administrator operations and inventories ev
     assert.ok(!operation.admin || operation.callerClass === "browser");
     if (operation.method === "GET")
       assert.deepEqual(operation.input.parse({}), {});
+    if (operation.method === "POST" || operation.method === "PATCH")
+      assert.ok(operation.bodyLimit, `${operation.name} has no body limit`);
   }
   assert.throws(() => defineOperation({ ...browser, callerClass: "public" }));
   assert.throws(() => defineOperation({ ...whoami, admin: true }));
