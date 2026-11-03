@@ -3,6 +3,21 @@ import { test } from "node:test";
 import { loadConfig } from "../src/config.ts";
 import { test as authTest } from "./support/hang-ceiling.ts";
 
+authTest("MCP origin config validates the allow list", () => {
+  for (const [value, expected] of [
+    [undefined, []],
+    ["", []],
+    [" ", []],
+    [" https://a.test, http://b.test ", ["https://a.test", "http://b.test"]],
+    ["https://app.example.test/path", null],
+  ] as const) {
+    const env = { DATABASE_URL: ":memory:", TARE_MCP_ALLOWED_ORIGINS: value };
+    const read = () => loadConfig(env).mcpAllowedOrigins;
+    if (expected === null) assert.throws(read, /TARE_MCP_ALLOWED_ORIGINS/);
+    else assert.deepEqual(read(), expected);
+  }
+});
+
 test("USDA API key is optional, trimmed, and empty counts as unset", () => {
   for (const value of [undefined, "", "   "])
     assert.equal(

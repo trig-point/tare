@@ -56,6 +56,8 @@ TypeSQL generation uses an ignored local database at `packages/engine/data/types
 
 `TARE_ACCESS_AUD` is the Access application's audience tag. Setting only one Access option prevents startup.
 
+`TARE_MCP_ALLOWED_ORIGINS` is a comma-separated list of HTTP or HTTPS origins with no path. Entries are trimmed, and invalid entries prevent startup. If empty or unset, it allows only MCP requests without an `Origin` header.
+
 `TARE_ADMIN_ACCESS_EMAIL` creates the first administrator in Access mode with `TARE_ADMIN_USERNAME`. Emails are trimmed and lowercased. Access mode uses no administrator password; fallback mode requires `TARE_ADMIN_PASSWORD`.
 
 `TARE_USDA_API_KEY` enables USDA FoodData Central lookups; it is trimmed, and empty or unset skips USDA.

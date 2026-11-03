@@ -9,3 +9,11 @@ export const operations: Operation[] = [
 export const agentOperations = operations.filter(
   (operation) => operation.callerClass === "browser_and_agent",
 );
+
+export function agentOperationsFor(mode: "access" | "fallback") {
+  return operations.filter(
+    (operation) =>
+      operation.callerClass === "browser_and_agent" &&
+      operation.modes.includes(mode),
+  );
+}

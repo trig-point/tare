@@ -62,6 +62,7 @@ test("registry constrains public and administrator operations and inventories ev
     // MHA-214 moves the two fallback session routes into the registry.
     const infrastructure = [
       "GET /health",
+      ...(mode === "access" ? ["GET /mcp", "POST /mcp", "DELETE /mcp"] : []),
       ...(mode === "fallback"
         ? ["POST /api/session", "DELETE /api/session"]
         : []),

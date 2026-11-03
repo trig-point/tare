@@ -10,7 +10,9 @@
     "generate": "node scripts/generate.mts && biome check --write --no-errors-on-unmatched src/queries"
   },
   "dependencies": {
+    "@hono/mcp": "0.3.5",
     "@hono/node-server": "2.1.5",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "@tare/nutrition": "workspace:*",
     "better-sqlite3": "13.0.3",
     "croner": "11.0.0",
