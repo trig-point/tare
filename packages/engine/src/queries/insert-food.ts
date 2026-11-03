@@ -33,6 +33,10 @@ export type InsertFoodResult = {
   provenance: string;
   source: string | null;
   source_food_id: number | null;
+  service: string | null;
+  meal_name: string | null;
+  chef: string | null;
+  meal_key: string | null;
 };
 
 export function insertFood(
@@ -84,6 +88,10 @@ function mapArrayToInsertFoodResult(data: any) {
     provenance: data[12],
     source: data[13],
     source_food_id: data[14],
+    service: data[15],
+    meal_name: data[16],
+    chef: data[17],
+    meal_key: data[18],
   };
   return result;
 }

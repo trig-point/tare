@@ -28,7 +28,7 @@ export function updateRegularMealFood(
   db: Database,
   data: UpdateRegularMealFoodData,
   params: UpdateRegularMealFoodParams,
-): UpdateRegularMealFoodResult | null {
+): UpdateRegularMealFoodResult[] {
   const sql = `
 	UPDATE foods SET name = ?, serving_size = ?, serving_unit = ?,
 	  kcal = ?, protein_g = ?, carbs_g = ?, fat_g = ?, fiber_g = ?,
@@ -36,10 +36,10 @@ export function updateRegularMealFood(
 	WHERE user_id = ? AND id = ? RETURNING id;
 	
 	`;
-  const res = db
+  const rows = db
     .prepare(sql)
     .raw(true)
-    .get([
+    .all([
       data.name,
       data.serving_size,
       data.serving_unit,
@@ -56,7 +56,7 @@ export function updateRegularMealFood(
       params.id,
     ]);
 
-  return res ? mapArrayToUpdateRegularMealFoodResult(res) : null;
+  return rows.map((data) => mapArrayToUpdateRegularMealFoodResult(data));
 }
 
 function mapArrayToUpdateRegularMealFoodResult(data: any) {
