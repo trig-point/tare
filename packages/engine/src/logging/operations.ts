@@ -110,6 +110,12 @@ const editIntake = defineOperation({
         throw new OperationError(400, "invalid_request");
       if (!reference && input.servings !== undefined)
         throw new OperationError(400, "invalid_request");
+      // A claim only applies to new numbers, so a claim-only patch would be a silent no-op.
+      if (
+        !changesNumbers &&
+        (input.provenance !== undefined || input.source !== undefined)
+      )
+        throw new OperationError(400, "invalid_request");
       let merged = {
         ...stored,
         ...input,
