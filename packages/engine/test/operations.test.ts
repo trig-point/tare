@@ -59,6 +59,9 @@ test("registry constrains public and administrator operations and inventories ev
       "search_online",
       "list_questions",
       "answer_question",
+      "log_signal",
+      "log_activity",
+      "read_signals",
     ],
   );
   assert.deepEqual(
@@ -69,7 +72,7 @@ test("registry constrains public and administrator operations and inventories ev
   );
   for (const operation of operations) {
     assert.ok(!operation.admin || operation.callerClass === "browser");
-    if (operation.method === "GET")
+    if (operation.method === "GET" && !operation.path.includes(":"))
       assert.deepEqual(operation.input.parse({}), {});
   }
   assert.throws(() => defineOperation({ ...browser, callerClass: "public" }));
