@@ -151,32 +151,41 @@ test("stored targets: readiness, adaptive today, rollback, owner isolation, rese
     [latest()?.tdee_kcal, latest()?.low_kcal, latest()?.high_kcal],
     [estimate.tdee_kcal, estimate.low_kcal, estimate.high_kcal],
   );
+  let goal = -0.25;
   for (const actions of [
     ["weekly", "profile"],
     ["profile", "weekly"],
     ["profile", "weekly", "profile"],
-  ]) {
+  ] as const) {
     for (const action of actions) {
-      if (action === "weekly") recompute();
-      else assert.equal(await save(admin, { goal_rate_kg_week: -0.5 }), 200);
+      goal = goal === -0.5 ? 0 : -0.5;
+      if (action === "weekly") {
+        database
+          .prepare(
+            "UPDATE profiles SET goal_rate_kg_week = ? WHERE user_id = ?",
+          )
+          .run(goal, admin.user.id);
+        recompute();
+      } else assert.equal(await save(admin, { goal_rate_kg_week: goal }), 200);
+      assert.equal(latest()?.trigger, action);
+      assert.equal(
+        latest()?.kcal,
+        Math.round((estimate.tdee_kcal + goal * 1100) / 10) * 10,
+      );
+      assert.equal((await today()).kcal, latest()?.kcal);
     }
-    assert.equal(
-      latest()?.kcal,
-      Math.round((estimate.tdee_kcal - 550) / 10) * 10,
-    );
-    assert.equal((await today()).kcal, latest()?.kcal);
   }
   assert.equal(latest()?.computed_at, now.toISOString());
   const previous = latest();
   database.exec(
     "CREATE TRIGGER reject_target AFTER INSERT ON target_results WHEN NEW.trigger = 'profile' BEGIN SELECT RAISE(ABORT, 'injected'); END",
   );
-  assert.equal(await save(admin, { goal_rate_kg_week: 0 }), 500);
+  assert.equal(await save(admin, { goal_rate_kg_week: 0.25 }), 500);
   assert.deepEqual(latest(), previous);
   assert.equal(
     (await (await admin.request("/api/profile")).json()).profile
       .goal_rate_kg_week,
-    -0.5,
+    goal,
   );
   database.exec("DROP TRIGGER reject_target");
   database.prepare("DELETE FROM weights WHERE user_id = ?").run(admin.user.id);
