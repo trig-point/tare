@@ -196,6 +196,12 @@ test("HTTP skips USDA without a key and migration backfills OFF", async (context
     off: "ok",
   });
   assert.deepEqual(peer.calls, ["off"]);
+  const oversized = await setup.app.request("/api/lookup/search", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ name: "x".repeat(9000) }),
+  });
+  assert.equal(oversized.status, 413);
   setup.database.exec(
     "DROP INDEX source_foods_barcode; ALTER TABLE source_foods DROP COLUMN barcode",
   );

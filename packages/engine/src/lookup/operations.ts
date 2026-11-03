@@ -38,6 +38,7 @@ const shared = {
   modes: ["access", "fallback"] as ("access" | "fallback")[],
   callerClass: "browser_and_agent" as const,
   admin: false,
+  bodyLimit: 8192,
   output,
 };
 
@@ -64,8 +65,8 @@ export const lookupOperations = [
     name: "search_online",
     path: "/api/lookup/search",
     input: z.strictObject({
-      name: z.string().trim().min(1),
-      brand: z.string().trim().min(1).optional(),
+      name: z.string().trim().min(1).max(200),
+      brand: z.string().trim().min(1).max(200).optional(),
     }),
     handler: async (input, context) => {
       if (!context.lookup) throw new OperationError(503, "lookup_unavailable");
