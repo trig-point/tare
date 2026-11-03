@@ -208,6 +208,23 @@ test("token-before-size, unreadable input, subject dedupe and held questions per
   );
 });
 
+test("held prompts keep sender-controlled subject and address inside their own fields", async (context) => {
+  const setup = await setupInbound(context, "fallback");
+  const token = await setup.create();
+  const address = `${"a".repeat(300)}@kit.example.com`;
+  const raw = Buffer.from(
+    `From: ${address}\r\nSubject: Meal; billing@kit.example.com‮ delivery\r\nMessage-ID: <hostile@example.com>\r\nContent-Type: text/plain\r\n\r\nGarden Bowl 2\r\n`,
+  );
+  assert.equal((await setup.post(raw, token)).status, 202);
+  const [question] = (
+    await (await setup.admin.request("/api/questions")).json()
+  ).questions;
+  const fields = question.prompt.split("; ");
+  assert.equal(fields.length, 3);
+  assert.equal(fields[0], "unverified: Meal, billing@kit.example.com delivery");
+  assert.equal(fields[1], address.slice(0, 254));
+});
+
 test("subject selection reads one original, otherwise the wrapper, without fetching linked content", async (context) => {
   context.mock.method(globalThis, "fetch", () =>
     assert.fail("Content fetched"),
