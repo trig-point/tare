@@ -1,6 +1,7 @@
 import { z as zod } from "zod";
 import { localDay } from "../logging/day.ts";
 import { defineOperation, operationPerson } from "../operations/registry.ts";
+import { readTarget, targetSchema } from "../target/reader.ts";
 import { findFood, findFoodInput, findFoodOutput } from "./find-food.ts";
 import { ledgerSchema, readLedger } from "./ledger.ts";
 
@@ -16,17 +17,41 @@ export const dayReadOperations = [
     method: "GET",
     path: "/api/today",
     input: zod.strictObject({}),
-    output: ledgerSchema,
+    output: ledgerSchema.extend({
+      target: targetSchema,
+      remaining: zod.strictObject({
+        kcal: zod.number().nullable(),
+        protein_g: zod.number().nullable(),
+      }),
+    }),
     handler(_input, context) {
       const person = operationPerson(context);
+      const now = context.clock.now();
       const day = localDay(
-        context.clock.now().toISOString(),
+        now.toISOString(),
         person.timezone,
         person.day_start_hour,
       );
+      const ledger = readLedger(context.database, person.id, day);
+      const target = readTarget(context.database, person, now);
+      const remaining = (key: "kcal" | "protein_g") => {
+        const total = ledger.totals[key];
+        return target.status === "ready" &&
+          total.complete &&
+          total.total !== null
+          ? target[key] - total.total
+          : null;
+      };
       return {
         status: 200,
-        body: readLedger(context.database, person.id, day),
+        body: {
+          ...ledger,
+          target,
+          remaining: {
+            kcal: remaining("kcal"),
+            protein_g: remaining("protein_g"),
+          },
+        },
       };
     },
   }),
