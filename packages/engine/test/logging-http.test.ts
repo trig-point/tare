@@ -54,6 +54,11 @@ test("logging HTTP writes preserve snapshots, replay, ownership and patch semant
       { client_id: "bad", source_food_id: 1, servings: 1, kcal: 100 },
       "invalid_request",
     ],
+    [
+      { client_id: "bad", source_food_id: 1, servings: 1, source: "Box" },
+      "invalid_request",
+    ],
+    [log("bad", { name: "x".repeat(9000) }), "body_too_large"],
   ] as const) {
     if (code === "provenance_mismatch")
       database
@@ -70,7 +75,10 @@ test("logging HTTP writes preserve snapshots, replay, ownership and patch semant
           "2026-01-01T00:00:00.000Z",
         );
     const result = await send("/api/intake", body);
-    assert.deepEqual([result.status, result.error.code], [400, code]);
+    assert.deepEqual(
+      [result.status, result.error.code],
+      [code === "body_too_large" ? 413 : 400, code],
+    );
     assert.equal(
       database
         .prepare("SELECT count(*) FROM intake_entries WHERE client_id = ?")

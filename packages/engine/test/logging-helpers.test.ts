@@ -34,10 +34,12 @@ test("local days follow literal DST and half-hour cases; timestamps reject rollo
   ] as const)
     assert.equal(localDay(instant, zone, 4), expected);
   assert.equal(localDay("2026-01-01T00:00Z", "UTC", 0), "2026-01-01");
-  assert.equal(
-    canonicalInstant("2026-01-01T05:30:00+05:30"),
-    "2026-01-01T00:00:00.000Z",
-  );
+  for (const [input, expected] of [
+    ["2026-01-01T05:30:00+05:30", "2026-01-01T00:00:00.000Z"],
+    ["2026-01-01T05:30:00.123456+05:30", "2026-01-01T00:00:00.123Z"],
+    ["2026-01-01T05:30+05:30", "2026-01-01T00:00:00.000Z"],
+  ] as const)
+    assert.equal(canonicalInstant(input), expected);
   for (const value of [
     "",
     "bad",
