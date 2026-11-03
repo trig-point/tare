@@ -7,12 +7,20 @@ import { mountMcp } from "./mcp/server.ts";
 import { mountOperations, operationGuards } from "./operations/http.ts";
 import { operations } from "./operations/index.ts";
 import { OperationError } from "./operations/registry.ts";
+import { createOffAdapter } from "./sources/off.ts";
+import { createUsdaAdapter } from "./sources/usda.ts";
 import { mountWeb } from "./web.ts";
 
 export function createApp(options: AppOptions & { webRoot?: string }) {
   const dependencies = {
     ...options,
     questionKinds: options.questionKinds ?? new Map(),
+    lookup: options.lookup ?? {
+      usda: createUsdaAdapter(options.config, {
+        now: () => options.clock.now(),
+      }),
+      off: createOffAdapter({ userAgent: options.config.offUserAgent }),
+    },
     signInLimiter: { waiting: 0 },
   };
   const app = new Hono<AuthEnv>();
