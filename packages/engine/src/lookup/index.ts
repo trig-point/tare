@@ -90,14 +90,15 @@ async function lookup(
     off: "not_called",
   };
   const request = { kind: "explicit", key, basis: "any" } as const;
+  const upc =
+    key.kind === "barcode" && key.code.length === 13 && key.code.startsWith("0")
+      ? key.code.slice(1)
+      : null;
   const cached =
     key.kind === "barcode"
       ? selectSourceFoodsByBarcode(database, {
           barcode: key.code,
-          upc:
-            key.code.length === 13 && key.code.startsWith("0")
-              ? key.code.slice(1)
-              : key.code,
+          upc: upc ?? key.code,
         })
       : [];
   const cachedRecords = cached.map(cachedRecord);
@@ -136,8 +137,10 @@ async function lookup(
     const response =
       source === "usda"
         ? await adapters.usda.search(
+            // FDC search matches only the exact stored GTIN token, and it
+            // stores a UPC-A with or without the leading zero.
             key.kind === "barcode"
-              ? key.code
+              ? [upc, key.code].filter(Boolean).join(" ")
               : [key.name, key.brand].filter(Boolean).join(" "),
           )
         : key.kind === "barcode"

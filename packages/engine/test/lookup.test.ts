@@ -43,6 +43,7 @@ const product: OffProduct = {
 };
 function peers(key = true) {
   const calls: string[] = [];
+  const queries: (string | null)[] = [];
   let now = issuedAt;
   const bodies = {
     usda: { foods: [cheddar] } as unknown,
@@ -52,6 +53,8 @@ function peers(key = true) {
     const source =
       new URL(String(input)).hostname === "api.nal.usda.gov" ? "usda" : "off";
     calls.push(source);
+    if (source === "usda")
+      queries.push(new URL(String(input)).searchParams.get("query"));
     return Response.json(bodies[source]);
   };
   const adapters = {
@@ -67,6 +70,7 @@ function peers(key = true) {
   return {
     adapters,
     calls,
+    queries,
     bodies,
     step: () => {
       now = new Date(now.getTime() + 1000);
@@ -115,6 +119,7 @@ test("USDA normalizes UPC and the shared cache serves both people without exposi
     assert.equal(first.foods[0]?.barcode, `0${upc}`);
     assert.equal(first.foods[0]?.fiber_g, null);
     assert.deepEqual(first.sources, { usda: "ok", off: "not_called" });
+    assert.deepEqual(peer.queries, [`${upc} 0${upc}`]);
     peer.step();
     const second = (await run(setup.member)) as typeof first;
     assert.deepEqual(second.foods, first.foods);
