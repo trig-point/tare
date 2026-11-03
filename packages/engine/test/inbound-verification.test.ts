@@ -36,13 +36,18 @@ const attached = (original: Buffer, count = 1) =>
   Buffer.from(
     `From: person@example.com\r\nSubject: Forward\r\nContent-Type: multipart/mixed; boundary=parts\r\n\r\n--parts\r\nContent-Type: text/plain\r\n\r\nWrapper body\r\n${`--parts\r\nContent-Type: message/rfc822\r\nContent-Disposition: attachment\r\nContent-Transfer-Encoding: base64\r\n\r\n${original.toString("base64")}\r\n`.repeat(count)}--parts--\r\n`,
   );
-async function signed(raw: Buffer, domain = "kit.example.com") {
+async function signed(
+  raw: Buffer,
+  domain = "kit.example.com",
+  maxBodyLength?: number,
+) {
   const result = await dkimSign(raw, {
     signatureData: [
       {
         signingDomain: domain,
         selector: "fixture",
         privateKey: keys.privateKey,
+        maxBodyLength,
       },
     ],
   });
@@ -113,6 +118,17 @@ test("DKIM fixture table requires exact pass, a domain boundary and one matching
     [attached(original), "verified"],
     [attached(changed), "sender_matched"],
     [changed, "sender_matched"],
+    [
+      Buffer.concat([
+        await signed(message("limited"), "kit.example.com", 10),
+        Buffer.from("Garden Bowl 9\r\n"),
+      ]),
+      "sender_matched",
+    ],
+    [
+      Buffer.concat([Buffer.from("Subject: Unsigned order\r\n"), original]),
+      "sender_matched",
+    ],
     [message("inline", "person@example.com"), "unverified"],
     [
       message(

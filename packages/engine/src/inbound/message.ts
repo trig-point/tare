@@ -45,8 +45,20 @@ export async function markMessage(
   resolver?: DkimResolver,
 ): Promise<Mark> {
   const verification = await dkimVerify(subject.bytes, { resolver });
+  const fields = subject.mail.headerLines.map((line) => line.key);
   for (const result of verification.results) {
-    if (result.status.result !== "pass") continue;
+    // l= can leave appended body bytes unsigned, and a repeated field is signed bottom-up
+    // while mailparser reads the top instance, so both must be fully covered.
+    if (result.status.result !== "pass" || result.status.underSized) continue;
+    const signed = (result.signingHeaders?.keys ?? "")
+      .split(":")
+      .map((key) => key.trim().toLowerCase());
+    if (
+      ["from", "subject"].some(
+        (name) => countOf(fields, name) > countOf(signed, name),
+      )
+    )
+      continue;
     const domain = result.signingDomain?.toLowerCase();
     for (const [service, settings] of Object.entries(services))
       if (
@@ -65,6 +77,10 @@ export async function markMessage(
         return { mark: "sender_matched", service };
   }
   return { mark: "unverified", service: null };
+}
+
+function countOf(names: string[], name: string) {
+  return names.filter((candidate) => candidate === name).length;
 }
 
 export function errorClass(error: unknown): string {
