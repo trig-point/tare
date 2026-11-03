@@ -176,6 +176,16 @@ test("days conflicts are atomic and preserve sign-off; writer failures skip only
     fullness: 4,
     notes: days.notes,
   });
+  database
+    .prepare(
+      "INSERT INTO days (user_id, day, notes) VALUES (1, '2025-06-05', '')",
+    )
+    .run();
+  await run("days", [{ day: "2025-06-05", notes: " Example note " }]);
+  assert.equal(
+    selectDay(database, { user_id: 1, day: "2025-06-05" })?.notes,
+    "Example note",
+  );
   const result = await run("intake", [
     { ...intake, provenance: "label" },
     intake,

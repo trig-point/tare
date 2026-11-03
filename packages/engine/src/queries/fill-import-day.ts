@@ -23,7 +23,7 @@ export function fillImportDay(
 	ON CONFLICT (user_id, day) DO UPDATE SET
 	    hunger = COALESCE(days.hunger, ?),
 	    fullness = COALESCE(days.fullness, ?),
-	    notes = COALESCE(days.notes, ?),
+	    notes = COALESCE(NULLIF(days.notes, ''), ?),
 	    signed_off_at = NULL;
 	
 	`;

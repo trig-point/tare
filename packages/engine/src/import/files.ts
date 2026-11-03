@@ -121,10 +121,14 @@ export async function importFiles(
               ).created;
             }
             const input = days.parse(raw);
-            const existing = selectDay(database, {
+            const stored = selectDay(database, {
               user_id: person.id,
               day: input.day,
             });
+            const existing = stored && {
+              ...stored,
+              notes: stored.notes || null,
+            };
             const fields = ["hunger", "fullness", "notes"] as const;
             for (const field of fields)
               if (
