@@ -66,6 +66,7 @@ export const logFoodInput = zod
         ? references === 1 &&
           input.servings !== undefined &&
           input.name === undefined &&
+          input.source === undefined &&
           !nutrientKeys.some((key) => input[key] !== undefined)
         : input.servings === undefined &&
           input.name !== undefined &&
