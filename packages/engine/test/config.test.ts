@@ -3,6 +3,40 @@ import { test } from "node:test";
 import { loadConfig } from "../src/config.ts";
 import { test as authTest } from "./support/hang-ceiling.ts";
 
+test("order model settings are all-or-none, trimmed, and validate the URL", () => {
+  const configured = {
+    TARE_ORDER_MODEL_BASE_URL: " https://model.example.test/v1 ",
+    TARE_ORDER_MODEL: " fixture-model ",
+    TARE_ORDER_MODEL_API_KEY: " fixture-key ",
+  };
+  const config = (values: Record<string, string | undefined>) =>
+    loadConfig({ DATABASE_URL: ":memory:", ...values });
+  assert.deepEqual(config(configured).orderModel, {
+    baseURL: "https://model.example.test/v1",
+    model: "fixture-model",
+    apiKey: "fixture-key",
+  });
+  for (const value of [undefined, "", " "])
+    assert.equal(
+      config({
+        TARE_ORDER_MODEL_BASE_URL: value,
+        TARE_ORDER_MODEL: value,
+        TARE_ORDER_MODEL_API_KEY: value,
+      }).orderModel,
+      null,
+    );
+  for (const setting of Object.keys(configured))
+    assert.throws(
+      () => config({ ...configured, [setting]: "" }),
+      new RegExp(setting),
+    );
+  for (const value of ["bad-url", "ftp://model.example.test"])
+    assert.throws(
+      () => config({ ...configured, TARE_ORDER_MODEL_BASE_URL: value }),
+      /TARE_ORDER_MODEL_BASE_URL/,
+    );
+});
+
 authTest("MCP origin config validates the allow list", () => {
   for (const [value, expected] of [
     [undefined, []],

@@ -1,0 +1,59 @@
+{
+  "email": {
+    "subject": "Cedar Spoon scheduling",
+    "html": "<head>Hidden head<style>Hidden CSS</style></head><script>Hidden instruction</script><div style='DISPLAY : none !important'>Hidden meal 9</div><span style='visibility: hidden'>Hidden chef</span><p>Delivery: 2026-11-12</p><table style='color:green'><tr><td>Garden Bowl</td><td>Rowan Vale</td><td>2</td></tr><tr><td>Smoky Beans</td><td>Mira Finch</td><td>3</td></tr></table><a href='https://synthetic.example.test/order'>Order details</a><img src='https://synthetic.example.test/image' alt='Hidden image'>"
+  },
+  "reply": {
+    "service": {
+      "value": "Cedar Spoon",
+      "excerpt": "Cedar Spoon scheduling",
+      "uncertain": false
+    },
+    "delivery_date": {
+      "value": "2026-11-12",
+      "excerpt": "Delivery: 2026-11-12",
+      "uncertain": false
+    },
+    "kind": {
+      "value": "scheduling",
+      "excerpt": "Cedar Spoon scheduling",
+      "uncertain": false
+    },
+    "meals": [
+      {
+        "name": {
+          "value": "Garden Bowl",
+          "excerpt": "Garden Bowl Rowan Vale 2",
+          "uncertain": false
+        },
+        "chef": {
+          "value": "Rowan Vale",
+          "excerpt": "Garden Bowl Rowan Vale 2",
+          "uncertain": false
+        },
+        "quantity": {
+          "value": 2,
+          "excerpt": "Garden Bowl Rowan Vale 2",
+          "uncertain": false
+        }
+      },
+      {
+        "name": {
+          "value": "Smoky Beans",
+          "excerpt": "Smoky Beans Mira Finch 3",
+          "uncertain": false
+        },
+        "chef": {
+          "value": "Mira Finch",
+          "excerpt": "Smoky Beans Mira Finch 3",
+          "uncertain": false
+        },
+        "quantity": {
+          "value": 3,
+          "excerpt": "Smoky Beans Mira Finch 3",
+          "uncertain": false
+        }
+      }
+    ]
+  }
+}
