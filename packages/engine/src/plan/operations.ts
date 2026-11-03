@@ -7,6 +7,7 @@ import {
   OperationError,
   operationPerson,
 } from "../operations/registry.ts";
+import { clearIntakeSlots } from "../queries/clear-intake-slots.ts";
 import { deleteDayTemplate } from "../queries/delete-day-template.ts";
 import { deleteDayType } from "../queries/delete-day-type.ts";
 import { deleteTemplateSlots } from "../queries/delete-template-slots.ts";
@@ -113,8 +114,12 @@ export const planOperations = [
       const body = restricted("template_in_use", () =>
         writeTransaction(context.database, () => {
           const user_id = operationPerson(context).id;
-          if (input.action !== "create")
+          if (input.action !== "create") {
             owned(selectDayTemplate(context.database, { user_id, id }));
+            // Saves reuse positions and a deleted id can return, so stored
+            // links would name another window; reads reassign these by time.
+            clearIntakeSlots(context.database, { user_id, template_id: id });
+          }
           if (input.action !== "delete") validateSlots(slots);
           if (input.action === "delete") {
             deleteTemplateSlots(context.database, {

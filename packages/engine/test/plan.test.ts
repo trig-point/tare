@@ -368,6 +368,13 @@ for (const mode of ["fallback", "access"] as const) {
       [breakfast.slot_position, gap.slot_position, late.slot_position],
       [3, 1, 0],
     );
+    await send(admin, "templates", {
+      action: "update",
+      id: planned.template.id,
+      name: "Example reordered day",
+      slots: windows.toReversed(),
+    });
+    assert.equal((await read()).slots[0].kcal.intake, 400);
     const owner = { ...admin.user, timezone: "UTC", day_start_hour: 0 };
     const insert = (position: number, person = owner) =>
       writeTransaction(database, (scope) =>
