@@ -35,7 +35,8 @@ Keep `.env` private and out of version control. It is excluded from the image bu
 
 The example publishes port 3000 on the host's loopback interface for a local reverse proxy.
 If the proxy runs elsewhere, adjust the port binding or attach it to the Compose network.
-The image listens on port 3000 by default. If you change `PORT`, update the port mapping too.
+The image listens on port 3000 by default. Compose sets `PORT` in `compose.example.yaml` instead of `.env`.
+To change it, update both `PORT` and the port mapping there.
 
 To stop and recreate the service while keeping both volumes:
 
@@ -46,7 +47,9 @@ docker compose -f compose.example.yaml up --detach --wait
 
 ## Build and run without Compose
 
-Use the same private `.env` file:
+Use the same private `.env` file. `docker run --env-file` reads values literally, so do not wrap them in quotes.
+Leave `DATABASE_URL` and `TARE_BACKUP_DIR` out of this file so the image defaults keep the database and backups
+on their volumes. A local development `.env` copied from `.env.example` sets `DATABASE_URL` to a path outside `/data`.
 
 ```sh
 docker build --tag tare:local .
