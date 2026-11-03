@@ -2,6 +2,7 @@ import type { Database } from "better-sqlite3";
 import type { JWTVerifyGetKey } from "jose";
 import { z as zod } from "zod";
 import { type Config, validateTimezone } from "../config.ts";
+import type { LookupAdapters } from "../lookup/index.ts";
 import {
   defineOperation,
   OperationError,
@@ -10,6 +11,7 @@ import {
 import { deleteSession } from "../queries/delete-session.ts";
 import { insertAccount } from "../queries/insert-account.ts";
 import { selectUserByUsername } from "../queries/select-user-by-username.ts";
+import type { QuestionKind } from "../questions/kinds.ts";
 import { normalizeAccessEmail } from "./access.ts";
 import {
   hashPassword,
@@ -25,6 +27,8 @@ export interface AppOptions {
   clock: { now(): Date };
   dummyHash: string;
   accessKeySet?: JWTVerifyGetKey;
+  questionKinds?: ReadonlyMap<string, QuestionKind>;
+  lookup?: LookupAdapters;
   verifyPassword(password: string, stored: string): Promise<boolean>;
 }
 

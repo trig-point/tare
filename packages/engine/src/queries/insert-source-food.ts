@@ -31,6 +31,7 @@ export type InsertSourceFoodResult = {
   fiber_g: number | null;
   provenance: "verified" | "label";
   fetched_at: string;
+  barcode: string | null;
 };
 
 export function insertSourceFood(
@@ -80,6 +81,7 @@ function mapArrayToInsertSourceFoodResult(data: any) {
     fiber_g: data[11],
     provenance: data[12],
     fetched_at: data[13],
+    barcode: data[14],
   };
   return result;
 }

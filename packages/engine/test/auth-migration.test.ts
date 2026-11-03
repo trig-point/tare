@@ -13,18 +13,14 @@ test("session migration upgrades the prior schema and enforces expiry, ownership
   const directory = mkdtempSync(join(tmpdir(), "tare-session-migration-"));
   context.after(() => rmSync(directory, { recursive: true, force: true }));
   const folder = new URL("../migrations/", import.meta.url);
-  for (const name of readdirSync(folder).filter((name) =>
-    /^000[123]_/.test(name),
+  for (const name of readdirSync(folder).filter(
+    (name) => name.endsWith(".sql") && !/^000[456]_/.test(name),
   ))
     cpSync(new URL(name, folder), join(directory, name));
   const connection = openDatabase(":memory:");
   context.after(connection.close);
   connection.database.exec(
     "DROP TABLE agent_tokens; DROP TABLE sessions; DELETE FROM schema_migrations WHERE name IN ('0004_sessions.sql', '0005_access_identity.sql', '0006_agent_tokens.sql')",
-  );
-  cpSync(
-    new URL("0007_intake_name.sql", folder),
-    join(directory, "0007_intake_name.sql"),
   );
 
   applyMigrations(connection.database, pathToFileURL(directory + sep));
