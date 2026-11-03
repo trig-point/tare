@@ -111,6 +111,8 @@ for (const mode of ["fallback", "access"] as const)
     for (const invalid of [
       {},
       { ...profile, birth_date: "2001-02-29" },
+      { ...profile, birth_date: "2008-01-02" },
+      { ...profile, birth_date: "2030-01-01" },
       { ...profile, height_cm: 99 },
       { ...profile, protein_factor: null },
       { ...profile, user_id: admin.user.id },
