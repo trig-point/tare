@@ -6,6 +6,7 @@ import {
   operationPerson,
 } from "../operations/registry.ts";
 import { selectOrder } from "../queries/orders/select-order.ts";
+import { eatMealInput, eatMealOutput, eatOrderMeal } from "./eat.ts";
 import { listMealsOnHand, recordDelivery } from "./index.ts";
 
 const shared = {
@@ -15,6 +16,27 @@ const shared = {
 } as const;
 
 export const orderOperations = [
+  defineOperation({
+    ...shared,
+    name: "eat_meal",
+    method: "POST",
+    path: "/api/meals/eat",
+    bodyLimit: 8192,
+    input: eatMealInput,
+    output: eatMealOutput,
+    handler(input, context) {
+      const person = operationPerson(context);
+      return writeTransaction(context.database, (scope) => ({
+        status: 200,
+        body: eatOrderMeal(
+          scope,
+          person,
+          input,
+          context.clock.now().toISOString(),
+        ),
+      }));
+    },
+  }),
   defineOperation({
     ...shared,
     name: "mark_delivery",

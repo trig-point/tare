@@ -65,6 +65,7 @@ test("registry constrains public and administrator operations and inventories ev
       "log_signal",
       "log_activity",
       "read_signals",
+      "eat_meal",
       "mark_delivery",
       "list_meals_on_hand",
       "save_profile",
