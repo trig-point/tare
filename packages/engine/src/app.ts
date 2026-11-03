@@ -10,6 +10,11 @@ import { OperationError } from "./operations/registry.ts";
 import { mountWeb } from "./web.ts";
 
 export function createApp(options: AppOptions & { webRoot?: string }) {
+  const dependencies = {
+    ...options,
+    questionKinds: options.questionKinds ?? new Map(),
+    signInLimiter: { waiting: 0 },
+  };
   const app = new Hono<AuthEnv>();
   const guards = operationGuards(
     operations,
@@ -52,12 +57,8 @@ export function createApp(options: AppOptions & { webRoot?: string }) {
     );
     app.use("*", guards.serviceRoutes);
   }
-  mountOperations(app, operations, {
-    ...options,
-    signInLimiter: { waiting: 0 },
-  });
-  if (options.config.identity.mode === "access")
-    mountMcp(app, { ...options, signInLimiter: { waiting: 0 } });
+  mountOperations(app, operations, dependencies);
+  if (options.config.identity.mode === "access") mountMcp(app, dependencies);
   mountWeb(app, options.webRoot);
   return app;
 }
