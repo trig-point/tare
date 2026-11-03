@@ -130,12 +130,45 @@ export function openDatabase(databaseUrl: string) {
   const database = new Database(databaseUrl);
   try {
     database.pragma("foreign_keys = ON");
+    database.pragma("journal_mode = WAL");
+    database.pragma("busy_timeout = 5000");
     applyMigrations(database);
     return { database, close: () => database.close() };
   } catch (error) {
     database.close();
     throw error;
   }
+}
+
+const scopeBrand: unique symbol = Symbol("writeScope");
+export interface WriteScope {
+  readonly database: Database.Database;
+  readonly [scopeBrand]: true;
+}
+const liveScopes = new WeakSet<WriteScope>();
+
+export function scopeDatabase(scope: WriteScope): Database.Database {
+  if (!liveScopes.has(scope) || !scope.database.inTransaction)
+    throw new Error("Inactive write scope");
+  return scope.database;
+}
+
+export function writeTransaction<Result>(
+  database: Database.Database,
+  callback: (scope: WriteScope) => Result,
+): Result {
+  if (database.inTransaction) throw new Error("Write transaction cannot nest");
+  return database
+    .transaction(() => {
+      const scope: WriteScope = { database, [scopeBrand]: true };
+      liveScopes.add(scope);
+      try {
+        return callback(scope);
+      } finally {
+        liveScopes.delete(scope);
+      }
+    })
+    .immediate();
 }
 
 import { createHash } from "node:crypto";
