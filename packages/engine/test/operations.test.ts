@@ -46,10 +46,13 @@ test("registry constrains public and administrator operations and inventories ev
     agentOperations.map((operation) => operation.name),
     ["whoami"],
   );
+  assert.deepEqual(
+    operations
+      .filter((operation) => operation.callerClass === "public")
+      .map((operation) => operation.name),
+    ["sign_in"],
+  );
   for (const operation of operations) {
-    assert.ok(
-      operation.callerClass !== "public" || operation.name === "sign_in",
-    );
     assert.ok(!operation.admin || operation.callerClass === "browser");
     if (operation.method === "GET")
       assert.deepEqual(operation.input.parse({}), {});
@@ -59,13 +62,7 @@ test("registry constrains public and administrator operations and inventories ev
   for (const mode of ["access", "fallback"] as const) {
     const makeSetup = mode === "access" ? accessFixture : fixture;
     const setup = makeSetup(context);
-    // MHA-214 moves the two fallback session routes into the registry.
-    const infrastructure = [
-      "GET /health",
-      ...(mode === "fallback"
-        ? ["POST /api/session", "DELETE /api/session"]
-        : []),
-    ];
+    const infrastructure = ["GET /health"];
     const registryApp = new Hono<AuthEnv>();
     mountOperations(registryApp, operations, {
       ...dependencies(setup.database),
