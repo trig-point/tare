@@ -32,6 +32,7 @@ Use Node 22 (at least 22.18) and pnpm 11.2.2. Run these from the repository root
 - Regenerate query types: `pnpm generate`
 - Run engine: optionally copy `.env.example` to `.env`, or set environment variables, then `pnpm --filter @tare/engine start`
 - Health check: `curl -s localhost:3000/health`
+- Container deployment: see [docs/deploy.md](docs/deploy.md).
 - Weekly API drift check: `node packages/engine/scripts/api-drift-check.mts`; update `packages/engine/scripts/api-drift-baselines.json` in a reviewed PR after checking vendor changes.
 
 Biome handles linting and formatting for the workspace. TypeScript runs in strict mode. Node strips TypeScript types directly, so the engine has no build step or type-stripping flag. Only `apps/web` is built with Vite.
