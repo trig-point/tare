@@ -49,6 +49,17 @@ export async function readSession(): Promise<Session | null> {
   }
 }
 
+export type SessionDeletion = { method: "DELETE"; path: string };
+
+export async function endSession(target: SessionDeletion) {
+  try {
+    await api(target.path, { method: target.method });
+  } catch (error) {
+    // A 401 means the session has already ended.
+    if (!(error instanceof ApiError && error.status === 401)) throw error;
+  }
+}
+
 export function signOutTarget(session: Session) {
   return session.mode === "access"
     ? { href: session.logout_url }

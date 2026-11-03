@@ -14,7 +14,13 @@ import {
 } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { ApiError, api, readSession, signOutTarget } from "./api.ts";
+import {
+  ApiError,
+  api,
+  endSession,
+  readSession,
+  signOutTarget,
+} from "./api.ts";
 import "./style.css";
 
 const sessionKey = ["session"];
@@ -42,7 +48,7 @@ function Home() {
     retry: false,
   });
   const signOut = useMutation({
-    mutationFn: () => api("/api/session", { method: "DELETE" }),
+    mutationFn: endSession,
     onSuccess: () => {
       client.setQueryData(sessionKey, null);
     },
@@ -72,7 +78,7 @@ function Home() {
         <button
           type="button"
           disabled={signOut.isPending}
-          onClick={() => signOut.mutate()}
+          onClick={() => signOut.mutate(target)}
         >
           {signOut.isPending ? "Signing out..." : "Sign out"}
         </button>
