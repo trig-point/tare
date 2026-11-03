@@ -22,7 +22,7 @@ Weight requires `client_id`, `measured_at`, positive `weight_kg` and nonblank `s
 
 Timestamps must include a timezone and fall between 1970-01-01T00:00:00Z and the current time plus one day. Intake and weight days use the person's timezone and day-start hour.
 
-Days require `day` (a valid `YYYY-MM-DD` date). Optional `hunger` and `fullness` are integers from 1 to 5; optional `notes` is a string of at most 2000 characters. Null fields are not accepted.
+Days require `day` (a valid `YYYY-MM-DD` date). Optional `hunger` and `fullness` are integers from 1 to 5; optional `notes` is a nonblank string of at most 2000 characters, stored trimmed. Null fields are not accepted.
 
 ```json
 {"day":"2025-06-01","hunger":3,"fullness":4,"notes":"Example day note"}

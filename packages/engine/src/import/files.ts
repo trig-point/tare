@@ -41,7 +41,7 @@ const days = zod.strictObject({
   day: zod.iso.date(),
   hunger: zod.number().int().min(1).max(5).optional(),
   fullness: zod.number().int().min(1).max(5).optional(),
-  notes: zod.string().max(2000).optional(),
+  notes: zod.string().trim().min(1).max(2000).optional(),
 });
 export type ImportKind = "intake" | "weight" | "days";
 export type ImportFiles = Partial<Record<ImportKind, string>>;

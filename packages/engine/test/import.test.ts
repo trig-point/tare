@@ -89,7 +89,7 @@ for (const kind of ["intake", "weight", "days"] as const)
       "{broken",
       { ...row, unexpected: "private value" },
       ...(kind === "days"
-        ? []
+        ? [{ ...row, notes: " " }]
         : [
             {
               ...row,
@@ -107,7 +107,7 @@ for (const kind of ["intake", "weight", "days"] as const)
       errors: [
         { line: 2, code: "invalid_row" },
         { line: 3, code: "invalid_row" },
-        ...(kind === "days" ? [] : [{ line: 4, code: "invalid_time" }]),
+        { line: 4, code: kind === "days" ? "invalid_row" : "invalid_time" },
       ],
     });
     if (kind === "intake") {
