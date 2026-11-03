@@ -2,7 +2,7 @@ CREATE TABLE day_templates (
   id INTEGER PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id),
   name TEXT NOT NULL CHECK (length(trim(name)) > 0),
-  created_at TEXT NOT NULL,
+  created_at TEXT NOT NULL CHECK (strftime('%Y-%m-%dT%H:%M:%fZ', created_at, '+0 seconds') IS created_at),
   UNIQUE (user_id, id)
 ) STRICT;
 
@@ -27,6 +27,7 @@ CREATE TABLE day_types (
   UNIQUE (user_id, id),
   FOREIGN KEY (user_id, template_id) REFERENCES day_templates(user_id, id)
 ) STRICT;
+CREATE INDEX day_types_user_template ON day_types (user_id, template_id);
 
 CREATE TABLE default_day_types (
   user_id INTEGER PRIMARY KEY NOT NULL REFERENCES users(id),
@@ -41,3 +42,4 @@ CREATE TABLE day_type_choices (
   PRIMARY KEY (user_id, day),
   FOREIGN KEY (user_id, day_type_id) REFERENCES day_types(user_id, id)
 ) STRICT;
+CREATE INDEX day_type_choices_user_day_type ON day_type_choices (user_id, day_type_id);
