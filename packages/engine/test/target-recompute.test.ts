@@ -158,7 +158,7 @@ test("stored targets: readiness, adaptive today, rollback, owner isolation, rese
     ["profile", "weekly", "profile"],
   ] as const) {
     for (const action of actions) {
-      goal = goal === -0.5 ? 0 : -0.5;
+      goal = -goal;
       if (action === "weekly") {
         database
           .prepare(
@@ -172,7 +172,11 @@ test("stored targets: readiness, adaptive today, rollback, owner isolation, rese
         latest()?.kcal,
         Math.round((estimate.tdee_kcal + goal * 1100) / 10) * 10,
       );
-      assert.equal((await today()).kcal, latest()?.kcal);
+      const shown = await today();
+      assert.deepEqual(
+        [shown.kcal, shown.basis],
+        [latest()?.kcal, "weekly_adaptive"],
+      );
     }
   }
   assert.equal(latest()?.computed_at, now.toISOString());
@@ -180,7 +184,7 @@ test("stored targets: readiness, adaptive today, rollback, owner isolation, rese
   database.exec(
     "CREATE TRIGGER reject_target AFTER INSERT ON target_results WHEN NEW.trigger = 'profile' BEGIN SELECT RAISE(ABORT, 'injected'); END",
   );
-  assert.equal(await save(admin, { goal_rate_kg_week: 0.25 }), 500);
+  assert.equal(await save(admin, { goal_rate_kg_week: 0 }), 500);
   assert.deepEqual(latest(), previous);
   assert.equal(
     (await (await admin.request("/api/profile")).json()).profile
