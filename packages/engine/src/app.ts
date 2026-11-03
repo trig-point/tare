@@ -6,8 +6,9 @@ import { type AppOptions, mountAuthRoutes } from "./auth/routes.ts";
 import { mountOperations, operationGuards } from "./operations/http.ts";
 import { operations } from "./operations/index.ts";
 import { OperationError } from "./operations/registry.ts";
+import { mountWeb } from "./web.ts";
 
-export function createApp(options: AppOptions) {
+export function createApp(options: AppOptions & { webRoot?: string }) {
   const app = new Hono<AuthEnv>();
   const guards = operationGuards(operations, options.config.identity.mode);
   app.use("*", guards.noStore);
@@ -49,5 +50,6 @@ export function createApp(options: AppOptions) {
     signInLimiter: { waiting: 0 },
   });
   mountAuthRoutes(app, options);
+  mountWeb(app, options.webRoot);
   return app;
 }

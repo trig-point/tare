@@ -15,6 +15,7 @@ Use TypeScript only. Tests run with `node --test`.
   Start table rebuild migrations with `-- tare:rebuild` on the first line to disable foreign keys before the transaction and check them before commit.
 - `packages/engine/src/queries`: queries in `.sql` files with TypeSQL-generated types.
 - `apps/*`: application workspaces.
+- `apps/web`: React app shell, built by Vite and served by the engine.
 
 SQLite only. No ORM. Kysely (a query builder) is allowed only for a query built at runtime from many optional filters. Parameters only: never insert values into SQL strings. Every query is exercised by a test against a real migrated SQLite database. Commit generated query files and regenerate them after changing SQL or migrations.
 
@@ -23,6 +24,7 @@ SQLite only. No ORM. Kysely (a query builder) is allowed only for a query built 
 Use Node 22 (at least 22.18) and pnpm 11.2.2. Run these from the repository root:
 
 - Install: `pnpm install`
+- Build web assets and typecheck the engine: `pnpm build`
 - Lint and format check: `pnpm lint`
 - Apply formatting: `pnpm format`
 - Typecheck all workspaces: `pnpm typecheck`
