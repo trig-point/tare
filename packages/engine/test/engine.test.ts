@@ -63,6 +63,14 @@ describe("engine", () => {
 
   test("config reads a present required variable and defaults the port", () => {
     assert.deepEqual(loadConfig({ DATABASE_URL: ":memory:" }), {
+      tdee: {
+        windowDays: 28,
+        energyDensity: 7700,
+        minSignedDays: 14,
+        minWeighInDays: 8,
+        minSpanDays: 14,
+        defaultRange: 0.25,
+      },
       databaseUrl: ":memory:",
       port: 3000,
       timezone: "UTC",
@@ -73,6 +81,7 @@ describe("engine", () => {
       backupKeep: 7,
       usdaApiKey: undefined,
       offUserAgent: undefined,
+      orderModel: null,
       identity: { mode: "fallback" },
       firstUser: {
         username: undefined,

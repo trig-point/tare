@@ -23,6 +23,13 @@ const profile = {
   activity_level: "moderate",
   goal_rate_kg_week: -0.5,
 };
+const adaptive = {
+  status: "learning",
+  reason: "signed_days",
+  signed_days: 0,
+  weigh_in_days: 0,
+  span_days: null,
+};
 
 test("formula constants, rounding and non-decreasing weight and activity targets", () => {
   const activities = [
@@ -93,7 +100,10 @@ for (const mode of ["fallback", "access"] as const)
       send(person, path, body, 201);
     const today = (person = admin) => send(person, "/api/today");
     assert.deepEqual(await send(admin, "/api/profile"), { profile: null });
-    assert.deepEqual((await today()).target, { status: "needs_profile" });
+    assert.deepEqual((await today()).target, {
+      status: "needs_profile",
+      adaptive,
+    });
     const { profile: saved } = await send(admin, "/api/profile", profile);
     assert.deepEqual(saved, {
       ...profile,
@@ -102,7 +112,10 @@ for (const mode of ["fallback", "access"] as const)
       updated_at: "2026-01-01T00:00:00.000Z",
     });
     assert.deepEqual(await send(admin, "/api/profile"), { profile: saved });
-    assert.deepEqual((await today()).target, { status: "needs_weigh_in" });
+    assert.deepEqual((await today()).target, {
+      status: "needs_weigh_in",
+      adaptive,
+    });
     assert.deepEqual((await today()).remaining, {
       kcal: null,
       protein_g: null,
@@ -127,6 +140,7 @@ for (const mode of ["fallback", "access"] as const)
     assert.deepEqual(await send(admin, "/api/profile"), { profile: saved });
     assert.deepEqual((await today(member)).target, {
       status: "needs_weigh_in",
+      adaptive,
     });
     await create(admin, "/api/weights", {
       client_id: "example-weight",
@@ -134,6 +148,7 @@ for (const mode of ["fallback", "access"] as const)
     });
     const expected = {
       status: "ready",
+      adaptive,
       kcal: 2130,
       protein_g: 128,
       trend_kg: 80,
@@ -167,6 +182,7 @@ for (const mode of ["fallback", "access"] as const)
     });
     assert.deepEqual((await today(member)).target, {
       status: "ready",
+      adaptive,
       kcal: 2030,
       protein_g: 160,
       trend_kg: 80,

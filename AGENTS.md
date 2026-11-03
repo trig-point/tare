@@ -47,6 +47,17 @@ TypeSQL generation uses an ignored local database at `packages/engine/data/types
 
 `TARE_TIMEZONE` sets the install's IANA timezone for scheduled jobs (default: `UTC`) independently of the process `TZ`. Invalid or empty values prevent startup.
 
+Adaptive TDEE settings treat empty values as unset:
+
+- `TARE_TDEE_WINDOW_DAYS`: window length, default 28, integer from 14 to 90.
+- `TARE_TDEE_ENERGY_DENSITY`: kcal per kg, default 7700, from 5000 to 10000.
+- `TARE_TDEE_MIN_SIGNED_DAYS`: minimum signed days, default 14.
+- `TARE_TDEE_MIN_WEIGH_IN_DAYS`: minimum weigh-in days, default 8.
+- `TARE_TDEE_MIN_SPAN_DAYS`: minimum elapsed days, default 14.
+- `TARE_TDEE_DEFAULT_RANGE`: estimated intake range, default 0.25, from 0 to 0.9.
+
+Each minimum must be an integer from 1 to the configured window length. Invalid settings prevent startup and name the variable.
+
 `TARE_PUBLIC_URL` accepts an HTTP or HTTPS URL. An HTTPS install must set it to enable the `Secure` flag on session cookies. Empty or unset leaves `Secure` off.
 
 `TARE_SESSION_DAYS` sets the absolute session lifetime in days (default: `30`, integer from 1 to 365). Empty counts as unset.
@@ -64,6 +75,8 @@ TypeSQL generation uses an ignored local database at `packages/engine/data/types
 `TARE_ADMIN_ACCESS_EMAIL` creates the first administrator in Access mode with `TARE_ADMIN_USERNAME`. Emails are trimmed and lowercased. Access mode uses no administrator password; fallback mode requires `TARE_ADMIN_PASSWORD`.
 
 `TARE_USDA_API_KEY` enables USDA FoodData Central lookups; it is trimmed, and empty or unset skips USDA.
+
+`TARE_ORDER_MODEL_BASE_URL`, `TARE_ORDER_MODEL` and `TARE_ORDER_MODEL_API_KEY` configure order-email parsing through an OpenAI-compatible model. Set all three or leave all three unset. Values are trimmed; empty values count as unset. The base URL must use HTTP or HTTPS and may include a path, but not credentials, a query or a fragment. A keyless local endpoint requires a placeholder API key. With no model configured, the parser returns `no_model` for the engine to turn into a question.
 
 `TARE_OFF_USER_AGENT` must follow `AppName/Version (ContactEmail)`; leaving it empty or unset disables Open Food Facts requests.
 

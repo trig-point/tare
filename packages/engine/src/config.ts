@@ -1,7 +1,17 @@
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { normalizeAccessEmail } from "./auth/access.ts";
 
+export interface TdeeSettings {
+  windowDays: number;
+  energyDensity: number;
+  minSignedDays: number;
+  minWeighInDays: number;
+  minSpanDays: number;
+  defaultRange: number;
+}
+
 export interface Config {
+  tdee: TdeeSettings;
   databaseUrl: string;
   port: number;
   timezone: string;
@@ -12,6 +22,7 @@ export interface Config {
   backupKeep: number;
   usdaApiKey: string | undefined;
   offUserAgent: string | undefined;
+  orderModel: { baseURL: string; model: string; apiKey: string } | null;
   identity:
     | { mode: "access"; teamDomain: string; audience: string }
     | { mode: "fallback" };
@@ -49,6 +60,40 @@ export function validateTimezone(timezone: string): string {
   return timezone;
 }
 
+function parseOrderModel(
+  env: Record<string, string | undefined>,
+): Config["orderModel"] {
+  const settings = [
+    "TARE_ORDER_MODEL_BASE_URL",
+    "TARE_ORDER_MODEL",
+    "TARE_ORDER_MODEL_API_KEY",
+  ] as const;
+  const values = settings.map((setting) => env[setting]?.trim());
+  if (!values.some(Boolean)) return null;
+  for (const [index, setting] of settings.entries()) {
+    if (!values[index])
+      throw new Error(
+        `${setting} must be set when an order model is configured`,
+      );
+  }
+  const [baseURL, model, apiKey] = values as [string, string, string];
+  try {
+    const url = new URL(baseURL);
+    // The SDK appends paths to the base URL, and fetch rejects embedded credentials.
+    if (
+      !["http:", "https:"].includes(url.protocol) ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash
+    )
+      throw new Error("Unsupported URL");
+  } catch {
+    throw new Error("TARE_ORDER_MODEL_BASE_URL must be an HTTP or HTTPS URL");
+  }
+  return { baseURL, model, apiKey };
+}
+
 function parseMcpAllowedOrigins(value: string | undefined): string[] {
   if (!value?.trim()) return [];
   return value.split(",").map((entry) => {
@@ -64,6 +109,51 @@ function parseMcpAllowedOrigins(value: string | undefined): string[] {
     }
     return origin;
   });
+}
+
+function parseTdeeSettings(
+  env: Record<string, string | undefined>,
+): TdeeSettings {
+  const number = (
+    name: string,
+    fallback: number,
+    minimum: number,
+    maximum: number,
+    integer = false,
+  ) => {
+    const text = env[name]?.trim();
+    const pattern = integer ? /^\d+$/ : /^\d+(\.\d+)?$/;
+    const value = !text
+      ? fallback
+      : pattern.test(text)
+        ? Number(text)
+        : Number.NaN;
+    if (
+      !Number.isFinite(value) ||
+      value < minimum ||
+      value > maximum ||
+      (integer && !Number.isInteger(value))
+    )
+      throw new Error(
+        `${name} must be ${integer ? "an integer" : "a number"} between ${minimum} and ${maximum}`,
+      );
+    return value;
+  };
+  const windowDays = number("TARE_TDEE_WINDOW_DAYS", 28, 14, 90, true);
+  return {
+    windowDays,
+    energyDensity: number("TARE_TDEE_ENERGY_DENSITY", 7700, 5000, 10000),
+    minSignedDays: number("TARE_TDEE_MIN_SIGNED_DAYS", 14, 1, windowDays, true),
+    minWeighInDays: number(
+      "TARE_TDEE_MIN_WEIGH_IN_DAYS",
+      8,
+      1,
+      windowDays,
+      true,
+    ),
+    minSpanDays: number("TARE_TDEE_MIN_SPAN_DAYS", 14, 1, windowDays, true),
+    defaultRange: number("TARE_TDEE_DEFAULT_RANGE", 0.25, 0, 0.9),
+  };
 }
 
 export function loadConfig(env: Record<string, string | undefined>): Config {
@@ -133,6 +223,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     );
   const accessEmail = normalizeAccessEmail(env.TARE_ADMIN_ACCESS_EMAIL ?? "");
   return {
+    tdee: parseTdeeSettings(env),
     databaseUrl,
     port,
     timezone,
@@ -143,6 +234,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     backupKeep,
     usdaApiKey: env.TARE_USDA_API_KEY?.trim() || undefined,
     offUserAgent: validateOffUserAgent(env.TARE_OFF_USER_AGENT),
+    orderModel: parseOrderModel(env),
     identity:
       teamDomain !== undefined && audience !== undefined
         ? { mode: "access", teamDomain, audience }
