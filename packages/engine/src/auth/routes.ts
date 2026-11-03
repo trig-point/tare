@@ -1,7 +1,4 @@
 import type { Database } from "better-sqlite3";
-import type { Context, Hono } from "hono";
-import { bodyLimit } from "hono/body-limit";
-import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import type { JWTVerifyGetKey } from "jose";
 import { z as zod } from "zod";
 import { type Config, validateTimezone } from "../config.ts";
@@ -15,15 +12,9 @@ import { insertAccount } from "../queries/insert-account.ts";
 import { selectUserByUsername } from "../queries/select-user-by-username.ts";
 import { normalizeAccessEmail } from "./access.ts";
 import {
-  type AuthEnv,
-  hasRequestedWith,
-  requireRequestedWith,
-  sessionAuth,
-} from "./middleware.ts";
-import {
   hashPassword,
   isValidPassword,
-  normalizeUsername,
+  PASSWORD_MAX_LENGTH,
   USERNAME_MAX_LENGTH,
 } from "./password.ts";
 import { createSession, hashToken } from "./sessions.ts";
@@ -51,25 +42,6 @@ export function toPublicUser(person: {
     day_start_hour: person.day_start_hour,
     is_admin: Boolean(person.is_admin),
   };
-}
-
-async function readJsonBody(context: Context<AuthEnv>) {
-  try {
-    const body: unknown = await context.req.json();
-    if (body === null || typeof body !== "object" || Array.isArray(body))
-      return null;
-    const fields = body as Record<string, unknown>;
-    const username = normalizeUsername(fields.username);
-    if (username === null) return null;
-    return {
-      username,
-      password: fields.password,
-      email: fields.email,
-      timezone: fields.timezone,
-    };
-  } catch {
-    return null;
-  }
 }
 
 export const emptyInput = zod.strictObject({});
@@ -125,6 +97,74 @@ export const authOperations = [
           : { mode: "fallback" }),
       },
     }),
+  }),
+  defineOperation({
+    ...browserOperation,
+    name: "sign_in",
+    method: "POST",
+    path: "/api/session",
+    modes: ["fallback"],
+    callerClass: "public",
+    bodyLimit: 8192,
+    input: zod.object({
+      username: zod.string().trim().min(1).max(USERNAME_MAX_LENGTH),
+      password: zod.string().min(1).max(PASSWORD_MAX_LENGTH),
+    }),
+    output: userOutput,
+    async handler(body, context) {
+      const {
+        database,
+        config,
+        clock,
+        dummyHash,
+        verifyPassword,
+        signInLimiter,
+      } = context;
+      if (signInLimiter.waiting >= 8)
+        throw new OperationError(503, "busy", { "Retry-After": "1" });
+      signInLimiter.waiting++;
+      try {
+        const person = selectUserByUsername(database, {
+          username: body.username,
+        });
+        if (!person || person.password_hash === null) {
+          await verifyPassword(body.password, dummyHash);
+          throw new OperationError(401, "invalid_credentials");
+        }
+        if (!(await verifyPassword(body.password, person.password_hash)))
+          throw new OperationError(401, "invalid_credentials");
+        const token = createSession(
+          database,
+          person.id,
+          context.sessionToken,
+          clock.now(),
+          config.sessionDays,
+        );
+        return {
+          status: 200,
+          body: { user: toPublicUser(person) },
+          effects: { setSessionCookie: token },
+        };
+      } finally {
+        signInLimiter.waiting--;
+      }
+    },
+  }),
+  defineOperation({
+    ...browserOperation,
+    name: "sign_out",
+    method: "DELETE",
+    path: "/api/session",
+    modes: ["fallback"],
+    output: zod.never(),
+    handler(_input, context) {
+      if (context.sessionToken === undefined)
+        throw new Error("Authenticated session cookie missing");
+      deleteSession(context.database, {
+        token_hash: hashToken(context.sessionToken),
+      });
+      return { status: 204, effects: { clearSessionCookie: true } };
+    },
   }),
   defineOperation({
     ...browserOperation,
@@ -190,78 +230,3 @@ export const authOperations = [
     },
   }),
 ];
-
-export function mountAuthRoutes(app: Hono<AuthEnv>, options: AppOptions) {
-  const { database, config, clock, dummyHash, verifyPassword } = options;
-  if (config.identity.mode === "access") return;
-  const cookieOptions = {
-    httpOnly: true,
-    sameSite: "Lax" as const,
-    secure:
-      config.publicUrl !== undefined &&
-      new URL(config.publicUrl).protocol === "https:",
-    path: "/",
-    maxAge: config.sessionDays * 86_400,
-  };
-  const limit = bodyLimit({
-    maxSize: 8192,
-    onError: (context) =>
-      context.json({ error: { code: "body_too_large" } }, 413),
-  });
-  const authenticate = sessionAuth(database, clock);
-  let waiting = 0;
-
-  app.post(
-    "/api/session",
-    async (context, next) => {
-      if (!hasRequestedWith(context))
-        return context.json(
-          { error: { code: "requested_with_required" } },
-          403,
-        );
-      await next();
-    },
-    limit,
-    async (context) => {
-      const body = await readJsonBody(context);
-      if (!body || !isValidPassword(body.password))
-        return context.json({ error: { code: "invalid_request" } }, 400);
-      if (waiting >= 8) {
-        context.header("Retry-After", "1");
-        return context.json({ error: { code: "busy" } }, 503);
-      }
-      waiting++;
-      try {
-        const person = selectUserByUsername(database, {
-          username: body.username,
-        });
-        if (!person || person.password_hash === null) {
-          await verifyPassword(body.password, dummyHash);
-          return context.json({ error: { code: "invalid_credentials" } }, 401);
-        }
-        if (!(await verifyPassword(body.password, person.password_hash)))
-          return context.json({ error: { code: "invalid_credentials" } }, 401);
-        const token = createSession(
-          database,
-          person.id,
-          getCookie(context, "tare_session"),
-          clock.now(),
-          config.sessionDays,
-        );
-        setCookie(context, "tare_session", token, cookieOptions);
-        return context.json({ user: toPublicUser(person) });
-      } finally {
-        waiting--;
-      }
-    },
-  );
-
-  app.delete("/api/session", authenticate, requireRequestedWith, (context) => {
-    const token = getCookie(context, "tare_session");
-    if (token === undefined)
-      throw new Error("Authenticated session cookie missing");
-    deleteSession(database, { token_hash: hashToken(token) });
-    deleteCookie(context, "tare_session", cookieOptions);
-    return context.body(null, 204);
-  });
-}

@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { createRemoteJWKSet } from "jose";
 import { createAccessVerifier } from "./auth/access.ts";
 import { type AuthEnv, accessAuth } from "./auth/middleware.ts";
-import { type AppOptions, mountAuthRoutes } from "./auth/routes.ts";
+import type { AppOptions } from "./auth/routes.ts";
 import { mountOperations, operationGuards } from "./operations/http.ts";
 import { operations } from "./operations/index.ts";
 import { OperationError } from "./operations/registry.ts";
@@ -49,7 +49,6 @@ export function createApp(options: AppOptions & { webRoot?: string }) {
     ...options,
     signInLimiter: { waiting: 0 },
   });
-  mountAuthRoutes(app, options);
   mountWeb(app, options.webRoot);
   return app;
 }
