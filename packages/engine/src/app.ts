@@ -7,8 +7,9 @@ import { mountMcp } from "./mcp/server.ts";
 import { mountOperations, operationGuards } from "./operations/http.ts";
 import { operations } from "./operations/index.ts";
 import { OperationError } from "./operations/registry.ts";
+import { mountWeb } from "./web.ts";
 
-export function createApp(options: AppOptions) {
+export function createApp(options: AppOptions & { webRoot?: string }) {
   const app = new Hono<AuthEnv>();
   const guards = operationGuards(
     operations,
@@ -57,5 +58,6 @@ export function createApp(options: AppOptions) {
   });
   if (options.config.identity.mode === "access")
     mountMcp(app, { ...options, signInLimiter: { waiting: 0 } });
+  mountWeb(app, options.webRoot);
   return app;
 }
