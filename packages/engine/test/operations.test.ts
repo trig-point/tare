@@ -62,6 +62,9 @@ test("registry constrains public and administrator operations and inventories ev
       "search_online",
       "list_questions",
       "answer_question",
+      "log_signal",
+      "log_activity",
+      "read_signals",
     ],
   );
   assert.deepEqual(
