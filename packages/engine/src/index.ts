@@ -10,6 +10,7 @@ import { openDatabase } from "./db.ts";
 import { createJobRunner } from "./jobs.ts";
 import { createOrderMaintenanceJob } from "./orders/maintenance.ts";
 import { deleteExpiredSessions } from "./queries/delete-expired-sessions.ts";
+import { createTargetRecomputeJob } from "./target/job.ts";
 
 const config = loadConfig(process.env);
 const connection = openDatabase(config.databaseUrl);
@@ -56,6 +57,14 @@ async function startEngine() {
   } else console.info("Backups disabled");
   runner.register(
     createOrderMaintenanceJob({ database: connection.database, clock }),
+  );
+  runner.register(
+    createTargetRecomputeJob({
+      database: connection.database,
+      clock,
+      settings: config.tdee,
+      weekday: config.targetWeekday,
+    }),
   );
   runner.start();
   const app = createApp({

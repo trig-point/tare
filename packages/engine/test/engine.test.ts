@@ -74,6 +74,7 @@ describe("engine", () => {
       databaseUrl: ":memory:",
       port: 3000,
       timezone: "UTC",
+      targetWeekday: 1,
       publicUrl: undefined,
       mcpAllowedOrigins: [],
       sessionDays: 30,
