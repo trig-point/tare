@@ -12,6 +12,14 @@ import { createQuestion, type QuestionKind } from "../questions/kinds.ts";
 import { selectMessage } from "./message.ts";
 import { heldEmailKind } from "./questions.ts";
 
+// Subject and From are sender-controlled, and ";" separates the prompt's fields.
+function promptField(text: string, limit: number) {
+  return text
+    .replace(/[\p{Cc}\p{Cf}]/gu, "")
+    .replaceAll(";", ",")
+    .slice(0, limit);
+}
+
 export function mountInboundEmail(
   app: Hono<AuthEnv>,
   options: AppOptions & { questionKinds: ReadonlyMap<string, QuestionKind> },
@@ -73,9 +81,11 @@ export function mountInboundEmail(
           const person = selectPerson(options.database, { id: key.user_id });
           if (!person) throw new Error("Email owner missing");
           const from = subject.mail.from?.value;
-          const title = (subject.mail.subject ?? "")
-            .replace(/\p{Cc}/gu, "")
-            .slice(0, 120);
+          const title = promptField(subject.mail.subject ?? "", 120);
+          const sender = promptField(
+            from?.length === 1 ? (from[0]?.address ?? "") : "",
+            254,
+          );
           const received = now.toLocaleString("en-US", {
             timeZone: person.timezone,
             timeZoneName: "short",
@@ -86,7 +96,7 @@ export function mountInboundEmail(
               userId: key.user_id,
               kind: heldEmailKind.name,
               subjectRef: String(inserted.id),
-              prompt: `${mark.mark}: ${title}; ${from?.length === 1 ? (from[0]?.address ?? "") : ""}; ${received}`,
+              prompt: `${mark.mark}: ${title}; ${sender}; ${received}`,
             },
             options.clock,
             options.questionKinds,
