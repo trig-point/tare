@@ -15,6 +15,7 @@ function nextCalendarDay(day: string): string {
   return date.toISOString().slice(0, 10);
 }
 
+/** Rows must be ordered by day, measured_at, and id; the first row of each day is that day's reading. */
 export function weightTrend(rows: readonly WeightReading[]): WeightTrendDay[] {
   const days: WeightTrendDay[] = [];
   let previous: WeightTrendDay | undefined;
