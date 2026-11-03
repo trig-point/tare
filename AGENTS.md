@@ -32,13 +32,14 @@ Use Node 22 (at least 22.18) and pnpm 11.2.2. Run these from the repository root
 - Regenerate query types: `pnpm generate`
 - Run engine: optionally copy `.env.example` to `.env`, or set environment variables, then `pnpm --filter @tare/engine start`
 - Health check: `curl -s localhost:3000/health`
+- Container deployment: see [docs/deploy.md](docs/deploy.md).
 - Weekly API drift check: `node packages/engine/scripts/api-drift-check.mts`; update `packages/engine/scripts/api-drift-baselines.json` in a reviewed PR after checking vendor changes.
 
 Biome handles linting and formatting for the workspace. TypeScript runs in strict mode. Node strips TypeScript types directly, so the engine has no build step or type-stripping flag. Only `apps/web` is built with Vite.
 
 ## Configuration
 
-`DATABASE_URL` is required and is a SQLite file path, or `:memory:` for an ephemeral database. Surrounding whitespace is trimmed. Relative paths resolve from the engine process working directory (`packages/engine` when using the workspace command). Parent directories are created automatically. Startup applies migrations before listening.
+`DATABASE_URL` is required and is a SQLite file path, or `:memory:` for an ephemeral database. Surrounding whitespace is trimmed. Relative paths resolve from the engine process working directory (`packages/engine` when using the workspace command). Parent directories are created automatically. Startup applies migrations before listening. File databases use WAL; every connection sets a 5000 ms busy timeout.
 
 `PORT` defaults to `3000` and must be an integer from 1 to 65535. `.env.example` lists the configuration variables with safe local values. The startup command loads the root `.env` file if it exists; process environment variables can override it. Set the required variables in the process environment when running without a file.
 
