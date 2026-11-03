@@ -1,7 +1,17 @@
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { normalizeAccessEmail } from "./auth/access.ts";
 
+export interface TdeeSettings {
+  windowDays: number;
+  energyDensity: number;
+  minSignedDays: number;
+  minWeighInDays: number;
+  minSpanDays: number;
+  defaultRange: number;
+}
+
 export interface Config {
+  tdee: TdeeSettings;
   databaseUrl: string;
   port: number;
   timezone: string;
@@ -101,6 +111,51 @@ function parseMcpAllowedOrigins(value: string | undefined): string[] {
   });
 }
 
+function parseTdeeSettings(
+  env: Record<string, string | undefined>,
+): TdeeSettings {
+  const number = (
+    name: string,
+    fallback: number,
+    minimum: number,
+    maximum: number,
+    integer = false,
+  ) => {
+    const text = env[name]?.trim();
+    const pattern = integer ? /^\d+$/ : /^\d+(\.\d+)?$/;
+    const value = !text
+      ? fallback
+      : pattern.test(text)
+        ? Number(text)
+        : Number.NaN;
+    if (
+      !Number.isFinite(value) ||
+      value < minimum ||
+      value > maximum ||
+      (integer && !Number.isInteger(value))
+    )
+      throw new Error(
+        `${name} must be ${integer ? "an integer" : "a number"} between ${minimum} and ${maximum}`,
+      );
+    return value;
+  };
+  const windowDays = number("TARE_TDEE_WINDOW_DAYS", 28, 14, 90, true);
+  return {
+    windowDays,
+    energyDensity: number("TARE_TDEE_ENERGY_DENSITY", 7700, 5000, 10000),
+    minSignedDays: number("TARE_TDEE_MIN_SIGNED_DAYS", 14, 1, windowDays, true),
+    minWeighInDays: number(
+      "TARE_TDEE_MIN_WEIGH_IN_DAYS",
+      8,
+      1,
+      windowDays,
+      true,
+    ),
+    minSpanDays: number("TARE_TDEE_MIN_SPAN_DAYS", 14, 1, windowDays, true),
+    defaultRange: number("TARE_TDEE_DEFAULT_RANGE", 0.25, 0, 0.9),
+  };
+}
+
 export function loadConfig(env: Record<string, string | undefined>): Config {
   const databaseUrl = env.DATABASE_URL?.trim();
   if (!databaseUrl) {
@@ -168,6 +223,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     );
   const accessEmail = normalizeAccessEmail(env.TARE_ADMIN_ACCESS_EMAIL ?? "");
   return {
+    tdee: parseTdeeSettings(env),
     databaseUrl,
     port,
     timezone,
