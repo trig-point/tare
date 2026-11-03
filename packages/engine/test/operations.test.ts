@@ -69,6 +69,8 @@ test("registry constrains public and administrator operations and inventories ev
       "list_meals_on_hand",
       "save_profile",
       "read_profile",
+      "save_regular_meal",
+      "log_regular_meal",
     ],
   );
   assert.deepEqual(
