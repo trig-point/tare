@@ -34,28 +34,35 @@ export function mountMcp(app: Hono<AuthEnv>, deps: OperationDependencies) {
     await session.server.close();
   }
 
+  // Synchronous from insert to the last delete, so parallel opens cannot pass the cap.
+  async function admitSession(id: string, admitted: McpSession) {
+    sessions.set(id, admitted);
+    const all = [...sessions].sort(
+      (left, right) => left[1].lastSeenAt - right[1].lastSeenAt,
+    );
+    const owned = all.filter(
+      ([, session]) => session.ownerPersonId === admitted.ownerPersonId,
+    );
+    const evicted = [
+      ...all.filter(
+        ([, session]) =>
+          admitted.lastSeenAt - session.lastSeenAt >= idleLifetime,
+      ),
+      ...owned.slice(0, Math.max(0, owned.length - sessionsPerPerson)),
+    ];
+    await Promise.all(evicted.map(([evictedId]) => closeSession(evictedId)));
+  }
+
   async function createSession(identity: OperationIdentity, now: number) {
-    for (const [id, session] of sessions)
-      if (now - session.lastSeenAt >= idleLifetime) await closeSession(id);
     const ownerPersonId = identity.person?.id;
     if (ownerPersonId === undefined)
       throw new OperationError(401, "unauthenticated");
-    const owned = [...sessions].filter(
-      ([, session]) => session.ownerPersonId === ownerPersonId,
-    );
-    owned.sort((left, right) => left[1].lastSeenAt - right[1].lastSeenAt);
-    while (owned.length >= sessionsPerPerson) {
-      const oldest = owned.shift();
-      if (oldest) await closeSession(oldest[0]);
-    }
     const server = new McpServer({ name: "tare", version: "1.0.0" });
     const transport = new StreamableHTTPTransport({
       sessionIdGenerator: randomUUID,
       // @hono/mcp 0.3.5 never frees request state in JSON-response mode.
       enableDnsRebindingProtection: false,
-      onsessioninitialized: (id) => {
-        sessions.set(id, session);
-      },
+      onsessioninitialized: (id) => admitSession(id, session),
       onsessionclosed: closeSession,
     });
     const session: McpSession = {
