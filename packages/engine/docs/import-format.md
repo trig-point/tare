@@ -8,7 +8,7 @@ pnpm --filter @tare/engine run import --user example --intake /data/intake.jsonl
 
 Supply at least one file. Relative file paths and `DATABASE_URL` resolve from `packages/engine`. Each UTF-8 line is one JSON object; empty lines and unknown fields are rejected. All examples below are made up.
 
-Intake requires `client_id` (1 to 200 characters), `eaten_at`, `name`, at least one nutrient and `provenance` (`estimated` or `label`). A label requires a nonblank `source`. Nutrients are nonnegative numbers or null: `kcal`, `protein_g`, `carbs_g`, `fat_g`, `fiber_g`, `kcal_low`, `kcal_high`. Omitted nutrients stay unknown. Calorie bounds must be supplied together and contain `kcal` when it is known.
+Intake requires `client_id` (1 to 200 characters), `eaten_at`, `name`, at least one of `kcal`, `protein_g`, `carbs_g`, `fat_g` or `fiber_g`, and `provenance` (`estimated` or `label`). A label requires a nonblank `source`. Nutrients are nonnegative numbers or null: `kcal`, `protein_g`, `carbs_g`, `fat_g`, `fiber_g`, `kcal_low`, `kcal_high`. Omitted nutrients stay unknown. Calorie bounds must be supplied together and contain `kcal` when it is known.
 
 ```json
 {"client_id":"example-soup-1","eaten_at":"2025-06-01T12:00:00Z","name":"Example soup","kcal":240,"provenance":"estimated"}
