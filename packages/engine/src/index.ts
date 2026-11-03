@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { createApp } from "./app.ts";
 import { ensureFirstUser, ensureSignInCapableUsers } from "./auth/bootstrap.ts";
@@ -59,6 +60,7 @@ async function startEngine() {
     clock,
     dummyHash,
     verifyPassword,
+    webRoot: fileURLToPath(new URL("../../../apps/web/dist/", import.meta.url)),
   });
   const server = serve({ port: config.port, fetch: app.fetch }, (address) => {
     console.info(`Engine listening on port ${address.port}`);
