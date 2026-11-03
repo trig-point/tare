@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { ApiError, api, readSession, signOutTarget } from "../src/api.ts";
 import { test } from "./support.mts";
 
-test("API sends the browser header and credentials; sign-out accepts empty 204", async () => {
+test("API sends the browser header and credentials; sign-out accepts empty 204", async (context) => {
   const request: typeof fetch = async (path, options) => {
     assert.equal(path, "/api/session");
     assert.equal(
@@ -14,10 +14,8 @@ test("API sends the browser header and credentials; sign-out accepts empty 204",
     assert.equal(options?.method, "DELETE");
     return new Response(null, { status: 204 });
   };
-  assert.equal(
-    await api("/api/session", { method: "DELETE" }, request),
-    undefined,
-  );
+  context.mock.method(globalThis, "fetch", request);
+  assert.equal(await api("/api/session", { method: "DELETE" }), undefined);
 });
 
 test("session read distinguishes signed-out, malformed and valid responses", async (context) => {

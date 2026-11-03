@@ -22,13 +22,12 @@ export class ApiError extends Error {
 export async function api(
   path: string,
   options: RequestInit = {},
-  request: typeof fetch = fetch,
 ): Promise<unknown> {
   const headers = new Headers(options.headers);
   headers.set("X-Requested-With", "XMLHttpRequest");
   if (options.body !== undefined)
     headers.set("Content-Type", "application/json");
-  const response = await request(path, {
+  const response = await fetch(path, {
     ...options,
     headers,
     credentials: "same-origin",
