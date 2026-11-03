@@ -2,6 +2,7 @@ import type { Database } from "better-sqlite3";
 import type { JWTVerifyGetKey } from "jose";
 import { z as zod } from "zod";
 import { type Config, validateTimezone } from "../config.ts";
+import type { LookupAdapters } from "../lookup/index.ts";
 import {
   defineOperation,
   OperationError,
@@ -25,6 +26,7 @@ export interface AppOptions {
   clock: { now(): Date };
   dummyHash: string;
   accessKeySet?: JWTVerifyGetKey;
+  lookup?: LookupAdapters;
   verifyPassword(password: string, stored: string): Promise<boolean>;
 }
 
