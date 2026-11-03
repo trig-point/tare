@@ -62,7 +62,10 @@ test("registry constrains public and administrator operations and inventories ev
   for (const mode of ["access", "fallback"] as const) {
     const makeSetup = mode === "access" ? accessFixture : fixture;
     const setup = makeSetup(context);
-    const infrastructure = ["GET /health"];
+    const infrastructure = [
+      "GET /health",
+      ...(mode === "access" ? ["GET /mcp", "POST /mcp", "DELETE /mcp"] : []),
+    ];
     const registryApp = new Hono<AuthEnv>();
     mountOperations(registryApp, operations, {
       ...dependencies(setup.database),

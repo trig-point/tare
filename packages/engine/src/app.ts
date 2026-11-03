@@ -3,6 +3,7 @@ import { createRemoteJWKSet } from "jose";
 import { createAccessVerifier } from "./auth/access.ts";
 import { type AuthEnv, accessAuth } from "./auth/middleware.ts";
 import type { AppOptions } from "./auth/routes.ts";
+import { mountMcp } from "./mcp/server.ts";
 import { mountOperations, operationGuards } from "./operations/http.ts";
 import { operations } from "./operations/index.ts";
 import { OperationError } from "./operations/registry.ts";
@@ -10,7 +11,13 @@ import { mountWeb } from "./web.ts";
 
 export function createApp(options: AppOptions & { webRoot?: string }) {
   const app = new Hono<AuthEnv>();
-  const guards = operationGuards(operations, options.config.identity.mode);
+  const guards = operationGuards(
+    operations,
+    options.config.identity.mode,
+    options.config.identity.mode === "access"
+      ? ["GET", "POST", "DELETE"].map((method) => ({ method, path: "/mcp" }))
+      : [],
+  );
   app.use("*", guards.noStore);
   app.onError((error, context) => {
     if (error instanceof OperationError) {
@@ -49,6 +56,8 @@ export function createApp(options: AppOptions & { webRoot?: string }) {
     ...options,
     signInLimiter: { waiting: 0 },
   });
+  if (options.config.identity.mode === "access")
+    mountMcp(app, { ...options, signInLimiter: { waiting: 0 } });
   mountWeb(app, options.webRoot);
   return app;
 }

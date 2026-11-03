@@ -6,6 +6,7 @@ export interface Config {
   port: number;
   timezone: string;
   publicUrl: string | undefined;
+  mcpAllowedOrigins: string[];
   sessionDays: number;
   backupDir: string | undefined;
   backupKeep: number;
@@ -46,6 +47,23 @@ export function validateTimezone(timezone: string): string {
     throw new Error("TARE_TIMEZONE must be an IANA timezone");
   }
   return timezone;
+}
+
+function parseMcpAllowedOrigins(value: string | undefined): string[] {
+  if (!value?.trim()) return [];
+  return value.split(",").map((entry) => {
+    const origin = entry.trim();
+    try {
+      const url = new URL(origin);
+      if (!["http:", "https:"].includes(url.protocol) || url.origin !== origin)
+        throw new Error("HTTP or HTTPS origin required");
+    } catch {
+      throw new Error(
+        `TARE_MCP_ALLOWED_ORIGINS has an invalid origin: ${origin}`,
+      );
+    }
+    return origin;
+  });
 }
 
 export function loadConfig(env: Record<string, string | undefined>): Config {
@@ -119,6 +137,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     port,
     timezone,
     publicUrl,
+    mcpAllowedOrigins: parseMcpAllowedOrigins(env.TARE_MCP_ALLOWED_ORIGINS),
     sessionDays,
     backupDir,
     backupKeep,

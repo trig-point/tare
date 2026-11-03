@@ -67,6 +67,7 @@ describe("engine", () => {
       port: 3000,
       timezone: "UTC",
       publicUrl: undefined,
+      mcpAllowedOrigins: [],
       sessionDays: 30,
       backupDir: undefined,
       backupKeep: 7,
