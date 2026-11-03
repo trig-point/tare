@@ -163,6 +163,19 @@ test("USDA precedes OFF and a similar-name search writes nothing", async (contex
   );
 });
 
+test("a cached ambiguous barcode returns the same candidates without a vendor call", async (context) => {
+  const setup = fixture(context);
+  const peer = peers();
+  peer.bodies.usda = { foods: [cheddar, { ...cheddar, fdcId: 2095237 }] };
+  const first = await lookupBarcode(setup.database, peer.adapters, upc);
+  assert.equal(first.result, "ambiguous");
+  assert.equal(first.foods.length, 2);
+  const second = await lookupBarcode(setup.database, peer.adapters, upc);
+  assert.deepEqual(second.foods, first.foods);
+  assert.equal(second.result, "ambiguous");
+  assert.deepEqual(peer.calls, ["usda"]);
+});
+
 test("HTTP skips USDA without a key and migration backfills OFF", async (context) => {
   const peer = peers(false);
   const setup = fixture(context, { lookup: peer.adapters });

@@ -100,9 +100,8 @@ async function lookup(
               : key.code,
         })
       : [];
-  const cacheResult = resolveLookup(request, {
-    cache: cached.map(cachedRecord),
-  });
+  const cachedRecords = cached.map(cachedRecord);
+  const cacheResult = resolveLookup(request, { cache: cachedRecords });
   if (cacheResult.status === "match") {
     const selected = new Set(
       cacheResult.records.map(
@@ -117,12 +116,21 @@ async function lookup(
       sources,
     };
   }
-  if (cacheResult.final)
+  if (cacheResult.final && cacheResult.reason !== "ambiguous")
+    return { result: "no_match", foods: [], sources };
+  if (cacheResult.final) {
+    const candidates = cached.filter(
+      (_row, index) => cachedRecords[index]?.basis != null,
+    );
+    const source = candidates.some((row) => row.source === "usda")
+      ? "usda"
+      : "off";
     return {
-      result: cacheResult.reason === "ambiguous" ? "ambiguous" : "no_match",
-      foods: [],
+      result: "ambiguous",
+      foods: candidates.filter((row) => row.source === source).map(publicFood),
       sources,
     };
+  }
 
   for (const source of ["usda", "off"] as const) {
     const response =
