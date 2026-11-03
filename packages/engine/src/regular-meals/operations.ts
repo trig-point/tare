@@ -25,7 +25,11 @@ const identifier = zod.number().int().positive();
 const baseline = zod.enum(["menu", "label", "estimate"]);
 const saveInput = zod
   .strictObject({
-    action: zod.enum(["create", "update", "delete"]),
+    action: zod
+      .enum(["create", "update", "delete"])
+      .describe(
+        "Update replaces the whole meal; omitted optional fields are cleared.",
+      ),
     id: identifier.optional(),
     name: text.optional(),
     restaurant: text.nullable().optional(),
