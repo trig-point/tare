@@ -59,7 +59,11 @@ test("built worker verifies its HTML and only caches built assets", async () => 
     denylist: RegExp[];
   };
   const denied = ["/api", "/mcp", "/health"];
-  for (const path of denied.flatMap((path) => [path, `${path}/missing`]))
+  for (const path of denied.flatMap((path) => [
+    path,
+    `${path}/missing`,
+    `${path}?check=1`,
+  ]))
     assert.ok(
       denylist.some((rule) => rule.test(path)),
       path,
