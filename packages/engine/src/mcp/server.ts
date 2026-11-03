@@ -108,6 +108,7 @@ export function mountMcp(app: Hono<AuthEnv>, deps: OperationDependencies) {
     ["GET", "POST", "DELETE"],
     "/mcp",
     async (context, next) => {
+      context.header("Cache-Control", "no-store");
       const origin = context.req.header("Origin");
       if (
         origin !== undefined &&
@@ -124,7 +125,6 @@ export function mountMcp(app: Hono<AuthEnv>, deps: OperationDependencies) {
         context.json({ error: { code: "body_too_large" } }, 413),
     }),
     async (context) => {
-      context.header("Cache-Control", "no-store");
       const identity: OperationIdentity = {
         person: context.get("person"),
         credential: context.get("credential"),
@@ -143,17 +143,21 @@ export function mountMcp(app: Hono<AuthEnv>, deps: OperationDependencies) {
       }
       session.identity = identity;
       session.lastSeenAt = now;
+      let response: Response | undefined;
       try {
-        return await session.transport.handleRequest(context);
+        response = await session.transport.handleRequest(context);
       } catch (error) {
-        if (error instanceof HTTPException) return error.getResponse();
-        throw error;
+        if (!(error instanceof HTTPException)) throw error;
+        response = error.getResponse();
       } finally {
         if (session.transport.sessionId === undefined) {
           await session.transport.close();
           await session.server.close();
         }
       }
+      // The transport's SSE helper sets no-cache, which still permits storage.
+      response?.headers.set("Cache-Control", "no-store");
+      return response;
     },
   );
 }
