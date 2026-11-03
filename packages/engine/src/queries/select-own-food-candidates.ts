@@ -27,7 +27,13 @@ export function selectOwnFoodCandidates(
   params: SelectOwnFoodCandidatesParams,
 ): SelectOwnFoodCandidatesResult[] {
   const sql = `
-	SELECT * FROM foods WHERE user_id = ? ORDER BY id;
+	SELECT foods.* FROM foods WHERE user_id = ?
+	AND NOT EXISTS (
+	  SELECT 1 FROM regular_meals
+	  WHERE regular_meals.user_id = foods.user_id AND regular_meals.food_id = foods.id
+	    AND regular_meals.archived_at IS NOT NULL
+	)
+	ORDER BY id;
 	
 	`;
   const rows = db.prepare(sql).raw(true).all([params.user_id]);

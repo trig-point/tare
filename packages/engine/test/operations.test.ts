@@ -62,6 +62,15 @@ test("registry constrains public and administrator operations and inventories ev
       "search_online",
       "list_questions",
       "answer_question",
+      "log_signal",
+      "log_activity",
+      "read_signals",
+      "mark_delivery",
+      "list_meals_on_hand",
+      "save_profile",
+      "read_profile",
+      "save_regular_meal",
+      "log_regular_meal",
     ],
   );
   assert.deepEqual(
@@ -78,6 +87,8 @@ test("registry constrains public and administrator operations and inventories ev
       });
     else if (operation.method === "GET")
       assert.deepEqual(operation.input.parse({}), {});
+    if (operation.method === "POST" || operation.method === "PATCH")
+      assert.ok(operation.bodyLimit, `${operation.name} has no body limit`);
   }
   assert.throws(() => defineOperation({ ...browser, callerClass: "public" }));
   assert.throws(() => defineOperation({ ...whoami, admin: true }));
