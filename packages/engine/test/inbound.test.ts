@@ -212,8 +212,14 @@ test("held prompts keep sender-controlled subject and address inside their own f
   const setup = await setupInbound(context, "fallback");
   const token = await setup.create();
   const address = `${"a".repeat(300)}@kit.example.com`;
+  const [override, lineBreak, meal] = [0x202e, 0x2028, 0x1f371].map((point) =>
+    String.fromCodePoint(point),
+  );
+  const visible = "Meal, billing@kit.example.com delivery ";
+  const padding = "x".repeat(119 - visible.length);
+  const subject = `Meal; billing@kit.example.com${override}${lineBreak} delivery ${padding}${meal} tail`;
   const raw = Buffer.from(
-    `From: ${address}\r\nSubject: Meal; billing@kit.example.com‮ delivery\r\nMessage-ID: <hostile@example.com>\r\nContent-Type: text/plain\r\n\r\nGarden Bowl 2\r\n`,
+    `From: ${address}\r\nSubject: ${subject}\r\nMessage-ID: <hostile@example.com>\r\nContent-Type: text/plain\r\n\r\nGarden Bowl 2\r\n`,
   );
   assert.equal((await setup.post(raw, token)).status, 202);
   const [question] = (
@@ -221,7 +227,7 @@ test("held prompts keep sender-controlled subject and address inside their own f
   ).questions;
   const fields = question.prompt.split("; ");
   assert.equal(fields.length, 3);
-  assert.equal(fields[0], "unverified: Meal, billing@kit.example.com delivery");
+  assert.equal(fields[0], `unverified: ${visible}${padding}${meal}`);
   assert.equal(fields[1], address.slice(0, 254));
 });
 
