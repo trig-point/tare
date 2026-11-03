@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { writeTransaction } from "../src/db.ts";
 import { createJobRunner } from "../src/jobs.ts";
+import { mealNutritionKinds } from "../src/meal-nutrition/index.ts";
 import { createOrder, isDue, updateMeal } from "../src/orders/index.ts";
 import { createOrderMaintenanceJob } from "../src/orders/maintenance.ts";
 import { selectOrder } from "../src/queries/orders/select-order.ts";
@@ -44,6 +45,7 @@ for (const mode of ["fallback", "access"] as const) {
             status: "scheduled",
             meals: [{ name: "Example bowl", chef: "Example chef", quantity }],
           },
+          mealNutritionKinds,
           now,
         ),
       );
