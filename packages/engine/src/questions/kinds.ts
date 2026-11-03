@@ -29,7 +29,7 @@ export function createQuestion(
   if (!kind) throw new OperationError(409, "kind_not_supported");
   const question = insertQuestion(database, {
     user_id: input.userId,
-    kind: kind.name,
+    kind: input.kind,
     subject_ref: input.subjectRef,
     prompt: input.prompt,
     answer_schema: JSON.stringify(
