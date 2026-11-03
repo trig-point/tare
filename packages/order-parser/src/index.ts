@@ -47,6 +47,16 @@ function occurrences(text: string, part: string): number[] {
   return starts;
 }
 
+// A date excerpt cut mid-token ("5 Nov" from "15 Nov") would change its value.
+function wholeTokens(text: string, excerpt: string): boolean {
+  const joined = /[\p{L}\p{N}_/-]/u;
+  return occurrences(text, excerpt).some(
+    (start) =>
+      !joined.test(text[start - 1] ?? "") &&
+      !joined.test(text[start + excerpt.length] ?? ""),
+  );
+}
+
 // Boundaries are read from the email line, not the excerpt, so a cut excerpt
 // cannot turn "20" into "2"; ranges, fractions and grouped digits do not count.
 function standaloneQuantity(
@@ -58,7 +68,7 @@ function standaloneQuantity(
   const digits = String(quantity);
   if (!/^\d+$/.test(digits)) return false;
   const number = new RegExp(
-    `(?<![\\p{L}\\p{N}_.+\\-])(?<!\\p{N}[,/])${digits}(?![\\p{L}\\p{N}_.+\\-]|[,/]\\p{N})`,
+    `(?<![\\p{L}\\p{N}_.+\\-])(?<!\\p{N}[,/])${digits}(?![\\p{L}\\p{N}_+\\-]|[.,/]\\p{N})`,
     "gu",
   );
   const names = occurrences(line, mealName);
@@ -118,7 +128,10 @@ function checkEvidence(
       uncertain: reply.delivery_date.uncertain || Boolean(date?.uncertain),
     },
     "delivery_date",
-    () => date !== null && date.value === reply.delivery_date.value,
+    (excerpt) =>
+      date !== null &&
+      date.value === reply.delivery_date.value &&
+      wholeTokens(source, excerpt),
   );
   const meals = reply.meals.flatMap((meal, source_index) => {
     const path = `meals[${source_index}]`;
