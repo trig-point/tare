@@ -87,7 +87,12 @@ function parseTdeeSettings(
     integer = false,
   ) => {
     const text = env[name]?.trim();
-    const value = text ? Number(text) : fallback;
+    const pattern = integer ? /^\d+$/ : /^\d+(\.\d+)?$/;
+    const value = !text
+      ? fallback
+      : pattern.test(text)
+        ? Number(text)
+        : Number.NaN;
     if (
       !Number.isFinite(value) ||
       value < minimum ||

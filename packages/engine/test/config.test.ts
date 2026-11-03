@@ -5,30 +5,48 @@ import { test as authTest } from "./support/hang-ceiling.ts";
 
 test("adaptive settings default, reset, override and reject invalid values", () => {
   const cases = [
-    ["TARE_TDEE_WINDOW_DAYS", "windowDays", 28, "35", ["13", "91", "14.5"]],
+    [
+      "TARE_TDEE_WINDOW_DAYS",
+      "windowDays",
+      28,
+      "35",
+      ["13", "91", "14.5", "0x23"],
+    ],
     [
       "TARE_TDEE_ENERGY_DENSITY",
       "energyDensity",
       7700,
       "7000",
-      ["4999", "10001"],
+      ["4999", "10001", "7e3"],
     ],
     [
       "TARE_TDEE_MIN_SIGNED_DAYS",
       "minSignedDays",
       14,
       "10",
-      ["0", "29", "1.5"],
+      ["0", "29", "1.5", "0xa"],
     ],
     [
       "TARE_TDEE_MIN_WEIGH_IN_DAYS",
       "minWeighInDays",
       8,
       "6",
-      ["0", "29", "1.5"],
+      ["0", "29", "1.5", "6e0"],
     ],
-    ["TARE_TDEE_MIN_SPAN_DAYS", "minSpanDays", 14, "20", ["0", "29", "1.5"]],
-    ["TARE_TDEE_DEFAULT_RANGE", "defaultRange", 0.25, "0.1", ["-0.1", "0.91"]],
+    [
+      "TARE_TDEE_MIN_SPAN_DAYS",
+      "minSpanDays",
+      14,
+      "20",
+      ["0", "29", "1.5", "0x14"],
+    ],
+    [
+      "TARE_TDEE_DEFAULT_RANGE",
+      "defaultRange",
+      0.25,
+      "0.1",
+      ["-0.1", "0.91", "1e-1"],
+    ],
   ] as const;
   for (const [name, key, fallback, override, invalid] of cases) {
     const read = (value: string | undefined) =>
