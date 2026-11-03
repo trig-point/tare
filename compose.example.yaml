@@ -1,0 +1,35 @@
+services:
+  tare:
+    build: .
+    image: tare:local
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      DATABASE_URL: /data/tare.sqlite
+      PORT: "3000"
+      TARE_TIMEZONE: ${TARE_TIMEZONE-UTC}
+      TARE_PUBLIC_URL: ${TARE_PUBLIC_URL:-}
+      TARE_SESSION_DAYS: ${TARE_SESSION_DAYS:-30}
+      TARE_BACKUP_DIR: /backups
+      TARE_BACKUP_KEEP: ${TARE_BACKUP_KEEP:-7}
+      TARE_ADMIN_USERNAME: ${TARE_ADMIN_USERNAME:-}
+      TARE_ADMIN_PASSWORD: ${TARE_ADMIN_PASSWORD:-}
+      TARE_ADMIN_ACCESS_EMAIL: ${TARE_ADMIN_ACCESS_EMAIL:-}
+      TARE_ACCESS_TEAM_DOMAIN: ${TARE_ACCESS_TEAM_DOMAIN:-}
+      TARE_ACCESS_AUD: ${TARE_ACCESS_AUD:-}
+      TARE_MCP_ALLOWED_ORIGINS: ${TARE_MCP_ALLOWED_ORIGINS:-}
+      TARE_USDA_API_KEY: ${TARE_USDA_API_KEY:-}
+      TARE_OFF_USER_AGENT: ${TARE_OFF_USER_AGENT:-}
+    volumes:
+      - tare-data:/data
+      - tare-backups:/backups
+    healthcheck:
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  tare-data:
+  tare-backups:
