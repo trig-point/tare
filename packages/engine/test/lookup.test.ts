@@ -182,6 +182,16 @@ test("a cached ambiguous barcode returns the same candidates without a vendor ca
   assert.deepEqual(peer.calls, ["usda"]);
 });
 
+test("a name search without a barcode keeps the cached barcode", async (context) => {
+  const setup = fixture(context);
+  const peer = peers();
+  await lookupBarcode(setup.database, peer.adapters, upc);
+  peer.bodies.usda = { foods: [{ ...cheddar, gtinUpc: null }] };
+  await searchOnline(setup.database, peer.adapters, cheddar.description);
+  await lookupBarcode(setup.database, peer.adapters, upc);
+  assert.deepEqual(peer.calls, ["usda", "usda"]);
+});
+
 test("HTTP skips USDA without a key and migration backfills OFF", async (context) => {
   const peer = peers(false);
   const setup = fixture(context, { lookup: peer.adapters });
