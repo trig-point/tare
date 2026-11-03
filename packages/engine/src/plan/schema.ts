@@ -101,6 +101,36 @@ export const slotSchema = zod.strictObject({
   share_bp: zod.number().int().positive(),
   fill_hint: zod.string().nullable(),
 });
+export const budgetStatus = zod.enum([
+  "ready",
+  "no_day_type",
+  "needs_profile",
+  "needs_weigh_in",
+]);
+const nutrientBudget = zod.strictObject({
+  intake: zod.number().int().nullable(),
+  known_subtotal: zod.number().int(),
+  complete: zod.boolean(),
+  budget: zod.number().int().nullable(),
+  remaining: zod.number().int().nullable(),
+});
+export const slotBudgetSchema = zod.strictObject({
+  template_id: identifier,
+  position: zod.number().int().nonnegative(),
+  name: zod.string(),
+  window_start: minute,
+  window_end: minute,
+  ended: zod.boolean(),
+  kcal: nutrientBudget,
+  protein_g: nutrientBudget,
+});
+export const budgetsSchema = zod.strictObject({
+  status: budgetStatus,
+  target: zod
+    .strictObject({ kcal: zod.number(), protein_g: zod.number() })
+    .nullable(),
+  slots: zod.array(slotBudgetSchema),
+});
 export const planSchema = zod
   .strictObject({
     status: zod.enum(["ready", "no_day_type"]),
@@ -108,6 +138,7 @@ export const planSchema = zod
     day_type: dayTypeSchema.nullable(),
     template: templateSchema.nullable(),
     slots: zod.array(slotSchema),
+    budgets: budgetsSchema,
   })
   .refine((plan) =>
     plan.status === "ready"

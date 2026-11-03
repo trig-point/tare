@@ -3,9 +3,11 @@ import { writeTransaction } from "../db.ts";
 import { localDay } from "../logging/day.ts";
 import {
   defineOperation,
+  type OperationContext,
   OperationError,
   operationPerson,
 } from "../operations/registry.ts";
+import { clearIntakeSlots } from "../queries/clear-intake-slots.ts";
 import { deleteDayTemplate } from "../queries/delete-day-template.ts";
 import { deleteDayType } from "../queries/delete-day-type.ts";
 import { deleteTemplateSlots } from "../queries/delete-template-slots.ts";
@@ -14,22 +16,56 @@ import { insertDayType } from "../queries/insert-day-type.ts";
 import { insertTemplateSlot } from "../queries/insert-template-slot.ts";
 import { selectDayTemplate } from "../queries/select-day-template.ts";
 import { selectDayType } from "../queries/select-day-type.ts";
+import { selectLedgerEntries } from "../queries/select-ledger-entries.ts";
 import { selectTemplateSlots } from "../queries/select-template-slots.ts";
 import { setDayType } from "../queries/set-day-type.ts";
 import { setDefaultDayType } from "../queries/set-default-day-type.ts";
 import { updateDayTemplate } from "../queries/update-day-template.ts";
 import { updateDayType } from "../queries/update-day-type.ts";
+import { readTarget } from "../target/reader.ts";
 import { selectedTemplate } from "./reader.ts";
 import {
+  budgetStatus,
   dayTypeSchema,
   identifier,
   planSchema,
   saveTemplateInput,
   saveTypeInput,
+  slotBudgetSchema,
   slotSchema,
   templateSchema,
   validateSlots,
 } from "./schema.ts";
+import { assignSlot, minuteOfDay, slotBudgets } from "./slots.ts";
+
+function readPlan(context: OperationContext) {
+  const person = operationPerson(context);
+  const now = context.clock.now();
+  const day = localDay(
+    now.toISOString(),
+    person.timezone,
+    person.day_start_hour,
+  );
+  const plan = selectedTemplate(context.database, person, day);
+  const target = readTarget(context.database, person, now, context.config.tdee);
+  const status = plan.status === "no_day_type" ? plan.status : target.status;
+  const budgets =
+    status === "ready" && target.status === "ready"
+      ? {
+          status,
+          target: { kcal: target.kcal, protein_g: target.protein_g },
+          slots: slotBudgets(
+            plan.slots,
+            selectLedgerEntries(context.database, { user_id: person.id, day }),
+            target,
+            day,
+            now.toISOString(),
+            person,
+          ),
+        }
+      : { status, target: null, slots: [] };
+  return { ...plan, budgets };
+}
 
 const shared = {
   modes: ["access", "fallback"] as ("access" | "fallback")[],
@@ -78,8 +114,12 @@ export const planOperations = [
       const body = restricted("template_in_use", () =>
         writeTransaction(context.database, () => {
           const user_id = operationPerson(context).id;
-          if (input.action !== "create")
+          if (input.action !== "create") {
             owned(selectDayTemplate(context.database, { user_id, id }));
+            // Saves reuse positions and a deleted id can return, so stored
+            // links would name another window; reads reassign these by time.
+            clearIntakeSlots(context.database, { user_id, template_id: id });
+          }
           if (input.action !== "delete") validateSlots(slots);
           if (input.action === "delete") {
             deleteTemplateSlots(context.database, {
@@ -230,15 +270,45 @@ export const planOperations = [
     input: zod.strictObject({}),
     output: planSchema,
     handler(_input, context) {
-      const person = operationPerson(context);
-      const day = localDay(
-        context.clock.now().toISOString(),
-        person.timezone,
-        person.day_start_hour,
+      return {
+        status: 200,
+        body: readPlan(context),
+      };
+    },
+  }),
+  defineOperation({
+    ...shared,
+    name: "next_slot",
+    method: "GET",
+    path: "/api/plan/next-slot",
+    input: zod.strictObject({}),
+    output: zod.strictObject({
+      status: budgetStatus,
+      slot: slotBudgetSchema.nullable(),
+    }),
+    handler(_input, context) {
+      const plan = readPlan(context);
+      const open = plan.slots.filter((slot) =>
+        plan.budgets.slots.some(
+          (row) => row.position === slot.position && !row.ended,
+        ),
+      );
+      const next = assignSlot(
+        open,
+        minuteOfDay(
+          context.clock.now().toISOString(),
+          operationPerson(context),
+        ),
       );
       return {
         status: 200,
-        body: selectedTemplate(context.database, person, day),
+        body: {
+          status: plan.budgets.status,
+          slot:
+            plan.budgets.slots.find(
+              (slot) => slot.position === next?.position,
+            ) ?? null,
+        },
       };
     },
   }),

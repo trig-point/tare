@@ -27,6 +27,8 @@ export type SelectIntakeEntryResult = {
   created_at: string;
   updated_at: string;
   name: string | null;
+  slot_template_id: number | null;
+  slot_position: number | null;
 };
 
 export function selectIntakeEntry(
@@ -65,6 +67,8 @@ function mapArrayToSelectIntakeEntryResult(data: any) {
     created_at: data[18],
     updated_at: data[19],
     name: data[20],
+    slot_template_id: data[21],
+    slot_position: data[22],
   };
   return result;
 }

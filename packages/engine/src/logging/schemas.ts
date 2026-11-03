@@ -119,6 +119,8 @@ export const intakeRow = zod.strictObject({
   portion_note: zod.string().nullable(),
   created_at: zod.string(),
   updated_at: zod.string(),
+  slot_template_id: zod.number().nullable().optional(),
+  slot_position: zod.number().nullable().optional(),
 });
 export const weightRow = zod.strictObject({
   id: zod.number(),
