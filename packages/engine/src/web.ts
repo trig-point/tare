@@ -7,7 +7,10 @@ import type { AuthEnv } from "./auth/middleware.ts";
 export function mountWeb(app: Hono<AuthEnv>, root?: string) {
   if (root === undefined) return;
   if (!isAbsolute(root)) throw new Error("Web asset root must be absolute");
-  if (!existsSync(join(root, "index.html"))) return;
+  if (!existsSync(join(root, "index.html"))) {
+    console.warn("Web assets not found; serving the API only");
+    return;
+  }
   const assets = serveStatic<AuthEnv>({ root });
   const index = serveStatic<AuthEnv>({ path: join(root, "index.html") });
   app.use("*", async (context, next) => {
