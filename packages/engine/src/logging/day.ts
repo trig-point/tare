@@ -2,13 +2,16 @@ import { OperationError } from "../operations/registry.ts";
 
 export function canonicalInstant(input: string): string {
   const match =
-    /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})(?:\.(\d{1,3}))?(Z|[+-]\d{2}:\d{2})$/.exec(
+    /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})(?::(\d{2})(?:\.(\d{1,9}))?)?(Z|[+-]\d{2}:\d{2})$/.exec(
       input,
     );
   if (!match) throw new OperationError(400, "invalid_time");
-  const wall = `${match[1]}T${match[2]}.${(match[3] ?? "").padEnd(3, "0")}Z`;
+  const [, date, minutes, seconds = "00", fraction = "", offset] = match;
+  // Stored timestamps keep milliseconds, so finer digits are dropped.
+  const time = `${date}T${minutes}:${seconds}.${fraction.slice(0, 3).padEnd(3, "0")}`;
+  const wall = `${time}Z`;
   const parsedWall = new Date(wall);
-  const instant = new Date(input);
+  const instant = new Date(`${time}${offset}`);
   if (
     !Number.isFinite(instant.getTime()) ||
     !Number.isFinite(parsedWall.getTime()) ||
