@@ -158,6 +158,7 @@ test("USDA precedes OFF and a similar-name search writes nothing", async (contex
   );
   assert.equal(miss.result, "no_match");
   assert.equal(miss.foods.length, 0);
+  assert.deepEqual(peer.calls, ["usda", "off", "usda", "off"]);
   assert.equal(
     setup.database
       .prepare<[], { count: number }>(
