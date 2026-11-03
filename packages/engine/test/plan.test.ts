@@ -210,6 +210,15 @@ for (const mode of ["fallback", "access"] as const) {
       ],
       ["templates", { action: "delete", id: first.template.id }],
       [
+        "templates",
+        {
+          action: "update",
+          id: first.template.id,
+          name: "Other",
+          slots: slots([80]),
+        },
+      ],
+      [
         "day-types",
         { action: "create", name: "Other", template_id: first.template.id },
       ],

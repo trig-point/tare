@@ -75,12 +75,12 @@ export const planOperations = [
       const id = input.id as number;
       const name = input.name as string;
       const slots = input.slots as NonNullable<typeof input.slots>;
-      if (input.action !== "delete") validateSlots(slots);
       const body = restricted("template_in_use", () =>
         writeTransaction(context.database, () => {
           const user_id = operationPerson(context).id;
           if (input.action !== "create")
             owned(selectDayTemplate(context.database, { user_id, id }));
+          if (input.action !== "delete") validateSlots(slots);
           if (input.action === "delete") {
             deleteTemplateSlots(context.database, {
               user_id,
