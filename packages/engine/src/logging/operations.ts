@@ -33,7 +33,7 @@ const shared = {
   callerClass: "browser_and_agent",
   admin: false,
 } as const;
-const base = { ...shared, modes: [...shared.modes] };
+const base = { ...shared, modes: [...shared.modes], bodyLimit: 8192 };
 const logFood = defineOperation({
   ...base,
   name: "log_food",
