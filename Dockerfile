@@ -10,12 +10,14 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json ./
 COPY packages/engine/package.json packages/engine/package.json
 COPY packages/nutrition/package.json packages/nutrition/package.json
+COPY packages/order-parser/package.json packages/order-parser/package.json
 COPY apps/web/package.json apps/web/package.json
 
 FROM tools AS build
 RUN pnpm install --frozen-lockfile
 COPY packages/engine packages/engine
 COPY packages/nutrition packages/nutrition
+COPY packages/order-parser packages/order-parser
 COPY apps/web apps/web
 RUN pnpm build
 
@@ -26,8 +28,9 @@ RUN rm -rf packages/engine/node_modules/better-sqlite3/prebuilds
 COPY packages/engine/src packages/engine/src
 COPY packages/engine/migrations packages/engine/migrations
 COPY packages/nutrition/src packages/nutrition/src
+COPY packages/order-parser/src packages/order-parser/src
 WORKDIR /app/packages/engine
-RUN node --input-type=module -e "await import('@tare/nutrition'); const { openDatabase } = await import('./src/db.ts'); const connection = openDatabase(':memory:'); connection.close()"
+RUN node --input-type=module -e "await import('@tare/nutrition'); await import('@tare/order-parser'); const { openDatabase } = await import('./src/db.ts'); const connection = openDatabase(':memory:'); connection.close()"
 
 FROM base AS runtime
 ENV NODE_ENV=production \
