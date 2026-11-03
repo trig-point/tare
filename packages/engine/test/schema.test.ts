@@ -214,9 +214,9 @@ test("fresh replay creates strict tables, defaults, typed reads and missing-row 
   assert.deepEqual(selectUser(database, { id: first.id }), first);
   const sourceFood = cache();
   const ownedFood = food();
+  const summary = day();
   const intake = entry();
   const measurement = weight();
-  const summary = day();
   assert.ok(sourceFood && ownedFood && intake && measurement && summary);
   assert.deepEqual(
     selectSourceFood(database, { id: sourceFood.id }),
@@ -234,10 +234,10 @@ test("fresh replay creates strict tables, defaults, typed reads and missing-row 
     selectWeight(database, { user_id: first.id, id: measurement.id }),
     measurement,
   );
-  assert.deepEqual(
-    selectDay(database, { user_id: first.id, day: storedDay }),
-    summary,
-  );
+  assert.deepEqual(selectDay(database, { user_id: first.id, day: storedDay }), {
+    ...summary,
+    signed_off_at: null,
+  });
   assert.equal(selectUser(database, { id: 999 }), null);
   assert.equal(selectSourceFood(database, { id: 999 }), null);
   assert.equal(

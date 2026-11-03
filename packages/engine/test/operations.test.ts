@@ -54,11 +54,17 @@ test("registry constrains public and administrator operations and inventories ev
       "delete_weight",
       "today",
       "find_food",
+      "add_day_note",
+      "list_unsigned_days",
+      "read_day",
       "weight_history",
       "lookup_barcode",
       "search_online",
       "list_questions",
       "answer_question",
+      "log_signal",
+      "log_activity",
+      "read_signals",
       "mark_delivery",
       "list_meals_on_hand",
     ],
@@ -71,7 +77,11 @@ test("registry constrains public and administrator operations and inventories ev
   );
   for (const operation of operations) {
     assert.ok(!operation.admin || operation.callerClass === "browser");
-    if (operation.method === "GET")
+    if (operation.method === "GET" && operation.path.includes(":day"))
+      assert.deepEqual(operation.input.parse({ day: "2026-01-01" }), {
+        day: "2026-01-01",
+      });
+    else if (operation.method === "GET")
       assert.deepEqual(operation.input.parse({}), {});
     if (operation.method === "POST" || operation.method === "PATCH")
       assert.ok(operation.bodyLimit, `${operation.name} has no body limit`);
