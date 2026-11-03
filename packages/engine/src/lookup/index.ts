@@ -7,6 +7,7 @@ import {
   toStoredNutrition,
 } from "@tare/nutrition";
 import type { Database } from "better-sqlite3";
+import { scopeDatabase, writeTransaction } from "../db.ts";
 import type { SelectSourceFoodResult } from "../queries/select-source-food.ts";
 import { selectSourceFoodsByBarcode } from "../queries/select-source-foods-by-barcode.ts";
 import { upsertSourceFood } from "../queries/upsert-source-food.ts";
@@ -168,9 +169,9 @@ async function lookup(
           : records.filter(
               (record) => matchesIdentity(key, record) && record.basis !== null,
             );
-      const rows = database.transaction(() =>
-        kept.map((record) => storeRecord(database, record)),
-      )();
+      const rows = writeTransaction(database, (scope) =>
+        kept.map((record) => storeRecord(scopeDatabase(scope), record)),
+      );
       return {
         result: ambiguous ? "ambiguous" : "match",
         foods: rows.map(publicFood),
