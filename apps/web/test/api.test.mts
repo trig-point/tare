@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
-import { ApiError, api, readSession, signOutTarget } from "../src/api.ts";
+import {
+  ApiError,
+  api,
+  endSession,
+  readSession,
+  signOutTarget,
+} from "../src/api.ts";
 import { test } from "./support.mts";
 
 test("API sends the browser header and credentials; sign-out accepts empty 204", async (context) => {
@@ -60,4 +66,17 @@ test("sign-out selects Access navigation or fallback session deletion", () => {
     }),
     { href: "https://example.com/cdn-cgi/access/logout" },
   );
+});
+
+test("fallback sign-out treats an already ended session as signed out", async (context) => {
+  const target = { method: "DELETE" as const, path: "/api/session" };
+  const response = context.mock.method(globalThis, "fetch");
+  response.mock.mockImplementation(
+    async () => new Response(null, { status: 401 }),
+  );
+  await endSession(target);
+  response.mock.mockImplementation(
+    async () => new Response(null, { status: 503 }),
+  );
+  await assert.rejects(endSession(target), ApiError);
 });
