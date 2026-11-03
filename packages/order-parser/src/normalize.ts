@@ -1,11 +1,36 @@
-import { convert, type HtmlToTextOptions } from "html-to-text";
+import { convert, type DomNode, type HtmlToTextOptions } from "html-to-text";
+
+function hidden(element: DomNode): boolean {
+  const style: unknown = element.attribs?.style;
+  if (element.type !== "tag" || typeof style !== "string") return false;
+  return style.split(";").some((declaration) => {
+    const [property, value] = declaration
+      .toLowerCase()
+      .split(":")
+      .map((part) => part.trim());
+    const setting = value?.split("!")[0]?.trim();
+    return (
+      (property === "display" && setting === "none") ||
+      (property === "visibility" && setting === "hidden")
+    );
+  });
+}
+
+function withoutHidden(element: DomNode): DomNode {
+  return {
+    ...element,
+    children: element.children
+      ?.filter((child) => !hidden(child))
+      .map(withoutHidden),
+  };
+}
 
 const htmlOptions: HtmlToTextOptions = {
   wordwrap: false,
   selectors: [
     {
       selector: "table",
-      format: "dataTable",
+      format: "visibleTable",
       options: { uppercaseHeaderCells: false, rowSpacing: 0, colSpacing: 1 },
     },
     { selector: "a", options: { ignoreHref: true } },
@@ -17,22 +42,21 @@ const htmlOptions: HtmlToTextOptions = {
   ],
   formatters: {
     styled(element, walk, builder) {
-      const { style, ...attributes } = element.attribs as Record<
+      const { style: _style, ...attributes } = element.attribs as Record<
         string,
         string
       >;
-      const hidden = style?.split(";").some((declaration) => {
-        const [property, value] = declaration
-          .toLowerCase()
-          .split(":")
-          .map((part) => part.trim());
-        const setting = value?.split("!")[0]?.trim();
-        return (
-          (property === "display" && setting === "none") ||
-          (property === "visibility" && setting === "hidden")
-        );
-      });
-      if (!hidden) walk([{ ...element, attribs: attributes }], builder);
+      if (!hidden(element))
+        walk([{ ...element, attribs: attributes }], builder);
+    },
+    // dataTable walks rows and cells itself, so the styled formatter never sees them.
+    visibleTable(element, walk, builder, options) {
+      builder.options.formatters.dataTable?.(
+        withoutHidden(element),
+        walk,
+        builder,
+        options,
+      );
     },
   },
 };
@@ -62,7 +86,7 @@ export function normalizeEmail(email: {
   )
     return null;
   const text = normalize(
-    `${email.subject}\n${email.text ?? convert(email.html ?? "", htmlOptions)}`,
+    `${email.subject}\n${email.text?.trim() ? email.text : convert(email.html ?? "", htmlOptions)}`,
   );
   return text.length > 20_000 ? null : text;
 }

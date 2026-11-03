@@ -40,6 +40,41 @@ type ParseResult =
     });
 const folded = (value: string) => normalize(value).toLowerCase();
 
+function occurrences(text: string, part: string): number[] {
+  const starts: number[] = [];
+  for (let at = text.indexOf(part); at >= 0; at = text.indexOf(part, at + 1))
+    starts.push(at);
+  return starts;
+}
+
+// Boundaries are read from the email line, not the excerpt, so a cut excerpt
+// cannot turn "20" into "2"; ranges, fractions and grouped digits do not count.
+function standaloneQuantity(
+  line: string,
+  excerpt: string,
+  quantity: number,
+  mealName: string,
+): boolean {
+  const digits = String(quantity);
+  if (!/^\d+$/.test(digits)) return false;
+  const number = new RegExp(
+    `(?<![\\p{L}\\p{N}_.+\\-])(?<!\\p{N}[,/])${digits}(?![\\p{L}\\p{N}_.+\\-]|[,/]\\p{N})`,
+    "gu",
+  );
+  const names = occurrences(line, mealName);
+  return occurrences(line, excerpt).some((start) =>
+    [...line.matchAll(number)].some((match) => {
+      const end = match.index + digits.length;
+      const insideName = names.some(
+        (name) => match.index < name + mealName.length && end > name,
+      );
+      return (
+        match.index >= start && end <= start + excerpt.length && !insideName
+      );
+    }),
+  );
+}
+
 function checkEvidence(
   reply: OrderReply,
   text: string,
@@ -88,7 +123,15 @@ function checkEvidence(
   const meals = reply.meals.flatMap((meal, source_index) => {
     const path = `meals[${source_index}]`;
     const name = textual(meal.name, path);
-    if (name.value === null) return [];
+    if (name.value === null) {
+      // A meal reported without a name is still a reported item.
+      if (
+        meal.name.value === null &&
+        [meal.chef.value, meal.quantity.value].some((value) => value !== null)
+      )
+        dropped.push(path);
+      return [];
+    }
     const mealName = folded(name.value);
     const chef = textual(meal.chef, `${path}.chef`);
     const quantity = check(meal.quantity, `${path}.quantity`, (excerpt) => {
@@ -99,15 +142,15 @@ function checkEvidence(
           other.name.value?.trim() &&
           excerpt.includes(folded(other.name.value)),
       );
+      const count = meal.quantity.value;
       return (
+        count !== null &&
         !excerpt.includes("\n") &&
-        source.split("\n").some((line) => line.includes(excerpt)) &&
         excerpt.includes(mealName) &&
-        new RegExp(
-          `(?<![\\p{L}\\p{N}_.+\\-])${meal.quantity.value}(?![\\p{L}\\p{N}_.])`,
-          "u",
-        ).test(excerpt) &&
-        !otherMeal
+        !otherMeal &&
+        source
+          .split("\n")
+          .some((line) => standaloneQuantity(line, excerpt, count, mealName))
       );
     });
     return [{ name, chef, quantity, source_index }];
@@ -129,7 +172,14 @@ export async function parseOrderEmail(
   options: { received_on?: string } = {},
 ): Promise<ParseResult> {
   if (model === null) return { status: "no_model" };
-  const text = normalizeEmail(email);
+  let text: string | null;
+  try {
+    text = normalizeEmail(email);
+  } catch (error) {
+    // html-to-text recurses per element, so deep nesting overflows the stack.
+    if (!(error instanceof RangeError)) throw error;
+    text = null;
+  }
   if (text === null) return { status: "failed", reason: "too_large" };
   try {
     const transport = model.fetch ?? globalThis.fetch;
@@ -142,15 +192,20 @@ export async function parseOrderEmail(
       timeout: 30_000,
       maxRetries: 1,
       fetch: async (input, init) => {
-        const headers = new Headers(
+        const sent = new Headers(
           input instanceof Request ? input.headers : undefined,
         );
         new Headers(init?.headers).forEach((value, name) =>
-          headers.set(name, value),
+          sent.set(name, value),
         );
-        headers.set("Authorization", `Bearer ${model.apiKey}`);
-        headers.delete("OpenAI-Organization");
-        headers.delete("OpenAI-Project");
+        // An allow list, because the SDK merges OPENAI_CUSTOM_HEADERS from the environment.
+        const headers = new Headers({
+          Authorization: `Bearer ${model.apiKey}`,
+        });
+        for (const name of ["Accept", "Content-Type"]) {
+          const value = sent.get(name);
+          if (value !== null) headers.set(name, value);
+        }
         return transport(input, { ...init, headers });
       },
     });
