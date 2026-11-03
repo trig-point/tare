@@ -47,13 +47,32 @@ const common = {
   eaten_at: zod.string().optional(),
   portion_note: text.nullable().optional(),
 };
-const reference = { ...common, ...claim, servings: zod.number().positive() };
-export const logFoodInput = zod.union([
-  zod.strictObject({ ...reference, food_id: zod.number().int().positive() }),
-  zod.strictObject({ ...reference, source_food_id: zod.number().int().positive() }),
-  zod.strictObject({ ...common, ...claim, ...optionalNumbers, name: text })
-    .refine(input => nutrientKeys.slice(0, 5).some(key => input[key] != null)),
-]);
+export const logFoodInput = zod
+  .strictObject({
+    ...common,
+    ...claim,
+    ...optionalNumbers,
+    food_id: zod.number().int().positive().optional(),
+    source_food_id: zod.number().int().positive().optional(),
+    servings: zod.number().positive().optional(),
+    name: text.optional(),
+  })
+  .superRefine((input, context) => {
+    const references =
+      Number(input.food_id !== undefined) +
+      Number(input.source_food_id !== undefined);
+    const valid =
+      references > 0
+        ? references === 1 &&
+          input.servings !== undefined &&
+          input.name === undefined &&
+          !nutrientKeys.some((key) => input[key] !== undefined)
+        : input.servings === undefined &&
+          input.name !== undefined &&
+          nutrientKeys.slice(0, 5).some((key) => input[key] != null);
+    if (!valid)
+      context.addIssue({ code: "custom", message: "Invalid food input" });
+  });
 export const idInput = zod.strictObject({
   id: zod.coerce.number().int().positive(),
 });

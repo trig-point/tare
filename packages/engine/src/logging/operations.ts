@@ -46,17 +46,19 @@ const logFood = defineOperation({
       insertIntake(
         scope,
         operationPerson(context),
-        "food_id" in input || "source_food_id" in input
+        input.food_id !== undefined || input.source_food_id !== undefined
           ? {
               ...input,
+              servings: input.servings as number,
               reference:
-                "food_id" in input
+                input.food_id !== undefined
                   ? { kind: "food", id: input.food_id }
                   : { kind: "source_food", id: input.source_food_id as number },
               claim: { provenance: input.provenance },
             }
           : {
               ...input,
+              name: input.name as string,
               numbers: numbersFrom(input),
               claim: { provenance: input.provenance, source: input.source },
             },
