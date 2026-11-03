@@ -3,8 +3,8 @@ ALTER TABLE intake_entries ADD COLUMN slot_position INTEGER NULL
 CHECK ((slot_template_id IS NULL) = (slot_position IS NULL));
 
 -- Slot links follow the day plan, so clearing them is not an intake edit and must not reopen a signed-off day.
-DROP TRIGGER intake_resets_day_on_update;
-CREATE TRIGGER intake_resets_day_on_update
+DROP TRIGGER IF EXISTS intake_resets_day_on_update;
+CREATE TRIGGER intake_resets_day_on_field_update
 AFTER UPDATE OF id, user_id, client_id, food_id, source_food_id, servings, eaten_at, day, kcal, protein_g, carbs_g, fat_g, fiber_g, kcal_low, kcal_high, provenance, source, portion_note, created_at, updated_at, name
 ON intake_entries
 BEGIN
