@@ -33,7 +33,7 @@ export function createQuestion(
     subject_ref: input.subjectRef,
     prompt: input.prompt,
     answer_schema: JSON.stringify(
-      zod.toJSONSchema(kind.answer, { target: "draft-7" }),
+      zod.toJSONSchema(kind.answer, { target: "draft-7", io: "input" }),
     ),
     created_at: clock.now().toISOString(),
   });
