@@ -3,6 +3,44 @@ import { test } from "node:test";
 import { loadConfig } from "../src/config.ts";
 import { test as authTest } from "./support/hang-ceiling.ts";
 
+test("adaptive settings default, reset, override and reject invalid values", () => {
+  const cases = [
+    ["TARE_TDEE_WINDOW_DAYS", "windowDays", 28, "35", ["13", "91", "14.5"]],
+    [
+      "TARE_TDEE_ENERGY_DENSITY",
+      "energyDensity",
+      7700,
+      "7000",
+      ["4999", "10001"],
+    ],
+    [
+      "TARE_TDEE_MIN_SIGNED_DAYS",
+      "minSignedDays",
+      14,
+      "10",
+      ["0", "29", "1.5"],
+    ],
+    [
+      "TARE_TDEE_MIN_WEIGH_IN_DAYS",
+      "minWeighInDays",
+      8,
+      "6",
+      ["0", "29", "1.5"],
+    ],
+    ["TARE_TDEE_MIN_SPAN_DAYS", "minSpanDays", 14, "20", ["0", "29", "1.5"]],
+    ["TARE_TDEE_DEFAULT_RANGE", "defaultRange", 0.25, "0.1", ["-0.1", "0.91"]],
+  ] as const;
+  for (const [name, key, fallback, override, invalid] of cases) {
+    const read = (value: string | undefined) =>
+      loadConfig({ DATABASE_URL: ":memory:", [name]: value }).tdee[key];
+    for (const empty of [undefined, "", " "])
+      assert.equal(read(empty), fallback);
+    assert.equal(read(` ${override} `), Number(override));
+    for (const value of [...invalid, "text", "NaN", "Infinity"])
+      assert.throws(() => read(value), new RegExp(name));
+  }
+});
+
 authTest("MCP origin config validates the allow list", () => {
   for (const [value, expected] of [
     [undefined, []],
