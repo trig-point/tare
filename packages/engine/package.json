@@ -15,10 +15,12 @@
     "@hono/node-server": "2.1.5",
     "@modelcontextprotocol/sdk": "1.32.2",
     "@tare/nutrition": "workspace:*",
+    "@tare/order-parser": "workspace:*",
     "better-sqlite3": "13.0.3",
     "croner": "11.0.0",
     "hono": "4.13.14",
     "jose": "6.2.14",
+    "mailauth": "8.0.4",
     "mailparser": "3.14.1",
     "rate-limiter-flexible": "11.2.3",
     "zod": "4.6.7"

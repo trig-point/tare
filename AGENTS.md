@@ -82,6 +82,8 @@ Each minimum must be an integer from 1 to the configured window length. Invalid 
 
 `TARE_OFF_USER_AGENT` must follow `AppName/Version (ContactEmail)`; leaving it empty or unset disables Open Food Facts requests.
 
+`TARE_ORDER_EMAIL_SERVICES` is a JSON map of service names to `senders` and `dkim_domains` arrays, for example `{"kit-a":{"senders":["orders@kit-a.example.com"],"dkim_domains":["kit-a.example.com"]}}`. Empty or unset holds all incoming emails as unverified. Names use lowercase letters, digits and hyphens (1 to 40 characters). Each service needs at least one sender or domain. Addresses and domains are lowercased; duplicate senders and cross-service domain overlap prevent startup. Accepted DKIM domains must be controlled by the service, never shared mail provider domains.
+
 Product data from [Open Food Facts](https://world.openfoodfacts.org/) is licensed under the [Open Database License (ODbL)](https://opendatacommons.org/licenses/odbl/1-0/). Attribute Open Food Facts when using its data; ODbL share-alike terms apply to derived databases.
 
 `TARE_ADMIN_USERNAME` and the mode's administrator credential create the first administrator in the install timezone. The system reads them only while the database has no users, and you can remove them after the first start. The username is trimmed; the password is kept exactly as set.

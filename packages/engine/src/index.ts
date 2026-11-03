@@ -7,6 +7,7 @@ import { hashPassword, verifyPassword } from "./auth/password.ts";
 import { createBackupJob } from "./backup.ts";
 import { loadConfig } from "./config.ts";
 import { openDatabase } from "./db.ts";
+import { createOrderEmailParseJob } from "./inbound/job.ts";
 import { createJobRunner } from "./jobs.ts";
 import { createOrderMaintenanceJob } from "./orders/maintenance.ts";
 import { deleteExpiredSessions } from "./queries/delete-expired-sessions.ts";
@@ -66,6 +67,13 @@ async function startEngine() {
       weekday: config.targetWeekday,
     }),
   );
+  runner.register(
+    createOrderEmailParseJob({
+      database: connection.database,
+      clock,
+      model: config.orderModel,
+    }),
+  );
   runner.start();
   const app = createApp({
     database: connection.database,
@@ -73,6 +81,7 @@ async function startEngine() {
     clock,
     dummyHash,
     verifyPassword,
+    onEmailQueued: () => runner.runNow("order-email-parse"),
     webRoot: fileURLToPath(new URL("../../../apps/web/dist/", import.meta.url)),
   });
   const server = serve({ port: config.port, fetch: app.fetch }, (address) => {

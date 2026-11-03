@@ -9,14 +9,28 @@ import { selectInboundEmail } from "../queries/select-inbound-email.ts";
 import { selectInboundOwner } from "../queries/select-inbound-owner.ts";
 import { selectPerson } from "../queries/select-person.ts";
 import { createQuestion, type QuestionKind } from "../questions/kinds.ts";
-import { selectMessage } from "./message.ts";
+import {
+  type DkimResolver,
+  errorClass,
+  type Mark,
+  markMessage,
+  selectMessage,
+} from "./message.ts";
 import { heldEmailKind } from "./questions.ts";
+
+export interface InboundOptions {
+  dkimResolver?: DkimResolver;
+  markEmail?: typeof markMessage;
+  onEmailQueued?: () => unknown;
+}
 
 export function mountInboundEmail(
   app: Hono<AuthEnv>,
-  options: AppOptions & { questionKinds: ReadonlyMap<string, QuestionKind> },
+  options: AppOptions &
+    InboundOptions & { questionKinds: ReadonlyMap<string, QuestionKind> },
 ) {
   const inbound = new Hono<{ Variables: { ownerId: number } }>();
+  let kickFailures = 0;
   inbound.post(
     "/api/inbound/email",
     async (context, next) => {
@@ -52,7 +66,18 @@ export function mountInboundEmail(
       const existing = selectInboundEmail(options.database, key);
       if (existing)
         return context.json({ email_id: existing.id, duplicate: true }, 200);
-      const mark = { mark: "unverified" as const, service: null };
+      let mark: Mark;
+      let reasonClass: string | null = null;
+      try {
+        mark = await (options.markEmail ?? markMessage)(
+          subject,
+          options.config.orderEmailServices,
+          options.dkimResolver,
+        );
+      } catch (error) {
+        mark = { mark: "unverified", service: null };
+        reasonClass = errorClass(error);
+      }
       const now = options.clock.now();
       const result = writeTransaction(options.database, () => {
         const inserted = insertInboundEmail(options.database, {
@@ -60,8 +85,8 @@ export function mountInboundEmail(
           ...mark,
           raw,
           subject_attached: subject.attached,
-          parse_state: "held",
-          reason_class: null,
+          parse_state: mark.mark === "unverified" ? "held" : "queued",
+          reason_class: reasonClass,
           now: now.toISOString(),
         });
         if (!inserted) {
@@ -100,6 +125,12 @@ export function mountInboundEmail(
       });
       if (result.duplicate) return context.json(result, 200);
       console.info("inbound_email_marked", result.email_id, result.mark);
+      if (result.mark !== "unverified" && options.onEmailQueued)
+        void Promise.resolve()
+          .then(options.onEmailQueued)
+          .catch(() =>
+            console.error("inbound_parse_kick_failed", ++kickFailures),
+          );
       return context.json(result, 202);
     },
   );
