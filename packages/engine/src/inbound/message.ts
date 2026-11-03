@@ -44,8 +44,10 @@ export async function markMessage(
   services: Config["orderEmailServices"],
   resolver?: DkimResolver,
 ): Promise<Mark> {
-  const verification = await dkimVerify(subject.bytes, { resolver });
   const fields = subject.mail.headerLines.map((line) => line.key);
+  // mailparser keeps only the first From field, so a second one would go unseen.
+  if (countOf(fields, "from") > 1) return { mark: "unverified", service: null };
+  const verification = await dkimVerify(subject.bytes, { resolver });
   for (const result of verification.results) {
     // l= can leave appended body bytes unsigned, and a repeated field is signed bottom-up
     // while mailparser reads the top instance, so both must be fully covered.

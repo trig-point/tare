@@ -103,6 +103,11 @@ test("DKIM fixture table requires exact pass, a domain boundary and one matching
     assert.fail("Email content fetched"),
   );
   const original = await signed(message());
+  const twoFrom = message(
+    "two-from",
+    "orders@kit.example.com",
+    "From: person@example.com\r\n",
+  );
   const changed = Buffer.from(
     original.toString().replace("Garden Bowl 2", "Garden Bowl 3"),
   );
@@ -143,6 +148,8 @@ test("DKIM fixture table requires exact pass, a domain boundary and one matching
       message("multiple", "orders@kit.example.com, person@example.com"),
       "unverified",
     ],
+    [twoFrom, "unverified"],
+    [await signed(twoFrom), "unverified"],
   ] as const;
   for (const [raw, mark] of cases)
     assert.deepEqual(
