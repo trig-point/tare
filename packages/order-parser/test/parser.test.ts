@@ -107,6 +107,7 @@ test("moved quantities, shared rows and non-standalone numbers are dropped", asy
     ["Garden Bowl 2-3"],
     ["Garden Bowl 1/2"],
     ["Garden Bowl 2\u20133"],
+    ["1. Garden Bowl", undefined, 1],
     ["Garden Bowl 1,200", undefined, 200],
     ["Garden Bowl 20", "Garden Bowl 2"],
   ] as const) {
@@ -141,7 +142,7 @@ test("moved quantities, shared rows and non-standalone numbers are dropped", asy
     ];
     const email = {
       subject: "Cedar Spoon scheduling",
-      text: "3 Bean Chili 1.",
+      text: "3 Bean Chili 1",
     };
     const result = parsed(await parse(reply, email));
     assert.equal(result.meals[0]?.quantity.value, kept ? value : null);
@@ -239,6 +240,7 @@ test("injection cannot change schema, add unsupported meals, or call tools", asy
         const body = JSON.parse(String(init?.body));
         assert.equal(body.tools, undefined);
         assert.equal(body.response_format.json_schema.strict, true);
+        assert.doesNotMatch(JSON.stringify(body), /maxLength/);
         assert.deepEqual(
           Object.keys(
             body.response_format.json_schema.schema.properties,
