@@ -37,7 +37,7 @@ test("ledger totals distinguish complete, partial, empty and all-unknown snapsho
       kcal: 50,
       protein_g: 5,
       carbs_g: 2,
-      fat_g: 1,
+      fat_g: 0,
       fiber_g: 2,
     }),
     claim: {},
@@ -49,7 +49,7 @@ test("ledger totals distinguish complete, partial, empty and all-unknown snapsho
     ["kcal", 250, true, 250],
     ["protein_g", 25, true, 25],
     ["carbs_g", 42, true, 42],
-    ["fat_g", 7, true, 7],
+    ["fat_g", 6, true, 6],
     ["fiber_g", null, false, 2],
   ] as const)
     assert.deepEqual(ledger.totals[key], { total, complete, known_subtotal });
