@@ -93,30 +93,53 @@ test("HTML normalization keeps rows, removes hidden content and never fetches", 
     }),
     "Café\nA B\n\nC",
   );
+  assert.equal(
+    normalizeEmail({ subject: "s", text: " ", html: "<p>Garden Bowl 2</p>" }),
+    "s\nGarden Bowl 2",
+  );
 });
 test("moved quantities, shared rows and non-standalone numbers are dropped", async () => {
-  for (const excerpt of [
-    "Smoky Beans Mira Finch 3",
-    "Garden Bowl 2 Smoky Beans 3",
-    "Garden Bowl 12",
-    "Garden Bowl 2\nSmoky Beans 3",
-  ]) {
+  for (const [line, excerpt = line, value = 2] of [
+    ["Smoky Beans Mira Finch 3", undefined, 3],
+    ["Garden Bowl 2 Smoky Beans 3", undefined, 3],
+    ["Garden Bowl 12"],
+    ["Garden Bowl 2\nSmoky Beans 3", undefined, 3],
+    ["Garden Bowl 2-3"],
+    ["Garden Bowl 1/2"],
+    ["Garden Bowl 20", "Garden Bowl 2"],
+  ] as const) {
     const { reply } = fixture();
     const meal = reply.meals[0];
     assert.ok(meal);
-    meal.quantity = {
-      value: excerpt.includes("12") ? 2 : 3,
-      excerpt,
-      uncertain: false,
-    };
+    meal.quantity = { value, excerpt, uncertain: false };
     const result = parsed(
       await parse(reply, {
         subject: "Cedar Spoon scheduling",
-        text: `${normalizeEmail(fixture().email)}\n${excerpt}`,
+        text: `${normalizeEmail(fixture().email)}\n${line}`,
       }),
     );
-    assert.equal(result.meals[0]?.quantity.value, null);
+    assert.equal(result.meals[0]?.quantity.value, null, line);
     assert.ok(result.dropped.includes("meals[0].quantity"));
+  }
+  for (const [value, kept] of [
+    [3, false],
+    [1, true],
+  ] as const) {
+    const { reply } = fixture();
+    reply.meals = [
+      {
+        name: {
+          value: "3 Bean Chili",
+          excerpt: "3 Bean Chili",
+          uncertain: false,
+        },
+        chef: { value: null, excerpt: null, uncertain: false },
+        quantity: { value, excerpt: "3 Bean Chili 1", uncertain: false },
+      },
+    ];
+    const email = { subject: "Cedar Spoon scheduling", text: "3 Bean Chili 1" };
+    const result = parsed(await parse(reply, email));
+    assert.equal(result.meals[0]?.quantity.value, kept ? value : null);
   }
 });
 test("borrowed evidence cannot support an invented meal or chef; paths do not shift", async () => {
@@ -147,6 +170,11 @@ test("absent, dropped and uncertain stay distinct, including empty orders", asyn
     uncertain: false,
   });
   assert.deepEqual(result.meals, []);
+  const nameless = fixture().reply;
+  const meal = nameless.meals[0];
+  assert.ok(meal);
+  meal.name = { value: null, excerpt: null, uncertain: false };
+  assert.deepEqual(parsed(await parse(nameless)).dropped, ["meals[0]"]);
 });
 test("dates are derived from exactly one supported expression", async () => {
   for (const [excerpt, value, received, kept, uncertain] of [
@@ -213,7 +241,7 @@ test("injection cannot change schema, add unsupported meals, or call tools", asy
 test("SDK environment cannot replace the configured URL or bearer key", async (context) => {
   const env = {
     OPENAI_CUSTOM_HEADERS:
-      "Authorization: Bearer environment-key\nOpenAI-Organization: environment-org\nOpenAI-Project: environment-project",
+      "Authorization: Bearer environment-key\nOpenAI-Organization: environment-org\nOpenAI-Project: environment-project\nX-Private-Token: environment-token",
     OPENAI_ORG_ID: "environment-org",
     OPENAI_PROJECT_ID: "environment-project",
     OPENAI_LOG: "debug",
@@ -228,16 +256,24 @@ test("SDK environment cannot replace the configured URL or bearer key", async (c
       else process.env[name] = saved[name];
     }
   });
-  await parseOrderEmail(fixture().email, {
+  const requests: { url: string; headers: Headers }[] = [];
+  const result = await parseOrderEmail(fixture().email, {
     ...settings,
     fetch: async (input, init) => {
-      assert.equal(String(input), `${settings.baseURL}/chat/completions`);
-      const headers = new Headers(init?.headers);
-      assert.equal(headers.get("authorization"), "Bearer configured-key");
-      assert.equal(headers.get("openai-organization"), null);
-      assert.equal(headers.get("openai-project"), null);
+      requests.push({
+        url: String(input),
+        headers: new Headers(init?.headers),
+      });
       return completion(JSON.stringify(fixture().reply));
     },
+  });
+  assert.equal(result.status, "parsed");
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0]?.url, `${settings.baseURL}/chat/completions`);
+  assert.deepEqual(Object.fromEntries(requests[0]?.headers ?? []), {
+    accept: "application/json",
+    authorization: "Bearer configured-key",
+    "content-type": "application/json",
   });
 });
 test("no model and oversized raw or normalized emails never call fetch", async (context) => {
@@ -250,6 +286,7 @@ test("no model and oversized raw or normalized emails never call fetch", async (
   for (const email of [
     { subject: "", html: "é".repeat(132_000) },
     { subject: "x".repeat(20_001) },
+    { subject: "", html: "<div>".repeat(5_000) },
   ])
     assert.deepEqual(await parseOrderEmail(email, settings), {
       status: "failed",

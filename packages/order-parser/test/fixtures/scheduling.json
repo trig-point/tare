@@ -1,7 +1,7 @@
 {
   "email": {
     "subject": "Cedar Spoon scheduling",
-    "html": "<head>Hidden head<style>Hidden CSS</style></head><script>Hidden instruction</script><div style='DISPLAY : none !important'>Hidden meal 9</div><span style='visibility: hidden'>Hidden chef</span><p>Delivery: 2026-11-12</p><table style='color:green'><tr><td>Garden Bowl</td><td>Rowan Vale</td><td>2</td></tr><tr><td>Smoky Beans</td><td>Mira Finch</td><td>3</td></tr></table><a href='https://synthetic.example.test/order'>Order details</a><img src='https://synthetic.example.test/image' alt='Hidden image'>"
+    "html": "<head>Hidden head<style>Hidden CSS</style></head><script>Hidden instruction</script><div style='DISPLAY : none !important'>Hidden meal 9</div><span style='visibility: hidden'>Hidden chef</span><p>Delivery: 2026-11-12</p><table style='color:green'><tr><td>Garden Bowl</td><td>Rowan Vale</td><td>2</td></tr><tr><td>Smoky Beans</td><td>Mira Finch</td><td>3</td><td style='visibility:hidden'>Hidden cell 7</td></tr><tr style='display:none'><td>Hidden row</td><td>9</td></tr></table><a href='https://synthetic.example.test/order'>Order details</a><img src='https://synthetic.example.test/image' alt='Hidden image'>"
   },
   "reply": {
     "service": {
