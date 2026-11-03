@@ -28,9 +28,9 @@ export default defineConfig({
         globPatterns: ["**/*.{js,css,html,png,webmanifest}"],
         navigateFallback: "/index.html",
         navigateFallbackDenylist: [
-          /^\/api(?:\/|$)/,
-          /^\/mcp(?:\/|$)/,
-          /^\/health(?:\/|$)/,
+          /^\/api(?:[/?]|$)/,
+          /^\/mcp(?:[/?]|$)/,
+          /^\/health(?:[/?]|$)/,
         ],
         runtimeCaching: [],
         manifestTransforms: [
