@@ -8,7 +8,9 @@ import { twoUsers } from "./support/two-users.ts";
 for (const mode of ["fallback", "access"] as const) {
   test(`${mode}: planned items preserve ownership, due dates, budgets and replacement identity`, async (context) => {
     const { database, admin, member, setNow } = await twoUsers(context, mode);
-    database.exec("UPDATE users SET timezone = 'UTC', day_start_hour = 0");
+    database.exec(
+      "UPDATE users SET timezone = 'America/New_York', day_start_hour = 20",
+    );
     const api =
       (person = admin) =>
       async (path: string, body?: unknown, status = 200, code?: string) => {
@@ -87,9 +89,9 @@ for (const mode of ["fallback", "access"] as const) {
             .get(order.id) as { id: number }
         ).id;
       });
-    const due = meal("2026-01-01"),
-      future = meal("2026-01-02"),
-      empty = meal("2026-01-03", 0);
+    const due = meal("2025-12-30"),
+      future = meal("2025-12-31"),
+      empty = meal("2026-01-01", 0);
     for (const body of [
       {},
       { position: 0, food_id: food, meal_id: due },
@@ -129,7 +131,7 @@ for (const mode of ["fallback", "access"] as const) {
     assert.equal(
       database
         .prepare(
-          "SELECT delivered_at FROM orders WHERE delivery_date = '2026-01-01'",
+          "SELECT delivered_at FROM orders WHERE delivery_date = '2025-12-30'",
         )
         .pluck()
         .get(),
@@ -170,7 +172,7 @@ for (const mode of ["fallback", "access"] as const) {
     assert.deepEqual((await plan({ ...replace, revision: 2 })).item, second);
     assert.deepEqual(rows(), unchanged);
     database
-      .prepare("UPDATE planned_items SET day = '2025-12-31' WHERE id = ?")
+      .prepare("UPDATE planned_items SET day = '2025-12-29' WHERE id = ?")
       .run(first.id);
     const yesterday = rows()[0];
     await plan({ ...replace, revision: 2 }, 409, "stale_revision");
