@@ -790,9 +790,15 @@ test("released service matching and human service identities work with empty con
           selectReconcileEmail(database, email)?.disposition,
           "questioned",
         );
-        await answerOk(question(email, "order_review").id, {
-          service: service === "Other kit" ? "  Meal Straße  " : " KIT ",
-        });
+        await answerOk(
+          question(email, "order_review").id,
+          service === "Other kit"
+            ? {
+                service: "  Meal Straße  ",
+                meals: [{ name: "Garden Bowl", quantity: 2 }],
+              }
+            : { service: " KIT " },
+        );
       }
       assert.equal(
         selectReconcileEmail(database, email)?.disposition,
