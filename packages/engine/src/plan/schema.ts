@@ -20,6 +20,7 @@ export const planSlotInput = zod
 export const plannedItemSchema = zod.strictObject({
   id: identifier,
   revision: identifier,
+  state: zod.enum(["planned", "eaten", "skipped"]),
   template_id: identifier,
   position: zod.number().int().nonnegative(),
   reference: zod.strictObject({

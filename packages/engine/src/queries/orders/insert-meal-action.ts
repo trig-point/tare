@@ -3,9 +3,10 @@ import type { Database } from "better-sqlite3";
 export type InsertMealActionParams = {
   user_id: number | null;
   mutation_id: string;
-  order_meal_id: number;
+  order_meal_id: number | null;
+  planned_item_id: number | null;
   action: string;
-  intake_entry_id: number;
+  intake_entry_id: number | null;
   result: string;
   created_at: string;
 };
@@ -20,8 +21,8 @@ export function insertMealAction(
   params: InsertMealActionParams,
 ): InsertMealActionResult {
   const sql = `
-	INSERT INTO meal_actions (user_id, mutation_id, order_meal_id, action, intake_entry_id, result, created_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?);
+	INSERT INTO meal_actions (user_id, mutation_id, order_meal_id, planned_item_id, action, intake_entry_id, result, created_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 	
 	`;
   return db
@@ -30,6 +31,7 @@ export function insertMealAction(
       params.user_id,
       params.mutation_id,
       params.order_meal_id,
+      params.planned_item_id,
       params.action,
       params.intake_entry_id,
       params.result,

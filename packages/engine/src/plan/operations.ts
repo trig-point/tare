@@ -7,6 +7,11 @@ import {
   OperationError,
   operationPerson,
 } from "../operations/registry.ts";
+import {
+  actOnPlannedItem,
+  plannedItemActionInput,
+  plannedItemActionOutput,
+} from "../orders/eat.ts";
 import { clearIntakeSlots } from "../queries/clear-intake-slots.ts";
 import { deleteDayTemplate } from "../queries/delete-day-template.ts";
 import { deleteDayType } from "../queries/delete-day-type.ts";
@@ -292,6 +297,25 @@ export const planOperations = [
     input: planSlotInput,
     output: zod.strictObject({ item: plannedItemSchema }),
     handler: planSlot,
+  }),
+  defineOperation({
+    ...write,
+    name: "planned_item_action",
+    path: "/api/plan/items/action",
+    bodyLimit: 8192,
+    input: plannedItemActionInput,
+    output: plannedItemActionOutput,
+    handler(input, context) {
+      return writeTransaction(context.database, (scope) => ({
+        status: 200,
+        body: actOnPlannedItem(
+          scope,
+          operationPerson(context),
+          input,
+          context.clock.now().toISOString(),
+        ),
+      }));
+    },
   }),
   defineOperation({
     ...shared,
