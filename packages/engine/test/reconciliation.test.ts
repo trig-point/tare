@@ -188,7 +188,10 @@ test("pickup recovers once, defers incomplete rows and validates persisted data 
     questionKinds: kinds,
   });
   for (let pass = 0; pass < 2; pass++)
-    await assert.rejects(job.run({ signal: new AbortController().signal }));
+    await assert.rejects(
+      job.run({ signal: new AbortController().signal }),
+      /Order email parse failed/,
+    );
   assert.equal(
     selectReconcileEmail(database, complete)?.disposition,
     "reconciled",
