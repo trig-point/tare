@@ -2,19 +2,33 @@ import { parseOrderEmail } from "@tare/order-parser";
 import type { Database } from "better-sqlite3";
 import { writeTransaction } from "../db.ts";
 import { localDay } from "../logging/day.ts";
+import { selectPerson } from "../queries/select-person.ts";
 import { selectQueuedInboundEmail } from "../queries/select-queued-inbound-email.ts";
+import { selectUnreconciledEmail } from "../queries/select-unreconciled-email.ts";
 import { updateInboundParse } from "../queries/update-inbound-parse.ts";
+import type { QuestionKind } from "../questions/kinds.ts";
 import { errorClass, selectMessage } from "./message.ts";
+import { createOrderQuestionKinds } from "./questions.ts";
+import { reconcileEmail } from "./reconcile.ts";
 
 export function createOrderEmailParseJob({
   database,
   clock,
   model,
+  questionKinds,
 }: {
   database: Database;
   clock: { now(): Date };
   model: Parameters<typeof parseOrderEmail>[1];
+  questionKinds?: ReadonlyMap<string, QuestionKind>;
 }) {
+  const registry = questionKinds ?? createOrderQuestionKinds({ clock });
+  const reconcile = (email: { id: number; user_id: number }) =>
+    writeTransaction(database, (scope) => {
+      const person = selectPerson(database, { id: email.user_id });
+      if (!person) throw new Error("Email owner is missing");
+      reconcileEmail(scope, email, person, clock.now().toISOString(), registry);
+    });
   return {
     name: "order-email-parse",
     schedule: "*/5 * * * *",
@@ -22,6 +36,18 @@ export function createOrderEmailParseJob({
       let afterId = 0;
       let parsed = 0;
       let failed = 0;
+      const reconcileRow = (email: { id: number; user_id: number }) => {
+        try {
+          reconcile(email);
+        } catch (error) {
+          failed++;
+          console.error(
+            "inbound_email_reconcile_failed",
+            email.id,
+            errorClass(error),
+          );
+        }
+      };
       for (;;) {
         signal.throwIfAborted();
         const row = selectQueuedInboundEmail(database, { after_id: afterId });
@@ -70,6 +96,14 @@ export function createOrderEmailParseJob({
             reasonClass ?? result.reason,
           );
         } else parsed++;
+      }
+      afterId = 0;
+      for (;;) {
+        signal.throwIfAborted();
+        const email = selectUnreconciledEmail(database, { after_id: afterId });
+        if (!email) break;
+        afterId = email.id;
+        reconcileRow(email);
       }
       const code = `emails_parsed:${parsed}`;
       if (failed) {

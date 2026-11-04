@@ -4,9 +4,8 @@ import { createAccessVerifier } from "./auth/access.ts";
 import { type AuthEnv, accessAuth } from "./auth/middleware.ts";
 import type { AppOptions } from "./auth/routes.ts";
 import { type InboundOptions, mountInboundEmail } from "./inbound/endpoint.ts";
-import { heldEmailKind } from "./inbound/questions.ts";
+import { createOrderQuestionKinds } from "./inbound/questions.ts";
 import { mountMcp } from "./mcp/server.ts";
-import { mealNutritionKinds } from "./meal-nutrition/index.ts";
 import { mountOperations, operationGuards } from "./operations/http.ts";
 import { operations } from "./operations/index.ts";
 import { OperationError } from "./operations/registry.ts";
@@ -21,7 +20,9 @@ export function createApp(
     ...options,
     questionKinds:
       options.questionKinds ??
-      new Map([...mealNutritionKinds, [heldEmailKind.name, heldEmailKind]]),
+      createOrderQuestionKinds({
+        clock: options.clock,
+      }),
     lookup: options.lookup ?? {
       usda: createUsdaAdapter(options.config, {
         now: () => options.clock.now(),

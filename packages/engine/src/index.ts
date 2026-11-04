@@ -8,6 +8,7 @@ import { createBackupJob } from "./backup.ts";
 import { loadConfig } from "./config.ts";
 import { openDatabase } from "./db.ts";
 import { createOrderEmailParseJob } from "./inbound/job.ts";
+import { createOrderQuestionKinds } from "./inbound/questions.ts";
 import { createJobRunner } from "./jobs.ts";
 import { createOrderMaintenanceJob } from "./orders/maintenance.ts";
 import { deleteExpiredSessions } from "./queries/delete-expired-sessions.ts";
@@ -36,6 +37,9 @@ await ensureFirstUser(
 
 async function startEngine() {
   const clock = { now: () => new Date() };
+  const questionKinds = createOrderQuestionKinds({
+    clock,
+  });
   deleteExpiredSessions(connection.database, {
     now: clock.now().toISOString(),
   });
@@ -72,6 +76,7 @@ async function startEngine() {
       database: connection.database,
       clock,
       model: config.orderModel,
+      questionKinds,
     }),
   );
   runner.start();
@@ -80,6 +85,7 @@ async function startEngine() {
     config,
     clock,
     dummyHash,
+    questionKinds,
     verifyPassword,
     onEmailQueued: () => runner.runNow("order-email-parse"),
     webRoot: fileURLToPath(new URL("../../../apps/web/dist/", import.meta.url)),

@@ -17,6 +17,11 @@ export type SelectQueuedInboundEmailResult = {
   reason_class: string | null;
   created_at: string;
   updated_at: string;
+  disposition: string | null;
+  disposition_at: string | null;
+  released_at: string | null;
+  manual_result: string | null;
+  applied_order_id: number | null;
   timezone: string;
   day_start_hour: number;
 };
@@ -51,8 +56,13 @@ function mapArrayToSelectQueuedInboundEmailResult(data: any) {
     reason_class: data[9],
     created_at: data[10],
     updated_at: data[11],
-    timezone: data[12],
-    day_start_hour: data[13],
+    disposition: data[12],
+    disposition_at: data[13],
+    released_at: data[14],
+    manual_result: data[15],
+    applied_order_id: data[16],
+    timezone: data[17],
+    day_start_hour: data[18],
   };
   return result;
 }
