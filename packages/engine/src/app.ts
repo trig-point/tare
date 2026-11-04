@@ -3,6 +3,7 @@ import { createRemoteJWKSet } from "jose";
 import { createAccessVerifier } from "./auth/access.ts";
 import { type AuthEnv, accessAuth } from "./auth/middleware.ts";
 import type { AppOptions } from "./auth/routes.ts";
+import { type InboundOptions, mountInboundEmail } from "./inbound/endpoint.ts";
 import { heldEmailKind } from "./inbound/questions.ts";
 import { mountMcp } from "./mcp/server.ts";
 import { mealNutritionKinds } from "./meal-nutrition/index.ts";
@@ -13,7 +14,9 @@ import { createOffAdapter } from "./sources/off.ts";
 import { createUsdaAdapter } from "./sources/usda.ts";
 import { mountWeb } from "./web.ts";
 
-export function createApp(options: AppOptions & { webRoot?: string }) {
+export function createApp(
+  options: AppOptions & InboundOptions & { webRoot?: string },
+) {
   const dependencies = {
     ...options,
     questionKinds:
@@ -50,6 +53,7 @@ export function createApp(options: AppOptions & { webRoot?: string }) {
     context.json({ error: { code: "not_found" } }, 404),
   );
   app.get("/health", (context) => context.json({ status: "ok" }));
+  mountInboundEmail(app, dependencies);
   if (options.config.identity.mode === "access") {
     const { teamDomain, audience } = options.config.identity;
     app.use(

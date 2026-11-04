@@ -39,7 +39,7 @@ export function accessAuth(
   verify: (token: string) => Promise<AccessIdentity | null>,
   clock: { now(): Date },
 ): MiddlewareHandler<AuthEnv> {
-  const exemptPaths = ["/health"];
+  const exemptPaths = ["/health", "/api/inbound/email"];
   return async (context, next) => {
     if (exemptPaths.includes(context.req.path)) return next();
     const token = context.req.header("Cf-Access-Jwt-Assertion");

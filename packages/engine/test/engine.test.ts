@@ -82,6 +82,7 @@ describe("engine", () => {
       backupKeep: 7,
       usdaApiKey: undefined,
       offUserAgent: undefined,
+      orderEmailServices: {},
       orderModel: null,
       identity: { mode: "fallback" },
       firstUser: {

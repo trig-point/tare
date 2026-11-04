@@ -1,4 +1,5 @@
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { z as zod } from "zod";
 import { normalizeAccessEmail } from "./auth/access.ts";
 
 export interface TdeeSettings {
@@ -11,6 +12,10 @@ export interface TdeeSettings {
 }
 
 export interface Config {
+  orderEmailServices: Record<
+    string,
+    { senders: string[]; dkim_domains: string[] }
+  >;
   tdee: TdeeSettings;
   databaseUrl: string;
   port: number;
@@ -32,6 +37,61 @@ export interface Config {
     password: string | undefined;
     accessEmail?: string;
   };
+}
+
+export function domainMatches(signingDomain: string, domain: string): boolean {
+  return signingDomain === domain || signingDomain.endsWith(`.${domain}`);
+}
+
+function parseOrderEmailServices(
+  value: string | undefined,
+): Config["orderEmailServices"] {
+  if (!value?.trim()) return {};
+  try {
+    const services = zod
+      .record(
+        zod.string().regex(/^[a-z0-9-]{1,40}$/),
+        zod
+          .strictObject({
+            senders: zod.array(
+              zod.email().transform((address) => address.toLowerCase()),
+            ),
+            dkim_domains: zod.array(
+              zod.hostname().transform((domain) => domain.toLowerCase()),
+            ),
+          })
+          .refine(
+            (service) =>
+              service.senders.length + service.dkim_domains.length > 0,
+          ),
+      )
+      .parse(JSON.parse(value));
+    const senders = new Set<string>();
+    const domains: { domain: string; service: string }[] = [];
+    for (const [name, service] of Object.entries(services)) {
+      for (const sender of service.senders) {
+        if (senders.has(sender)) throw new Error("Duplicate sender");
+        senders.add(sender);
+      }
+      for (const domain of service.dkim_domains) {
+        if (
+          domains.some(
+            (other) =>
+              other.service !== name &&
+              (domainMatches(domain, other.domain) ||
+                domainMatches(other.domain, domain)),
+          )
+        )
+          throw new Error("Overlapping domains");
+        domains.push({ domain, service: name });
+      }
+    }
+    return services;
+  } catch {
+    throw new Error(
+      "TARE_ORDER_EMAIL_SERVICES must contain valid, non-overlapping services",
+    );
+  }
 }
 
 export function validateOffUserAgent(
@@ -235,6 +295,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     );
   const accessEmail = normalizeAccessEmail(env.TARE_ADMIN_ACCESS_EMAIL ?? "");
   return {
+    orderEmailServices: parseOrderEmailServices(env.TARE_ORDER_EMAIL_SERVICES),
     tdee: parseTdeeSettings(env),
     databaseUrl,
     port,

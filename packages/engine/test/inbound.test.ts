@@ -55,7 +55,7 @@ async function setupInbound(context: TestContext, mode: "access" | "fallback") {
   return { ...setup, create, post, rows };
 }
 
-test("browser token management is owner-scoped and the inbound route stays unmounted", async (context) => {
+test("browser token management is owner-scoped and the inbound route requires its token", async (context) => {
   for (const mode of ["access", "fallback"] as const) {
     const setup = await setupInbound(context, mode);
     await rejection(
@@ -108,7 +108,7 @@ test("browser token management is owner-scoped and the inbound route stays unmou
     assert.equal(
       (await setup.app.request("/api/inbound/email", { method: "POST" }))
         .status,
-      mode === "fallback" ? 404 : 401,
+      401,
     );
     if (mode === "access") {
       await setup.admin.request("/api/agent-tokens", {
