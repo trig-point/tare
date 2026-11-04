@@ -295,6 +295,16 @@ test("instance caps bound in-window work while old history and RDATE remain supp
   const dense =
     "UID:dense\nDTSTART:20270104T040000Z\nDURATION:PT1M\nRRULE:FREQ=MINUTELY;COUNT=5000\nSUMMARY:Office";
   assert.equal(status(dense), "unavailable");
+  const ended = dense
+    .replace("UID:dense", "UID:ended")
+    .replace("COUNT=5000", "UNTIL=20270104T040100Z")
+    .replace("SUMMARY:Office", "SUMMARY:Lower");
+  assert.equal(
+    evaluateCalendar(
+      input(calendar(ended, event("DTSTART:20270105T090000Z"))),
+    ).status,
+    "match",
+  );
   const many = Array.from({ length: 12 }, (_, index) =>
     dense
       .replace("UID:dense", `UID:dense-${index}`)

@@ -60,12 +60,16 @@ export function evaluateCalendar(input: unknown): CalendarResult {
         includeOverrides: true,
         excludeExdates: true,
       });
-      total += instances.length;
-      if (instances.length > 1000 || total > 10_000)
-        return { status: "unavailable" };
+      let eventTotal = 0;
       for (const instance of instances) {
         const source = sources.get(componentKey(instance.event));
         if (!source) throw new Error("missing_source");
+        // UNTIL is enforced here, so only occurrences it allows count.
+        if (!withinUntil(source, master, instance.start)) continue;
+        eventTotal += 1;
+        total += 1;
+        if (eventTotal > 1000 || total > 10_000)
+          return { status: "unavailable" };
         if (
           instance.event.status === "CANCELLED" ||
           event.status === "CANCELLED"
@@ -76,7 +80,7 @@ export function evaluateCalendar(input: unknown): CalendarResult {
           instance.start,
           instance.isRecurring && !instance.isOverride,
         );
-        if (!start || !withinUntil(source, master, instance.start)) continue;
+        if (!start) continue;
         const end = endInstant(source, instance.end, start);
         if (!(start < bounds.end && end > bounds.start)) continue;
         const summary =
