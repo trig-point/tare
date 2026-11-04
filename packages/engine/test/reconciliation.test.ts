@@ -170,6 +170,7 @@ test("pickup recovers once, defers incomplete rows and validates persisted data 
   ].map((result) => seed(result));
   for (const state of ["held", "no_model", "failed"])
     pending.push(seed({ status: state }, admin, state));
+  const malformed = seed({ status: "parsed" });
   const complete = seed(),
     queued = seed(parse(), admin, "queued");
   const mapped = selectQueuedInboundEmail(database, { after_id: 0 });
@@ -187,14 +188,13 @@ test("pickup recovers once, defers incomplete rows and validates persisted data 
     questionKinds: kinds,
   });
   for (let pass = 0; pass < 2; pass++)
-    await job.run({ signal: new AbortController().signal });
+    await assert.rejects(job.run({ signal: new AbortController().signal }));
   assert.equal(
     selectReconcileEmail(database, complete)?.disposition,
     "reconciled",
   );
   for (const email of pending)
     assert.equal(selectReconcileEmail(database, email)?.disposition, null);
-  const malformed = seed({ status: "parsed" });
   assert.throws(() => fixture.run(malformed));
   assert.equal(selectReconcileEmail(database, malformed)?.disposition, null);
   assert.equal(first(fixture.meals()).revision, 1);

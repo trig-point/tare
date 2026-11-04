@@ -36,6 +36,18 @@ export function createOrderEmailParseJob({
       let afterId = 0;
       let parsed = 0;
       let failed = 0;
+      const reconcileRow = (email: { id: number; user_id: number }) => {
+        try {
+          reconcile(email);
+        } catch (error) {
+          failed++;
+          console.error(
+            "inbound_email_reconcile_failed",
+            email.id,
+            errorClass(error),
+          );
+        }
+      };
       for (;;) {
         signal.throwIfAborted();
         const row = selectQueuedInboundEmail(database, { after_id: afterId });
@@ -76,7 +88,7 @@ export function createOrderEmailParseJob({
             { id: row.id, user_id: row.user_id },
           ),
         );
-        if (result.status === "parsed") reconcile(row);
+        if (result.status === "parsed") reconcileRow(row);
         if (result.status === "failed") {
           failed++;
           console.error(
@@ -92,7 +104,7 @@ export function createOrderEmailParseJob({
         const email = selectUnreconciledEmail(database, { after_id: afterId });
         if (!email) break;
         afterId = email.id;
-        reconcile(email);
+        reconcileRow(email);
       }
       const code = `emails_parsed:${parsed}`;
       if (failed) {
