@@ -11,6 +11,7 @@ import { createOrderEmailParseJob } from "./inbound/job.ts";
 import { createOrderQuestionKinds } from "./inbound/questions.ts";
 import { createJobRunner } from "./jobs.ts";
 import { createOrderMaintenanceJob } from "./orders/maintenance.ts";
+import { createOura } from "./oura/service.ts";
 import { deleteExpiredSessions } from "./queries/delete-expired-sessions.ts";
 import { createTargetRecomputeJob } from "./target/job.ts";
 
@@ -37,6 +38,8 @@ await ensureFirstUser(
 
 async function startEngine() {
   const clock = { now: () => new Date() };
+  const oura = createOura({ database: connection.database, config, clock });
+  oura.cleanup();
   const questionKinds = createOrderQuestionKinds({
     clock,
     services: config.orderEmailServices,
@@ -81,6 +84,7 @@ async function startEngine() {
       services: config.orderEmailServices,
     }),
   );
+  runner.register(oura.job);
   runner.start();
   const app = createApp({
     database: connection.database,
@@ -89,6 +93,7 @@ async function startEngine() {
     dummyHash,
     questionKinds,
     verifyPassword,
+    oura,
     onEmailQueued: () => runner.runNow("order-email-parse"),
     webRoot: fileURLToPath(new URL("../../../apps/web/dist/", import.meta.url)),
   });
@@ -103,6 +108,7 @@ async function startEngine() {
     try {
       const results = await Promise.allSettled([
         runner.stop(),
+        oura.stop(),
         new Promise<void>((resolve, reject) => {
           server.close((error) => (error ? reject(error) : resolve()));
         }),

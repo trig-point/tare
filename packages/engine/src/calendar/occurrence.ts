@@ -6,10 +6,13 @@ export function rebuildStart(
   wall: Date,
   generated: boolean,
 ): Date | undefined {
-  const instant = wallInstant(wall, source.start.zone);
+  // node-ical gives an override of an all-day series a midnight start.
+  const start = generated ? wall : source.start.wall;
+  const instant = wallInstant(start, source.start.zone);
   if (
     generated &&
-    wallTime(instant, source.start.zone).getTime() !== wall.getTime()
+    source.start.form !== "date" &&
+    wallTime(instant, source.start.zone).getTime() !== start.getTime()
   )
     return undefined;
   return instant;

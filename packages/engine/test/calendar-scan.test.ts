@@ -78,12 +78,20 @@ test("person days follow local labels through DST gaps and folds", () => {
   assert.throws(() => personDayBounds("2027-01-01", "UTC", 24));
 });
 
-test("CLDR 48 Windows zones are accepted, with independent continent samples", () => {
-  assert.equal(Object.keys(windowsZones).length, 139);
-  for (const zone of Object.values(windowsZones))
-    assert.doesNotThrow(
-      () => new Intl.DateTimeFormat("en", { timeZone: zone }),
-    );
+test("CLDR 48 Windows zones resolve except offset names, with continent samples", () => {
+  const entries = Object.entries(windowsZones);
+  assert.equal(entries.length, 139);
+  const offsetNames = entries.filter(([name]) => /^UTC[+-]\d{2}$/.test(name));
+  assert.equal(offsetNames.length, 6);
+  for (const [name, zone] of entries)
+    if (offsetNames.some(([offsetName]) => offsetName === name))
+      assert.throws(() => supportedZone(name), /unsupported_timezone/);
+    else
+      assert.equal(
+        supportedZone(name),
+        new Intl.DateTimeFormat("en", { timeZone: zone }).resolvedOptions()
+          .timeZone,
+      );
   for (const [name, expected] of [
     ["Pacific Standard Time", "2027-01-05T17:00:00.000Z"],
     ["SA Eastern Standard Time", "2027-01-05T12:00:00.000Z"],
@@ -360,3 +368,181 @@ test("AM1 reuses node-ical all-day UTC UNTIL normalization", () => {
     ["2026-10-20T07:00:00.000Z"],
   );
 });
+
+const untrusted = (...lines: string[]) =>
+  calendar(event("UID:input", "DTSTART:20270105T090000Z", ...lines));
+for (const [name, feed, zone] of [
+  [
+    "a nested VEVENT",
+    untrusted("BEGIN:VEVENT", "END:VEVENT", "RRULE:FREQ=DAILY"),
+  ],
+  ["a second RRULE", untrusted("RRULE:FREQ=DAILY", "RRULE:FREQ=WEEKLY")],
+  [
+    "an empty TZID",
+    calendar(event("UID:input", "DTSTART;TZID=:20270105T090000")),
+  ],
+  [
+    "a repeated TZID",
+    calendar(
+      event(
+        "UID:input",
+        "DTSTART;TZID=Unlisted/Office;TZID=UTC:20270105T090000",
+      ),
+    ),
+  ],
+  [
+    "a TZID on another property",
+    untrusted("DTSTAMP;TZID=Unlisted/Office:20270101T000000"),
+  ],
+  [
+    "a TZID on a UTC value",
+    calendar(event("UID:input", "DTSTART;TZID=Asia/Tokyo:20270105T090000Z")),
+  ],
+  [
+    "a malformed DATE UNTIL",
+    calendar(
+      series("DTSTART;VALUE=DATE:20270101", "FREQ=DAILY;UNTIL=20270103BOGUS"),
+    ),
+  ],
+  [
+    "a parameter node-ical cannot read",
+    untrusted(
+      "RRULE:FREQ=DAILY",
+      'EXDATE;VALUE="DATE-TIME""x":20270106T090000Z',
+    ),
+  ],
+  [
+    "a RANGE override",
+    calendar(
+      series("DTSTART:20270105T090000Z", "FREQ=DAILY"),
+      event(
+        "UID:series",
+        "RECURRENCE-ID;RANGE=THISANDFUTURE:20270106T090000Z",
+        "DTSTART:20270106T110000Z",
+      ),
+    ),
+  ],
+  [
+    "an override with its own RRULE",
+    calendar(
+      series("DTSTART:20270105T090000Z", "FREQ=DAILY"),
+      event(
+        "UID:series",
+        "RECURRENCE-ID:20270106T090000Z",
+        "DTSTART:20270106T110000Z",
+        "RRULE:FREQ=DAILY;COUNT=2",
+      ),
+    ),
+  ],
+  ["a DTEND list", untrusted("DTEND:20270105T100000Z,20270105T110000Z")],
+  ["a numeric-offset person zone", untrusted(), "+05:30"],
+] as const)
+  test(`the scanner fails closed on ${name}`, () => {
+    assert.throws(() => scanCalendar(feed, zone ?? "UTC"));
+  });
+
+test("the scanner fails closed when the process zone is not UTC", () => {
+  process.env.TZ = "Asia/Tokyo";
+  try {
+    assert.throws(() => scanCalendar(untrusted(), "UTC"));
+  } finally {
+    process.env.TZ = "UTC";
+  }
+});
+
+test("free text, case and signed durations do not make a feed unavailable", () => {
+  const feed = calendar(
+    event(
+      "UID:text",
+      "DTSTART:20270105T090000Z",
+      "DURATION:+PT1H",
+      'SUMMARY;VALUE=TEXT:Bring a 12" ruler',
+    ),
+  )
+    .replace("VERSION:2.0", 'VERSION:2.0\r\nX-WR-CALDESC:Room 5" wide')
+    .replace("END:VCALENDAR", "end:vcalendar");
+  const component = Object.values(scanCalendar(feed, "UTC").events).find(
+    (entry) => entry?.type === "VEVENT",
+  );
+  assert.equal(component?.summary, 'Bring a 12" ruler');
+});
+
+for (const [name, feed, zone, from, to, expected] of [
+  [
+    "a lowercase UNTIL",
+    calendar(
+      series(
+        "DTSTART;TZID=Asia/Tokyo:20270101T090000",
+        "FREQ=DAILY;until=20270103T000000Z",
+      ),
+    ),
+    "UTC",
+    "2027-01-01",
+    "2027-01-06",
+    [
+      "2027-01-01T00:00:00.000Z",
+      "2027-01-02T00:00:00.000Z",
+      "2027-01-03T00:00:00.000Z",
+    ],
+  ],
+  [
+    "COUNT before FREQ",
+    calendar(series("DTSTART:20270101T090000Z", "COUNT=2;FREQ=DAILY")),
+    "UTC",
+    "2027-01-01",
+    "2027-01-06",
+    ["2027-01-01T09:00:00.000Z", "2027-01-02T09:00:00.000Z"],
+  ],
+  [
+    "a DATE UNTIL on a timed series",
+    calendar(
+      series(
+        "DTSTART;TZID=America/New_York:20270108T090000",
+        "FREQ=DAILY;UNTIL=20270110",
+      ),
+    ),
+    "UTC",
+    "2027-01-07",
+    "2027-01-14",
+    [
+      "2027-01-08T14:00:00.000Z",
+      "2027-01-09T14:00:00.000Z",
+      "2027-01-10T14:00:00.000Z",
+    ],
+  ],
+  [
+    "an all-day series over a skipped midnight",
+    calendar(series("DTSTART;VALUE=DATE:20260904", "FREQ=DAILY;COUNT=4")),
+    "America/Santiago",
+    "2026-09-03",
+    "2026-09-09",
+    [
+      "2026-09-04T04:00:00.000Z",
+      "2026-09-05T04:00:00.000Z",
+      "2026-09-06T04:00:00.000Z",
+      "2026-09-07T03:00:00.000Z",
+    ],
+  ],
+  [
+    "a timed override of an all-day series",
+    calendar(
+      series("DTSTART;VALUE=DATE:20270101", "FREQ=DAILY;COUNT=3"),
+      event(
+        "UID:series",
+        "RECURRENCE-ID;VALUE=DATE:20270102",
+        "DTSTART:20270102T140000Z",
+      ),
+    ),
+    "UTC",
+    "2027-01-01",
+    "2027-01-05",
+    [
+      "2027-01-01T00:00:00.000Z",
+      "2027-01-02T14:00:00.000Z",
+      "2027-01-03T00:00:00.000Z",
+    ],
+  ],
+] as const)
+  test(`recurrence positions survive ${name}`, () => {
+    assert.deepEqual(starts(feed, zone, from, to).sort(), [...expected]);
+  });
