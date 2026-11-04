@@ -23,6 +23,7 @@
     "mailauth": "8.0.4",
     "mailparser": "3.14.1",
     "node-ical": "0.27.3",
+    "oauth4webapi": "3.8.8",
     "rate-limiter-flexible": "11.2.3",
     "zod": "4.6.7"
   },
