@@ -88,7 +88,6 @@ export function createOrderEmailParseJob({
             { id: row.id, user_id: row.user_id },
           ),
         );
-        if (result.status === "parsed") reconcileRow(row);
         if (result.status === "failed") {
           failed++;
           console.error(
