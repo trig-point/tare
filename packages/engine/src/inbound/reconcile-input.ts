@@ -1,5 +1,7 @@
+import { foldName } from "@tare/nutrition";
 import { orderSchema } from "@tare/order-parser";
 import { z as zod } from "zod";
+import type { Config } from "../config.ts";
 import { OperationError } from "../operations/registry.ts";
 import type { SelectReconcileEmailResult } from "../queries/select-reconcile-email.ts";
 
@@ -39,6 +41,10 @@ const parsed = orderSchema.extend({
   uncertain: zod.array(zod.string()),
 });
 const fullMeal = meal.extend({ chef: text.nullable().optional() });
+export const manualEntryAnswer = manualOrder.extend({
+  delivery_date: zod.iso.date(),
+  meals: zod.array(fullMeal).min(1).max(30),
+});
 export const corrections = zod.strictObject({
   service: text.optional(),
   kind: kind.optional(),
@@ -71,8 +77,21 @@ export const advisoryAnswer = zod.union([
 ]);
 export const reviewAnswer = zod.union([corrections, advisoryAnswer]);
 
+export function serviceIdentity(
+  value: string,
+  services: Config["orderEmailServices"],
+): string {
+  const folded = foldName(value);
+  return (
+    Object.keys(services).find((key) => foldName(key) === folded) ?? folded
+  );
+}
+
 export function readOrderDraft(email: SelectReconcileEmailResult): OrderDraft {
-  const result = parsed.parse(JSON.parse(email.parse_result ?? "null"));
+  const result =
+    email.parse_state === "parsed"
+      ? parsed.parse(JSON.parse(email.parse_result ?? "null"))
+      : null;
   if (email.manual_result !== null) {
     const saved: unknown = JSON.parse(email.manual_result);
     const partial = zod.strictObject({ partial: draft }).safeParse(saved);
@@ -81,13 +100,14 @@ export function readOrderDraft(email: SelectReconcileEmailResult): OrderDraft {
     return {
       ...manual,
       issues: [],
-      resolved: [],
+      resolved: ["service"],
       meals: manual.meals.map((meal, index) => ({
         ...meal,
-        source_index: result.meals[index]?.source_index ?? index,
+        source_index: result?.meals[index]?.source_index ?? index,
       })),
     };
   }
+  if (!result) throw new Error("Email has no parsed or manual order");
   return {
     service: email.service ?? result.service.value,
     kind: result.kind.value,
@@ -120,6 +140,7 @@ export function foldAnswer(
     if (input[field] === undefined) continue;
     Object.assign(result, { [field]: input[field] });
     result.issues = result.issues.filter((path) => path !== field);
+    result.resolved.push(field);
   }
   if (input.meals) {
     if (input.meals.every((meal) => !("source_index" in meal))) {
