@@ -125,7 +125,7 @@ test("scanner strips VTIMEZONE and preserves each source form and folded value",
   assert(
     !Object.values(events).some((component) => component?.type === "VTIMEZONE"),
   );
-  const floating = events.floating;
+  const floating = events["event-1"];
   assert(floating?.type === "VEVENT");
   equal(floating.summary, 'Bring a 12" ruler');
   deepEqual(
