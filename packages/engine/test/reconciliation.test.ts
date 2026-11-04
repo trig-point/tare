@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import type { TestContext } from "node:test";
+import type { Config } from "../src/config.ts";
 import { writeTransaction } from "../src/db.ts";
 import { createOrderEmailParseJob } from "../src/inbound/job.ts";
 import { createOrderQuestionKinds } from "../src/inbound/questions.ts";
@@ -12,6 +13,8 @@ import { selectDeliveryOrder } from "../src/queries/orders/select-delivery-order
 import { selectPerson } from "../src/queries/select-person.ts";
 import { selectQueuedInboundEmail } from "../src/queries/select-queued-inbound-email.ts";
 import { selectReconcileEmail } from "../src/queries/select-reconcile-email.ts";
+import { updateInboundParse } from "../src/queries/update-inbound-parse.ts";
+import { createQuestion } from "../src/questions/kinds.ts";
 import { rejection } from "./auth-support.ts";
 import { test } from "./support/hang-ceiling.ts";
 import { twoUsers } from "./support/two-users.ts";
@@ -45,13 +48,26 @@ const first = <Value>(values: Value[]) => {
   assert.ok(value);
   return value;
 };
-async function setup(context: TestContext) {
+const emailServices = {
+  kit: { senders: ["orders@kit.example.com"], dkim_domains: [] },
+};
+async function setup(
+  context: TestContext,
+  services: Config["orderEmailServices"] = emailServices,
+) {
   const fixture = await twoUsers(context, "fallback");
   const { database, admin } = fixture;
   let now = "2026-01-01T00:00:00.000Z",
     sequence = 0;
   const clock = { now: () => new Date(now) };
-  const kinds = createOrderQuestionKinds({ clock });
+  const kinds = createOrderQuestionKinds({ clock, services });
+  const job = createOrderEmailParseJob({
+    database,
+    clock,
+    model: null,
+    questionKinds: kinds,
+    services,
+  });
   const seed = (
     result: unknown = parse(),
     person = admin,
@@ -61,10 +77,12 @@ async function setup(context: TestContext) {
     id: Number(
       database
         .prepare(
-          "INSERT INTO inbound_emails (user_id, service, mark, dedupe_key, raw, subject_attached, parse_state, parse_result, created_at, updated_at) VALUES (?, 'kit', 'sender_matched', ?, ?, 0, ?, ?, ?, ?)",
+          "INSERT INTO inbound_emails (user_id, service, mark, dedupe_key, raw, subject_attached, parse_state, parse_result, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)",
         )
         .run(
           person.user.id,
+          state === "held" ? null : "kit",
+          state === "held" ? "unverified" : "sender_matched",
           String(++sequence),
           Buffer.from("From: orders@kit.example.com\r\n\r\nGarden Bowl 2"),
           state,
@@ -81,7 +99,7 @@ async function setup(context: TestContext) {
         email,
         selectPerson(database, { id: person.user.id }) ?? person.user,
         now,
-        { questionKinds: kinds, services: {} },
+        { questionKinds: kinds, services },
         "job",
       ),
     );
@@ -121,6 +139,20 @@ async function setup(context: TestContext) {
     });
   const answerOk = async (id: number, value: unknown) =>
     assert.equal((await answer(id, value)).status, 200);
+  const release = async (email: ReturnType<typeof seed>) => {
+    const held = createQuestion(
+      database,
+      {
+        userId: email.user_id,
+        kind: "held_order_email",
+        subjectRef: String(email.id),
+        prompt: "Confirm the email.",
+      },
+      clock,
+      kinds,
+    );
+    await answerOk(held.id, { release: true });
+  };
   const setNow = (value: string) => {
     now = value;
     fixture.setNow(value);
@@ -129,6 +161,7 @@ async function setup(context: TestContext) {
     ...fixture,
     clock,
     kinds,
+    job,
     seed,
     run,
     order,
@@ -136,6 +169,7 @@ async function setup(context: TestContext) {
     question,
     answer,
     answerOk,
+    release,
     setNow,
   };
 }
@@ -174,9 +208,9 @@ test("chef carry-over, merged identities and ownership", async (context) => {
   assert.equal(question(late).status, "open");
 });
 
-test("pickup questions incomplete parses once and validates persisted data and mapper offsets", async (context) => {
+test("pickup questions rows once, reconciles failed manual answers and validates persisted data and mapper offsets", async (context) => {
   const fixture = await setup(context);
-  const { database, admin, seed, clock, kinds } = fixture;
+  const { database, admin, seed, job } = fixture;
   const pending = [
     parse(null),
     parse(2, "processed", null),
@@ -199,12 +233,6 @@ test("pickup questions incomplete parses once and validates persisted data and m
   database
     .prepare("UPDATE inbound_emails SET parse_state = 'held' WHERE id = ?")
     .run(queued.id);
-  const job = createOrderEmailParseJob({
-    database,
-    clock,
-    model: null,
-    questionKinds: kinds,
-  });
   for (let pass = 0; pass < 2; pass++)
     await assert.rejects(
       job.run({ signal: new AbortController().signal }),
@@ -216,16 +244,34 @@ test("pickup questions incomplete parses once and validates persisted data and m
   );
   for (const email of pending)
     assert.ok(selectReconcileEmail(database, email)?.disposition);
-  for (const email of deferred)
-    assert.equal(selectReconcileEmail(database, email)?.disposition, null);
+  for (const [index, email] of deferred.entries())
+    assert.equal(
+      selectReconcileEmail(database, email)?.disposition,
+      index === 0 ? null : "questioned",
+    );
   assert.equal(
     database.prepare("SELECT id FROM questions WHERE kind LIKE 'order_%'").all()
       .length,
-    pending.length,
+    pending.length + 2,
   );
   assert.throws(() => fixture.run(malformed));
   assert.equal(selectReconcileEmail(database, malformed)?.disposition, null);
   assert.equal(first(fixture.meals()).revision, 2);
+  const failedEmail = first(deferred.slice(2));
+  assert.equal(
+    selectReconcileEmail(database, failedEmail)?.parse_state,
+    "failed",
+  );
+  await fixture.answerOk(
+    fixture.question(failedEmail, "order_manual_entry").id,
+    {
+      service: " KIT ",
+      kind: "processed",
+      delivery_date: "2026-01-02",
+      meals: [{ name: "Garden Bowl", quantity: 4 }],
+    },
+  );
+  assert.equal(first(fixture.meals()).quantity, 4);
 });
 
 test("day-start changes and late lists preserve eaten stock; zero meals are hidden", async (context) => {
@@ -375,9 +421,10 @@ test("late acceptance creates once or commits a superseded answer after a collis
   }
 });
 
-test("all sequences of up to three emails, including answered incomplete parses, match precedence while not due", async (context) => {
+test("all sequences of up to three emails, including released and manually entered lists, match precedence while not due", async (context) => {
+  const fixture = await setup(context);
   const { answerOk, database, seed, run, admin, setNow, order, question } =
-    await setup(context);
+    fixture;
   const reset = () =>
     database.exec(
       "DELETE FROM questions; DELETE FROM order_meals; DELETE FROM orders; DELETE FROM inbound_emails",
@@ -391,7 +438,8 @@ test("all sequences of up to three emails, including answered incomplete parses,
     for (const prefix of sequences.filter(
       (sequence) => sequence.length === length - 1,
     ))
-      for (const variant of [0, 1, 2, 3]) sequences.push([...prefix, variant]);
+      for (const variant of [0, 1, 2, 3, 4, 5])
+        sequences.push([...prefix, variant]);
   for (const sequence of sequences)
     for (let dueAfter = 0; dueAfter <= sequence.length; dueAfter++) {
       reset();
@@ -409,8 +457,27 @@ test("all sequences of up to three emails, including answered incomplete parses,
           processed ? "processed" : "scheduling",
           variant === 2 ? null : "2026-01-02",
         );
-        const email = seed(result);
+        const email = seed(
+          variant === 5 ? { status: "no_model" } : result,
+          admin,
+          variant === 4 ? "held" : variant === 5 ? "no_model" : "parsed",
+        );
+        if (variant === 4) {
+          await fixture.release(email);
+          database
+            .prepare(
+              "UPDATE inbound_emails SET parse_state = 'parsed' WHERE id = ?",
+            )
+            .run(email.id);
+        }
         run(email);
+        if (variant === 5)
+          await answerOk(question(email, "order_manual_entry").id, {
+            service: "kit",
+            kind: "processed",
+            delivery_date: "2026-01-02",
+            meals: [{ name: "Garden Bowl", chef: "Example chef", quantity }],
+          });
         if (variant === 2 && (index === 0 || index >= dueAfter))
           await answerOk(question(email, "order_delivery_date").id, {
             delivery_date: "2026-01-02",
@@ -436,7 +503,7 @@ test("all sequences of up to three emails, including answered incomplete parses,
           [winner.processed ? "processed" : "scheduled", winner.id],
         );
     }
-  assert.equal(sequences.length, 85);
+  assert.equal(sequences.length, 259);
   reset();
   setNow("2026-01-01T00:00:00.000Z");
   const older = seed(parse(null));
@@ -656,4 +723,91 @@ test("ambiguous chefs require a blocking answer before replacement", async (cont
     meals().map((meal) => [meal.chef, meal.quantity]),
     [["Other chef", 3]],
   );
+});
+
+test("held release reaches parsed, model-free and failed outcomes and recovers after interruption", async (context) => {
+  const fixture = await setup(context);
+  const { database, admin, seed, clock, question, release, job } = fixture;
+  for (const outcome of ["parsed", "no_model", "failed"]) {
+    const email = seed(null, admin, "held");
+    await release(email);
+    const released = selectReconcileEmail(database, email);
+    assert.deepEqual(
+      [released?.parse_state, released?.disposition, released?.released_at],
+      ["queued", null, clock.now().toISOString()],
+    );
+    writeTransaction(database, () =>
+      updateInboundParse(
+        database,
+        {
+          parse_state: outcome,
+          parse_result: JSON.stringify(
+            outcome === "parsed" ? parse() : { status: outcome },
+          ),
+          reason_class: null,
+          now: clock.now().toISOString(),
+        },
+        email,
+      ),
+    );
+    assert.equal(selectReconcileEmail(database, email)?.disposition, null);
+    await job.run({ signal: new AbortController().signal });
+    const manual = outcome === "no_model" || outcome === "failed";
+    assert.equal(
+      selectReconcileEmail(database, email)?.disposition,
+      manual ? "questioned" : "reconciled",
+    );
+    if (manual)
+      assert.equal(question(email, "order_manual_entry").status, "open");
+  }
+  assert.deepEqual(
+    database.prepare("SELECT name, quantity FROM order_meals").all(),
+    [{ name: "Garden Bowl", quantity: 2 }],
+  );
+});
+
+test("released service matching and human service identities work with empty configuration", async (context) => {
+  for (const configured of [false, true]) {
+    const services: Config["orderEmailServices"] = configured
+      ? { kit: { senders: ["orders@kit.example.com"], dkim_domains: [] } }
+      : {};
+    const { database, admin, seed, run, question, answerOk, release } =
+      await setup(context, services);
+    for (const service of ["  KIT  ", "Other kit", "uncertain"]) {
+      const result = parse();
+      result.service = field(service === "uncertain" ? "kit" : service);
+      if (service === "uncertain") result.uncertain = ["service"];
+      const email = seed(result, admin, "held");
+      await release(email);
+      database
+        .prepare(
+          "UPDATE inbound_emails SET parse_state = 'parsed' WHERE id = ?",
+        )
+        .run(email.id);
+      run(email);
+      if (!configured || service !== "  KIT  ") {
+        assert.equal(
+          selectReconcileEmail(database, email)?.disposition,
+          "questioned",
+        );
+        await answerOk(
+          question(email, "order_review").id,
+          service === "Other kit"
+            ? {
+                service: "  Meal Straße  ",
+                meals: [{ name: "Garden Bowl", quantity: 2 }],
+              }
+            : { service: " KIT " },
+        );
+      }
+      assert.equal(
+        selectReconcileEmail(database, email)?.disposition,
+        "reconciled",
+      );
+    }
+    assert.deepEqual(
+      database.prepare("SELECT service FROM orders ORDER BY service").all(),
+      [{ service: "kit" }, { service: "meal strasse" }],
+    );
+  }
 });

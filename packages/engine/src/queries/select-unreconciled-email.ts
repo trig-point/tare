@@ -15,7 +15,7 @@ export function selectUnreconciledEmail(
 ): SelectUnreconciledEmailResult | null {
   const sql = `
 	SELECT id, user_id FROM inbound_emails
-	WHERE parse_state = 'parsed' AND disposition IS NULL AND id > ?
+	WHERE parse_state IN ('parsed', 'no_model', 'failed') AND disposition IS NULL AND id > ?
 	ORDER BY id LIMIT 1;
 	
 	`;

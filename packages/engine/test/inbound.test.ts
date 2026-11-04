@@ -6,7 +6,7 @@ import { hashToken } from "../src/auth/sessions.ts";
 import { loadConfig } from "../src/config.ts";
 import { mountInboundEmail } from "../src/inbound/endpoint.ts";
 import { selectMessage } from "../src/inbound/message.ts";
-import { heldEmailKind } from "../src/inbound/questions.ts";
+import { createOrderQuestionKinds } from "../src/inbound/questions.ts";
 import {
   assertionHeader,
   dummyHash,
@@ -35,7 +35,7 @@ async function setupInbound(context: TestContext, mode: "access" | "fallback") {
     clock: { now: () => issuedAt },
     dummyHash,
     verifyPassword: async () => false,
-    questionKinds: new Map([[heldEmailKind.name, heldEmailKind]]),
+    questionKinds: createOrderQuestionKinds({ clock: { now: () => issuedAt } }),
   });
   const create = async (
     request = setup.admin.request,
@@ -179,18 +179,34 @@ test("token-before-size, unreadable input, subject dedupe and held questions per
       /^unverified: Meal delivery; orders@kit.example.com;/,
     );
     assert.ok(!question.prompt.includes("Garden Bowl"));
-    await rejection(
-      await setup.admin.request("/api/questions/answer", {
-        method: "POST",
-        body: JSON.stringify({ id: question.id, answer: { release: true } }),
-      }),
-      409,
-      "held_email_answer_unavailable",
+    for (const release of [true, false])
+      await rejection(
+        await setup.member.request("/api/questions/answer", {
+          method: "POST",
+          body: JSON.stringify({ id: question.id, answer: { release } }),
+        }),
+        404,
+        "not_found",
+      );
+    assert.equal(
+      (
+        await setup.admin.request("/api/questions/answer", {
+          method: "POST",
+          body: JSON.stringify({ id: question.id, answer: { release: false } }),
+        })
+      ).status,
+      200,
     );
   }
+  for (const id of ["order", ""])
+    assert.equal((await setup.post(message(id), token)).status, 200);
+  assert.deepEqual(setup.rows("SELECT disposition FROM inbound_emails"), [
+    { disposition: "discarded" },
+    { disposition: "discarded" },
+  ]);
   assert.deepEqual(setup.rows("SELECT status FROM questions"), [
-    { status: "open" },
-    { status: "open" },
+    { status: "answered" },
+    { status: "answered" },
   ]);
   assert.deepEqual(
     (await (await setup.member.request("/api/questions")).json()).questions,

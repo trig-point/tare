@@ -27,8 +27,10 @@ import {
   corrections,
   dateAnswer,
   lateAnswer,
+  manualEntryAnswer,
   normalizedOrder,
   readOrderDraft,
+  serviceIdentity,
 } from "./reconcile-input.ts";
 
 export type ReconcileContext = {
@@ -53,13 +55,12 @@ export function reconcileEmail(
   if (!email) throw new OperationError(404, "not_found");
   if (
     mode === "job" &&
-    (email.disposition !== null || email.parse_state !== "parsed")
+    (email.disposition !== null ||
+      !["parsed", "no_model", "failed"].includes(email.parse_state))
   )
     return applied;
   if (email.disposition === "discarded")
     throw new OperationError(409, "email_discarded");
-  const input = readOrderDraft(email);
-  if (email.service !== null) input.service = email.service;
   const save = (
     disposition: "questioned" | "reconciled",
     orderId = email.applied_order_id,
@@ -105,6 +106,25 @@ export function reconcileEmail(
       );
     }
   };
+  if (
+    email.manual_result === null &&
+    (email.parse_state === "no_model" || email.parse_state === "failed")
+  ) {
+    save("questioned");
+    ask("order_manual_entry", "Enter the order.", manualEntryAnswer);
+    return applied;
+  }
+  const input = readOrderDraft(email);
+  if (email.service !== null) input.service = email.service;
+  else if (input.service !== null) {
+    input.service = serviceIdentity(input.service, context.services);
+    if (
+      !input.resolved.includes("service") &&
+      !Object.hasOwn(context.services, input.service) &&
+      !input.issues.includes("service")
+    )
+      input.issues.push("service");
+  }
   const block = (fields: string[]) => {
     save(
       "questioned",
