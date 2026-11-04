@@ -124,7 +124,11 @@ function applyList(
       desired.delete(key);
     } else if (meal.has_actions)
       updateMeal(scope, person.id, meal.id, { quantity: 0 }, now);
-    else deleteExpectedMeal(database, { user_id: person.id, id: meal.id });
+    else if (
+      deleteExpectedMeal(database, { user_id: person.id, id: meal.id })
+        .changes !== 1
+    )
+      throw new Error("Meal delete failed");
   }
   for (const meal of desired.values()) {
     if (

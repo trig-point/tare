@@ -272,11 +272,23 @@ test("late lists preserve eaten stock and receipts; zero meals are hidden", asyn
     database.prepare("SELECT mutation_id FROM meal_actions").all().length,
     2,
   );
-  replacement.meals[0].name = field("Garden Soup");
-  run(seed(replacement));
+  const stamp = fixture.clock.now().toISOString();
+  database
+    .prepare(
+      "INSERT INTO planned_items (user_id, day, order_meal_id, created_at, updated_at) VALUES (?, '2026-01-02', ?, ?, ?)",
+    )
+    .run(admin.user.id, meals()[1]?.id, stamp, stamp);
+  for (const name of ["Garden Soup", "Garden Rice"]) {
+    replacement.meals[0].name = field(name);
+    run(seed(replacement));
+  }
   assert.deepEqual(
-    meals().map((meal) => meal.name),
-    ["Garden Bowl", "Garden Soup"],
+    meals().map((meal) => [meal.name, meal.quantity]),
+    [
+      ["Garden Bowl", 0],
+      ["Garden Plate", 0],
+      ["Garden Rice", 1],
+    ],
   );
 });
 
