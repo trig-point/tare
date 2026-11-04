@@ -153,6 +153,23 @@ function applyList(
   return { status: "applied" };
 }
 
+function carryChefs(
+  input: CompleteOrder,
+  existing: { name: string; chef: string | null }[],
+): boolean {
+  for (const meal of input.meals) {
+    if (meal.chef !== null) continue;
+    const chefs = new Map(
+      existing
+        .filter((candidate) => foldName(candidate.name) === foldName(meal.name))
+        .map((candidate) => [foldName(candidate.chef ?? ""), candidate.chef]),
+    );
+    if (chefs.size > 1) return false;
+    if (chefs.size === 1) meal.chef = [...chefs.values()][0] ?? null;
+  }
+  return true;
+}
+
 export function reconcileEmail(
   scope: WriteScope,
   identity: { id: number; user_id: number },
@@ -175,20 +192,7 @@ export function reconcileEmail(
   const existing = order
     ? listReconcileMeals(database, { user_id: person.id, order_id: order.id })
     : [];
-  for (const meal of input.meals) {
-    if (meal.chef !== null) continue;
-    const matches = existing.filter(
-      (candidate) => foldName(candidate.name) === foldName(meal.name),
-    );
-    const chefs = new Map(
-      matches.map((candidate) => [
-        foldName(candidate.chef ?? ""),
-        candidate.chef,
-      ]),
-    );
-    if (chefs.size > 1) return;
-    if (chefs.size === 1) meal.chef = [...chefs.values()][0] ?? null;
-  }
+  if (!carryChefs(input, existing)) return;
   if (
     isDue(
       order ?? { delivered_at: null, delivery_date: input.delivery_date },
@@ -271,12 +275,14 @@ export function acceptLateList(
       delivery_date: input.delivery_date,
     });
     if (!existing) throw error;
+    const meals = listReconcileMeals(database, {
+      user_id: person.id,
+      order_id: existing.id,
+    });
     if (
       isDue(existing, person, now) ||
-      listReconcileMeals(database, {
-        user_id: person.id,
-        order_id: existing.id,
-      }).some((meal) => meal.has_actions)
+      meals.some((meal) => meal.has_actions) ||
+      !carryChefs(input, meals)
     ) {
       finishEmail(scope, email, now, "reconciled", null, input);
       return { status: "superseded" };

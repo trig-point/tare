@@ -285,7 +285,9 @@ test("late acceptance creates once or commits a superseded answer after a collis
     const fixture = await setup(context);
     const { database, seed, run, question, answer } = fixture;
     fixture.setNow("2026-01-03T00:00:00.000Z");
-    const late = seed(parse(4, "processed"));
+    const lateList = parse(4, "processed");
+    lateList.meals[0].chef = field(null);
+    const late = seed(lateList);
     run(late);
     if (collision !== "none") {
       fixture.setNow("2026-01-01T00:00:00.000Z");
@@ -297,7 +299,10 @@ test("late acceptance creates once or commits a superseded answer after a collis
     if (superseded) await rejection(response, 409, "order_superseded");
     else assert.equal(response.status, 200);
     assert.equal(question(late).status, "answered");
-    assert.equal(first(fixture.meals()).quantity, superseded ? 2 : 4);
+    assert.deepEqual(
+      fixture.meals().map((meal) => [meal.quantity, meal.chef]),
+      [[superseded ? 2 : 4, collision === "none" ? null : "Example chef"]],
+    );
     assert.equal(
       selectReconcileEmail(database, late)?.applied_order_id,
       superseded ? null : fixture.order().id,
