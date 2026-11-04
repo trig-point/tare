@@ -84,6 +84,8 @@ describe("engine", () => {
       offUserAgent: undefined,
       orderEmailServices: {},
       orderModel: null,
+      oura: null,
+      ouraTokenKey: undefined,
       identity: { mode: "fallback" },
       firstUser: {
         username: undefined,
