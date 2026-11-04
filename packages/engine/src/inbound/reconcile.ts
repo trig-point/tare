@@ -193,10 +193,6 @@ export function reconcileEmail(
     service: input.service,
     delivery_date: input.delivery_date,
   });
-  const existing = order
-    ? listReconcileMeals(database, { user_id: person.id, order_id: order.id })
-    : [];
-  if (!carryChefs(input, existing)) return;
   if (
     isDue(
       order ?? { delivered_at: null, delivery_date: input.delivery_date },
@@ -240,6 +236,10 @@ export function reconcileEmail(
     }
     return;
   }
+  const existing = order
+    ? listReconcileMeals(database, { user_id: person.id, order_id: order.id })
+    : [];
+  if (!carryChefs(input, existing)) return;
   applyList(scope, email, person, input, order, now, kinds);
 }
 

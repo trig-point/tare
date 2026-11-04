@@ -124,7 +124,8 @@ async function setup(context: TestContext) {
 }
 
 test("chef carry-over, merged identities and ownership", async (context) => {
-  const { database, member, seed, run, meals } = await setup(context);
+  const { database, member, seed, run, meals, setNow, question } =
+    await setup(context);
   run(seed());
   const original = first(meals());
   const processed = parse(3, "processed");
@@ -143,6 +144,17 @@ test("chef carry-over, merged identities and ownership", async (context) => {
   const foreign = seed(parse(), member);
   run(foreign, member);
   assert.equal(database.prepare("SELECT id FROM orders").all().length, 2);
+  const twoChefs = parse(1, "processed");
+  twoChefs.meals.push({
+    ...twoChefs.meals[0],
+    source_index: 1,
+    chef: field("Other chef"),
+  });
+  run(seed(twoChefs));
+  setNow("2026-01-02T00:00:00.000Z");
+  const late = seed(processed);
+  run(late);
+  assert.equal(question(late).status, "open");
 });
 
 test("pickup recovers once, defers incomplete rows and validates persisted data and mapper offsets", async (context) => {
