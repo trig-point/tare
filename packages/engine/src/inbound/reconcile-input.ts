@@ -155,9 +155,10 @@ export function foldAnswer(
       result.issues = result.issues.filter(
         (path) => !path.startsWith("meals["),
       );
-      result.resolved = result.meals.map(
-        (meal) => `meals[${meal.source_index}].chef`,
-      );
+      result.resolved = [
+        ...result.resolved.filter((path) => !path.startsWith("meals[")),
+        ...result.meals.map((meal) => `meals[${meal.source_index}].chef`),
+      ];
     } else {
       for (const fix of input.meals) {
         if (!("source_index" in fix))
