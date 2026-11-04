@@ -6,6 +6,7 @@ import { inboundTokenOperations } from "../inbound/tokens.ts";
 import { loggingOperations } from "../logging/operations.ts";
 import { lookupOperations } from "../lookup/operations.ts";
 import { orderOperations } from "../orders/operations.ts";
+import { ouraOperations } from "../oura/operations.ts";
 import { planOperations } from "../plan/operations.ts";
 import { profileOperations } from "../profile/operations.ts";
 import { questionOperations } from "../questions/operations.ts";
@@ -16,6 +17,7 @@ import type { Operation } from "./registry.ts";
 
 export const operations: Operation[] = [
   ...authOperations,
+  ...ouraOperations,
   ...agentTokenOperations,
   ...inboundTokenOperations,
   ...loggingOperations,
