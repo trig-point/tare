@@ -321,6 +321,19 @@ test("Oura real file restores preserve all rows with right, missing, wrong then 
   }
   assert.deepEqual(captured, []);
   const other = setup.member.user.id as number;
+  const shortTime = "2026-01-01T01:00:00Z";
+  assert.throws(
+    () =>
+      storeOuraConnection(
+        setup.database,
+        other,
+        0,
+        { ...grant, expiresAt: shortTime },
+        key,
+        issuedAt,
+      ),
+    /CHECK constraint failed/,
+  );
   assert.ok(
     storeOuraConnection(setup.database, other, 0, grant, key, issuedAt),
   );
@@ -330,6 +343,10 @@ test("Oura real file restores preserve all rows with right, missing, wrong then 
   assert.throws(
     () => state.run(999, issuedAt.toISOString(), grant.expiresAt),
     /FOREIGN KEY/,
+  );
+  assert.throws(
+    () => state.run(other, issuedAt.toISOString(), shortTime),
+    /CHECK constraint failed/,
   );
   state.run(other, issuedAt.toISOString(), grant.expiresAt);
   setup.database.prepare("DELETE FROM users WHERE id = ?").run(other);
