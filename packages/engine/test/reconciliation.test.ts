@@ -9,6 +9,7 @@ import { listMealsOnHand } from "../src/orders/index.ts";
 import { listMealCandidates } from "../src/queries/orders/list-meal-candidates.ts";
 import { listReconcileMeals } from "../src/queries/orders/list-reconcile-meals.ts";
 import { selectDeliveryOrder } from "../src/queries/orders/select-delivery-order.ts";
+import { selectPerson } from "../src/queries/select-person.ts";
 import { selectQueuedInboundEmail } from "../src/queries/select-queued-inbound-email.ts";
 import { selectReconcileEmail } from "../src/queries/select-reconcile-email.ts";
 import { rejection } from "./auth-support.ts";
@@ -75,28 +76,41 @@ async function setup(context: TestContext) {
   });
   const run = (email: ReturnType<typeof seed>, person = admin) =>
     writeTransaction(database, (scope) =>
-      reconcileEmail(scope, email, person.user, now, kinds),
+      reconcileEmail(
+        scope,
+        email,
+        selectPerson(database, { id: person.user.id }) ?? person.user,
+        now,
+        { questionKinds: kinds, services: {} },
+        "job",
+      ),
     );
-  const order = () => {
+  const order = (date = "2026-01-02") => {
     const row = selectDeliveryOrder(database, {
       user_id: admin.user.id,
       service: "kit",
-      delivery_date: "2026-01-02",
+      delivery_date: date,
     });
     assert.ok(row);
     return row;
   };
-  const meals = () =>
+  const meals = (date = "2026-01-02") =>
     listReconcileMeals(database, {
       user_id: admin.user.id,
-      order_id: order().id,
+      order_id: order(date).id,
     });
-  const question = (email: ReturnType<typeof seed>) => {
+  const question = (
+    email: ReturnType<typeof seed>,
+    kind = "order_late_list",
+  ) => {
     const rows = database
-      .prepare<[string], { id: number; status: string }>(
-        "SELECT id, status FROM questions WHERE subject_ref = ? AND kind = 'order_late_list'",
+      .prepare<
+        [string, string],
+        { id: number; status: string; answer_schema: string }
+      >(
+        "SELECT id, status, answer_schema FROM questions WHERE subject_ref = ? AND kind = ? ORDER BY id DESC LIMIT 1",
       )
-      .all(String(email.id));
+      .all(String(email.id), kind);
     assert.equal(rows.length, 1);
     return first(rows);
   };
@@ -105,6 +119,8 @@ async function setup(context: TestContext) {
       method: "POST",
       body: JSON.stringify({ id, answer: value }),
     });
+  const answerOk = async (id: number, value: unknown) =>
+    assert.equal((await answer(id, value)).status, 200);
   const setNow = (value: string) => {
     now = value;
     fixture.setNow(value);
@@ -119,6 +135,7 @@ async function setup(context: TestContext) {
     meals,
     question,
     answer,
+    answerOk,
     setNow,
   };
 }
@@ -157,7 +174,7 @@ test("chef carry-over, merged identities and ownership", async (context) => {
   assert.equal(question(late).status, "open");
 });
 
-test("pickup recovers once, defers incomplete rows and validates persisted data and mapper offsets", async (context) => {
+test("pickup questions incomplete parses once and validates persisted data and mapper offsets", async (context) => {
   const fixture = await setup(context);
   const { database, admin, seed, clock, kinds } = fixture;
   const pending = [
@@ -168,8 +185,9 @@ test("pickup recovers once, defers incomplete rows and validates persisted data 
     { ...parse(), dropped: ["meals[0].chef"] },
     { ...parse(), kind: field(null) },
   ].map((result) => seed(result));
-  for (const state of ["held", "no_model", "failed"])
-    pending.push(seed({ status: state }, admin, state));
+  const deferred = ["held", "no_model", "failed"].map((state) =>
+    seed({ status: state }, admin, state),
+  );
   const malformed = seed({ status: "parsed" });
   const complete = seed(),
     queued = seed(parse(), admin, "queued");
@@ -197,17 +215,27 @@ test("pickup recovers once, defers incomplete rows and validates persisted data 
     "reconciled",
   );
   for (const email of pending)
+    assert.ok(selectReconcileEmail(database, email)?.disposition);
+  for (const email of deferred)
     assert.equal(selectReconcileEmail(database, email)?.disposition, null);
+  assert.equal(
+    database.prepare("SELECT id FROM questions WHERE kind LIKE 'order_%'").all()
+      .length,
+    pending.length,
+  );
   assert.throws(() => fixture.run(malformed));
   assert.equal(selectReconcileEmail(database, malformed)?.disposition, null);
-  assert.equal(first(fixture.meals()).revision, 1);
+  assert.equal(first(fixture.meals()).revision, 2);
 });
 
-test("late lists preserve eaten stock and receipts; zero meals are hidden", async (context) => {
+test("day-start changes and late lists preserve eaten stock; zero meals are hidden", async (context) => {
   const fixture = await setup(context);
   const { database, admin, member, seed, run, meals, answer, question } =
     fixture;
-  run(seed());
+  const scheduled = parse();
+  scheduled.dropped = ["meals[1]"];
+  const originalEmail = seed(scheduled);
+  run(originalEmail);
   const nutrition = first(
     database
       .prepare<[], { id: number }>(
@@ -237,6 +265,14 @@ test("late lists preserve eaten stock and receipts; zero meals are hidden", asyn
     );
   };
   eat("first");
+  database.prepare("UPDATE users SET day_start_hour = 6").run();
+  await rejection(
+    await answer(question(originalEmail, "order_review").id, {
+      corrections: { meals: [{ source_index: 0, quantity: 2 }] },
+    }),
+    409,
+    "order_due",
+  );
   for (const delivered of [false, true]) {
     if (delivered)
       database
@@ -264,7 +300,10 @@ test("late lists preserve eaten stock and receipts; zero meals are hidden", asyn
       200,
     );
     assert.equal(first(meals()).quantity, delivered ? 0 : 1);
-    if (!delivered) eat("second");
+    if (!delivered) {
+      database.prepare("UPDATE users SET day_start_hour = 0").run();
+      eat("second");
+    }
   }
   assert.deepEqual(
     listMealCandidates(database, { user_id: admin.user.id }),
@@ -276,12 +315,12 @@ test("late lists preserve eaten stock and receipts; zero meals are hidden", asyn
   );
   database.prepare("UPDATE orders SET delivered_at = NULL").run();
   fixture.setNow("2026-01-01T00:00:00.000Z");
-  const replacement = parse(1, "processed");
+  const replacement = parse(1, "processed", "2026-01-03");
   replacement.meals[0].name = field("Garden Plate");
   run(seed(replacement));
   assert.deepEqual(
     meals().map((meal) => meal.quantity),
-    [0, 1],
+    [0],
   );
   assert.equal(
     database.prepare("SELECT mutation_id FROM meal_actions").all().length,
@@ -290,17 +329,16 @@ test("late lists preserve eaten stock and receipts; zero meals are hidden", asyn
   const stamp = fixture.clock.now().toISOString();
   database
     .prepare(
-      "INSERT INTO planned_items (user_id, day, order_meal_id, created_at, updated_at) VALUES (?, '2026-01-02', ?, ?, ?)",
+      "INSERT INTO planned_items (user_id, day, order_meal_id, created_at, updated_at) VALUES (?, '2026-01-03', ?, ?, ?)",
     )
-    .run(admin.user.id, meals()[1]?.id, stamp, stamp);
+    .run(admin.user.id, first(meals("2026-01-03")).id, stamp, stamp);
   for (const name of ["Garden Soup", "Garden Rice"]) {
     replacement.meals[0].name = field(name);
     run(seed(replacement));
   }
   assert.deepEqual(
-    meals().map((meal) => [meal.name, meal.quantity]),
+    meals("2026-01-03").map((meal) => [meal.name, meal.quantity]),
     [
-      ["Garden Bowl", 0],
       ["Garden Plate", 0],
       ["Garden Rice", 1],
     ],
@@ -337,8 +375,9 @@ test("late acceptance creates once or commits a superseded answer after a collis
   }
 });
 
-test("all sequences of up to three complete emails match precedence while not due", async (context) => {
-  const { database, seed, run, admin, setNow, order } = await setup(context);
+test("all sequences of up to three emails, including answered incomplete parses, match precedence while not due", async (context) => {
+  const { answerOk, database, seed, run, admin, setNow, order, question } =
+    await setup(context);
   const reset = () =>
     database.exec(
       "DELETE FROM questions; DELETE FROM order_meals; DELETE FROM orders; DELETE FROM inbound_emails",
@@ -352,11 +391,12 @@ test("all sequences of up to three complete emails match precedence while not du
     for (const prefix of sequences.filter(
       (sequence) => sequence.length === length - 1,
     ))
-      for (const variant of [0, 1, 2]) sequences.push([...prefix, variant]);
+      for (const variant of [0, 1, 2, 3]) sequences.push([...prefix, variant]);
   for (const sequence of sequences)
     for (let dueAfter = 0; dueAfter <= sequence.length; dueAfter++) {
       reset();
-      const emails = sequence.map((variant, index) => {
+      const emails: { processed: boolean; quantity: number; id: number }[] = [];
+      for (const [index, variant] of sequence.entries()) {
         setNow(
           index >= dueAfter
             ? "2026-01-02T00:00:00.000Z"
@@ -364,12 +404,23 @@ test("all sequences of up to three complete emails match precedence while not du
         );
         const processed = variant > 0,
           quantity = variant + 1 + 3 * index;
-        const email = seed(
-          parse(quantity, processed ? "processed" : "scheduling"),
+        const result = parse(
+          variant === 3 ? null : quantity,
+          processed ? "processed" : "scheduling",
+          variant === 2 ? null : "2026-01-02",
         );
+        const email = seed(result);
         run(email);
-        return { processed, quantity, id: email.id };
-      });
+        if (variant === 2 && (index === 0 || index >= dueAfter))
+          await answerOk(question(email, "order_delivery_date").id, {
+            delivery_date: "2026-01-02",
+          });
+        if (variant === 3 && (index < dueAfter || dueAfter === 0))
+          await answerOk(question(email, "order_review").id, {
+            meals: [{ source_index: 0, quantity }],
+          });
+        emails.push({ processed, quantity, id: email.id });
+      }
       const candidates = emails.slice(0, dueAfter);
       const winner =
         candidates.filter((email) => email.processed).at(-1) ??
@@ -385,7 +436,7 @@ test("all sequences of up to three complete emails match precedence while not du
           [winner.processed ? "processed" : "scheduled", winner.id],
         );
     }
-  assert.equal(sequences.length, 40);
+  assert.equal(sequences.length, 85);
   reset();
   setNow("2026-01-01T00:00:00.000Z");
   const older = seed(parse(5));
@@ -393,4 +444,213 @@ test("all sequences of up to three complete emails match precedence while not du
   run(seed(parse(6)));
   run(older);
   assert.deepEqual(onHand(), [6]);
+});
+
+test("blocking answers preserve partial fixes and open a successor", async (context) => {
+  const { answerOk, database, seed, run, question, answer, meals, member } =
+    await setup(context);
+  const result = parse(null);
+  result.dropped = ["delivery_date"];
+  result.delivery_date = field(null);
+  const email = seed(result);
+  run(email);
+  const initial = question(email, "order_review");
+  await rejection(await answer(initial.id, {}, member), 404, "not_found");
+  for (const invalid of [{}, { delivery_date: "invalid" }, { confirm: true }])
+    await rejection(await answer(initial.id, invalid), 400, "invalid_answer");
+  await answerOk(initial.id, { delivery_date: "2026-01-02" });
+  const next = question(email, "order_review");
+  assert.notEqual(next.id, initial.id);
+  assert.deepEqual(
+    database
+      .prepare(
+        "SELECT status FROM questions WHERE kind = 'order_review' ORDER BY id",
+      )
+      .all(),
+    [{ status: "answered" }, { status: "open" }],
+  );
+  const saved = selectReconcileEmail(database, email);
+  assert.equal(saved?.disposition, "questioned");
+  assert.equal(
+    JSON.parse(saved?.manual_result ?? "null").partial.delivery_date,
+    "2026-01-02",
+  );
+  await rejection(
+    await answer(next.id, { meals: [{ source_index: 8, quantity: 3 }] }),
+    400,
+    "invalid_answer",
+  );
+  assert.equal(question(email, "order_review").status, "open");
+  await answerOk(next.id, { meals: [{ source_index: 0, quantity: 3 }] });
+  assert.equal(first(meals()).quantity, 3);
+  assert.equal(
+    selectReconcileEmail(database, email)?.disposition,
+    "reconciled",
+  );
+  assert.equal(
+    "partial" in
+      JSON.parse(
+        selectReconcileEmail(database, email)?.manual_result ?? "null",
+      ),
+    false,
+  );
+});
+
+test("blocking reviews accept full meal names and original-index fixes", async (context) => {
+  const { answerOk, seed, run, question, meals } = await setup(context);
+  for (const empty of [true, false]) {
+    const result = parse(2, "processed");
+    result.meals[0].source_index = 2;
+    result.uncertain = ["kind", "meals[2].quantity"];
+    if (empty) {
+      result.meals.splice(0);
+      result.dropped = ["meals[0]"];
+    }
+    const email = seed(result);
+    run(email);
+    await answerOk(question(email, "order_review").id, { kind: "processed" });
+    const fix = empty
+      ? { meals: [{ name: "Garden Bowl", chef: "Example chef", quantity: 4 }] }
+      : { meals: [{ source_index: 2, quantity: 4 }] };
+    await answerOk(question(email, "order_review").id, fix);
+    assert.equal(first(meals()).quantity, 4);
+  }
+});
+
+test("advisory answers confirm, correct names, preserve revisions and commit supersession", async (context) => {
+  for (const mode of ["confirm", "same", "name", "superseded", "due"]) {
+    const { answerOk, seed, run, question, answer, meals, setNow } =
+      await setup(context);
+    const result = parse(2, "processed");
+    result.dropped = ["meals[1]"];
+    if (mode === "same") {
+      run(seed());
+      result.delivery_date = field(null);
+    }
+    const email = seed(result);
+    run(email);
+    const review = question(email, "order_review");
+    assert.equal(JSON.parse(review.answer_schema).mode, "advisory");
+    const before = meals();
+    const corrections = {
+      meals: [
+        {
+          name: mode === "name" ? "Garden Plate" : "Garden Bowl",
+          chef: "Example chef",
+          quantity: 2,
+        },
+      ],
+    };
+    if (mode === "name")
+      corrections.meals.push({
+        name: "Garden Soup",
+        chef: "Example chef",
+        quantity: 1,
+      });
+    await rejection(
+      await answer(review.id, { corrections: { delivery_date: "2026-01-03" } }),
+      400,
+      "invalid_answer",
+    );
+    if (mode === "superseded") run(seed(parse(7, "processed")));
+    if (mode === "due") setNow("2026-01-02T00:00:00.000Z");
+    const response = await answer(
+      review.id,
+      mode === "confirm" ? { confirm: true } : { corrections },
+    );
+    if (mode === "due") {
+      await rejection(response, 409, "order_due");
+      assert.equal(question(email, "order_review").status, "open");
+      await answerOk(review.id, { confirm: true });
+    } else if (mode === "superseded") {
+      await rejection(response, 409, "order_superseded");
+      assert.equal(first(meals()).quantity, 7);
+    } else if (mode === "name") {
+      assert.equal(response.status, 200);
+      assert.deepEqual(
+        meals().map((meal) => meal.name),
+        ["Garden Plate", "Garden Soup"],
+      );
+    } else assert.equal(response.status, 200);
+    assert.equal(question(email, "order_review").status, "answered");
+    if (mode !== "name" && mode !== "superseded")
+      assert.deepEqual(meals(), before);
+  }
+});
+
+test("dateless lists attach by receipt day, reuse processed deliveries and keep ownership", async (context) => {
+  const {
+    answerOk,
+    database,
+    admin,
+    member,
+    seed,
+    run,
+    meals,
+    setNow,
+    question,
+    order,
+  } = await setup(context);
+  database.prepare("UPDATE users SET day_start_hour = 4").run();
+  run(seed());
+  run(seed(parse(1, "scheduling", "2026-01-03")));
+  const dateless = parse(3, "processed", null);
+  dateless.meals[0].chef = field(null);
+  setNow("2026-01-01T22:29:00.000Z");
+  for (const quantity of [3, 4]) {
+    dateless.meals[0].quantity = field(quantity);
+    run(seed(dateless));
+    assert.deepEqual(
+      meals().map((meal) => [meal.quantity, meal.chef]),
+      [[quantity, "Example chef"]],
+    );
+  }
+  const foreign = seed(dateless, member);
+  run(foreign, member);
+  assert.equal(question(foreign, "order_delivery_date").status, "open");
+  setNow("2026-01-01T22:30:00.000Z");
+  run(seed(dateless));
+  assert.equal(first(meals("2026-01-03")).quantity, 4);
+  database
+    .prepare("UPDATE orders SET delivered_at = ? WHERE id = ?")
+    .run("2026-01-01T00:00:00.000Z", order().id);
+  setNow("2026-01-01T22:29:00.000Z");
+  const early = seed(dateless);
+  run(early);
+  assert.equal(question(early).status, "open");
+  assert.equal(first(meals("2026-01-03")).revision, 2);
+  const scheduling = seed(parse(1, "scheduling", null));
+  run(scheduling);
+  await answerOk(question(scheduling, "order_delivery_date").id, {
+    delivery_date: "2026-01-04",
+  });
+  assert.equal(
+    database
+      .prepare("SELECT id FROM orders WHERE user_id = ?")
+      .all(admin.user.id).length,
+    3,
+  );
+});
+
+test("ambiguous chefs require a blocking answer before replacement", async (context) => {
+  const { answerOk, seed, run, meals, question } = await setup(context);
+  const scheduled = parse();
+  scheduled.meals.push({
+    ...parsedMeal(1),
+    source_index: 1,
+    chef: field("Other chef"),
+  });
+  run(seed(scheduled));
+  const processed = parse(3, "processed");
+  processed.meals[0].chef = field(null);
+  const email = seed(processed);
+  run(email);
+  assert.equal(meals().length, 2);
+  await answerOk(question(email, "order_review").id, {
+    meals: [{ source_index: 0, chef: "Other chef" }],
+  });
+  assert.deepEqual(
+    meals().map((meal) => [meal.chef, meal.quantity]),
+    [["Other chef", 3]],
+  );
 });

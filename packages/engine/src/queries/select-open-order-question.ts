@@ -4,6 +4,8 @@ export type SelectOpenOrderQuestionParams = {
   user_id: number;
   subject_ref: string;
   kind: string;
+  excluded_id: number;
+  mode: any | null;
 };
 
 export type SelectOpenOrderQuestionResult = {
@@ -16,13 +18,22 @@ export function selectOpenOrderQuestion(
 ): SelectOpenOrderQuestionResult | null {
   const sql = `
 	SELECT id FROM questions WHERE user_id = ? AND subject_ref = ?
-	AND kind = ? AND status = 'open' LIMIT 1;
+	AND kind = ? AND status = 'open' AND id <> ?
+	AND (? IS NULL OR json_extract(answer_schema, '$.mode') = ?)
+	LIMIT 1;
 	
 	`;
   const res = db
     .prepare(sql)
     .raw(true)
-    .get([params.user_id, params.subject_ref, params.kind]);
+    .get([
+      params.user_id,
+      params.subject_ref,
+      params.kind,
+      params.excluded_id,
+      params.mode,
+      params.mode,
+    ]);
 
   return res ? mapArrayToSelectOpenOrderQuestionResult(res) : null;
 }
