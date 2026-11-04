@@ -125,7 +125,7 @@ Verified and sender-matched emails SHALL be parsed. An unverified email SHALL be
 - **THEN** the endpoint answers 413 and stores nothing
 
 ### Requirement: Order reconciliation
-The system SHALL keep one order per person, service and delivery date. An email that states a delivery date SHALL join or create the order for that date. A processed or final list SHALL supersede the expected meals of an order that has not been delivered yet. A processed email without a date SHALL attach to the person's earliest scheduled order for that service whose delivery date is later than the person's day on which the email was received, and SHALL take each meal's chef from the scheduled list by meal name. When no order matches, or a list arrives for an order already delivered (on hand by the shared due-date check), the system SHALL raise a question instead of changing stock. Confirming a held email SHALL release it into parsing and reconciliation; rejecting it SHALL discard it.
+The system SHALL keep one order per person, service and delivery date. An email that states a delivery date SHALL join or create the order for that date. A processed or final list SHALL supersede the expected meals of an order that has not been delivered yet. A processed email without a date SHALL attach to the person's earliest order for that service, in any status, whose delivery date is later than the person's day on which the email was received, and SHALL take each meal's chef from the scheduled list by meal name. When no order matches, or a list arrives for an order already due (on hand by the shared due-date check), the system SHALL raise a question instead of changing stock and SHALL NOT fall through to a later order. Confirming a held email SHALL release it into parsing and reconciliation; rejecting it SHALL discard it.
 
 #### Scenario: Scheduling then processed email
 - **WHEN** a scheduling email and a processed email arrive for the same delivery
@@ -135,8 +135,8 @@ The system SHALL keep one order per person, service and delivery date. An email 
 - **WHEN** a processed email lists meals and quantities only
 - **THEN** it attaches to the next scheduled delivery for that service and each meal keeps the chef the scheduling email named
 
-#### Scenario: No scheduled order
-- **WHEN** a processed email without a date arrives and the person has no later scheduled order for that service
+#### Scenario: No later order
+- **WHEN** a processed email without a date arrives and the person has no order for that service, in any status, whose delivery date is later than the person's day on which the email was received
 - **THEN** no order is created and a question asks for the delivery date
 
 #### Scenario: Confirmed held email
