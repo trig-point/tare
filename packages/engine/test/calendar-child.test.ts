@@ -70,6 +70,10 @@ test("first IPC decision wins and the slot waits for actual exit", async () => {
   });
   const first = evaluator.evaluate(input);
   const second = evaluator.evaluate(input);
+  let firstSettled = false;
+  void first.then(() => {
+    firstSettled = true;
+  });
   const child = children[0];
   assert(child);
   const connection = openDatabase(":memory:");
@@ -84,6 +88,7 @@ test("first IPC decision wins and the slot waits for actual exit", async () => {
     assert.deepEqual(await (await app.request("/health")).json(), {
       status: "ok",
     });
+    assert.equal(firstSettled, false);
   } finally {
     connection.close();
   }
