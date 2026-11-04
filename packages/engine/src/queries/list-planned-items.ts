@@ -27,8 +27,8 @@ export function listPlannedItems(
 ): ListPlannedItemsResult[] {
   const sql = `
 	SELECT * FROM planned_items
-	WHERE user_id = ? AND day = ? AND template_id = ? AND state = 'planned'
-	ORDER BY position;
+	WHERE user_id = ? AND day = ? AND template_id = ?
+	ORDER BY position, id;
 	
 	`;
   const rows = db

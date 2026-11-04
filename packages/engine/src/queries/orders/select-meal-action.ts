@@ -8,9 +8,10 @@ export type SelectMealActionParams = {
 export type SelectMealActionResult = {
   user_id: number;
   mutation_id: string;
-  order_meal_id: number;
+  order_meal_id: number | null;
+  planned_item_id: number | null;
   action: string;
-  intake_entry_id: number;
+  intake_entry_id: number | null;
   result: string;
   created_at: string;
 };
@@ -37,10 +38,11 @@ function mapArrayToSelectMealActionResult(data: any) {
     user_id: data[0],
     mutation_id: data[1],
     order_meal_id: data[2],
-    action: data[3],
-    intake_entry_id: data[4],
-    result: data[5],
-    created_at: data[6],
+    planned_item_id: data[3],
+    action: data[4],
+    intake_entry_id: data[5],
+    result: data[6],
+    created_at: data[7],
   };
   return result;
 }

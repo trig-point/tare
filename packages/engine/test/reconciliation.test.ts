@@ -5,7 +5,7 @@ import { writeTransaction } from "../src/db.ts";
 import { createOrderEmailParseJob } from "../src/inbound/job.ts";
 import { createOrderQuestionKinds } from "../src/inbound/questions.ts";
 import { reconcileEmail } from "../src/inbound/reconcile.ts";
-import { eatOrderMeal } from "../src/orders/eat.ts";
+import { actOnPlannedItem, eatOrderMeal } from "../src/orders/eat.ts";
 import { listMealsOnHand } from "../src/orders/index.ts";
 import { listMealCandidates } from "../src/queries/orders/list-meal-candidates.ts";
 import { listReconcileMeals } from "../src/queries/orders/list-reconcile-meals.ts";
@@ -310,7 +310,57 @@ test("day-start changes and late lists preserve eaten stock; zero meals are hidd
       eatOrderMeal(scope, admin.user, input, fixture.clock.now().toISOString()),
     );
   };
-  eat("first");
+  const userId = admin.user.id;
+  const plannedAt = fixture.clock.now().toISOString();
+  const templateId = Number(
+    database
+      .prepare(
+        "INSERT INTO day_templates (user_id, name, created_at) VALUES (?, 'Example day', ?)",
+      )
+      .run(userId, plannedAt).lastInsertRowid,
+  );
+  database
+    .prepare(
+      "INSERT INTO template_slots VALUES (?, ?, 0, 'Dinner', 0, 1440, 10000, NULL)",
+    )
+    .run(userId, templateId);
+  const typeId = Number(
+    database
+      .prepare(
+        "INSERT INTO day_types (user_id, name, template_id) VALUES (?, 'Example type', ?)",
+      )
+      .run(userId, templateId).lastInsertRowid,
+  );
+  database
+    .prepare("INSERT INTO default_day_types VALUES (?, ?)")
+    .run(userId, typeId);
+  for (const action of ["skip", "ate"] as const) {
+    const itemId = Number(
+      database
+        .prepare(
+          "INSERT INTO planned_items (user_id, day, template_id, position, order_meal_id, created_at, updated_at) VALUES (?, '2026-01-02', ?, 0, ?, ?, ?)",
+        )
+        .run(userId, templateId, first(meals()).id, plannedAt, plannedAt)
+        .lastInsertRowid,
+    );
+    writeTransaction(database, (scope) =>
+      actOnPlannedItem(
+        scope,
+        admin.user,
+        {
+          item_id: itemId,
+          revision: 1,
+          action,
+          mutation_id: `planned-${action}`,
+        },
+        plannedAt,
+      ),
+    );
+    const before = meals();
+    run(seed(parse(9, "processed")));
+    assert.deepEqual(meals(), before);
+    assert.equal(first(meals()).has_consumption, action === "ate" ? 1 : 0);
+  }
   database.prepare("UPDATE users SET day_start_hour = 6").run();
   await rejection(
     await answer(question(originalEmail, "order_review").id, {
@@ -370,7 +420,7 @@ test("day-start changes and late lists preserve eaten stock; zero meals are hidd
   );
   assert.equal(
     database.prepare("SELECT mutation_id FROM meal_actions").all().length,
-    2,
+    3,
   );
   const stamp = fixture.clock.now().toISOString();
   database
