@@ -78,12 +78,20 @@ test("person days follow local labels through DST gaps and folds", () => {
   assert.throws(() => personDayBounds("2027-01-01", "UTC", 24));
 });
 
-test("CLDR 48 Windows zones are accepted, with independent continent samples", () => {
-  assert.equal(Object.keys(windowsZones).length, 139);
-  for (const zone of Object.values(windowsZones))
-    assert.doesNotThrow(
-      () => new Intl.DateTimeFormat("en", { timeZone: zone }),
-    );
+test("CLDR 48 Windows zones resolve except offset names, with continent samples", () => {
+  const entries = Object.entries(windowsZones);
+  assert.equal(entries.length, 139);
+  const offsetNames = entries.filter(([name]) => /^UTC[+-]\d{2}$/.test(name));
+  assert.equal(offsetNames.length, 6);
+  for (const [name, zone] of entries)
+    if (offsetNames.some(([offsetName]) => offsetName === name))
+      assert.throws(() => supportedZone(name), /unsupported_timezone/);
+    else
+      assert.equal(
+        supportedZone(name),
+        new Intl.DateTimeFormat("en", { timeZone: zone }).resolvedOptions()
+          .timeZone,
+      );
   for (const [name, expected] of [
     ["Pacific Standard Time", "2027-01-05T17:00:00.000Z"],
     ["SA Eastern Standard Time", "2027-01-05T12:00:00.000Z"],
