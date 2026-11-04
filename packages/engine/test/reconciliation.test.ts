@@ -323,7 +323,15 @@ test("late acceptance creates once or commits a superseded answer after a collis
 });
 
 test("all sequences of up to three complete emails match precedence while not due", async (context) => {
-  const { database, seed, run, admin, setNow } = await setup(context);
+  const { database, seed, run, admin, setNow, order } = await setup(context);
+  const reset = () =>
+    database.exec(
+      "DELETE FROM questions; DELETE FROM order_meals; DELETE FROM orders; DELETE FROM inbound_emails",
+    );
+  const onHand = () =>
+    listMealsOnHand(database, admin.user, "2026-01-02T00:00:00.000Z").map(
+      (meal) => meal.quantity,
+    );
   const sequences: number[][] = [[]];
   for (let length = 1; length <= 3; length++)
     for (const prefix of sequences.filter(
@@ -332,30 +340,42 @@ test("all sequences of up to three complete emails match precedence while not du
       for (const variant of [0, 1, 2]) sequences.push([...prefix, variant]);
   for (const sequence of sequences)
     for (let dueAfter = 0; dueAfter <= sequence.length; dueAfter++) {
-      database.exec(
-        "DELETE FROM questions; DELETE FROM order_meals; DELETE FROM orders; DELETE FROM inbound_emails",
-      );
-      for (const [index, variant] of sequence.entries()) {
-        const due = index >= dueAfter;
-        setNow(due ? "2026-01-02T00:00:00.000Z" : "2026-01-01T00:00:00.000Z");
+      reset();
+      const emails = sequence.map((variant, index) => {
+        setNow(
+          index >= dueAfter
+            ? "2026-01-02T00:00:00.000Z"
+            : "2026-01-01T00:00:00.000Z",
+        );
         const processed = variant > 0,
-          quantity = variant + 1;
-        run(seed(parse(quantity, processed ? "processed" : "scheduling")));
-      }
-      const candidates = sequence.slice(0, dueAfter);
+          quantity = variant + 1 + 3 * index;
+        const email = seed(
+          parse(quantity, processed ? "processed" : "scheduling"),
+        );
+        run(email);
+        return { processed, quantity, id: email.id };
+      });
+      const candidates = emails.slice(0, dueAfter);
       const winner =
-        candidates.filter((variant) => variant > 0).at(-1) ?? candidates.at(-1);
-      const expected = winner === undefined ? [] : [winner + 1];
+        candidates.filter((email) => email.processed).at(-1) ??
+        candidates.at(-1);
+      assert.deepEqual(onHand(), winner ? [winner.quantity] : []);
       assert.equal(
         database.prepare("SELECT id FROM orders").all().length,
-        expected.length,
+        winner ? 1 : 0,
       );
-      assert.deepEqual(
-        listMealsOnHand(database, admin.user, "2026-01-02T00:00:00.000Z").map(
-          (meal) => meal.quantity,
-        ),
-        expected,
-      );
+      if (winner)
+        assert.deepEqual(
+          [order().status, order().applied_email_id],
+          [winner.processed ? "processed" : "scheduled", winner.id],
+        );
     }
   assert.equal(sequences.length, 40);
+  reset();
+  setNow("2026-01-01T00:00:00.000Z");
+  const older = seed(parse(5));
+  setNow("2026-01-01T00:00:00.001Z");
+  run(seed(parse(6)));
+  run(older);
+  assert.deepEqual(onHand(), [6]);
 });
