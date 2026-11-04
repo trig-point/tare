@@ -108,10 +108,10 @@ async function setup(context: TestContext) {
         [string, string],
         { id: number; status: string; answer_schema: string }
       >(
-        "SELECT id, status, answer_schema FROM questions WHERE subject_ref = ? AND kind = ? ORDER BY id DESC LIMIT 1",
+        "SELECT id, status, answer_schema FROM questions WHERE subject_ref = ? AND kind = ? ORDER BY id DESC",
       )
       .all(String(email.id), kind);
-    assert.equal(rows.length, 1);
+    assert.ok(rows.filter((row) => row.status === "open").length <= 1);
     return first(rows);
   };
   const answer = (id: number, value: unknown, person = admin) =>
