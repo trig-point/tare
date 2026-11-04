@@ -9,6 +9,8 @@ import { mountMcp } from "./mcp/server.ts";
 import { mountOperations, operationGuards } from "./operations/http.ts";
 import { operations } from "./operations/index.ts";
 import { OperationError } from "./operations/registry.ts";
+import { mountOuraCallback } from "./oura/callback.ts";
+import { createOura } from "./oura/service.ts";
 import { createOffAdapter } from "./sources/off.ts";
 import { createUsdaAdapter } from "./sources/usda.ts";
 import { mountWeb } from "./web.ts";
@@ -18,6 +20,7 @@ export function createApp(
 ) {
   const dependencies = {
     ...options,
+    oura: options.oura ?? createOura(options),
     questionKinds:
       options.questionKinds ??
       createOrderQuestionKinds({
@@ -74,6 +77,7 @@ export function createApp(
     );
     app.use("*", guards.serviceRoutes);
   }
+  mountOuraCallback(app, dependencies);
   mountOperations(app, operations, dependencies);
   if (options.config.identity.mode === "access") mountMcp(app, dependencies);
   mountWeb(app, options.webRoot);

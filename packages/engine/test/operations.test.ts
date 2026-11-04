@@ -107,6 +107,7 @@ test("registry constrains public and administrator operations and inventories ev
     const infrastructure = [
       "GET /health",
       "POST /api/inbound/email",
+      "GET /api/oura/callback",
       ...(mode === "access" ? ["GET /mcp", "POST /mcp", "DELETE /mcp"] : []),
     ];
     const registryApp = new Hono<AuthEnv>();
