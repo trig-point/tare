@@ -87,6 +87,9 @@ importers:
       mailparser:
         specifier: 3.14.1
         version: 3.14.1
+      node-ical:
+        specifier: 0.27.3
+        version: 0.27.3
       rate-limiter-flexible:
         specifier: 11.2.3
         version: 11.2.3
@@ -2271,6 +2274,10 @@ packages:
     resolution: {integrity: sha512-VijLXbi3UACN69I0JVXJsX4tjACjNoQDgv2gTF6sx2wWEi8tkSg2eX8p5gSIFi8z2+DL3oHmY6OyKce38SDolg==}
     engines: {node: ^18 || ^20 || >= 21}
 
+  node-ical@0.27.3:
+    resolution: {integrity: sha512-KT8DFQXcOlx4kXRUEr7XvEDa3SE7yury8ZKG6GB3JB20v9d0SKSSieThbXCI8kpTsyNeQkKqfJn/nbnmaRMpRw==}
+    engines: {node: '>=22'}
+
   node-releases@2.0.63:
     resolution: {integrity: sha512-6li2QanLsAXpIH2R6j77MzRyvOyrvdTqlKtO4CgBdHGNvN99ZZfyxszHc5o5+IZBWD5u6Hzwg83JoGXmqZNG9Q==}
     engines: {node: '>=18'}
@@ -2520,6 +2527,9 @@ packages:
     resolution: {integrity: sha512-nLTrUKm2UyiL7rlhapu/Zl45FwNgkZGaCpZbIHajDYgwlJCOzLSk+cIPAnsEqV955GjILJnKbdQC1nVPz+gAYQ==}
     engines: {node: '>= 18'}
 
+  rrule-temporal@2.2.8:
+    resolution: {integrity: sha512-+wWUe0J02oMh1UWKIt1RTu2H0Cz+gP11O/iweK0MN2UP6JLGeepTUkbSBa90Hxq0W+ywSxM9IlJNouIUdMOwhg==}
+
   safe-array-concat@1.1.4:
     resolution: {integrity: sha512-wtZlHyOje6OZTGqAoaDKxFkgRtkF9CnHAVnCHKfuj200wAgL+bSJhdsCD2l0Qx/2ekEXjPWcyKkfGb5CPboslg==}
     engines: {node: '>=0.4'}
@@ -2711,6 +2721,15 @@ packages:
   temp-dir@2.0.0:
     resolution: {integrity: sha512-aoBAniQmmwtcKp/7BzsH8Cxzv8OL736p7v1ihGb5e9DJ9kTwGWHrQrVB5+lfVDzfGrdRzXch+ig7LHaY1JTOrg==}
     engines: {node: '>=8'}
+
+  temporal-polyfill@1.0.6:
+    resolution: {integrity: sha512-tYyEry1HLGUDbm2356W3iYD0OZdo7rlP7h98Zr/EnjqLZQwTAfcBDUvJnJbfA15v/vQad57hJZScG5O0W2oKEA==}
+
+  temporal-spec@1.0.1:
+    resolution: {integrity: sha512-wxVoanmDeavXie1vu2JaQ3WIc3JZnWAOYFBsJyATaVsXsycKYUflGsyBmrRSnoCpZJpwPyr38VpgSUlQ8CbFxg==}
+
+  temporal-utils@1.0.3:
+    resolution: {integrity: sha512-9jbTSX3HvkOWvDpNpFzwX/d1mkCrgQgwLmVTOEiuocZGKHsrQJtttGZFmybJ2zYP5zCSZuU5ZyeS8+eOEPABiQ==}
 
   tempy@0.6.0:
     resolution: {integrity: sha512-G13vtMYPT/J8A4X2SjdtBTphZlrp1gKv6hZiOjw14RCWg6GbHuQBGtjlx75xLbYV/wEc0D7G5K4rxKP/cXk8Bw==}
@@ -5207,6 +5226,11 @@ snapshots:
 
   node-addon-api@8.9.2: {}
 
+  node-ical@0.27.3:
+    dependencies:
+      rrule-temporal: 2.2.8
+      temporal-polyfill: 1.0.6
+
   node-releases@2.0.63: {}
 
   nodemailer@10.2.0: {}
@@ -5485,6 +5509,10 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  rrule-temporal@2.2.8:
+    dependencies:
+      temporal-spec: 1.0.1
+
   safe-array-concat@1.1.4:
     dependencies:
       call-bind: 1.0.9
@@ -5727,6 +5755,15 @@ snapshots:
       readable-stream: 3.6.2
 
   temp-dir@2.0.0: {}
+
+  temporal-polyfill@1.0.6:
+    dependencies:
+      temporal-spec: 1.0.1
+      temporal-utils: 1.0.3
+
+  temporal-spec@1.0.1: {}
+
+  temporal-utils@1.0.3: {}
 
   tempy@0.6.0:
     dependencies:
