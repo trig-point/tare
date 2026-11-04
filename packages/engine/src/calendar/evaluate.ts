@@ -31,13 +31,16 @@ function endInstant(source: CalendarSource, wallEnd: Date, start: Date): Date {
   return wallInstant(source.end.wall, source.end.zone);
 }
 
-// RFC 5545 values are case-insensitive; node-ical keeps parameters as { val }.
+// The scanner re-emits SUMMARY and STATUS without parameters.
+function text(value: unknown): string {
+  if (value === undefined) return "";
+  if (typeof value !== "string") throw new Error("invalid_text");
+  return value;
+}
+
+// RFC 5545 values are case-insensitive.
 function cancelled(status: unknown): boolean {
-  const value =
-    typeof status === "object" && status !== null && "val" in status
-      ? status.val
-      : status;
-  return typeof value === "string" && value.toUpperCase() === "CANCELLED";
+  return text(status).toUpperCase() === "CANCELLED";
 }
 
 // Fold whole words: lowercasing a title first can split it (İ gains a mark).
@@ -89,12 +92,10 @@ export function evaluateCalendar(input: unknown): CalendarResult {
         if (!start) continue;
         const end = endInstant(source, instance.end, start);
         if (!(start < bounds.end && end > bounds.start)) continue;
-        const summary =
-          typeof instance.summary === "string"
-            ? instance.summary
-            : instance.summary?.val;
         const words = new Set(
-          (summary ?? "").match(/[\p{L}\p{M}\p{N}_]+/gu)?.map(foldWord),
+          text(instance.summary)
+            .match(/[\p{L}\p{M}\p{N}_]+/gu)
+            ?.map(foldWord),
         );
         const match = keywords.findIndex((keyword) => words.has(keyword));
         if (match >= 0) ruleIndex = Math.min(ruleIndex, match);

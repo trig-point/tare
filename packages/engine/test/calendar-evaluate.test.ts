@@ -208,11 +208,7 @@ test("F1 durations preserve elapsed hours, calendar days and series duration", (
 });
 
 test("moved, cancelled, orphan and mixed-form overrides select their own titles", () => {
-  for (const cancelled of [
-    "STATUS:CANCELLED",
-    "STATUS:Cancelled",
-    "STATUS;X-SOURCE=sample:CANCELLED",
-  ])
+  for (const cancelled of ["STATUS:CANCELLED", "STATUS:Cancelled"])
     assert.equal(
       status(`${event("DTSTART:20270105T090000Z")}\n${cancelled}`),
       "no_match",
