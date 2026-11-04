@@ -274,6 +274,9 @@ test("Oura refuses malformed pairs and provider failures without exposing causes
     { ...tokens, expires_in: 0 },
     { ...tokens, expires_in: 1.5 },
     { ...tokens, expires_in: undefined },
+    { ...tokens, expires_in: "3600" },
+    { ...tokens, expires_in: "3600garbage" },
+    { ...tokens, expires_in: [3600] },
     { ...tokens, scope: 1 },
   ];
   for (const body of invalid) {
