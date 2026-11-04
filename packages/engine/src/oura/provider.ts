@@ -63,9 +63,10 @@ export async function exchangeCode(
       verifier,
       { signal, ...(transport ? { [oauth.customFetch]: transport } : {}) },
     );
-    const result = tokenResponse.safeParse(
-      await oauth.processAuthorizationCodeResponse(metadata, client, response),
-    );
+    // The library parseFloat-normalizes expires_in, so check the body as sent.
+    const sent = response.clone();
+    await oauth.processAuthorizationCodeResponse(metadata, client, response);
+    const result = tokenResponse.safeParse(await sent.json());
     if (!result.success) throw new OperationError(400, "oura_token_invalid");
     return result.data;
   } catch {
