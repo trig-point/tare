@@ -43,7 +43,7 @@ export function createCalendarEvaluator({
       let child: ChildProcess;
       try {
         child = forkProcess(new URL("./child.ts", import.meta.url), [], {
-          env: { ...process.env, TZ: "UTC" },
+          env: { TZ: "UTC" },
           execArgv: [`--max-old-space-size=${heapMb}`],
           stdio: ["ignore", "ignore", "ignore", "ipc"],
         });

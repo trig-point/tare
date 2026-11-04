@@ -36,7 +36,7 @@ function fakeFork(children: FakeChild[]): typeof fork {
     _args: string[],
     options: { env: NodeJS.ProcessEnv; execArgv: string[]; stdio: string[] },
   ) => {
-    assert.equal(options.env.TZ, "UTC");
+    assert.deepEqual(options.env, { TZ: "UTC" });
     assert.deepEqual(options.stdio, ["ignore", "ignore", "ignore", "ipc"]);
     assert.deepEqual(options.execArgv, ["--max-old-space-size=128"]);
     const child = new FakeChild();
