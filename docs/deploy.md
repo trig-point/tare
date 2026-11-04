@@ -111,6 +111,10 @@ Relative filesystem paths resolve from `/app/packages/engine` in the image.
 | `TARE_ACCESS_TEAM_DOMAIN` | Unset | Access HTTPS origin, with no path or trailing slash. Requires `TARE_ACCESS_AUD`; both unset select fallback mode. |
 | `TARE_ACCESS_AUD` | Unset | Access application's audience tag. Trimmed; must be set with the team domain. |
 | `TARE_MCP_ALLOWED_ORIGINS` | Empty list | Comma-separated HTTP or HTTPS origins without paths. Entries are trimmed. Empty permits only MCP requests without an `Origin` header. Invalid entries prevent startup. |
+| `TARE_OURA_CLIENT_ID` | Unset (Oura disabled) | Oura application client ID. Trimmed; empty counts as unset. Set all three Oura application settings or none. See [Connect Oura](oura.md). |
+| `TARE_OURA_CLIENT_SECRET` | Unset (Oura disabled) | Oura application client secret. This is a secret: supply it through the environment. Trimmed; empty counts as unset. Set all three Oura application settings or none. |
+| `TARE_OURA_REDIRECT_URL` | Unset (Oura disabled) | Exact callback URL registered with Oura: absolute HTTP or HTTPS, no fragment. Trimmed; empty counts as unset. Set all three Oura application settings or none. |
+| `TARE_OURA_TOKEN_KEY` | Unset (no new Oura connections) | Canonical base64 for 32 bytes that encrypts stored Oura tokens. Malformed values prevent startup. Back it up separately from database copies; restoring without it requires reconnecting. |
 | `TARE_USDA_API_KEY` | Unset (USDA disabled) | USDA FoodData Central API key. Trimmed; empty disables USDA requests. |
 | `TARE_OFF_USER_AGENT` | Unset (Open Food Facts disabled) | Must follow `AppName/Version (ContactEmail)`, for example `Tare/1.0 (support@example.com)`. Trimmed; empty disables requests. |
 

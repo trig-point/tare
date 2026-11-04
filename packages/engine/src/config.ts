@@ -29,6 +29,8 @@ export interface Config {
   usdaApiKey: string | undefined;
   offUserAgent: string | undefined;
   orderModel: { baseURL: string; model: string; apiKey: string } | null;
+  oura: { clientId: string; clientSecret: string; redirectUrl: string } | null;
+  ouraTokenKey: Buffer | undefined;
   identity:
     | { mode: "access"; teamDomain: string; audience: string }
     | { mode: "fallback" };
@@ -153,6 +155,50 @@ function parseOrderModel(
     throw new Error("TARE_ORDER_MODEL_BASE_URL must be an HTTP or HTTPS URL");
   }
   return { baseURL, model, apiKey };
+}
+
+function parseOura(env: Record<string, string | undefined>): Config["oura"] {
+  const settings = [
+    "TARE_OURA_CLIENT_ID",
+    "TARE_OURA_CLIENT_SECRET",
+    "TARE_OURA_REDIRECT_URL",
+  ] as const;
+  const values = settings.map((setting) => env[setting]?.trim());
+  if (!values.some(Boolean)) return null;
+  for (const [index, setting] of settings.entries()) {
+    if (!values[index])
+      throw new Error(`${setting} must be set when Oura is configured`);
+  }
+  const [clientId, clientSecret, redirectUrl] = values as [
+    string,
+    string,
+    string,
+  ];
+  try {
+    const url = new URL(redirectUrl);
+    if (
+      !["http:", "https:"].includes(url.protocol) ||
+      url.hash ||
+      redirectUrl.includes("#")
+    )
+      throw new Error();
+  } catch {
+    throw new Error(
+      "TARE_OURA_REDIRECT_URL must be an absolute HTTP or HTTPS URL without a fragment",
+    );
+  }
+  return { clientId, clientSecret, redirectUrl };
+}
+
+function parseOuraKey(value: string | undefined): Buffer | undefined {
+  const text = value?.trim();
+  if (!text) return undefined;
+  const key = Buffer.from(text, "base64");
+  if (key.length !== 32 || key.toString("base64") !== text)
+    throw new Error(
+      "TARE_OURA_TOKEN_KEY must be canonical base64 for 32 bytes",
+    );
+  return key;
 }
 
 function parseMcpAllowedOrigins(value: string | undefined): string[] {
@@ -309,6 +355,8 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     usdaApiKey: env.TARE_USDA_API_KEY?.trim() || undefined,
     offUserAgent: validateOffUserAgent(env.TARE_OFF_USER_AGENT),
     orderModel: parseOrderModel(env),
+    oura: parseOura(env),
+    ouraTokenKey: parseOuraKey(env.TARE_OURA_TOKEN_KEY),
     identity:
       teamDomain !== undefined && audience !== undefined
         ? { mode: "access", teamDomain, audience }
