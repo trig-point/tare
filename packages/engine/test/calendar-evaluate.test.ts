@@ -297,7 +297,7 @@ test("F4 unsupported zones and an injected source-join failure are unavailable",
   assert.equal(status(lower), "unavailable");
 });
 
-test("instance caps bound in-window work while old history and RDATE remain supported limits", () => {
+test("instance caps bound in-window work, old history evaluates and RDATE is unavailable", () => {
   const dense =
     "UID:dense\nDTSTART:20270104T040000Z\nDURATION:PT1M\nRRULE:FREQ=MINUTELY;COUNT=5000\nSUMMARY:Office";
   assert.equal(status(dense), "unavailable");
@@ -333,6 +333,6 @@ test("instance caps bound in-window work while old history and RDATE remain supp
     "match",
   );
   const rdate = `${event("DTSTART:20270101T090000Z")}\nRDATE:20270110T090000Z`;
-  assert.equal(status(rdate, "2027-01-01"), "match");
-  assert.equal(status(rdate, "2027-01-10"), "no_match");
+  assert.equal(status(rdate, "2027-01-01"), "unavailable");
+  assert.equal(status(rdate, "2027-01-10"), "unavailable");
 });
