@@ -40,6 +40,26 @@ test("literal Unicode keywords use whole words and first-rule order", () => {
     ),
     { status: "match", rule_index: 0 },
   );
+  for (const [title, keyword, expected] of [
+    ["İstanbul trip", "İstanbul", "match"],
+    ["İstanbul trip", "i", "no_match"],
+    ["Café visit", "Café", "match"],
+    ["Officé", "office", "no_match"],
+    ["ΟΔΟΣ", "οδοσ", "match"],
+  ])
+    assert.equal(
+      evaluateCalendar(
+        input(
+          calendar(event("DTSTART:20270105T090000Z", "DURATION:PT1H", title)),
+          undefined,
+          undefined,
+          undefined,
+          [keyword],
+        ),
+      ).status,
+      expected,
+      `${title} with ${keyword}`,
+    );
   for (const keyword of ["office", "Équipe_2", "123"])
     assert(validCalendarKeyword(keyword));
   for (const keyword of ["", "office day", "office.*", "a".repeat(41)])

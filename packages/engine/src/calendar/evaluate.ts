@@ -31,6 +31,11 @@ function endInstant(source: CalendarSource, wallEnd: Date, start: Date): Date {
   return wallInstant(source.end.wall, source.end.zone);
 }
 
+// Fold whole words: lowercasing a title first can split it (İ gains a mark).
+function foldWord(word: string): string {
+  return word.normalize("NFC").toUpperCase();
+}
+
 export function evaluateCalendar(input: unknown): CalendarResult {
   try {
     const parsed = calendarInput.parse(input);
@@ -42,6 +47,7 @@ export function evaluateCalendar(input: unknown): CalendarResult {
     const from = new Date(bounds.start.getTime() - calendarDayMs);
     const to = new Date(bounds.end.getTime() + calendarDayMs);
     let total = 0;
+    const keywords = parsed.keywords.map(foldWord);
     let ruleIndex = parsed.keywords.length;
     for (const event of Object.values(events)) {
       if (event?.type !== "VEVENT") continue;
@@ -78,11 +84,9 @@ export function evaluateCalendar(input: unknown): CalendarResult {
             ? instance.summary
             : instance.summary?.val;
         const words = new Set(
-          (summary ?? "").toLowerCase().match(/[\p{L}\p{N}_]+/gu) ?? [],
+          (summary ?? "").match(/[\p{L}\p{M}\p{N}_]+/gu)?.map(foldWord),
         );
-        const match = parsed.keywords.findIndex((keyword) =>
-          words.has(keyword.toLowerCase()),
-        );
+        const match = keywords.findIndex((keyword) => words.has(keyword));
         if (match >= 0) ruleIndex = Math.min(ruleIndex, match);
       }
     }
