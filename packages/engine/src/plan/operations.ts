@@ -11,6 +11,7 @@ import { clearIntakeSlots } from "../queries/clear-intake-slots.ts";
 import { deleteDayTemplate } from "../queries/delete-day-template.ts";
 import { deleteDayType } from "../queries/delete-day-type.ts";
 import { deleteTemplateSlots } from "../queries/delete-template-slots.ts";
+import { detachPlannedItems } from "../queries/detach-planned-items.ts";
 import { insertDayTemplate } from "../queries/insert-day-template.ts";
 import { insertDayType } from "../queries/insert-day-type.ts";
 import { insertTemplateSlot } from "../queries/insert-template-slot.ts";
@@ -23,12 +24,15 @@ import { setDefaultDayType } from "../queries/set-default-day-type.ts";
 import { updateDayTemplate } from "../queries/update-day-template.ts";
 import { updateDayType } from "../queries/update-day-type.ts";
 import { readTarget } from "../target/reader.ts";
+import { planSlot, readPlannedItems } from "./items.ts";
 import { selectedTemplate } from "./reader.ts";
 import {
   budgetStatus,
   dayTypeSchema,
   identifier,
+  plannedItemSchema,
   planSchema,
+  planSlotInput,
   saveTemplateInput,
   saveTypeInput,
   slotBudgetSchema,
@@ -119,6 +123,11 @@ export const planOperations = [
             // Saves reuse positions and a deleted id can return, so stored
             // links would name another window; reads reassign these by time.
             clearIntakeSlots(context.database, { user_id, template_id: id });
+            detachPlannedItems(
+              context.database,
+              { updated_at: context.clock.now().toISOString() },
+              { user_id, template_id: id },
+            );
           }
           if (input.action !== "delete") validateSlots(slots);
           if (input.action === "delete") {
@@ -273,6 +282,41 @@ export const planOperations = [
       return {
         status: 200,
         body: readPlan(context),
+      };
+    },
+  }),
+  defineOperation({
+    ...write,
+    name: "plan_slot",
+    path: "/api/plan/slot",
+    input: planSlotInput,
+    output: zod.strictObject({ item: plannedItemSchema }),
+    handler: planSlot,
+  }),
+  defineOperation({
+    ...shared,
+    name: "read_plan",
+    method: "GET",
+    path: "/api/plan",
+    input: zod.strictObject({}),
+    output: planSchema.safeExtend({
+      planned_items: zod.array(plannedItemSchema),
+    }),
+    handler(_input, context) {
+      const plan = readPlan(context);
+      return {
+        status: 200,
+        body: {
+          ...plan,
+          planned_items: plan.template
+            ? readPlannedItems(
+                context.database,
+                operationPerson(context).id,
+                plan.day,
+                plan.template.id,
+              )
+            : [],
+        },
       };
     },
   }),

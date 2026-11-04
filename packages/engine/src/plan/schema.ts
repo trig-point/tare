@@ -2,6 +2,36 @@ import { z as zod } from "zod";
 import { OperationError } from "../operations/registry.ts";
 
 export const identifier = zod.number().int().positive();
+export const planSlotInput = zod
+  .strictObject({
+    position: zod.number().int().nonnegative(),
+    meal_id: identifier.optional(),
+    food_id: identifier.optional(),
+    servings: zod.number().positive().optional(),
+    item_id: identifier.optional(),
+    revision: identifier.optional(),
+  })
+  .refine(
+    (input) =>
+      (input.meal_id === undefined) !== (input.food_id === undefined) &&
+      (input.meal_id === undefined || input.servings === undefined) &&
+      (input.item_id === undefined) === (input.revision === undefined),
+  );
+export const plannedItemSchema = zod.strictObject({
+  id: identifier,
+  revision: identifier,
+  template_id: identifier,
+  position: zod.number().int().nonnegative(),
+  reference: zod.strictObject({
+    kind: zod.enum(["meal", "food"]),
+    id: identifier,
+    name: zod.string(),
+  }),
+  servings: zod.number().positive().nullable(),
+  nutrition: zod.strictObject({
+    status: zod.enum(["known", "pending", "unknown"]),
+  }),
+});
 const name = zod
   .string()
   .trim()

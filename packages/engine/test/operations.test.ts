@@ -77,6 +77,8 @@ test("registry constrains public and administrator operations and inventories ev
       "set_default_day_type",
       "set_day_type",
       "read_day_plan",
+      "plan_slot",
+      "read_plan",
       "next_slot",
     ],
   );
