@@ -19,6 +19,7 @@
     "better-sqlite3": "13.0.3",
     "croner": "11.0.0",
     "hono": "4.13.14",
+    "ical.js": "2.2.1",
     "jose": "6.2.14",
     "mailauth": "8.0.4",
     "mailparser": "3.14.1",

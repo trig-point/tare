@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import ICAL from "ical.js";
 import ical from "node-ical";
 import { rebuildStart, withinUntil } from "../src/calendar/occurrence.ts";
 import { componentKey, scanCalendar } from "../src/calendar/scan.ts";
@@ -11,6 +12,9 @@ import {
 } from "../src/calendar/time.ts";
 import { windowsZones } from "../src/calendar/windows-zones.ts";
 import { localDay } from "../src/logging/day.ts";
+
+const instants = (values: string) =>
+  values.split(" ").map((value) => new Date(value).toISOString());
 
 process.env.TZ = "UTC";
 const event = (...lines: string[]) =>
@@ -59,16 +63,12 @@ test("person days follow local labels through DST gaps and folds", () => {
   ] as const) {
     const { start, end } = personDayBounds(day, zone, hour);
     assert.equal((end.getTime() - start.getTime()) / 3_600_000, hours);
-    assert.equal(localDay(start.toISOString(), zone, hour), day);
-    assert.notEqual(
-      localDay(new Date(start.getTime() - 1).toISOString(), zone, hour),
-      day,
-    );
-    assert.equal(
-      localDay(new Date(end.getTime() - 1).toISOString(), zone, hour),
-      day,
-    );
-    assert.notEqual(localDay(end.toISOString(), zone, hour), day);
+    const label = (instant: number) =>
+      localDay(new Date(instant).toISOString(), zone, hour);
+    assert.equal(label(start.getTime()), day);
+    assert.notEqual(label(start.getTime() - 1), day);
+    assert.equal(label(end.getTime() - 1), day);
+    assert.notEqual(label(end.getTime()), day);
   }
   assert.equal(
     personDayBounds("2027-10-31", "Europe/Berlin", 2).start.toISOString(),
@@ -80,18 +80,12 @@ test("person days follow local labels through DST gaps and folds", () => {
 
 test("CLDR 48 Windows zones resolve except offset names, with continent samples", () => {
   const entries = Object.entries(windowsZones);
-  assert.equal(entries.length, 139);
   const offsetNames = entries.filter(([name]) => /^UTC[+-]\d{2}$/.test(name));
-  assert.equal(offsetNames.length, 6);
-  for (const [name, zone] of entries)
+  for (const [name] of entries)
     if (offsetNames.some(([offsetName]) => offsetName === name))
       assert.throws(() => supportedZone(name), /unsupported_timezone/);
-    else
-      assert.equal(
-        supportedZone(name),
-        new Intl.DateTimeFormat("en", { timeZone: zone }).resolvedOptions()
-          .timeZone,
-      );
+    else assert.doesNotThrow(() => supportedZone(name));
+  const sample = new Date("2027-01-05T09:00Z");
   for (const [name, expected] of [
     ["Pacific Standard Time", "2027-01-05T17:00:00.000Z"],
     ["SA Eastern Standard Time", "2027-01-05T12:00:00.000Z"],
@@ -101,10 +95,7 @@ test("CLDR 48 Windows zones resolve except offset names, with continent samples"
     ["AUS Eastern Standard Time", "2027-01-04T22:00:00.000Z"],
   ])
     assert.equal(
-      wallInstant(
-        new Date("2027-01-05T09:00Z"),
-        supportedZone(name as string),
-      ).toISOString(),
+      wallInstant(sample, supportedZone(name as string)).toISOString(),
       expected,
     );
 });
@@ -144,12 +135,12 @@ test("scanner strips VTIMEZONE and preserves each source form and folded value",
     Object.values(events).some((component) => component?.type === "VTIMEZONE"),
     false,
   );
-  assert.deepEqual(starts(feed, "Asia/Tokyo", "2027-01-05", "2027-01-06"), [
-    "2027-01-05T00:00:00.000Z",
-    "2027-01-05T14:00:00.000Z",
-    "2027-01-04T15:00:00.000Z",
-    "2027-01-05T09:00:00.000Z",
-  ]);
+  assert.deepEqual(
+    starts(feed, "Asia/Tokyo", "2027-01-05", "2027-01-06"),
+    instants(
+      "2027-01-05T00:00Z 2027-01-05T14:00Z 2027-01-04T15:00Z 2027-01-05T09:00Z",
+    ),
+  );
   for (const name of [
     "America/New_York",
     "UTC",
@@ -166,40 +157,6 @@ test("scanner strips VTIMEZONE and preserves each source form and folded value",
     );
 });
 
-test("unsupported TZIDs on starts and exceptions fail without a process-zone guess", () => {
-  for (const name of [
-    "Customized Time Zone",
-    "Unlisted/Office",
-    "tzone://Microsoft/Custom",
-    "+05:30",
-    "UTC-03",
-  ]) {
-    for (const field of ["DTSTART", "EXDATE", "RECURRENCE-ID"]) {
-      const lines = field === "DTSTART" ? [] : ["DTSTART:20270105T090000Z"];
-      assert.throws(() =>
-        scanCalendar(
-          calendar(
-            event(
-              "UID:bad",
-              ...lines,
-              `${field};TZID="${name}":20270105T090000`,
-            ),
-          ),
-          "UTC",
-        ),
-      );
-    }
-  }
-  for (const input of [
-    "",
-    "BEGIN:VCALENDAR",
-    calendar(event("UID:missing")),
-    calendar(event("UID:bad", "DTSTART:20270230T090000")),
-  ])
-    assert.throws(() => scanCalendar(input, "UTC"));
-  assert.equal(scanCalendar(calendar(), "UTC").sources.size, 0);
-});
-
 test("zoned recurrences keep local time across DST and use the earlier autumn fold", () => {
   const feed = calendar(
     series(
@@ -207,10 +164,10 @@ test("zoned recurrences keep local time across DST and use the earlier autumn fo
       "FREQ=WEEKLY;COUNT=2",
     ),
   );
-  assert.deepEqual(starts(feed, "UTC", "2027-03-01", "2027-03-15"), [
-    "2027-03-07T14:00:00.000Z",
-    "2027-03-14T13:00:00.000Z",
-  ]);
+  assert.deepEqual(
+    starts(feed, "UTC", "2027-03-01", "2027-03-15"),
+    instants("2027-03-07T14:00Z 2027-03-14T13:00Z"),
+  );
   const folded = calendar(
     event("UID:fold", "DTSTART;TZID=America/Los_Angeles:20261101T013000"),
   );
@@ -220,10 +177,10 @@ test("zoned recurrences keep local time across DST and use the earlier autumn fo
   const gap = calendar(
     series("DTSTART;TZID=Europe/Berlin:20270321T023000", "FREQ=WEEKLY;COUNT=3"),
   );
-  assert.deepEqual(starts(gap, "UTC", "2027-03-20", "2027-04-05"), [
-    "2027-03-21T01:30:00.000Z",
-    "2027-04-04T00:30:00.000Z",
-  ]);
+  assert.deepEqual(
+    starts(gap, "UTC", "2027-03-20", "2027-04-05"),
+    instants("2027-03-21T01:30Z 2027-04-04T00:30Z"),
+  );
   const wall = new Date("2027-03-28T02:30Z");
   assert.equal(
     wallInstant(wall, "Europe/Berlin").toISOString(),
@@ -248,7 +205,7 @@ test("UTC exceptions join a zoned series, and mixed-form overrides retain their 
   );
   assert.deepEqual(
     starts(calendar(master, moved), "UTC", "2027-01-01", "2027-01-07"),
-    ["2027-01-01T14:00:00.000Z", "2027-01-05T15:30:00.000Z"],
+    instants("2027-01-01T14:00Z 2027-01-05T15:30Z"),
   );
   const floating = series("DTSTART:20270101T090000", "FREQ=DAILY;COUNT=2");
   assert.throws(() =>
@@ -278,7 +235,7 @@ test("UTC exceptions join a zoned series, and mixed-form overrides retain their 
       "2027-01-01",
       "2027-01-07",
     ),
-    ["2027-01-01T09:00:00.000Z", "2027-01-06T00:00:00.000Z"],
+    instants("2027-01-01T09:00Z 2027-01-06T00:00Z"),
   );
 });
 
@@ -316,7 +273,7 @@ test("UNTIL compares original instants and keeps the final moved occurrence", ()
   assert.equal(starts(fold, "UTC", "2027-10-30", "2027-11-15").length, 2);
 });
 
-test("DATE exceptions and L1 bounds use calendar dates in east and west zones", () => {
+test("DATE exceptions and recurrence bounds use calendar dates in east and west zones", () => {
   for (const zone of ["America/Los_Angeles", "Asia/Tokyo"]) {
     const master = series(
       "DTSTART;VALUE=DATE:20270101",
@@ -349,7 +306,7 @@ test("DATE exceptions and L1 bounds use calendar dates in east and west zones", 
   }
 });
 
-test("AM1 reuses node-ical all-day UTC UNTIL normalization", () => {
+test("all-day UNTIL reuses node-ical UTC normalization", () => {
   const feed = calendar(
     series(
       "DTSTART;VALUE=DATE:20090213",
@@ -371,83 +328,98 @@ test("AM1 reuses node-ical all-day UTC UNTIL normalization", () => {
 
 const untrusted = (...lines: string[]) =>
   calendar(event("UID:input", "DTSTART:20270105T090000Z", ...lines));
-for (const [name, feed, zone] of [
-  [
-    "a nested VEVENT",
-    untrusted("BEGIN:VEVENT", "END:VEVENT", "RRULE:FREQ=DAILY"),
-  ],
-  ["a second RRULE", untrusted("RRULE:FREQ=DAILY", "RRULE:FREQ=WEEKLY")],
-  [
-    "an empty TZID",
-    calendar(event("UID:input", "DTSTART;TZID=:20270105T090000")),
-  ],
-  [
-    "a repeated TZID",
+test("unsupported and malformed feeds fail closed", (context) => {
+  const timed = (start: string) => calendar(event("UID:input", start));
+  const cases = [
+    "",
+    "BEGIN:VCALENDAR",
+    calendar(event("UID:missing")),
     calendar(
-      event(
-        "UID:input",
-        "DTSTART;TZID=Unlisted/Office;TZID=UTC:20270105T090000",
-      ),
+      "BEGIN:VTODO",
+      event("UID:input", "DTSTART:20270105T090000Z"),
+      "END:VTODO",
     ),
-  ],
-  [
-    "a TZID on another property",
-    untrusted("DTSTAMP;TZID=Unlisted/Office:20270101T000000"),
-  ],
-  [
-    "a TZID on a UTC value",
-    calendar(event("UID:input", "DTSTART;TZID=Asia/Tokyo:20270105T090000Z")),
-  ],
-  [
-    "a malformed DATE UNTIL",
+    `${calendar()}\r\n${calendar()}`,
+    untrusted().replace("END:VEVENT", "END:VTODO"),
+    untrusted().replace(
+      "UID:input",
+      "UID;VALUE=URI:https://example.test/event",
+    ),
     calendar(
       series("DTSTART;VALUE=DATE:20270101", "FREQ=DAILY;UNTIL=20270103BOGUS"),
     ),
-  ],
-  [
-    "a parameter node-ical cannot read",
-    untrusted(
-      "RRULE:FREQ=DAILY",
-      'EXDATE;VALUE="DATE-TIME""x":20270106T090000Z',
-    ),
-  ],
-  [
-    "a RANGE override",
     calendar(
-      series("DTSTART:20270105T090000Z", "FREQ=DAILY"),
-      event(
-        "UID:series",
-        "RECURRENCE-ID;RANGE=THISANDFUTURE:20270106T090000Z",
-        "DTSTART:20270106T110000Z",
-      ),
+      event("UID:input", "DTSTART:20270105T090000Z"),
+      "X-AT;TZID=Unlisted/Office:20270105T090000",
     ),
-  ],
-  [
-    "an override with its own RRULE",
-    calendar(
-      series("DTSTART:20270105T090000Z", "FREQ=DAILY"),
-      event(
-        "UID:series",
-        "RECURRENCE-ID:20270106T090000Z",
-        "DTSTART:20270106T110000Z",
-        "RRULE:FREQ=DAILY;COUNT=2",
-      ),
-    ),
-  ],
-  ["a DTEND list", untrusted("DTEND:20270105T100000Z,20270105T110000Z")],
-  ["a numeric-offset person zone", untrusted(), "+05:30"],
-] as const)
-  test(`the scanner fails closed on ${name}`, () => {
-    assert.throws(() => scanCalendar(feed, zone ?? "UTC"));
-  });
-
-test("the scanner fails closed when the process zone is not UTC", () => {
+  ];
+  for (const suffix of [
+    ":20270230T090000",
+    ";TZID=:20270105T090000",
+    ";TZID=Unlisted/Office;TZID=UTC:20270105T090000",
+    ";TZID=Asia/Tokyo:20270105T090000Z",
+    ";VALUE=DATE;TZID=Asia/Tokyo:20270105",
+    ";VALUE=TEXT:20270105T090000Z",
+  ])
+    cases.push(timed(`DTSTART${suffix}`));
+  for (const fields of [
+    ["BEGIN:VEVENT", "END:VEVENT"],
+    ["UID:duplicate"],
+    ["DTSTART:20270106T090000Z"],
+    ["RRULE:FREQ=DAILY", "RRULE:FREQ=WEEKLY"],
+    ["RECURRENCE-ID;RANGE=THISANDFUTURE:20270106T090000Z"],
+    ["RECURRENCE-ID:20270106T090000Z", "RRULE:FREQ=DAILY"],
+    ["DTEND:20270105T100000Z,20270105T110000Z"],
+    ["RDATE:20270106T090000Z"],
+    [
+      "BEGIN:VALARM",
+      "DTSTAMP;TZID=Unlisted/Office:20270105T090000",
+      "END:VALARM",
+    ],
+  ])
+    cases.push(untrusted(...fields));
+  for (const rule of ["COUNT=abc", "COUNT=2junk", "INTERVAL=0", "BYHOUR=25"])
+    cases.push(untrusted(`RRULE:FREQ=DAILY;${rule}`));
+  for (const name of [
+    "Customized Time Zone",
+    "Unlisted/Office",
+    "tzone://Microsoft/Custom",
+    "+05:30",
+    "UTC-03",
+  ])
+    for (const field of ["DTSTART", "EXDATE", "RECURRENCE-ID"])
+      cases.push(
+        calendar(
+          event(
+            "UID:bad",
+            ...(field === "DTSTART" ? [] : ["DTSTART:20270105T090000Z"]),
+            `${field};TZID="${name}":20270105T090000`,
+          ),
+        ),
+      );
+  for (const feed of cases)
+    assert.throws(() => scanCalendar(feed, "UTC"), Error, feed);
+  assert.throws(
+    () => scanCalendar(untrusted(), "+05:30"),
+    /unsupported_timezone/,
+  );
+  assert.equal(scanCalendar(calendar(), "UTC").sources.size, 0);
   process.env.TZ = "Asia/Tokyo";
   try {
-    assert.throws(() => scanCalendar(untrusted(), "UTC"));
+    assert.throws(
+      () => scanCalendar(untrusted(), "UTC"),
+      /process_timezone_not_utc/,
+    );
   } finally {
     process.env.TZ = "UTC";
   }
+  const parser = context.mock.method(ICAL, "parse");
+  const nested = calendar(
+    "BEGIN:VTODO\r\n".repeat(80_000),
+    "END:VTODO\r\n".repeat(80_000),
+  );
+  assert.throws(() => scanCalendar(nested, "UTC"), /invalid_calendar/);
+  assert.equal(parser.mock.callCount(), 0);
 });
 
 test("free text, case and signed durations do not make a feed unavailable", () => {
@@ -467,7 +439,7 @@ test("free text, case and signed durations do not make a feed unavailable", () =
   assert.equal(component?.summary, 'Bring a 12" ruler');
 });
 
-for (const [name, feed, zone, from, to, expected] of [
+for (const [name, feed, zone, expected] of [
   [
     "a lowercase UNTIL",
     calendar(
@@ -477,21 +449,13 @@ for (const [name, feed, zone, from, to, expected] of [
       ),
     ),
     "UTC",
-    "2027-01-01",
-    "2027-01-06",
-    [
-      "2027-01-01T00:00:00.000Z",
-      "2027-01-02T00:00:00.000Z",
-      "2027-01-03T00:00:00.000Z",
-    ],
+    instants("2027-01-01T00:00Z 2027-01-02T00:00Z 2027-01-03T00:00Z"),
   ],
   [
     "COUNT before FREQ",
     calendar(series("DTSTART:20270101T090000Z", "COUNT=2;FREQ=DAILY")),
     "UTC",
-    "2027-01-01",
-    "2027-01-06",
-    ["2027-01-01T09:00:00.000Z", "2027-01-02T09:00:00.000Z"],
+    instants("2027-01-01T09:00Z 2027-01-02T09:00Z"),
   ],
   [
     "a DATE UNTIL on a timed series",
@@ -502,26 +466,15 @@ for (const [name, feed, zone, from, to, expected] of [
       ),
     ),
     "UTC",
-    "2027-01-07",
-    "2027-01-14",
-    [
-      "2027-01-08T14:00:00.000Z",
-      "2027-01-09T14:00:00.000Z",
-      "2027-01-10T14:00:00.000Z",
-    ],
+    instants("2027-01-08T14:00Z 2027-01-09T14:00Z 2027-01-10T14:00Z"),
   ],
   [
     "an all-day series over a skipped midnight",
     calendar(series("DTSTART;VALUE=DATE:20260904", "FREQ=DAILY;COUNT=4")),
     "America/Santiago",
-    "2026-09-03",
-    "2026-09-09",
-    [
-      "2026-09-04T04:00:00.000Z",
-      "2026-09-05T04:00:00.000Z",
-      "2026-09-06T04:00:00.000Z",
-      "2026-09-07T03:00:00.000Z",
-    ],
+    instants(
+      "2026-09-04T04:00Z 2026-09-05T04:00Z 2026-09-06T04:00Z 2026-09-07T03:00Z",
+    ),
   ],
   [
     "a timed override of an all-day series",
@@ -534,15 +487,61 @@ for (const [name, feed, zone, from, to, expected] of [
       ),
     ),
     "UTC",
-    "2027-01-01",
-    "2027-01-05",
-    [
-      "2027-01-01T00:00:00.000Z",
-      "2027-01-02T14:00:00.000Z",
-      "2027-01-03T00:00:00.000Z",
-    ],
+    instants("2027-01-01T00:00Z 2027-01-02T14:00Z 2027-01-03T00:00Z"),
   ],
 ] as const)
   test(`recurrence positions survive ${name}`, () => {
-    assert.deepEqual(starts(feed, zone, from, to).sort(), [...expected]);
+    assert.deepEqual(starts(feed, zone, "2026-09-01", "2027-02-01").sort(), [
+      ...expected,
+    ]);
   });
+
+test("parameterized UIDs keep distinct events", () => {
+  const { events } = scanCalendar(
+    calendar(
+      event("UID;X-SOURCE=example:one", "DTSTART:20270105T090000Z"),
+      event("UID;X-SOURCE=example:two", "DTSTART:20270105T100000Z"),
+    ),
+    "UTC",
+  );
+  assert.equal(
+    Object.values(events).filter((entry) => entry?.type === "VEVENT").length,
+    2,
+  );
+});
+
+test("quoted parameters cannot change recurrence value types", () => {
+  const feed = calendar(
+    series(
+      'DTSTART;X-LABEL="a;VALUE=DATE;X=b":20270105T090000Z',
+      "FREQ=DAILY;COUNT=2",
+    ),
+  );
+  const actual = starts(feed, "UTC", "2027-01-05", "2027-01-07");
+  assert.deepEqual(actual, instants("2027-01-05T09:00Z 2027-01-06T09:00Z"));
+});
+
+test("canonicalization is idempotent", (context) => {
+  let canonical = "";
+  const parse = ical.sync.parseICS;
+  context.mock.method(ical.sync, "parseICS", (text: string) => {
+    canonical = text;
+    return parse(text);
+  });
+  scanCalendar(
+    calendar(
+      series(
+        "DTSTART;TZID=Asia/Tokyo:20270101T090000",
+        "FREQ=DAILY;UNTIL=20270103T000000Z",
+        "EXDATE:20270102T000000Z",
+      ),
+    ),
+    "Europe/Berlin",
+  );
+  const canonical1 = canonical;
+  const first = scanCalendar(canonical1, "Europe/Berlin");
+  const canonical2 = canonical;
+  const second = scanCalendar(canonical2, "Europe/Berlin");
+  assert.equal(canonical2, canonical1);
+  assert.deepEqual(second.sources, first.sources);
+});

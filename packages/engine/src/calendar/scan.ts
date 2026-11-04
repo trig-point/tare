@@ -1,12 +1,10 @@
+import ICAL from "ical.js";
 import ical, { type VEvent } from "node-ical";
 import { calendarDayMs, supportedZone, wallInstant, wallTime } from "./time.ts";
 
-type Property = {
-  name: string;
-  parameters: Record<string, string>;
-  segments: string[];
-  value: string;
-};
+type Property = [string, Record<string, unknown>, string, ...unknown[]];
+type Component = [string, Property[], Component[]];
+type Rule = Record<string, unknown>;
 export type CalendarValue = {
   wall: Date;
   form: "date" | "floating" | "utc" | "zoned";
@@ -20,77 +18,172 @@ export type CalendarSource = {
   until?: Date | string;
   recurring: boolean;
 };
+const timeProperties = new Set(["dtstart", "dtend", "recurrence-id", "exdate"]);
+const propertyTypes: Record<string, string> = {
+  uid: "text",
+  duration: "duration",
+  rrule: "recur",
+  sequence: "integer",
+  summary: "text",
+  status: "text",
+};
+const numericRules: Record<string, [number, number]> = {
+  count: [1, 2_147_483_647],
+  interval: [1, 2_147_483_647],
+  bysecond: [0, 60],
+  byminute: [0, 59],
+  byhour: [0, 23],
+  bymonthday: [-31, 31],
+  byyearday: [-366, 366],
+  byweekno: [-53, 53],
+  bymonth: [1, 12],
+  bysetpos: [-366, 366],
+};
 
-function splitQuoted(text: string, separator: string): string[] {
-  const parts: string[] = [];
-  let quoted = false;
-  let begin = 0;
-  for (let index = 0; index < text.length; index += 1) {
-    if (text[index] === '"') quoted = !quoted;
-    if (!quoted && text[index] === separator) {
-      parts.push(text.slice(begin, index));
-      begin = index + 1;
-    }
-  }
-  if (quoted) throw new Error("invalid_property");
-  parts.push(text.slice(begin));
-  return parts;
+function wallDate(value: string, dateOnly: boolean): Date {
+  const normalized = dateOnly ? `${value}T00:00:00` : value.replace(/Z$/, "");
+  const wall = new Date(`${normalized}.000Z`);
+  if (
+    !Number.isFinite(wall.getTime()) ||
+    wall.toISOString() !== `${normalized}.000Z`
+  )
+    throw new Error("invalid_calendar_time");
+  return wall;
 }
 
-// Properties node-ical must keep exactly as the scanner read them.
-const exactProperties = new Set([
-  "UID",
-  "DTSTART",
-  "DTEND",
-  "DURATION",
-  "RECURRENCE-ID",
-  "RRULE",
-  "EXDATE",
-  "SEQUENCE",
-  "SUMMARY",
-  "STATUS",
-]);
+function validateRule(raw: string): void {
+  const names = new Set<string>();
+  for (const part of raw.split(";")) {
+    const [name = "", value = "", ...extra] = part.split("=");
+    const key = name.toLowerCase();
+    if (!value || extra.length || names.has(key))
+      throw new Error("invalid_rule");
+    names.add(key);
+    const range = Object.hasOwn(numericRules, key)
+      ? numericRules[key]
+      : undefined;
+    if (range) {
+      for (const member of value.split(",")) {
+        const number = Number(member);
+        if (
+          !/^[+-]?\d+$/.test(member) ||
+          !Number.isInteger(number) ||
+          number < range[0] ||
+          number > range[1] ||
+          (range[0] < 0 && number === 0) ||
+          ((key === "count" || key === "interval") && value.includes(","))
+        )
+          throw new Error("invalid_rule");
+      }
+    } else if (!["freq", "until", "byday", "wkst"].includes(key)) {
+      throw new Error("invalid_rule");
+    }
+  }
+  if (!names.has("freq")) throw new Error("invalid_rule");
+}
 
-function property(line: string): Property {
-  let quoted = false;
-  let colon = -1;
-  for (let index = 0; index < line.length && colon < 0; index += 1) {
-    if (line[index] === '"') quoted = !quoted;
-    else if (!quoted && line[index] === ":") colon = index;
+function parseTree(feed: string): Component {
+  // ical.js accepts mismatched END names; this guard checks only component boundaries.
+  const stack: string[] = [];
+  let roots = 0;
+  for (const line of feed.replace(/\r?\n[ \t]/g, "").split(/\r?\n/)) {
+    const boundary = /^(BEGIN|END):(.+)$/i.exec(line);
+    if (!boundary) continue;
+    const name = boundary[2]?.toLowerCase();
+    if (!name) throw new Error("invalid_calendar");
+    if (boundary[1]?.toUpperCase() === "BEGIN") {
+      if (
+        (!stack.length && (name !== "vcalendar" || roots++ !== 0)) ||
+        (stack.length && name === "vcalendar") ||
+        (name === "vevent" &&
+          (stack.length !== 1 || stack[0] !== "vcalendar")) ||
+        stack.length >= 32
+      )
+        throw new Error("invalid_calendar");
+      stack.push(name);
+    } else if (stack.pop() !== name) throw new Error("invalid_calendar");
   }
-  if (colon < 1) throw new Error("invalid_property");
-  const [name = "", ...segments] = splitQuoted(line.slice(0, colon), ";");
-  const exact = exactProperties.has(name.toUpperCase());
-  const parameters: Record<string, string> = {};
-  for (const segment of segments) {
-    const equal = segment.indexOf("=");
-    if (equal < 1) throw new Error("invalid_parameter");
-    const key = segment.slice(0, equal).toUpperCase();
-    if (
-      (exact || key === "TZID") &&
-      (Object.hasOwn(parameters, key) ||
-        !/^[\w-]+=(?:"[^"]*"|[^":;]+)$/.test(segment))
-    )
-      throw new Error("invalid_parameter");
-    parameters[key] = segment.slice(equal + 1).replace(/^"(.*)"$/, "$1");
-  }
-  if (!name) throw new Error("invalid_property");
-  return {
-    name: name.toUpperCase(),
-    parameters,
-    segments,
-    value: line.slice(colon + 1),
+  if (stack.length || roots !== 1) throw new Error("invalid_calendar");
+  const design = ICAL.design.icalendar;
+  const savedTzid = design.param.tzid;
+  const savedRecur = design.value.recur.fromICAL;
+  const converters = ["date", "date-time", "integer"].map((type) => ({
+    type,
+    original: design.value[type].fromICAL as (raw: string) => string | number,
+  }));
+  design.param.tzid = { ...savedTzid, multiValue: "," };
+  design.value.recur.fromICAL = (raw: string) => {
+    validateRule(raw);
+    return savedRecur(raw.toUpperCase());
   };
+  for (const { type, original } of converters) {
+    design.value[type].fromICAL = (raw: string) => {
+      const value = original(raw);
+      if (type === "integer") {
+        if (!/^[+-]?\d+$/.test(raw) || !Number.isSafeInteger(value))
+          throw new Error("invalid_integer");
+      } else {
+        if (
+          typeof value !== "string" ||
+          design.value[type].toICAL(value) !== raw
+        )
+          throw new Error("invalid_calendar_time");
+        wallDate(value, type === "date");
+      }
+      return value;
+    };
+  }
+  try {
+    const root = ICAL.parse(feed) as Component;
+    if (root[0] !== "vcalendar") throw new Error("invalid_calendar");
+    const pending = [root];
+    while (pending.length) {
+      const component = pending.pop();
+      if (!component) throw new Error("invalid_calendar");
+      for (const property of component[1]) {
+        if (!Object.hasOwn(property[1], "tzid")) continue;
+        const tzid = property[1].tzid;
+        if (typeof tzid !== "string" || !tzid) throw new Error("invalid_tzid");
+        supportedZone(tzid);
+        if (
+          property[2] === "date" ||
+          property
+            .slice(3)
+            .some((value) => typeof value === "string" && value.endsWith("Z"))
+        )
+          throw new Error("invalid_tzid");
+      }
+      for (const child of component[2]) {
+        if (
+          child[0] === "vcalendar" ||
+          (child[0] === "vevent" && component !== root)
+        )
+          throw new Error("invalid_calendar");
+        pending.push(child);
+      }
+    }
+    return root;
+  } finally {
+    design.param.tzid = savedTzid;
+    design.value.recur.fromICAL = savedRecur;
+    for (const { type, original } of converters)
+      design.value[type].fromICAL = original;
+  }
 }
 
 function readValue(
   raw: Property,
   personZone: string,
-  value = raw.value,
+  value = raw[3],
 ): CalendarValue {
-  const tzid = raw.parameters.TZID;
+  if (
+    (raw[2] !== "date" && raw[2] !== "date-time") ||
+    typeof value !== "string"
+  )
+    throw new Error("invalid_calendar_time");
+  const tzid = raw[1].tzid;
   const form =
-    raw.parameters.VALUE?.toUpperCase() === "DATE"
+    raw[2] === "date"
       ? "date"
       : tzid !== undefined
         ? "zoned"
@@ -98,30 +191,12 @@ function readValue(
           ? "utc"
           : "floating";
   const zone =
-    tzid !== undefined
+    typeof tzid === "string"
       ? supportedZone(tzid)
       : form === "utc"
         ? "UTC"
         : personZone;
-  const pattern =
-    form === "date"
-      ? /^\d{8}$/
-      : form === "utc"
-        ? /^\d{8}T\d{6}Z$/
-        : /^\d{8}T\d{6}$/;
-  if (!pattern.test(value)) throw new Error("invalid_calendar_time");
-  const date = `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
-  const time =
-    form === "date"
-      ? "00:00:00"
-      : `${value.slice(9, 11)}:${value.slice(11, 13)}:${value.slice(13, 15)}`;
-  const wall = new Date(`${date}T${time}.000Z`);
-  if (
-    !Number.isFinite(wall.getTime()) ||
-    wall.toISOString() !== `${date}T${time}.000Z`
-  )
-    throw new Error("invalid_calendar_time");
-  return { wall, form, zone };
+  return { wall: wallDate(value, form === "date"), form, zone };
 }
 
 function stamp(wall: Date, dateOnly: boolean): string {
@@ -172,201 +247,192 @@ function exceptionWall(value: CalendarValue, series: CalendarValue): Date {
   return wallTime(wallInstant(value.wall, value.zone), series.zone);
 }
 
-// node-ical builds DATE values from local fields, so they are UTC only here.
-function requireUtcProcess(): void {
-  for (const month of [0, 6])
-    if (new Date(2027, month, 1).getTimezoneOffset() !== 0)
-      throw new Error("process_timezone_not_utc");
+function canonicalProperty(
+  name: string,
+  type: string,
+  ...values: unknown[]
+): Property {
+  return [name, {}, type, ...values];
+}
+
+function untilBound(value: string, start: CalendarValue): Date | string {
+  const bound = readValue(
+    canonicalProperty(
+      "until",
+      value.length === 10 ? "date" : "date-time",
+      value,
+    ),
+    start.zone,
+  );
+  if (start.form === "date") {
+    const normalized = ical.sync.parseICS(
+      ICAL.stringify([
+        "vcalendar",
+        [],
+        [
+          [
+            "vevent",
+            [
+              canonicalProperty("uid", "text", "until"),
+              canonicalProperty(
+                "dtstart",
+                "date",
+                start.wall.toISOString().slice(0, 10),
+              ),
+              canonicalProperty("rrule", "recur", {
+                freq: "DAILY",
+                until: value,
+              }),
+            ],
+            [],
+          ],
+        ],
+      ]),
+    ).until;
+    const until =
+      normalized?.type === "VEVENT"
+        ? normalized.rrule?.options.until
+        : undefined;
+    if (!(until instanceof Date)) throw new Error("invalid_until");
+    return stamp(until, true);
+  }
+  return bound.form === "date"
+    ? new Date(
+        wallInstant(
+          new Date(bound.wall.getTime() + calendarDayMs),
+          start.zone,
+          "boundary",
+        ).getTime() - 1,
+      )
+    : wallInstant(bound.wall, bound.zone);
 }
 
 export function scanCalendar(feed: string, requestedZone: string) {
-  requireUtcProcess();
+  // node-ical builds DATE values from local fields, so they are UTC only here.
+  for (const month of [0, 6])
+    if (new Date(2027, month, 1).getTimezoneOffset() !== 0)
+      throw new Error("process_timezone_not_utc");
   const personZone = supportedZone(requestedZone);
-  const components: Property[][] = [];
-  const stack: string[] = [];
-  let current: Property[] | undefined;
-  let closed = false;
-  for (const line of feed.replace(/\r?\n[ \t]/g, "").split(/\r?\n/)) {
-    if (!line) continue;
-    const raw = property(line);
-    const kind = raw.value.toUpperCase();
-    if (raw.name === "BEGIN") {
-      if (
-        (kind === "VCALENDAR" && stack.length) ||
-        (kind === "VEVENT" && stack.includes("VEVENT"))
-      )
-        throw new Error("invalid_calendar");
-      stack.push(kind);
-      if (stack.join("/") === "VCALENDAR/VEVENT") current = [];
-    } else if (raw.name === "END") {
-      if (stack.pop() !== kind) throw new Error("invalid_calendar");
-      if (kind === "VEVENT" && current) {
-        components.push(current);
-        current = undefined;
+  const root = parseTree(feed);
+  const candidates = root[2]
+    .filter((component) => component[0] === "vevent")
+    .map((component) => {
+      const properties = new Map<string, Property>();
+      for (const raw of component[1]) {
+        const name = raw[0];
+        if (name === "rdate") throw new Error("unsupported_rdate");
+        if (!timeProperties.has(name) && !Object.hasOwn(propertyTypes, name))
+          continue;
+        if (name !== "exdate" && properties.has(name))
+          throw new Error("duplicate_property");
+        if (
+          (name !== "exdate" && raw.length !== 4) ||
+          (Object.hasOwn(propertyTypes, name) && raw[2] !== propertyTypes[name])
+        )
+          throw new Error("invalid_property");
+        if (name === "recurrence-id" && Object.hasOwn(raw[1], "range"))
+          throw new Error("unsupported_range");
+        properties.set(
+          name === "exdate" ? `exdate:${properties.size}` : name,
+          raw,
+        );
       }
-      if (kind === "VCALENDAR") closed = true;
-    } else if (current && stack.join("/") === "VCALENDAR/VEVENT") {
-      current.push(raw);
-    }
+      const uid = properties.get("uid")?.[3];
+      const rawStart = properties.get("dtstart");
+      if (typeof uid !== "string" || !uid) throw new Error("missing_uid");
+      if (!rawStart) throw new Error("missing_start");
+      if (properties.has("recurrence-id") && properties.has("rrule"))
+        throw new Error("unsupported_override_rule");
+      const sequence = properties.get("sequence")?.[3] ?? 0;
+      if (typeof sequence !== "number" || sequence < 0)
+        throw new Error("invalid_sequence");
+      return {
+        uid,
+        properties,
+        sequence,
+        start: readValue(rawStart, personZone),
+      };
+    });
+  const masters = new Map<string, (typeof candidates)[number]>();
+  for (const candidate of candidates) {
+    if (
+      !candidate.properties.has("recurrence-id") &&
+      candidate.sequence >= (masters.get(candidate.uid)?.sequence ?? -1)
+    )
+      masters.set(candidate.uid, candidate);
   }
-  if (stack.length || !closed) throw new Error("invalid_calendar");
-  for (const properties of components) {
-    const names = properties.map((entry) => entry.name);
-    for (const name of exactProperties)
-      if (name !== "EXDATE" && names.indexOf(name) !== names.lastIndexOf(name))
-        throw new Error("duplicate_property");
-    if (names.includes("RECURRENCE-ID") && names.includes("RRULE"))
-      throw new Error("unsupported_override_rule");
-  }
-  const starts = components.map((properties) => {
-    const raw = properties.find((entry) => entry.name === "DTSTART");
-    if (!raw) throw new Error("missing_start");
-    return readValue(raw, personZone);
-  });
-  const uids = components.map((properties) => {
-    const uid = properties.find((entry) => entry.name === "UID")?.value;
-    if (!uid) throw new Error("missing_uid");
-    return uid;
-  });
-  const masters = new Map<string, { start: CalendarValue; sequence: number }>();
-  for (const [index, properties] of components.entries()) {
-    const uid = uids[index] as string;
-    if (properties.some((entry) => entry.name === "RECURRENCE-ID")) continue;
-    const sequence = Number(
-      properties.find((entry) => entry.name === "SEQUENCE")?.value ?? 0,
-    );
-    const normalized = Number.isFinite(sequence) ? sequence : 0;
-    const start = starts[index];
-    if (!start) throw new Error("missing_start");
-    if (!masters.has(uid) || normalized >= (masters.get(uid)?.sequence ?? 0))
-      masters.set(uid, { start, sequence: normalized });
-  }
-  const sources = new Map<string, CalendarSource>();
-  const sequences = new Map<string, number>();
-  const rewritten: string[] = [];
-  for (const [index, properties] of components.entries()) {
-    const start = starts[index];
-    if (!start) throw new Error("missing_start");
-    const series = masters.get(uids[index] as string)?.start;
+  const winners = new Map<
+    string,
+    { component: Component; source: CalendarSource; sequence: number }
+  >();
+  for (const candidate of candidates) {
+    const { uid, properties, start, sequence } = candidate;
+    const series = masters.get(uid)?.start;
     const source: CalendarSource = {
       start,
-      recurring: properties.some((entry) => entry.name === "RRULE"),
+      recurring: properties.has("rrule"),
     };
-    const lines: string[] = [];
-    let untilText: string | undefined;
-    for (const raw of properties) {
-      let value = raw.value;
-      if (raw.parameters.TZID !== undefined) supportedZone(raw.parameters.TZID);
-      if (raw.name === "RECURRENCE-ID" && raw.parameters.RANGE !== undefined)
-        throw new Error("unsupported_range");
-      if (["DTSTART", "DTEND", "RECURRENCE-ID", "EXDATE"].includes(raw.name)) {
-        value = (raw.name === "EXDATE" ? value.split(",") : [value])
-          .map((member) => {
-            const parsed = readValue(raw, personZone, member);
-            const wall = ["RECURRENCE-ID", "EXDATE"].includes(raw.name)
+    const rewritten: Property[] = [];
+    let recurrenceForm: CalendarValue["form"] | undefined;
+    for (const raw of properties.values()) {
+      const name = raw[0];
+      if (timeProperties.has(name)) {
+        const values = raw.slice(3).map((member) => {
+          const parsed = readValue(raw, personZone, member);
+          const wall =
+            name === "exdate" || name === "recurrence-id"
               ? exceptionWall(parsed, series ?? parsed)
               : parsed.wall;
-            if (raw.name === "DTEND") source.end = parsed;
-            if (raw.name === "RECURRENCE-ID") source.recurrence = wall;
-            return stamp(wall, parsed.form === "date");
-          })
-          .join(",");
-      } else if (raw.name === "DURATION") source.duration = duration(value);
-      else if (raw.name === "RRULE") {
-        const rules = value.split(";").map((rule) => {
-          const equal = rule.indexOf("=");
-          if (equal < 1) throw new Error("invalid_rule");
-          return [rule.slice(0, equal).toUpperCase(), rule.slice(equal + 1)];
+          if (name === "dtend") source.end = parsed;
+          if (name === "recurrence-id") {
+            source.recurrence = wall;
+            recurrenceForm = parsed.form;
+          }
+          return parsed.form === "date"
+            ? wall.toISOString().slice(0, 10)
+            : `${wall.toISOString().slice(0, 19)}Z`;
         });
-        const names = rules.map(([name]) => name);
-        if (new Set(names).size !== names.length || !names.includes("FREQ"))
-          throw new Error("invalid_rule");
-        untilText = rules.find(([name]) => name === "UNTIL")?.[1];
-        if (untilText !== undefined) {
-          const bound = readValue(
-            {
-              name: "UNTIL",
-              parameters: /^\d{8}$/.test(untilText) ? { VALUE: "DATE" } : {},
-              segments: [],
-              value: untilText,
-            },
-            start.zone,
-          );
-          if (bound.form === "date" && start.form !== "date")
-            source.until = new Date(
-              wallInstant(
-                new Date(bound.wall.getTime() + calendarDayMs),
-                start.zone,
-                "boundary",
-              ).getTime() - 1,
-            );
-          else if (start.form !== "date")
-            source.until = wallInstant(bound.wall, bound.zone);
-        }
-        value = [
-          ...rules.filter(([name]) => name === "FREQ"),
-          ...rules.filter(([name]) => name !== "FREQ" && name !== "UNTIL"),
-        ]
-          .map((rule) => rule.join("="))
-          .join(";");
+        rewritten.push(canonicalProperty(name, raw[2], ...values));
+      } else if (name === "rrule") {
+        const rule = raw[3] as Rule;
+        if (typeof rule.until === "string")
+          source.until = untilBound(rule.until, start);
+        rewritten.push(
+          canonicalProperty(name, "recur", {
+            freq: rule.freq,
+            ...Object.fromEntries(
+              Object.entries(rule).filter(
+                ([key]) => key !== "freq" && key !== "until",
+              ),
+            ),
+          }),
+        );
+      } else {
+        if (name === "duration") source.duration = duration(String(raw[3]));
+        rewritten.push(canonicalProperty(name, raw[2], raw[3]));
       }
-      const segments = raw.segments.filter(
-        (segment) => !/^TZID=/i.test(segment),
-      );
-      lines.push(
-        `${raw.name}${segments.map((segment) => `;${segment}`).join("")}:${value}`,
-      );
     }
-    const isolated = ical.sync.parseICS(
-      [
-        "BEGIN:VCALENDAR",
-        "VERSION:2.0",
-        "BEGIN:VEVENT",
-        ...lines,
-        "END:VEVENT",
-        "END:VCALENDAR",
-      ].join("\r\n"),
-    );
-    const event = Object.values(isolated).find(
-      (entry): entry is VEvent => entry?.type === "VEVENT",
-    );
-    if (!event) throw new Error("missing_component");
-    if (start.form === "date" && untilText) {
-      const bounded = ical.sync.parseICS(
-        [
-          "BEGIN:VCALENDAR",
-          "BEGIN:VEVENT",
-          `UID:until`,
-          `DTSTART;VALUE=DATE:${stamp(start.wall, true)}`,
-          `RRULE:FREQ=DAILY;UNTIL=${untilText}`,
-          "END:VEVENT",
-          "END:VCALENDAR",
-        ].join("\r\n"),
-      );
-      const normalized = bounded.until;
-      const bound =
-        normalized?.type === "VEVENT"
-          ? normalized.rrule?.options.until
-          : undefined;
-      if (!(bound instanceof Date)) throw new Error("invalid_until");
-      source.until = stamp(bound, true);
-    }
-    const key = componentKey(event);
-    const sequence = Number.isFinite(event.sequence)
-      ? (event.sequence as number)
-      : 0;
-    if (!sources.has(key) || sequence >= (sequences.get(key) ?? 0)) {
-      sources.set(key, source);
-      sequences.set(key, sequence);
-    }
-    rewritten.push("BEGIN:VEVENT", ...lines, "END:VEVENT");
+    const key = JSON.stringify([
+      uid,
+      source.recurrence
+        ? `${recurrenceForm === "date" ? "DATE" : "INSTANT"}:${source.recurrence.toISOString()}`
+        : "MASTER",
+    ]);
+    if (sequence >= (winners.get(key)?.sequence ?? -1))
+      winners.set(key, {
+        component: ["vevent", rewritten, []],
+        source,
+        sequence,
+      });
   }
   return {
-    sources,
+    sources: new Map([...winners].map(([key, winner]) => [key, winner.source])),
     events: ical.sync.parseICS(
-      ["BEGIN:VCALENDAR", "VERSION:2.0", ...rewritten, "END:VCALENDAR"].join(
-        "\r\n",
-      ),
+      ICAL.stringify([
+        "vcalendar",
+        [canonicalProperty("version", "text", "2.0")],
+        [...winners.values()].map((winner) => winner.component),
+      ]),
     ),
   };
 }
