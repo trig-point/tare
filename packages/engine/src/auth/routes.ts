@@ -8,6 +8,7 @@ import {
   OperationError,
   operationPerson,
 } from "../operations/registry.ts";
+import type { OuraService } from "../oura/service.ts";
 import { deleteSession } from "../queries/delete-session.ts";
 import { insertAccount } from "../queries/insert-account.ts";
 import { selectUserByUsername } from "../queries/select-user-by-username.ts";
@@ -29,6 +30,7 @@ export interface AppOptions {
   accessKeySet?: JWTVerifyGetKey;
   questionKinds?: ReadonlyMap<string, QuestionKind>;
   lookup?: LookupAdapters;
+  oura?: OuraService;
   verifyPassword(password: string, stored: string): Promise<boolean>;
 }
 

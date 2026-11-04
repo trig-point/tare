@@ -1,9 +1,37 @@
 import { z as zod } from "zod";
 import { emptyInput } from "../auth/routes.ts";
-import { defineOperation, operationPerson } from "../operations/registry.ts";
+import {
+  defineOperation,
+  OperationError,
+  operationPerson,
+} from "../operations/registry.ts";
 import { readOuraConnection } from "./connections.ts";
+import { createOura } from "./service.ts";
 
 export const ouraOperations = [
+  defineOperation({
+    name: "connect_oura",
+    method: "POST",
+    path: "/api/oura/connect",
+    modes: ["access", "fallback"],
+    callerClass: "browser",
+    admin: false,
+    bodyLimit: 1024,
+    input: emptyInput,
+    output: zod.strictObject({ authorization_url: zod.string().url() }),
+    async handler(_input, context) {
+      if (context.credential !== "access" && context.credential !== "session")
+        throw new OperationError(403, "forbidden");
+      return {
+        status: 200,
+        body: {
+          authorization_url: await (
+            context.oura ?? createOura(context)
+          ).connect(operationPerson(context).id),
+        },
+      };
+    },
+  }),
   defineOperation({
     name: "read_oura_connection",
     method: "GET",
