@@ -7,6 +7,7 @@ import {
 } from "@tare/nutrition";
 import type { Database } from "better-sqlite3";
 import { z as zod } from "zod";
+import { scopeDatabase } from "../db.ts";
 import { resolveProvenance } from "../logging/provenance.ts";
 import { OperationError } from "../operations/registry.ts";
 import { insertMealFood } from "../queries/insert-meal-food.ts";
@@ -40,7 +41,8 @@ export function mealKey(meal: Meal): string {
 export const mealNutritionKind: QuestionKind = {
   name: "meal_nutrition",
   answer: labelAnswer,
-  apply(database, question, input) {
+  apply(scope, question, input) {
+    const database = scopeDatabase(scope);
     if (question.user_id === null)
       throw new Error("Meal question has no owner");
     const [service, name, chef] = zod
@@ -88,6 +90,7 @@ export const mealNutritionKind: QuestionKind = {
       })
     )
       throw new Error("Meal food insert returned no row");
+    return { status: "applied" };
   },
 };
 

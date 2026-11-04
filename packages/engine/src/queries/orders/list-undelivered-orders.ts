@@ -8,6 +8,7 @@ export type ListUndeliveredOrdersResult = {
   status: string;
   delivered_at: string | null;
   created_at: string;
+  applied_email_id: number | null;
 };
 
 export function listUndeliveredOrders(
@@ -31,6 +32,7 @@ function mapArrayToListUndeliveredOrdersResult(data: any) {
     status: data[4],
     delivered_at: data[5],
     created_at: data[6],
+    applied_email_id: data[7],
   };
   return result;
 }

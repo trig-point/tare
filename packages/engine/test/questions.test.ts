@@ -4,6 +4,7 @@ import { StreamableHTTPClientTransport as McpTransport } from "@modelcontextprot
 import type { Database } from "better-sqlite3";
 import { z as zod } from "zod";
 import { createApp } from "../src/app.ts";
+import { scopeDatabase } from "../src/db.ts";
 import { insertAgentToken } from "../src/queries/insert-agent-token.ts";
 import { createQuestion, type QuestionKind } from "../src/questions/kinds.ts";
 import * as auth from "./auth-support.ts";
@@ -23,11 +24,13 @@ function kinds(database: Database) {
   const kind: QuestionKind = {
     name: "example",
     answer: zod.boolean(),
-    apply(database, _question, answer) {
+    apply(scope, _question, answer) {
+      const database = scopeDatabase(scope);
       database
         .prepare("UPDATE example_subject SET value = ?")
         .run(Number(answer));
       if (!answer) throw new Error("Example failure");
+      return { status: "applied" };
     },
   };
   return new Map([[kind.name, kind]]);

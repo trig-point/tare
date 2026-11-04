@@ -9,6 +9,8 @@ import { deliveryDate } from "./dates.ts";
 import { normalize, normalizeEmail } from "./normalize.ts";
 import { type OrderReply, orderSchema, systemPrompt } from "./schema.ts";
 
+export { orderSchema } from "./schema.ts";
+
 type Model = {
   baseURL: string;
   model: string;

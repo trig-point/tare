@@ -1,4 +1,5 @@
 import { z as zod } from "zod";
+import { writeTransaction } from "../db.ts";
 import {
   defineOperation,
   type OperationContext,
@@ -77,33 +78,36 @@ export const questionOperations = [
     }),
     handler(input, context) {
       const { database, clock } = context;
-      return database
-        .transaction(() => {
-          const actor = visibility(context);
-          const question = selectQuestion(database, { ...actor, id: input.id });
-          if (!question) throw new OperationError(404, "not_found");
-          if (question.status === "answered")
-            throw new OperationError(409, "already_answered");
-          const kind = context.questionKinds?.get(question.kind);
-          if (!kind) throw new OperationError(409, "kind_not_supported");
-          const answer = kind.answer.safeParse(input.answer);
-          if (!answer.success) throw new OperationError(400, "invalid_answer");
-          kind.apply(database, question, answer.data);
-          const closed = answerQuestion(
-            database,
-            {
-              answer: JSON.stringify(answer.data),
-              answered_at: clock.now().toISOString(),
-            },
-            { ...actor, id: question.id },
-          );
-          if (closed.length !== 1) throw new Error("Could not close question");
-          return {
-            status: 200 as const,
-            body: { id: question.id, status: "answered" },
-          };
-        })
-        .immediate();
+      const result = writeTransaction(database, (scope) => {
+        const actor = visibility(context);
+        const question = selectQuestion(database, { ...actor, id: input.id });
+        if (!question) throw new OperationError(404, "not_found");
+        if (question.status === "answered")
+          throw new OperationError(409, "already_answered");
+        const kinds = context.questionKinds;
+        const kind = kinds?.get(question.kind);
+        if (!kind || !kinds)
+          throw new OperationError(409, "kind_not_supported");
+        const answer = kind.answer.safeParse(input.answer);
+        if (!answer.success) throw new OperationError(400, "invalid_answer");
+        const outcome = kind.apply(scope, question, answer.data, kinds);
+        const closed = answerQuestion(
+          database,
+          {
+            answer: JSON.stringify(answer.data),
+            answered_at: clock.now().toISOString(),
+          },
+          { ...actor, id: question.id },
+        );
+        if (closed.length !== 1) throw new Error("Could not close question");
+        return { outcome, id: question.id };
+      });
+      if (result.outcome.status === "superseded")
+        throw new OperationError(409, "order_superseded");
+      return {
+        status: 200 as const,
+        body: { id: result.id, status: "answered" },
+      };
     },
   }),
 ];

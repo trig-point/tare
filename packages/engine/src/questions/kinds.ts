@@ -1,17 +1,20 @@
 import type { Database } from "better-sqlite3";
 import { z as zod } from "zod";
+import type { WriteScope } from "../db.ts";
 import { OperationError } from "../operations/registry.ts";
 import { insertQuestion } from "../queries/insert-question.ts";
 import type { SelectQuestionResult } from "../queries/select-question.ts";
 
+export type ApplyOutcome = { status: "applied" } | { status: "superseded" };
 export interface QuestionKind {
   name: string;
   answer: zod.ZodType;
   apply(
-    database: Database,
+    scope: WriteScope,
     question: SelectQuestionResult,
     answer: unknown,
-  ): undefined;
+    questionKinds: ReadonlyMap<string, QuestionKind>,
+  ): ApplyOutcome;
 }
 
 export function createQuestion(
@@ -21,6 +24,7 @@ export function createQuestion(
     kind: string;
     subjectRef: string;
     prompt: string;
+    answerSchema?: Record<string, unknown>;
   },
   clock: { now(): Date },
   questionKinds: ReadonlyMap<string, QuestionKind>,
@@ -33,7 +37,8 @@ export function createQuestion(
     subject_ref: input.subjectRef,
     prompt: input.prompt,
     answer_schema: JSON.stringify(
-      zod.toJSONSchema(kind.answer, { target: "draft-7", io: "input" }),
+      input.answerSchema ??
+        zod.toJSONSchema(kind.answer, { target: "draft-7", io: "input" }),
     ),
     created_at: clock.now().toISOString(),
   });
