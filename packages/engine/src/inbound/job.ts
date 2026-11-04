@@ -1,5 +1,6 @@
 import { parseOrderEmail } from "@tare/order-parser";
 import type { Database } from "better-sqlite3";
+import type { Config } from "../config.ts";
 import { writeTransaction } from "../db.ts";
 import { localDay } from "../logging/day.ts";
 import { selectPerson } from "../queries/select-person.ts";
@@ -16,18 +17,28 @@ export function createOrderEmailParseJob({
   clock,
   model,
   questionKinds,
+  services = {},
 }: {
   database: Database;
   clock: { now(): Date };
   model: Parameters<typeof parseOrderEmail>[1];
   questionKinds?: ReadonlyMap<string, QuestionKind>;
+  services?: Config["orderEmailServices"];
 }) {
-  const registry = questionKinds ?? createOrderQuestionKinds({ clock });
+  const registry =
+    questionKinds ?? createOrderQuestionKinds({ clock, services });
   const reconcile = (email: { id: number; user_id: number }) =>
     writeTransaction(database, (scope) => {
       const person = selectPerson(database, { id: email.user_id });
       if (!person) throw new Error("Email owner is missing");
-      reconcileEmail(scope, email, person, clock.now().toISOString(), registry);
+      reconcileEmail(
+        scope,
+        email,
+        person,
+        clock.now().toISOString(),
+        { questionKinds: registry, services },
+        "job",
+      );
     });
   return {
     name: "order-email-parse",

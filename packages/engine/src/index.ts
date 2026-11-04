@@ -39,6 +39,7 @@ async function startEngine() {
   const clock = { now: () => new Date() };
   const questionKinds = createOrderQuestionKinds({
     clock,
+    services: config.orderEmailServices,
   });
   deleteExpiredSessions(connection.database, {
     now: clock.now().toISOString(),
@@ -77,6 +78,7 @@ async function startEngine() {
       clock,
       model: config.orderModel,
       questionKinds,
+      services: config.orderEmailServices,
     }),
   );
   runner.start();
