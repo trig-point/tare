@@ -1,9 +1,10 @@
 import ical, { type VEvent } from "node-ical";
-import { supportedZone, wallInstant, wallTime } from "./time.ts";
+import { calendarDayMs, supportedZone, wallInstant, wallTime } from "./time.ts";
 
 type Property = {
   name: string;
   parameters: Record<string, string>;
+  segments: string[];
   value: string;
 };
 export type CalendarValue = {
@@ -36,24 +37,49 @@ function splitQuoted(text: string, separator: string): string[] {
   return parts;
 }
 
+// Properties node-ical must keep exactly as the scanner read them.
+const exactProperties = new Set([
+  "UID",
+  "DTSTART",
+  "DTEND",
+  "DURATION",
+  "RECURRENCE-ID",
+  "RRULE",
+  "EXDATE",
+  "SEQUENCE",
+  "SUMMARY",
+  "STATUS",
+]);
+
 function property(line: string): Property {
-  const [header, ...values] = splitQuoted(line, ":");
-  if (!header || !values.length) throw new Error("invalid_property");
-  const [name, ...parameters] = splitQuoted(header, ";");
+  let quoted = false;
+  let colon = -1;
+  for (let index = 0; index < line.length && colon < 0; index += 1) {
+    if (line[index] === '"') quoted = !quoted;
+    else if (!quoted && line[index] === ":") colon = index;
+  }
+  if (colon < 1) throw new Error("invalid_property");
+  const [name = "", ...segments] = splitQuoted(line.slice(0, colon), ";");
+  const exact = exactProperties.has(name.toUpperCase());
+  const parameters: Record<string, string> = {};
+  for (const segment of segments) {
+    const equal = segment.indexOf("=");
+    if (equal < 1) throw new Error("invalid_parameter");
+    const key = segment.slice(0, equal).toUpperCase();
+    if (
+      (exact || key === "TZID") &&
+      (Object.hasOwn(parameters, key) ||
+        !/^[\w-]+=(?:"[^"]*"|[^":;]+)$/.test(segment))
+    )
+      throw new Error("invalid_parameter");
+    parameters[key] = segment.slice(equal + 1).replace(/^"(.*)"$/, "$1");
+  }
   if (!name) throw new Error("invalid_property");
   return {
     name: name.toUpperCase(),
-    parameters: Object.fromEntries(
-      parameters.map((parameter) => {
-        const equal = parameter.indexOf("=");
-        if (equal < 1) throw new Error("invalid_parameter");
-        return [
-          parameter.slice(0, equal).toUpperCase(),
-          parameter.slice(equal + 1).replace(/^"(.*)"$/, "$1"),
-        ];
-      }),
-    ),
-    value: values.join(":"),
+    parameters,
+    segments,
+    value: line.slice(colon + 1),
   };
 }
 
@@ -62,21 +88,28 @@ function readValue(
   personZone: string,
   value = raw.value,
 ): CalendarValue {
+  const tzid = raw.parameters.TZID;
   const form =
     raw.parameters.VALUE?.toUpperCase() === "DATE"
       ? "date"
-      : raw.parameters.TZID
+      : tzid !== undefined
         ? "zoned"
         : value.endsWith("Z")
           ? "utc"
           : "floating";
-  const zone = raw.parameters.TZID
-    ? supportedZone(raw.parameters.TZID)
-    : form === "utc"
-      ? "UTC"
-      : personZone;
-  if (!(form === "date" ? /^\d{8}$/ : /^\d{8}T\d{6}Z?$/).test(value))
-    throw new Error("invalid_calendar_time");
+  const zone =
+    tzid !== undefined
+      ? supportedZone(tzid)
+      : form === "utc"
+        ? "UTC"
+        : personZone;
+  const pattern =
+    form === "date"
+      ? /^\d{8}$/
+      : form === "utc"
+        ? /^\d{8}T\d{6}Z$/
+        : /^\d{8}T\d{6}$/;
+  if (!pattern.test(value)) throw new Error("invalid_calendar_time");
   const date = `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
   const time =
     form === "date"
@@ -98,7 +131,7 @@ function stamp(wall: Date, dateOnly: boolean): string {
 
 function duration(value: string): NonNullable<CalendarSource["duration"]> {
   const match =
-    /^P(?:(\d+)W|(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?)$/.exec(
+    /^\+?P(?:(\d+)W|(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?)$/.exec(
       value,
     );
   if (!match || !match.slice(1).some((part) => part !== undefined))
@@ -139,38 +172,65 @@ function exceptionWall(value: CalendarValue, series: CalendarValue): Date {
   return wallTime(wallInstant(value.wall, value.zone), series.zone);
 }
 
-export function scanCalendar(feed: string, personZone: string) {
+// node-ical builds DATE values from local fields, so they are UTC only here.
+function requireUtcProcess(): void {
+  for (const month of [0, 6])
+    if (new Date(2027, month, 1).getTimezoneOffset() !== 0)
+      throw new Error("process_timezone_not_utc");
+}
+
+export function scanCalendar(feed: string, requestedZone: string) {
+  requireUtcProcess();
+  const personZone = supportedZone(requestedZone);
   const components: Property[][] = [];
   const stack: string[] = [];
   let current: Property[] | undefined;
+  let closed = false;
   for (const line of feed.replace(/\r?\n[ \t]/g, "").split(/\r?\n/)) {
     if (!line) continue;
     const raw = property(line);
+    const kind = raw.value.toUpperCase();
     if (raw.name === "BEGIN") {
-      stack.push(raw.value.toUpperCase());
+      if (
+        (kind === "VCALENDAR" && stack.length) ||
+        (kind === "VEVENT" && stack.includes("VEVENT"))
+      )
+        throw new Error("invalid_calendar");
+      stack.push(kind);
       if (stack.join("/") === "VCALENDAR/VEVENT") current = [];
     } else if (raw.name === "END") {
-      if (stack.pop() !== raw.value.toUpperCase())
-        throw new Error("invalid_calendar");
-      if (raw.value.toUpperCase() === "VEVENT" && current) {
+      if (stack.pop() !== kind) throw new Error("invalid_calendar");
+      if (kind === "VEVENT" && current) {
         components.push(current);
         current = undefined;
       }
+      if (kind === "VCALENDAR") closed = true;
     } else if (current && stack.join("/") === "VCALENDAR/VEVENT") {
       current.push(raw);
     }
   }
-  if (stack.length || !feed.trimEnd().endsWith("END:VCALENDAR"))
-    throw new Error("invalid_calendar");
+  if (stack.length || !closed) throw new Error("invalid_calendar");
+  for (const properties of components) {
+    const names = properties.map((entry) => entry.name);
+    for (const name of exactProperties)
+      if (name !== "EXDATE" && names.indexOf(name) !== names.lastIndexOf(name))
+        throw new Error("duplicate_property");
+    if (names.includes("RECURRENCE-ID") && names.includes("RRULE"))
+      throw new Error("unsupported_override_rule");
+  }
   const starts = components.map((properties) => {
     const raw = properties.find((entry) => entry.name === "DTSTART");
     if (!raw) throw new Error("missing_start");
     return readValue(raw, personZone);
   });
-  const masters = new Map<string, { start: CalendarValue; sequence: number }>();
-  for (const [index, properties] of components.entries()) {
+  const uids = components.map((properties) => {
     const uid = properties.find((entry) => entry.name === "UID")?.value;
     if (!uid) throw new Error("missing_uid");
+    return uid;
+  });
+  const masters = new Map<string, { start: CalendarValue; sequence: number }>();
+  for (const [index, properties] of components.entries()) {
+    const uid = uids[index] as string;
     if (properties.some((entry) => entry.name === "RECURRENCE-ID")) continue;
     const sequence = Number(
       properties.find((entry) => entry.name === "SEQUENCE")?.value ?? 0,
@@ -187,8 +247,7 @@ export function scanCalendar(feed: string, personZone: string) {
   for (const [index, properties] of components.entries()) {
     const start = starts[index];
     if (!start) throw new Error("missing_start");
-    const uid = properties.find((entry) => entry.name === "UID")?.value;
-    const series = masters.get(uid ?? "")?.start;
+    const series = masters.get(uids[index] as string)?.start;
     const source: CalendarSource = {
       start,
       recurring: properties.some((entry) => entry.name === "RRULE"),
@@ -197,9 +256,11 @@ export function scanCalendar(feed: string, personZone: string) {
     let untilText: string | undefined;
     for (const raw of properties) {
       let value = raw.value;
+      if (raw.parameters.TZID !== undefined) supportedZone(raw.parameters.TZID);
+      if (raw.name === "RECURRENCE-ID" && raw.parameters.RANGE !== undefined)
+        throw new Error("unsupported_range");
       if (["DTSTART", "DTEND", "RECURRENCE-ID", "EXDATE"].includes(raw.name)) {
-        value = value
-          .split(",")
+        value = (raw.name === "EXDATE" ? value.split(",") : [value])
           .map((member) => {
             const parsed = readValue(raw, personZone, member);
             const wall = ["RECURRENCE-ID", "EXDATE"].includes(raw.name)
@@ -212,31 +273,48 @@ export function scanCalendar(feed: string, personZone: string) {
           .join(",");
       } else if (raw.name === "DURATION") source.duration = duration(value);
       else if (raw.name === "RRULE") {
-        const rules = value.split(";");
-        untilText = rules.find((rule) => rule.startsWith("UNTIL="))?.slice(6);
-        if (untilText) {
-          if (start.form !== "date") {
-            const bound = readValue(
-              {
-                name: "UNTIL",
-                parameters: /^\d{8}$/.test(untilText) ? { VALUE: "DATE" } : {},
-                value: untilText,
-              },
-              start.zone,
+        const rules = value.split(";").map((rule) => {
+          const equal = rule.indexOf("=");
+          if (equal < 1) throw new Error("invalid_rule");
+          return [rule.slice(0, equal).toUpperCase(), rule.slice(equal + 1)];
+        });
+        const names = rules.map(([name]) => name);
+        if (new Set(names).size !== names.length || !names.includes("FREQ"))
+          throw new Error("invalid_rule");
+        untilText = rules.find(([name]) => name === "UNTIL")?.[1];
+        if (untilText !== undefined) {
+          const bound = readValue(
+            {
+              name: "UNTIL",
+              parameters: /^\d{8}$/.test(untilText) ? { VALUE: "DATE" } : {},
+              segments: [],
+              value: untilText,
+            },
+            start.zone,
+          );
+          if (bound.form === "date" && start.form !== "date")
+            source.until = new Date(
+              wallInstant(
+                new Date(bound.wall.getTime() + calendarDayMs),
+                start.zone,
+                "boundary",
+              ).getTime() - 1,
             );
-            source.until = wallInstant(
-              bound.wall,
-              bound.form === "utc" ? "UTC" : start.zone,
-            );
-          }
-          value = rules.filter((rule) => !rule.startsWith("UNTIL=")).join(";");
+          else if (start.form !== "date")
+            source.until = wallInstant(bound.wall, bound.zone);
         }
+        value = [
+          ...rules.filter(([name]) => name === "FREQ"),
+          ...rules.filter(([name]) => name !== "FREQ" && name !== "UNTIL"),
+        ]
+          .map((rule) => rule.join("="))
+          .join(";");
       }
-      const parameters = Object.entries(raw.parameters).filter(
-        ([name]) => name !== "TZID",
+      const segments = raw.segments.filter(
+        (segment) => !/^TZID=/i.test(segment),
       );
       lines.push(
-        `${raw.name}${parameters.map(([name, parameter]) => `;${name}="${parameter}"`).join("")}:${value}`,
+        `${raw.name}${segments.map((segment) => `;${segment}`).join("")}:${value}`,
       );
     }
     const isolated = ical.sync.parseICS(
