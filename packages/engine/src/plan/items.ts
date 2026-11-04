@@ -55,6 +55,7 @@ function itemView(database: Database, row: InsertPlannedItemResult) {
   return plannedItemSchema.parse({
     id: row.id,
     revision: row.revision,
+    state: row.state,
     template_id: row.template_id,
     position: row.position,
     reference,
