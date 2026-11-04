@@ -49,7 +49,7 @@ export function readOuraConnection(
   const row = selectConnection(database, { user_id: owner });
   const readable = row ? decryptPair(row, owner, key) !== null : false;
   return {
-    configured,
+    configured: configured && key !== undefined,
     status: row?.status ?? null,
     credentials: row ? (readable ? "readable" : "unreadable") : null,
     reconnect_required:

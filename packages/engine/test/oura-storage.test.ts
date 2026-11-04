@@ -37,6 +37,7 @@ const grant = { pair, expiresAt: "2026-01-01T01:00:00.000Z" };
 const parse = (env: Record<string, string | undefined>) =>
   loadConfig({ DATABASE_URL: ":memory:", ...env });
 const status = (read: ReturnType<typeof readOuraConnection>) => [
+  read.configured,
   read.status,
   read.credentials,
   read.reconnect_required,
@@ -308,6 +309,7 @@ test("Oura real file restores preserve all rows with right, missing, wrong then 
     try {
       const read = readOuraConnection(restored.database, owner, secret, true);
       assert.deepEqual(status(read), [
+        secret !== undefined,
         "membership_required",
         secret === key ? "readable" : "unreadable",
         secret !== key,
