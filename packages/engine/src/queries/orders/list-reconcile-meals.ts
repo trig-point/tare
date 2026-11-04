@@ -15,6 +15,7 @@ export type ListReconcileMealsResult = {
   revision: number;
   updated_at: string;
   has_actions: number;
+  has_consumption: number;
 };
 
 export function listReconcileMeals(
@@ -25,7 +26,9 @@ export function listReconcileMeals(
 	SELECT order_meals.*, EXISTS (SELECT 1 FROM meal_actions
 	WHERE meal_actions.user_id = order_meals.user_id AND order_meal_id = order_meals.id)
 	OR EXISTS (SELECT 1 FROM planned_items
-	WHERE planned_items.user_id = order_meals.user_id AND order_meal_id = order_meals.id) AS has_actions
+	WHERE planned_items.user_id = order_meals.user_id AND order_meal_id = order_meals.id) AS has_actions,
+	EXISTS (SELECT 1 FROM meal_actions
+	WHERE meal_actions.user_id = order_meals.user_id AND order_meal_id = order_meals.id) AS has_consumption
 	FROM order_meals WHERE user_id = ? AND order_id = ? ORDER BY id;
 	
 	`;
@@ -45,6 +48,7 @@ function mapArrayToListReconcileMealsResult(data: any) {
     revision: data[6],
     updated_at: data[7],
     has_actions: data[8],
+    has_consumption: data[9],
   };
   return result;
 }
