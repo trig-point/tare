@@ -439,10 +439,13 @@ test("all sequences of up to three emails, including answered incomplete parses,
   assert.equal(sequences.length, 85);
   reset();
   setNow("2026-01-01T00:00:00.000Z");
-  const older = seed(parse(5));
+  const older = seed(parse(null));
+  run(older);
   setNow("2026-01-01T00:00:00.001Z");
   run(seed(parse(6)));
-  run(older);
+  await answerOk(question(older, "order_review").id, {
+    meals: [{ source_index: 0, quantity: 5 }],
+  });
   assert.deepEqual(onHand(), [6]);
 });
 
