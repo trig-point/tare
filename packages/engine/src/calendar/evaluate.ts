@@ -31,6 +31,15 @@ function endInstant(source: CalendarSource, wallEnd: Date, start: Date): Date {
   return wallInstant(source.end.wall, source.end.zone);
 }
 
+// RFC 5545 values are case-insensitive; node-ical keeps parameters as { val }.
+function cancelled(status: unknown): boolean {
+  const value =
+    typeof status === "object" && status !== null && "val" in status
+      ? status.val
+      : status;
+  return typeof value === "string" && value.toUpperCase() === "CANCELLED";
+}
+
 // Fold whole words: lowercasing a title first can split it (İ gains a mark).
 function foldWord(word: string): string {
   return word.normalize("NFC").toUpperCase();
@@ -70,10 +79,7 @@ export function evaluateCalendar(input: unknown): CalendarResult {
         total += 1;
         if (eventTotal > 1000 || total > 10_000)
           return { status: "unavailable" };
-        if (
-          instance.event.status === "CANCELLED" ||
-          event.status === "CANCELLED"
-        )
+        if (cancelled(instance.event.status) || cancelled(event.status))
           continue;
         const start = rebuildStart(
           source,

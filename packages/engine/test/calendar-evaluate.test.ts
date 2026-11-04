@@ -43,10 +43,10 @@ test("literal Unicode keywords use whole words and first-rule order", () => {
   for (const [title, keyword, expected] of [
     ["İstanbul trip", "İstanbul", "match"],
     ["İstanbul trip", "i", "no_match"],
-    ["Café visit", "Café", "match"],
-    ["Officé", "office", "no_match"],
+    ["Cafe\u0301 visit", "Café", "match"],
+    ["Office\u0301", "office", "no_match"],
     ["ΟΔΟΣ", "οδοσ", "match"],
-  ])
+  ] as const)
     assert.equal(
       evaluateCalendar(
         input(
@@ -208,10 +208,16 @@ test("F1 durations preserve elapsed hours, calendar days and series duration", (
 });
 
 test("moved, cancelled, orphan and mixed-form overrides select their own titles", () => {
-  assert.equal(
-    status(`${event("DTSTART:20270105T090000Z")}\nSTATUS:CANCELLED`),
-    "no_match",
-  );
+  for (const cancelled of [
+    "STATUS:CANCELLED",
+    "STATUS:Cancelled",
+    "STATUS;X-SOURCE=sample:CANCELLED",
+  ])
+    assert.equal(
+      status(`${event("DTSTART:20270105T090000Z")}\n${cancelled}`),
+      "no_match",
+      cancelled,
+    );
   const master =
     "UID:series\nDTSTART:20270101T090000\nDURATION:PT1H\nRRULE:FREQ=DAILY;COUNT=10\nSUMMARY:Lower";
   const moved =
@@ -300,9 +306,8 @@ test("instance caps bound in-window work while old history and RDATE remain supp
     .replace("COUNT=5000", "UNTIL=20270104T040100Z")
     .replace("SUMMARY:Office", "SUMMARY:Lower");
   assert.equal(
-    evaluateCalendar(
-      input(calendar(ended, event("DTSTART:20270105T090000Z"))),
-    ).status,
+    evaluateCalendar(input(calendar(ended, event("DTSTART:20270105T090000Z"))))
+      .status,
     "match",
   );
   const many = Array.from({ length: 12 }, (_, index) =>
