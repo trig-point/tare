@@ -106,12 +106,15 @@ function parseTree(feed: string): Component {
   if (stack.length || roots !== 1) throw new Error("invalid_calendar");
   const design = ICAL.design.icalendar;
   const savedTzid = design.param.tzid;
+  const savedValue = design.param.value;
   const savedRecur = design.value.recur.fromICAL;
   const converters = ["date", "date-time", "integer"].map((type) => ({
     type,
     original: design.value[type].fromICAL as (raw: string) => string | number,
   }));
   design.param.tzid = { ...savedTzid, multiValue: "," };
+  // A repeated VALUE becomes an array, which ical.js cannot read as a type.
+  design.param.value = { ...savedValue, multiValue: "," };
   design.value.recur.fromICAL = (raw: string) => {
     validateRule(raw);
     return savedRecur(raw.toUpperCase());
@@ -165,6 +168,8 @@ function parseTree(feed: string): Component {
     return root;
   } finally {
     design.param.tzid = savedTzid;
+    if (savedValue) design.param.value = savedValue;
+    else delete design.param.value;
     design.value.recur.fromICAL = savedRecur;
     for (const { type, original } of converters)
       design.value[type].fromICAL = original;
@@ -320,7 +325,8 @@ export function scanCalendar(feed: string, requestedZone: string) {
       const properties = new Map<string, Property>();
       for (const raw of component[1]) {
         const name = raw[0];
-        if (name === "rdate") throw new Error("unsupported_rdate");
+        if (name === "rdate" || name === "exrule")
+          throw new Error(`unsupported_${name}`);
         if (!timeProperties.has(name) && !Object.hasOwn(propertyTypes, name))
           continue;
         if (name !== "exdate" && properties.has(name))
@@ -361,12 +367,18 @@ export function scanCalendar(feed: string, requestedZone: string) {
     )
       masters.set(candidate.uid, candidate);
   }
+  // node-ical strips quotes and keys its own record by UID, so it never sees one.
+  const identities = new Map<string, string>();
+  for (const { uid } of candidates)
+    if (!identities.has(uid))
+      identities.set(uid, `event-${identities.size + 1}`);
   const winners = new Map<
     string,
     { component: Component; source: CalendarSource; sequence: number }
   >();
   for (const candidate of candidates) {
     const { uid, properties, start, sequence } = candidate;
+    const identity = identities.get(uid) as string;
     const series = masters.get(uid)?.start;
     const source: CalendarSource = {
       start,
@@ -409,11 +421,13 @@ export function scanCalendar(feed: string, requestedZone: string) {
         );
       } else {
         if (name === "duration") source.duration = duration(String(raw[3]));
-        rewritten.push(canonicalProperty(name, raw[2], raw[3]));
+        rewritten.push(
+          canonicalProperty(name, raw[2], name === "uid" ? identity : raw[3]),
+        );
       }
     }
     const key = JSON.stringify([
-      uid,
+      identity,
       source.recurrence
         ? `${recurrenceForm === "date" ? "DATE" : "INSTANT"}:${source.recurrence.toISOString()}`
         : "MASTER",
@@ -425,14 +439,26 @@ export function scanCalendar(feed: string, requestedZone: string) {
         sequence,
       });
   }
+  const events = ical.sync.parseICS(
+    ICAL.stringify([
+      "vcalendar",
+      [canonicalProperty("version", "text", "2.0")],
+      [...winners.values()].map((winner) => winner.component),
+    ]),
+  );
+  // Only top-level events and overrides of a recurring series are ever expanded.
+  const expanded = new Set<string>();
+  for (const entry of Object.values(events)) {
+    if (entry?.type !== "VEVENT") continue;
+    expanded.add(componentKey(entry));
+    if (entry.rrule)
+      for (const override of Object.values(entry.recurrences ?? {}))
+        expanded.add(componentKey(override as VEvent));
+  }
+  for (const key of winners.keys())
+    if (!expanded.has(key)) throw new Error("unreconciled_component");
   return {
     sources: new Map([...winners].map(([key, winner]) => [key, winner.source])),
-    events: ical.sync.parseICS(
-      ICAL.stringify([
-        "vcalendar",
-        [canonicalProperty("version", "text", "2.0")],
-        [...winners.values()].map((winner) => winner.component),
-      ]),
-    ),
+    events,
   };
 }
