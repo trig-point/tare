@@ -245,6 +245,9 @@ test("unsupported and malformed feeds fail closed", (context) => {
     feed`${input}|RECURRENCE-ID:20270106T090000Z|RRULE:FREQ=DAILY`,
     feed`${input}|DTEND:20270105T100000Z,20270105T110000Z`,
     feed`${input}|RDATE:20270106T090000Z`,
+    feed`${input}|EXRULE:FREQ=DAILY;COUNT=1`,
+    feed`UID:input|DTSTART;VALUE=TEXT;VALUE=DATE-TIME:20270105T090000Z`,
+    feed`UID:hourly|DTSTART:20270105T090000Z|RRULE:FREQ=HOURLY;COUNT=2~UID:hourly|SEQUENCE:2|RECURRENCE-ID:20270105T090000Z|DTSTART:20270105T110000Z~UID:hourly|SEQUENCE:1|RECURRENCE-ID:20270105T100000Z|DTSTART:20270105T120000Z`,
     feed`${input}|BEGIN:VALARM|DTSTAMP;TZID=Unlisted/Office:20270105T090000|END:VALARM`,
     feed`${input}|RRULE:FREQ=DAILY;COUNT=abc`,
     feed`${input}|RRULE:FREQ=DAILY;COUNT=2junk`,
@@ -292,6 +295,10 @@ recurrence(
   "recurrence positions survive a timed override of an all-day series",
   "2027-01-01T00:00Z 2027-01-02T14:00Z 2027-01-03T00:00Z",
 )`UID:series|DTSTART;VALUE=DATE:20270101|RRULE:FREQ=DAILY;COUNT=3~UID:series|RECURRENCE-ID;VALUE=DATE:20270102|DTSTART:20270102T140000Z`;
+recurrence(
+  "quoted and reserved UIDs keep their events",
+  "2027-01-05T09:00Z 2027-01-05T10:00Z",
+)`UID:"example"|DTSTART:20270105T090000Z~UID:vcalendar|DTSTART:20270105T100000Z`;
 test("parameterized UIDs keep distinct events", () => {
   const { events } = scanCalendar(
     feed`UID;X-SOURCE=example:one|DTSTART:20270105T090000Z~UID;X-SOURCE=example:two|DTSTART:20270105T100000Z`,
