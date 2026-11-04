@@ -25,6 +25,7 @@ export function createApp(
       options.questionKinds ??
       createOrderQuestionKinds({
         clock: options.clock,
+        services: options.config.orderEmailServices,
       }),
     lookup: options.lookup ?? {
       usda: createUsdaAdapter(options.config, {
