@@ -176,10 +176,22 @@ test("F4 unsupported zones and an injected source-join failure are unavailable",
   assert.equal(status(lower), "unavailable");
 });
 
-test("instance caps bound in-window work and old history evaluates", () => {
+test("per-event and total instance caps bound in-window work and old history evaluates", () => {
   const dense =
     "UID:dense\nDTSTART:20270104T040000Z\nDURATION:PT1M\nRRULE:FREQ=MINUTELY;COUNT=5000\nSUMMARY:Office";
   assert.equal(status(dense), "unavailable");
+  const many = Array.from({ length: 12 }, (_, index) =>
+    dense
+      .replace("UID:dense", `UID:dense-${index}`)
+      .replace(
+        "FREQ=MINUTELY;COUNT=5000",
+        "FREQ=MINUTELY;INTERVAL=5;COUNT=1000",
+      ),
+  );
+  assert.equal(
+    evaluateCalendar(input(calendar(...many))).status,
+    "unavailable",
+  );
   const history = Array.from(
     { length: 2001 },
     (_, index) => `UID:old-${index}\nDTSTART:20200101T090000Z\nDURATION:PT1H`,
