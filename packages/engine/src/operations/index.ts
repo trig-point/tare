@@ -1,5 +1,6 @@
 import { agentTokenOperations } from "../auth/agent-tokens.ts";
 import { authOperations } from "../auth/routes.ts";
+import { calendarOperations } from "../calendar/operations.ts";
 import { dayReadOperations } from "../days/operations.ts";
 import { daySignOffOperations } from "../days/sign-off.ts";
 import { inboundTokenOperations } from "../inbound/tokens.ts";
@@ -18,6 +19,7 @@ import type { Operation } from "./registry.ts";
 export const operations: Operation[] = [
   ...authOperations,
   ...ouraOperations,
+  ...calendarOperations,
   ...agentTokenOperations,
   ...inboundTokenOperations,
   ...loggingOperations,

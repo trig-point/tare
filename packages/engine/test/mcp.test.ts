@@ -108,6 +108,10 @@ test("MCP tools match registry schemas and routes and act for their person", asy
       operation.modes.includes("access"),
   );
   const tools: Tool[] = (await result(list, id)).tools;
+  assert.equal(
+    tools.some((tool) => tool.name.includes("calendar")),
+    false,
+  );
   for (const name of ["plan_slot", "planned_item_action", "read_plan"]) {
     const tool = tools.find((tool) => tool.name === name);
     assert.equal(tool?.inputSchema.type, "object");

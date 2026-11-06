@@ -43,6 +43,15 @@ const dependencies = (database: ReturnType<typeof fixture>["database"]) => ({
 
 test("registry constrains public and administrator operations and inventories every app route", (context) => {
   assert.deepEqual(
+    operations
+      .filter((operation) => operation.name.includes("calendar"))
+      .map((operation) => [operation.name, operation.callerClass]),
+    [
+      ["read_calendar_settings", "browser"],
+      ["save_calendar_settings", "browser"],
+    ],
+  );
+  assert.deepEqual(
     agentOperations.map((operation) => operation.name),
     [
       "whoami",

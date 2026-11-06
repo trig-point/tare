@@ -74,7 +74,8 @@ export function insertIntake(
     client_id: input.client_id,
   });
   if (replay) return { entry: replay, created: false };
-  const now = clock.now().toISOString();
+  const instant = clock.now();
+  const now = instant.toISOString();
   const eaten_at = canonicalInstant(input.eaten_at ?? now);
   let snapshot: Numbers & {
     name: string;
@@ -100,7 +101,7 @@ export function insertIntake(
     if (!snapshot.name) throw new OperationError(400, "invalid_request");
   }
   const day = localDay(eaten_at, person.timezone, person.day_start_hour);
-  const plan = selectedTemplate(database, person, day);
+  const plan = selectedTemplate(database, person, day, instant);
   const slot =
     input.slot === undefined
       ? assignSlot(plan.slots, minuteOfDay(eaten_at, person))
