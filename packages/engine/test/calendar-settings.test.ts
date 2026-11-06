@@ -328,6 +328,7 @@ test("settings validation is bounded and saves retain URLs, bump revisions, clea
   state.setTime("2026-01-01T13:00:00.000Z");
   assert.equal((await state.settings()).status, "pending");
   assert.ok((await state.settings()).checked_at);
+  assert.equal((await state.settings()).day_type_id, undefined);
   const initial = snapshots();
   for (const [extra, status] of [
     [{}, "no_match"],
