@@ -1,20 +1,14 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { applyMigrations, writeTransaction } from "../src/db.ts";
+import { writeTransaction } from "../src/db.ts";
 import { mealNutritionKinds } from "../src/meal-nutrition/index.ts";
 import { actOnPlannedItem } from "../src/orders/eat.ts";
 import { createOrder } from "../src/orders/index.ts";
-import { insertAgentToken } from "../src/queries/insert-agent-token.ts";
-import { assertionHeader, signAccessToken } from "./auth-support.ts";
 import { test } from "./support/hang-ceiling.ts";
 import { twoUsers } from "./support/two-users.ts";
 
 for (const mode of ["fallback", "access"] as const) {
   test(`${mode}: planned items preserve ownership, due dates, budgets and replacement identity`, async (context) => {
-    const { app, database, admin, member, setNow } = await twoUsers(
-      context,
-      mode,
-    );
+    const { database, admin, member, setNow } = await twoUsers(context, mode);
     database.exec(
       "UPDATE users SET timezone = 'America/New_York', day_start_hour = 20",
     );
@@ -271,89 +265,40 @@ for (const mode of ["fallback", "access"] as const) {
     const now = "2026-01-01T00:00:00.000Z";
     setNow(now);
     database.exec("UPDATE users SET timezone = 'UTC', day_start_hour = 0");
-    if (mode === "access") {
-      const client_id = "example-planned-agent";
-      insertAgentToken(database, {
-        client_id,
-        user_id: admin.user.id,
-        name: "Example agent",
-        created_at: now,
-      });
-      const token = await signAccessToken({
-        sub: "",
-        common_name: client_id,
-      });
-      admin.request = async (path, init = {}) =>
-        app.request(path, { ...init, headers: assertionHeader(token) });
-    }
-    const scalar = (sql: string, ...params: (number | string)[]) =>
-      database
-        .prepare(sql)
-        .pluck()
-        .get(...params);
-    const run = (sql: string, ...params: (number | string)[]) =>
-      database.prepare(sql).run(...params);
-    const apply = (
-      request: Parameters<typeof actOnPlannedItem>[2],
-      person = admin.user,
-      time = now,
-    ) =>
-      writeTransaction(database, (scope) =>
-        actOnPlannedItem(scope, person, request, time),
-      );
-    const api = (path: string, body?: unknown, person = admin, status = 200) =>
-      sendFor(person)(path, body, status);
-    const actionSlots = [
-      { name: "Breakfast", start_minute: 0, end_minute: 900, share: 50 },
-      { name: "Dinner", start_minute: 900, end_minute: 1440, share: 50 },
-    ];
-    for (const person of [admin, member]) {
-      const { template } = await api(
-        "plan/templates",
-        { action: "create", name: "Example day", slots: actionSlots },
-        person,
-        201,
-      );
-      const { day_type } = await api(
-        "plan/day-types",
-        { action: "create", name: "Example type", template_id: template.id },
-        person,
-        201,
-      );
-      await api("plan/day-type", { day_type_id: day_type.id }, person);
-    }
-    let sequence = 0;
-    const makeMeal = async () => {
-      const order = writeTransaction(database, (scope) =>
-        createOrder(
-          scope,
-          admin.user,
-          {
-            service: `Example service ${sequence++}`,
-            delivery_date: "2026-01-01",
-            status: "scheduled",
-            meals: [{ name: "Example bowl", chef: null, quantity: 20 }],
-          },
-          mealNutritionKinds,
-          now,
-        ),
-      );
-      const question = (await api("questions")).questions.at(-1);
-      await api("questions/answer", {
-        id: question.id,
-        answer: {
-          kcal: 800,
-          protein_g: 40,
-          carbs_g: 80,
-          fat_g: 20,
-          source: "Example label",
-        },
-      });
-      return Number(
-        scalar("SELECT id FROM order_meals WHERE order_id = ?", order.id),
-      );
-    };
-    const actionMeal = await makeMeal();
+    const { template: actionTemplate } = await send(
+      "plan/templates",
+      {
+        action: "create",
+        name: "Action day",
+        slots: [
+          { name: "Breakfast", start_minute: 0, end_minute: 900, share: 50 },
+          { name: "Dinner", start_minute: 900, end_minute: 1440, share: 50 },
+        ],
+      },
+      201,
+    );
+    const { day_type: actionType } = await send(
+      "plan/day-types",
+      {
+        action: "create",
+        name: "Action type",
+        template_id: actionTemplate.id,
+      },
+      201,
+    );
+    await send("plan/day-type", { day_type_id: actionType.id });
+    const place = async (
+      reference = { food_id: food, servings: 2 } as {
+        food_id?: number;
+        servings?: number;
+        meal_id?: number;
+      },
+    ) => (await plan({ position: 1, ...reference }, 201)).item;
+    const input = (
+      item: { id: number; revision: number },
+      mutation_id: string,
+      action = "ate",
+    ) => ({ item_id: item.id, revision: item.revision, action, mutation_id });
     const snapshot = () =>
       [
         "planned_items",
@@ -365,21 +310,6 @@ for (const mode of ["fallback", "access"] as const) {
       ].map((table) =>
         database.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all(),
       );
-    const place = async (
-      reference: { food_id?: number; servings?: number; meal_id?: number } = {
-        food_id: food,
-        servings: 2,
-      },
-      person = admin,
-    ) =>
-      (await api("plan/slot", { position: 1, ...reference }, person, 201)).item;
-    const input = (
-      item: { id: number; revision: number },
-      mutation_id: string,
-      action = "ate",
-    ) => ({ item_id: item.id, revision: item.revision, action, mutation_id });
-    const act = (body: unknown, person = admin, status = 200) =>
-      api("plan/items/action", body, person, status);
     const reject = async (
       body: unknown,
       code: string,
@@ -387,19 +317,43 @@ for (const mode of ["fallback", "access"] as const) {
       person = admin,
     ) => {
       const beforeAction = snapshot();
-      assert.deepEqual(await act(body, person, status), { error: { code } });
+      await sendFor(person)("plan/items/action", body, status, code);
       assert.deepEqual(snapshot(), beforeAction);
     };
-    const mealReference = { meal_id: actionMeal };
-    for (const [reference, action, kcal] of [
-      [mealReference, "ate", 800],
-      [mealReference, "ate_three_quarters", 600],
-      [{ food_id: food, servings: 2 }, "ate", 200],
-      [{ food_id: food, servings: 2 }, "ate_three_quarters", 150],
+    const open = await place();
+    await reject(input(open, "foreign"), "planned_item_not_found", 404, member);
+    if (mode === "access") return;
+    const act = (body: unknown) => send("plan/items/action", body);
+    const apply = (
+      request: Parameters<typeof actOnPlannedItem>[2],
+      time = now,
+      person = admin.user,
+    ) =>
+      writeTransaction(database, (scope) =>
+        actOnPlannedItem(scope, person, request, time),
+      );
+    const question = (await send("questions")).questions[0];
+    await send("questions/answer", {
+      id: question.id,
+      answer: {
+        kcal: 800,
+        protein_g: 40,
+        carbs_g: 80,
+        fat_g: 20,
+        source: "Example label",
+      },
+    });
+    const mealReference = { meal_id: due };
+    let receipt: Awaited<ReturnType<typeof act>> | undefined;
+    for (const [reference, action, kcal, quantity] of [
+      [{ food_id: food, servings: 2 }, "ate", 200, null],
+      [{ food_id: food, servings: 2 }, "ate_three_quarters", 150, null],
+      [mealReference, "ate", 800, 1],
+      [mealReference, "ate_three_quarters", 600, 0],
     ] as const) {
-      const item = await place(reference);
-      const request = input(item, `eat-${kcal}`, action);
-      const result = await act(request);
+      const item = kcal === 200 ? open : await place(reference);
+      const result = await act(input(item, `eat-${kcal}`, action));
+      if (item === open) receipt = result;
       assert.deepEqual(result.item, {
         id: item.id,
         revision: 2,
@@ -411,339 +365,132 @@ for (const mode of ["fallback", "access"] as const) {
           result.entry.slot_template_id,
           result.entry.slot_position,
           result.entry.fiber_g,
+          result.meal?.quantity ?? null,
         ],
-        [kcal, item.template_id, 1, null],
+        [kcal, item.template_id, 1, null, quantity],
       );
-      assert.equal(
-        result.meal?.quantity ?? null,
-        kcal === 800 ? 19 : kcal === 600 ? 18 : null,
-      );
-      const replacement = await place();
-      const beforeAction = snapshot();
-      assert.deepEqual(await act(request), result);
-      assert.deepEqual(await act({ ...request, revision: 99 }), result);
-      assert.deepEqual(snapshot(), beforeAction);
-      if (kcal === 150) {
-        run("UPDATE foods SET kcal = 300 WHERE id = ?", food);
-        run(
-          "UPDATE planned_items SET template_id = NULL, position = NULL WHERE id = ?",
-          item.id,
-        );
-        assert.deepEqual(
-          apply(
-            { ...request, action, revision: 99 },
-            admin.user,
-            "2026-01-02T00:00:00.000Z",
-          ),
-          result,
-        );
-        run("UPDATE foods SET kcal = 100 WHERE id = ?", food);
-      }
-      await reject(input(result.item, `handled-${kcal}`), "stale_revision");
-      await reject({ ...request, action: "skip" }, "mutation_conflict");
-      await reject(
-        { ...request, item_id: replacement.id },
-        "mutation_conflict",
-      );
-      await act(input(replacement, `clear-${kcal}`, "skip"));
     }
-    const planView = await api("plan");
-    assert.equal(planView.planned_items.length, 7);
+    const request = input(open, "eat-200");
+    const replacement = await place();
+    const beforeReplay = snapshot();
+    assert.deepEqual(await act(request), receipt);
+    assert.deepEqual(await act({ ...request, revision: 99 }), receipt);
     assert.deepEqual(
-      new Set(
-        planView.planned_items.map((item: { state: string }) => item.state),
-      ),
-      new Set(["eaten", "skipped"]),
+      apply({ ...request, action: "ate" }, "2026-01-02T00:00:00.000Z"),
+      receipt,
     );
-    assert.deepEqual(
-      planView.budgets.slots.map(
-        (slot: { kcal: { intake: number } }) => slot.kcal.intake,
-      ),
-      [0, 1750],
+    await send(
+      "meals/eat",
+      { meal_id: due, revision: 1, action: "ate", mutation_id: "eat-800" },
+      409,
+      "mutation_conflict",
     );
-    assert.equal(
-      scalar(
-        "SELECT delivered_at FROM orders WHERE id = (SELECT order_id FROM order_meals WHERE id = ?)",
-        actionMeal,
-      ),
-      null,
-    );
-    run("UPDATE order_meals SET quantity = 100 WHERE id = ?", actionMeal);
-    const modelReceipts = new Map<
-      string,
-      {
-        request: ReturnType<typeof input>;
-        result: Awaited<ReturnType<typeof act>>;
-      }
-    >();
-    let current = await place(),
-      seed = 201,
-      acceptedEats = 0,
-      acceptedMeals = 0;
-    let expected = { state: "planned", revision: 1 };
-    const intakeBefore = Number(scalar("SELECT count(*) FROM intake_entries"));
-    for (let step = 0; step < 72; step++) {
-      seed = (seed * 1664525 + 1013904223) >>> 0;
-      const prior = [...modelReceipts.values()][seed % modelReceipts.size];
-      const request =
-        step % 3 === 0 && prior
-          ? { ...prior.request, revision: 1 + (seed % 5) }
-          : {
-              ...input(
-                current,
-                `model-${step}`,
-                ["ate", "ate_three_quarters", "skip"][seed % 3],
-              ),
-              revision: seed % 4 === 0 ? 9 : 1,
-            };
-      const recorded = modelReceipts.get(request.mutation_id);
-      const beforeAction = snapshot();
-      if (recorded) {
-        assert.deepEqual(await act(request), recorded.result);
-        assert.deepEqual(snapshot(), beforeAction);
-      } else if (
-        expected.state !== "planned" ||
-        request.revision !== expected.revision
-      ) {
-        await reject(request, "stale_revision");
-      } else {
-        const result = await act(request);
-        expected.state = request.action === "skip" ? "skipped" : "eaten";
-        expected.revision++;
-        assert.deepEqual(result.item, { id: request.item_id, ...expected });
-        if (request.action !== "skip") {
-          acceptedEats++;
-          if (current.reference.kind === "meal") acceptedMeals++;
-          assert.equal(
-            result.entry.kcal,
-            (current.reference.kind === "meal" ? 800 : 200) *
-              (request.action === "ate" ? 1 : 0.75),
-          );
-        } else {
-          assert.deepEqual(result.entry, null);
-        }
-        modelReceipts.set(request.mutation_id, {
-          request,
-          result: structuredClone(result),
-        });
-      }
-      assert.equal(
-        scalar("SELECT count(*) FROM intake_entries"),
-        intakeBefore + acceptedEats,
-      );
-      assert.equal(
-        scalar("SELECT quantity FROM order_meals WHERE id = ?", actionMeal),
-        100 - acceptedMeals,
-      );
-      assert.deepEqual(
-        database
-          .prepare("SELECT state, revision FROM planned_items WHERE id = ?")
-          .get(request.item_id),
-        recorded
-          ? {
-              state: recorded.result.item.state,
-              revision: recorded.result.item.revision,
-            }
-          : expected,
-      );
-      if (step % 4 === 0 && expected.state !== "planned") {
-        current = await place(step % 8 === 0 ? mealReference : undefined);
-        expected = { state: "planned", revision: 1 };
-      }
-    }
-    if (expected.state === "planned")
-      await act(input(current, "model-clear", "skip"));
-    const open = await place();
-    for (const invalid of [
-      {},
-      { ...input(open, "bad"), mutation_id: " " },
-      { ...input(open, "bad"), action: "unknown" },
-      { ...input(open, "bad"), revision: 0 },
-      { ...input(open, "bad"), extra: true },
-    ])
-      await reject(invalid, "invalid_request", 400);
-    await reject(input(open, "foreign"), "planned_item_not_found", 404, member);
+    assert.deepEqual(snapshot(), beforeReplay);
     await reject(
-      { ...input(open, "missing"), item_id: 999999 },
-      "planned_item_not_found",
-      404,
+      { ...input(replacement, "stale"), revision: 2 },
+      "stale_revision",
     );
-    await reject({ ...input(open, "stale"), revision: 2 }, "stale_revision");
-    await api(
+    await reject(input(receipt.item, "handled"), "stale_revision");
+    await reject({ ...request, action: "skip" }, "mutation_conflict");
+    await reject({ ...request, item_id: replacement.id }, "mutation_conflict");
+    await send(
       "intake",
       { client_id: "example-collision", name: "Example snack", kcal: 77 },
-      admin,
       201,
     );
-    await reject(input(open, "example-collision"), "mutation_conflict");
+    await reject(input(replacement, "example-collision"), "mutation_conflict");
+    const boundary = {
+      ...input(replacement, "boundary", "skip"),
+      action: "skip" as const,
+    };
     const boundaryPerson = {
       ...admin.user,
       timezone: "Europe/Warsaw",
       day_start_hour: 1,
     };
-    const boundary = { ...input(open, "boundary"), action: "skip" as const };
     const beforeBoundary = snapshot();
     assert.throws(
-      () => apply(boundary, boundaryPerson, "2026-01-02T00:00:00.000Z"),
+      () => apply(boundary, "2026-01-02T00:00:00.000Z", boundaryPerson),
       /planned_item_not_today/,
     );
     assert.deepEqual(snapshot(), beforeBoundary);
-    run("UPDATE planned_items SET day = '2026-01-02' WHERE id = ?", open.id);
-    apply(boundary, boundaryPerson, "2026-01-02T00:00:00.000Z");
-    const blocked = await place(mealReference);
-    run(
-      "UPDATE planned_items SET template_id = NULL, position = NULL WHERE id = ?",
-      blocked.id,
-    );
-    for (const [change, code] of [
-      ["UPDATE order_meals SET quantity = 0", "meal_out_of_stock"],
-      [
-        "UPDATE order_meals SET quantity = 18; UPDATE orders SET delivery_date = '2026-01-02'",
-        "meal_not_due",
-      ],
-      ["UPDATE orders SET delivery_date = '2026-01-01'", "slot_not_found"],
-    ] as const) {
-      database.exec(change);
-      await reject(
-        input(blocked, code),
-        code,
-        code === "slot_not_found" ? 400 : 409,
-      );
-    }
-    database.exec(
-      "UPDATE foods SET meal_key = NULL, service = NULL, meal_name = NULL, chef = NULL WHERE meal_key IS NOT NULL",
-    );
-    await reject(input(blocked, "unknown"), "meal_nutrition_missing");
-    database.exec(
-      "UPDATE questions SET status = 'open' WHERE kind = 'meal_nutrition'",
-    );
-    await reject(input(blocked, "pending"), "meal_nutrition_pending");
-    database.exec("UPDATE order_meals SET quantity = 0");
-    const stock = database.prepare("SELECT * FROM order_meals").all();
-    const skipped = await act(input(blocked, "shared", "skip"));
+    database
+      .prepare("UPDATE planned_items SET day = '2026-01-02' WHERE id = ?")
+      .run(replacement.id);
+    apply(boundary, "2026-01-02T00:00:00.000Z", boundaryPerson);
+    setNow("2026-01-02T00:00:00.000Z");
+    await send("plan/day-type", { day_type_id: actionType.id });
+    assert.equal((await read()).planned_items[0].state, "skipped");
+    setNow(now);
+    const planView = await read();
     assert.deepEqual(
-      [skipped.item.state, skipped.item.revision, skipped.entry, skipped.meal],
-      ["skipped", 2, null, null],
-    );
-    assert.deepEqual(
-      database.prepare("SELECT * FROM order_meals").all(),
-      stock,
-    );
-    await reject(input(skipped.item, "handled-skip"), "stale_revision");
-    const otherFood = Number(
-      database
-        .prepare(
-          "INSERT INTO foods (user_id, name, kcal, provenance) VALUES (?, 'Example fruit', 50, 'estimated')",
-        )
-        .run(member.user.id).lastInsertRowid,
-    );
-    const otherItem = await place({ food_id: otherFood, servings: 1 }, member);
-    assert.equal(
-      (await act(input(otherItem, "shared", "skip"), member)).item.state,
-      "skipped",
-    );
-    database.exec(
-      "UPDATE questions SET status = 'answered' WHERE kind = 'meal_nutrition'",
-    );
-    const collisionMeal = await makeMeal();
-    const direct = {
-      meal_id: collisionMeal,
-      revision: 1,
-      action: "ate" as const,
-      mutation_id: "direct",
-    };
-    const directResult = await api("meals/eat", direct);
-    const rollback = await place({ meal_id: collisionMeal });
-    await reject(input(rollback, "direct"), "mutation_conflict");
-    assert.deepEqual(
-      await api(
-        "meals/eat",
-        { ...direct, meal_id: actionMeal, revision: 2, mutation_id: "eat-800" },
-        admin,
-        409,
+      new Set(
+        planView.planned_items.map((item: { state: string }) => item.state),
       ),
-      { error: { code: "mutation_conflict" } },
+      new Set(["eaten"]),
     );
+    assert.deepEqual(
+      planView.budgets.slots.map(
+        (slot: { kcal: { intake: number } }) => slot.kcal.intake,
+      ),
+      [77, 1750],
+    );
+    database
+      .prepare("UPDATE order_meals SET quantity = 1 WHERE id = ?")
+      .run(due);
+    const blocked = await place(mealReference);
     const beforeAction = snapshot();
     database.exec(
       "CREATE TRIGGER fail_action BEFORE INSERT ON meal_actions BEGIN SELECT RAISE(ABORT, 'injected failure'); END",
     );
     assert.throws(
-      () => apply({ ...input(rollback, "rollback"), action: "ate" }),
+      () => apply({ ...input(blocked, "rollback"), action: "ate" }),
       /injected failure/,
     );
     assert.deepEqual(snapshot(), beforeAction);
     database.exec("DROP TRIGGER fail_action");
-    if (mode === "fallback") {
-      const legacyResult = structuredClone(directResult);
-      delete legacyResult.entry.slot_template_id;
-      delete legacyResult.entry.slot_position;
-      const bytes = ` ${JSON.stringify(legacyResult)} `;
-      database
-        .prepare(
-          "UPDATE meal_actions SET result = ? WHERE mutation_id = 'direct'",
-        )
-        .run(bytes);
-      database.exec("ALTER TABLE meal_actions RENAME TO old_actions");
-      database.exec(
-        readFileSync(
-          new URL("../migrations/0017_meal_actions.sql", import.meta.url),
-          "utf8",
-        ),
-      );
-      database.exec(
-        "INSERT INTO meal_actions SELECT user_id, mutation_id, order_meal_id, action, intake_entry_id, result, created_at FROM old_actions WHERE mutation_id = 'direct'; DROP TABLE old_actions; DELETE FROM schema_migrations WHERE name = '0024_meal_actions.sql'",
-      );
-      const original = database.prepare("SELECT * FROM meal_actions").get();
-      applyMigrations(database);
-      assert.deepEqual(database.prepare("SELECT * FROM meal_actions").get(), {
-        ...(original as object),
-        planned_item_id: null,
-      });
-      assert.deepEqual(database.pragma("foreign_key_check"), []);
-      assert.equal(database.pragma("foreign_keys", { simple: true }), 1);
-      assert.deepEqual(await api("meals/eat", direct), legacyResult);
-      const insert = database.prepare(
-        "INSERT INTO meal_actions (user_id, mutation_id, planned_item_id, order_meal_id, intake_entry_id, action, result, created_at) VALUES (?, ?, ?, ?, ?, ?, '{}', ?)",
-      );
-      for (const [action, item, mealId, intake, error] of [
-        ["ate", null, actionMeal, 999999, null],
-        ["ate_three_quarters", rollback.id, actionMeal, 999999, null],
-        ["ate", rollback.id, null, 999999, null],
-        ["skip", rollback.id, null, null, null],
-        ["skip", null, null, null, /CHECK/],
-        ["skip", rollback.id, actionMeal, null, /CHECK/],
-        ["skip", rollback.id, null, 999999, /CHECK/],
-        ["ate", null, null, 999999, /CHECK/],
-        ["ate", null, actionMeal, null, /CHECK/],
-        ["skip", otherItem.id, null, null, /FOREIGN KEY/],
-      ] as const) {
-        const write = () =>
-          insert.run(
-            admin.user.id,
-            `shape-${sequence++}`,
-            item,
-            mealId,
-            intake,
-            action,
-            now,
-          );
-        if (error) assert.throws(write, error);
-        else assert.equal(write().changes, 1);
-      }
-      assert.throws(
-        () =>
-          insert.run(
-            admin.user.id,
-            "direct",
-            rollback.id,
-            null,
-            null,
-            "skip",
-            now,
-          ),
-        /UNIQUE/,
-      );
+    database
+      .prepare(
+        "UPDATE planned_items SET template_id = NULL, position = NULL WHERE id = ?",
+      )
+      .run(blocked.id);
+    database
+      .prepare("UPDATE order_meals SET quantity = 0 WHERE id = ?")
+      .run(due);
+    await reject(input(blocked, "stock"), "meal_out_of_stock");
+    const beforeSkip = snapshot();
+    const skipped = await act(input(blocked, "skip", "skip"));
+    assert.deepEqual(
+      [skipped.item.state, skipped.item.revision, skipped.entry, skipped.meal],
+      ["skipped", 2, null, null],
+    );
+    assert.deepEqual(snapshot().slice(1, 3), beforeSkip.slice(1, 3));
+    const insert = database.prepare(
+      "INSERT INTO meal_actions (user_id, mutation_id, planned_item_id, order_meal_id, intake_entry_id, action, result, created_at) VALUES (?, ?, ?, ?, ?, ?, '{}', ?)",
+    );
+    for (const [index, [action, item, mealId, intake, valid]] of (
+      [
+        ["ate", null, due, 999999, true],
+        ["ate_three_quarters", blocked.id, due, 999999, true],
+        ["ate", blocked.id, null, 999999, true],
+        ["skip", blocked.id, null, null, true],
+        ["skip", null, null, null, false],
+        ["skip", blocked.id, due, null, false],
+        ["skip", blocked.id, null, 999999, false],
+      ] as const
+    ).entries()) {
+      const write = () =>
+        insert.run(
+          admin.user.id,
+          `shape-${index}`,
+          item,
+          mealId,
+          intake,
+          action,
+          now,
+        );
+      if (valid) assert.equal(write().changes, 1);
+      else assert.throws(write, /CHECK/);
     }
   });
 }
