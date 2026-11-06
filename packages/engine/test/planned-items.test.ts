@@ -344,6 +344,7 @@ for (const mode of ["fallback", "access"] as const) {
       },
     });
     const mealReference = { meal_id: due };
+    let receipt: Awaited<ReturnType<typeof act>> | undefined;
     for (const [reference, action, kcal, quantity] of [
       [{ food_id: food, servings: 2 }, "ate", 200, null],
       [{ food_id: food, servings: 2 }, "ate_three_quarters", 150, null],
@@ -352,6 +353,7 @@ for (const mode of ["fallback", "access"] as const) {
     ] as const) {
       const item = kcal === 200 ? open : await place(reference);
       const result = await act(input(item, `eat-${kcal}`, action));
+      if (item === open) receipt = result;
       assert.deepEqual(result.item, {
         id: item.id,
         revision: 2,
@@ -369,7 +371,6 @@ for (const mode of ["fallback", "access"] as const) {
       );
     }
     const request = input(open, "eat-200");
-    const receipt = await act(request);
     const replacement = await place();
     const beforeReplay = snapshot();
     assert.deepEqual(await act(request), receipt);
@@ -378,7 +379,17 @@ for (const mode of ["fallback", "access"] as const) {
       apply({ ...request, action: "ate" }, "2026-01-02T00:00:00.000Z"),
       receipt,
     );
+    await send(
+      "meals/eat",
+      { meal_id: due, revision: 1, action: "ate", mutation_id: "eat-800" },
+      409,
+      "mutation_conflict",
+    );
     assert.deepEqual(snapshot(), beforeReplay);
+    await reject(
+      { ...input(replacement, "stale"), revision: 2 },
+      "stale_revision",
+    );
     await reject(input(receipt.item, "handled"), "stale_revision");
     await reject({ ...request, action: "skip" }, "mutation_conflict");
     await reject({ ...request, item_id: replacement.id }, "mutation_conflict");
