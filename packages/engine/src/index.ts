@@ -5,6 +5,8 @@ import { createApp } from "./app.ts";
 import { ensureFirstUser, ensureSignInCapableUsers } from "./auth/bootstrap.ts";
 import { hashPassword, verifyPassword } from "./auth/password.ts";
 import { createBackupJob } from "./backup.ts";
+import { createCalendarRefresher } from "./calendar/refresh.ts";
+import { createCalendarTransport } from "./calendar/transport.ts";
 import { loadConfig } from "./config.ts";
 import { openDatabase } from "./db.ts";
 import { createOrderEmailParseJob } from "./inbound/job.ts";
@@ -38,6 +40,11 @@ await ensureFirstUser(
 
 async function startEngine() {
   const clock = { now: () => new Date() };
+  const calendar = createCalendarRefresher({
+    database: connection.database,
+    clock,
+    transport: createCalendarTransport(),
+  });
   const oura = createOura({ database: connection.database, config, clock });
   oura.cleanup();
   const questionKinds = createOrderQuestionKinds({
@@ -85,6 +92,8 @@ async function startEngine() {
     }),
   );
   runner.register(oura.job);
+  runner.register(calendar.job);
+  calendar.start();
   runner.start();
   const app = createApp({
     database: connection.database,
@@ -94,6 +103,7 @@ async function startEngine() {
     questionKinds,
     verifyPassword,
     oura,
+    calendar,
     onEmailQueued: () => runner.runNow("order-email-parse"),
     webRoot: fileURLToPath(new URL("../../../apps/web/dist/", import.meta.url)),
   });
@@ -109,6 +119,7 @@ async function startEngine() {
       const results = await Promise.allSettled([
         runner.stop(),
         oura.stop(),
+        calendar.stop(),
         new Promise<void>((resolve, reject) => {
           server.close((error) => (error ? reject(error) : resolve()));
         }),
