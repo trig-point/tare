@@ -252,7 +252,7 @@ test("two held evaluations preserve HTTP responsiveness, queued saves read lates
   );
 });
 
-test("one owner's transport failure does not stop another and commits prune only that owner's old days", async (context) => {
+test("one owner's transport failure does not stop another, commits prune only that owner's old days, and a failed commit is logged", async (context) => {
   const state = setup(context);
   state.setTime("2026-01-04T12:00:00.000Z");
   for (const day of ["2026-01-01", "2026-01-02"])
@@ -279,6 +279,15 @@ test("one owner's transport failure does not stop another and commits prune only
       .map((row) => row.status),
     ["unavailable", "match"],
   );
+  const logged = context.mock.method(console, "error", () => {});
+  state.database.pragma("query_only = ON");
+  state.enqueue(1);
+  await state.called(3);
+  state.calls[2]?.resolve("feed");
+  await until(() => logged.mock.callCount() === 1);
+  assert.deepEqual(logged.mock.calls[0]?.arguments, [
+    "calendar_refresh_failed",
+  ]);
 });
 
 test("shutdown aborts fetches, drops queued work and awaits evaluation before closing the evaluator", async (context) => {

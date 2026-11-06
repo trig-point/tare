@@ -103,7 +103,7 @@ export function createCalendarRefresher({
       running.set(user_id, task);
       task.promise = Promise.resolve()
         .then(() => refresh(user_id, task.controller.signal))
-        .catch(() => "unavailable")
+        .catch(() => console.error("calendar_refresh_failed"))
         .finally(() => {
           running.delete(user_id);
           if (task.dirty && !stopped) queued.add(user_id);
