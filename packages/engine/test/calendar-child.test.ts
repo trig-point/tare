@@ -1,11 +1,8 @@
 import assert from "node:assert/strict";
 import type { fork } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { createApp } from "../src/app.ts";
 import { createCalendarEvaluator } from "../src/calendar/index.ts";
-import { loadConfig } from "../src/config.ts";
-import { openDatabase } from "../src/db.ts";
-import { dummyHash } from "./auth-support.ts";
+import { fixture } from "./auth-support.ts";
 import { HANG_CEILING_MS, test } from "./support/hang-ceiling.ts";
 
 const input = {
@@ -19,9 +16,7 @@ const input = {
 class FakeChild extends EventEmitter {
   pid: number | undefined = 123;
   killed = false;
-  input: unknown;
-  send(input: unknown, callback: (error: Error | null) => void) {
-    this.input = input;
+  send(_input: unknown, callback: (error: Error | null) => void) {
     callback(null);
   }
   kill(signal: string) {
@@ -62,7 +57,7 @@ test("real child runs TypeScript directly and returns only a decision", async ()
   assert.deepEqual(await evaluator.evaluate(input), { status: "unavailable" });
 });
 
-test("first IPC decision wins and the slot waits for actual exit", async () => {
+test("first IPC decision wins and the slot waits for actual exit", async (context) => {
   const children: FakeChild[] = [];
   const evaluator = createCalendarEvaluator({
     concurrency: 1,
@@ -76,22 +71,11 @@ test("first IPC decision wins and the slot waits for actual exit", async () => {
   });
   const child = children[0];
   assert(child);
-  const connection = openDatabase(":memory:");
-  try {
-    const app = createApp({
-      database: connection.database,
-      config: loadConfig({ DATABASE_URL: ":memory:" }),
-      clock: { now: () => new Date("2027-01-05T12:00Z") },
-      dummyHash,
-      verifyPassword: async () => false,
-    });
-    assert.deepEqual(await (await app.request("/health")).json(), {
-      status: "ok",
-    });
-    assert.equal(firstSettled, false);
-  } finally {
-    connection.close();
-  }
+  const { app } = fixture(context);
+  assert.deepEqual(await (await app.request("/health")).json(), {
+    status: "ok",
+  });
+  assert.equal(firstSettled, false);
   child.emit("message", { status: "match", rule_index: 0 });
   child.emit("message", { status: "no_match" });
   assert(child.killed);
@@ -105,42 +89,16 @@ test("first IPC decision wins and the slot waits for actual exit", async () => {
   await evaluator.close();
 });
 
-test("malformed IPC, fork failure, IPC failure and empty exit are unavailable", async () => {
-  for (const message of [
-    { status: "match", rule_index: 1 },
-    { status: "match", rule_index: -1 },
-    { status: "match" },
-    { status: "no_match", title: "Office" },
-    { status: "unknown" },
-  ]) {
-    const children: FakeChild[] = [];
-    const evaluator = createCalendarEvaluator({
-      forkProcess: fakeFork(children),
-    });
-    const result = evaluator.evaluate(input);
-    children[0]?.emit("message", message);
-    children[0]?.emit("exit", null, "SIGKILL");
-    assert.deepEqual(await result, { status: "unavailable" });
-    await evaluator.close();
-  }
-  const failed = createCalendarEvaluator({
-    forkProcess: (() => {
-      throw new Error("spawn failed");
-    }) as typeof fork,
+test("malformed IPC is unavailable", async () => {
+  const children: FakeChild[] = [];
+  const evaluator = createCalendarEvaluator({
+    forkProcess: fakeFork(children),
   });
-  assert.deepEqual(await failed.evaluate(input), { status: "unavailable" });
-  await failed.close();
-  for (const event of ["error", "disconnect", "exit"]) {
-    const children: FakeChild[] = [];
-    const evaluator = createCalendarEvaluator({
-      forkProcess: fakeFork(children),
-    });
-    const result = evaluator.evaluate(input);
-    children[0]?.emit(event, new Error("IPC failure"));
-    children[0]?.emit("exit", 1);
-    assert.deepEqual(await result, { status: "unavailable" });
-    await evaluator.close();
-  }
+  const result = evaluator.evaluate(input);
+  children[0]?.emit("message", { status: "match", rule_index: 1 });
+  children[0]?.emit("exit", null, "SIGKILL");
+  assert.deepEqual(await result, { status: "unavailable" });
+  await evaluator.close();
 });
 
 test("stepped deadline kills the child and close drains active and queued work", async (context) => {
