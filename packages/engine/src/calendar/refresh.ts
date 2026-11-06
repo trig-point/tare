@@ -8,11 +8,8 @@ import { selectCalendarRules } from "../queries/calendar/select-calendar-rules.t
 import { selectCalendarSettings } from "../queries/calendar/select-calendar-settings.ts";
 import { selectPerson } from "../queries/select-person.ts";
 import { createCalendarEvaluator } from "./index.ts";
+import type { CalendarTransport } from "./transport.ts";
 
-export type CalendarTransport = (
-  url: string,
-  signal: AbortSignal,
-) => Promise<string | null>;
 export type CalendarRefresher = ReturnType<typeof createCalendarRefresher>;
 export function createCalendarRefresher({
   database,
