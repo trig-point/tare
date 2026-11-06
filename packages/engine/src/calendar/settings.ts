@@ -40,19 +40,3 @@ export function readCalendarSettings(
       : {}),
   };
 }
-
-export function validFeedUrl(value: string) {
-  try {
-    const url = new URL(value);
-    return (
-      value.length <= 2048 &&
-      url.protocol === "https:" &&
-      !url.username &&
-      !url.password &&
-      !url.hash &&
-      !url.port
-    );
-  } catch {
-    return false;
-  }
-}

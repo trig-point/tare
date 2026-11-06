@@ -12,7 +12,8 @@ import { saveCalendarSettings } from "../queries/calendar/save-calendar-settings
 import { selectCalendarSettings } from "../queries/calendar/select-calendar-settings.ts";
 import { selectDayType } from "../queries/select-day-type.ts";
 import { validCalendarKeyword } from "./contract.ts";
-import { readCalendarSettings, validFeedUrl } from "./settings.ts";
+import { readCalendarSettings } from "./settings.ts";
+import { validFeedUrl } from "./transport.ts";
 
 const rule = zod.strictObject({
   keyword: zod.string(),
