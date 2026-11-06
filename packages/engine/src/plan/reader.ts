@@ -6,10 +6,18 @@ import { selectTemplateSlots } from "../queries/select-template-slots.ts";
 
 export function selectedTemplate(
   database: Database,
-  person: Pick<Person, "id">,
+  person: Pick<Person, "id" | "timezone" | "day_start_hour">,
   day: string,
+  now: Date,
 ) {
-  const day_type = selectSelectedDayType(database, { user_id: person.id, day });
+  const day_type = selectSelectedDayType(database, {
+    user_id: person.id,
+    day,
+    timezone: person.timezone,
+    day_start_hour: person.day_start_hour,
+    fresh_after: new Date(now.getTime() - 3_600_000).toISOString(),
+    now: now.toISOString(),
+  });
   if (!day_type)
     return {
       status: "no_day_type" as const,

@@ -143,11 +143,21 @@ for (const mode of ["fallback", "access"] as const) {
     });
     assert.deepEqual(await send(admin, "today"), selected);
     assert.equal(
-      selectedTemplate(database, admin.user, "2026-01-02").template?.id,
+      selectedTemplate(
+        database,
+        admin.user,
+        "2026-01-02",
+        new Date("2026-01-01T00:00:00.000Z"),
+      ).template?.id,
       first.template.id,
     );
     assert.equal(
-      selectedTemplate(database, admin.user, "2026-01-03").template?.id,
+      selectedTemplate(
+        database,
+        admin.user,
+        "2026-01-03",
+        new Date("2026-01-01T00:00:00.000Z"),
+      ).template?.id,
       first.template.id,
     );
     await send(admin, "day-types", {

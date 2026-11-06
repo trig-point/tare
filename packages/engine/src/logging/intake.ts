@@ -100,7 +100,7 @@ export function insertIntake(
     if (!snapshot.name) throw new OperationError(400, "invalid_request");
   }
   const day = localDay(eaten_at, person.timezone, person.day_start_hour);
-  const plan = selectedTemplate(database, person, day);
+  const plan = selectedTemplate(database, person, day, clock.now());
   const slot =
     input.slot === undefined
       ? assignSlot(plan.slots, minuteOfDay(eaten_at, person))

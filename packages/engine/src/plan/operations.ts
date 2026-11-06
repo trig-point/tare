@@ -55,7 +55,7 @@ function readPlan(context: OperationContext) {
     person.timezone,
     person.day_start_hour,
   );
-  const plan = selectedTemplate(context.database, person, day);
+  const plan = selectedTemplate(context.database, person, day, now);
   const target = readTarget(context.database, person, now, context.config.tdee);
   const status = plan.status === "no_day_type" ? plan.status : target.status;
   const budgets =

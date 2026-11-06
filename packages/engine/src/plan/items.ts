@@ -84,7 +84,7 @@ export function planSlot(
     const person = operationPerson(context);
     const now = context.clock.now().toISOString();
     const day = localDay(now, person.timezone, person.day_start_hour);
-    const plan = selectedTemplate(database, person, day);
+    const plan = selectedTemplate(database, person, day, context.clock.now());
     if (!plan.template) throw new OperationError(409, "no_day_type");
     if (!plan.slots.some((slot) => slot.position === input.position))
       throw new OperationError(400, "slot_not_found");
