@@ -1,7 +1,6 @@
 import type { Database } from "better-sqlite3";
 import type { JWTVerifyGetKey } from "jose";
 import { z as zod } from "zod";
-import type { CalendarRefresher } from "../calendar/refresh.ts";
 import { type Config, validateTimezone } from "../config.ts";
 import type { LookupAdapters } from "../lookup/index.ts";
 import {
@@ -32,7 +31,6 @@ export interface AppOptions {
   questionKinds?: ReadonlyMap<string, QuestionKind>;
   lookup?: LookupAdapters;
   oura?: OuraService;
-  calendar?: CalendarRefresher;
   verifyPassword(password: string, stored: string): Promise<boolean>;
 }
 

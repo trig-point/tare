@@ -3,8 +3,6 @@ import { createRemoteJWKSet } from "jose";
 import { createAccessVerifier } from "./auth/access.ts";
 import { type AuthEnv, accessAuth } from "./auth/middleware.ts";
 import type { AppOptions } from "./auth/routes.ts";
-import { createCalendarRefresher } from "./calendar/refresh.ts";
-import { createCalendarTransport } from "./calendar/transport.ts";
 import { type InboundOptions, mountInboundEmail } from "./inbound/endpoint.ts";
 import { createOrderQuestionKinds } from "./inbound/questions.ts";
 import { mountMcp } from "./mcp/server.ts";
@@ -22,12 +20,6 @@ export function createApp(
 ) {
   const dependencies = {
     ...options,
-    calendar:
-      options.calendar ??
-      createCalendarRefresher({
-        ...options,
-        transport: createCalendarTransport(),
-      }),
     oura: options.oura ?? createOura(options),
     questionKinds:
       options.questionKinds ??
