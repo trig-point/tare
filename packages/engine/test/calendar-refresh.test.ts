@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
 import type { TestContext } from "node:test";
-import { setImmediate } from "node:timers/promises";
-import type { CalendarInput, CalendarResult } from "../src/calendar/index.ts";
-import { createCalendarRefresher } from "../src/calendar/refresh.ts";
+import type { CalendarResult } from "../src/calendar/index.ts";
 import { writeTransaction } from "../src/db.ts";
 import {
   type CommitCalendarCacheParams,
@@ -18,11 +16,9 @@ import { insertAccount } from "../src/queries/insert-account.ts";
 import { insertDayTemplate } from "../src/queries/insert-day-template.ts";
 import { insertDayType } from "../src/queries/insert-day-type.ts";
 import { cookie, fixture, requestedWith } from "./auth-support.ts";
+import { calendarFakes, until } from "./support/calendar-fakes.ts";
 import { test } from "./support/hang-ceiling.ts";
 
-const until = async (condition: () => boolean) => {
-  while (!condition()) await setImmediate();
-};
 function setup(context: TestContext) {
   const original = fixture(context),
     { database } = original;
@@ -77,33 +73,11 @@ function setup(context: TestContext) {
         });
     });
   people.forEach((_person, owner) => save(owner));
-  const calls: {
-    signal: AbortSignal;
-    url: string;
-    resolve(value: string | null): void;
-    reject(error: Error): void;
-  }[] = [];
-  let evaluate: (input: CalendarInput) => Promise<CalendarResult> =
-    async () => ({ status: "match", rule_index: 0 });
-  let closed = false;
-  const calendar = createCalendarRefresher({
+  const { calendar, calls, closed, useEvaluator } = calendarFakes(
+    context,
     database,
     clock,
-    evaluator: {
-      evaluate: (input) => evaluate(input),
-      close: async () => {
-        closed = true;
-      },
-    },
-    transport: (url, signal) => {
-      assert.equal(database.inTransaction, false);
-      return new Promise((resolve, reject) => {
-        signal.addEventListener("abort", () => resolve(null), { once: true });
-        calls.push({ url, signal, resolve, reject });
-      });
-    },
-  });
-  context.after(() => calendar.stop());
+  );
   const enqueue = (owner = 0) => calendar.enqueue(people[owner] as number);
   const rows = () =>
     database
@@ -134,10 +108,8 @@ function setup(context: TestContext) {
     calls,
     rows,
     cache,
-    closed: () => closed,
-    evaluate(value: typeof evaluate) {
-      evaluate = value;
-    },
+    closed,
+    evaluate: useEvaluator,
     setTime(value: string) {
       now = new Date(value);
     },

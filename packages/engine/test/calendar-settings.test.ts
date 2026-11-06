@@ -1,14 +1,11 @@
 import assert from "node:assert/strict";
 import type { TestContext } from "node:test";
-import { setImmediate } from "node:timers/promises";
 import { inspect } from "node:util";
 import {
-  type CalendarInput,
   type CalendarResult,
   createCalendarEvaluator,
 } from "../src/calendar/index.ts";
 import { calendarOperations } from "../src/calendar/operations.ts";
-import { createCalendarRefresher } from "../src/calendar/refresh.ts";
 import { loadConfig } from "../src/config.ts";
 import { writeTransaction } from "../src/db.ts";
 import { insertIntake } from "../src/logging/intake.ts";
@@ -21,12 +18,10 @@ import { commitCalendarCache } from "../src/queries/calendar/commit-calendar-cac
 import { selectCalendarRules } from "../src/queries/calendar/select-calendar-rules.ts";
 import { selectCalendarSettings } from "../src/queries/calendar/select-calendar-settings.ts";
 import { accessConfig, dummyHash } from "./auth-support.ts";
+import { calendarFakes, until } from "./support/calendar-fakes.ts";
 import { test } from "./support/hang-ceiling.ts";
 import { twoUsers } from "./support/two-users.ts";
 
-const until = async (condition: () => boolean) => {
-  while (!condition()) await setImmediate();
-};
 async function setup(
   context: TestContext,
   mode: "fallback" | "access" = "fallback",
@@ -39,31 +34,11 @@ async function setup(
   );
   users.setNow(now.toISOString());
   const clock = { now: () => now };
-  const calls: {
-    url: string;
-    signal: AbortSignal;
-    resolve(value: string | null): void;
-    reject(error: Error): void;
-  }[] = [];
-  let evaluate: (input: CalendarInput) => Promise<CalendarResult> =
-    async () => ({ status: "match", rule_index: 0 });
-  const evaluator = {
-    evaluate: (input: CalendarInput) => evaluate(input),
-    close: async () => {},
-  };
-  const calendar = createCalendarRefresher({
+  const { calendar, calls, useEvaluator } = calendarFakes(
+    context,
     database,
     clock,
-    evaluator,
-    transport: (url, signal) => {
-      assert.equal(database.inTransaction, false);
-      return new Promise((resolve, reject) => {
-        signal.addEventListener("abort", () => resolve(null), { once: true });
-        calls.push({ url, signal, resolve, reject });
-      });
-    },
-  });
-  context.after(() => calendar.stop());
+  );
   const deps = {
     database,
     clock,
@@ -154,11 +129,9 @@ async function setup(
       users.setNow(value);
     },
     result(value: CalendarResult) {
-      evaluate = async () => value;
+      useEvaluator(async () => value);
     },
-    useEvaluator(value: typeof evaluate) {
-      evaluate = value;
-    },
+    useEvaluator,
   };
 }
 
