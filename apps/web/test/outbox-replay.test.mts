@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readSessionOutcome, type SessionOutcome } from "../src/outbox-http.ts";
+import type { QueueSnapshot } from "../src/outbox-replay.ts";
 import {
   deferred,
   fixture,
@@ -165,6 +166,88 @@ test("an edit survives a late acknowledgement and duplicate replay retains both 
   }
 });
 
+test("a session bump during a write keeps the acknowledgement and the retry backoff", async (context) => {
+  for (const status of [201, 503]) {
+    const { store, replay, scheduler } = await fixture(context);
+    const queued = await store.enqueue("weight", { note: "Original" }, person);
+    await store.settle(queued, { error_code: "invalid_request" });
+    const [rejected] = await store.entries();
+    assert.ok(rejected);
+    await store.edit(rejected, { note: "Edited" });
+    const entered = deferred<void>();
+    const release = deferred<void>();
+    const saved = new Set<string>();
+    let calls = 0;
+    const instance = replay({
+      fetch: async (_path, options) => {
+        const body = JSON.parse(String(options?.body));
+        calls++;
+        entered.resolve();
+        await release.promise;
+        if (status === 503) return json({ error: { code: "down" } }, 503);
+        const created = !saved.has(body.client_id);
+        saved.add(body.client_id);
+        return json({ created, entry: { ...body, user_id: person.id } });
+      },
+    });
+    const work = instance.wake();
+    await entered.promise;
+    await store.cacheSession((await store.session()).version, session());
+    release.resolve();
+    await work;
+    assert.equal(calls, 1);
+    assert.deepEqual(
+      (await store.entries()).map((entry) => entry.state),
+      status === 503 ? ["pending"] : [],
+    );
+    assert.deepEqual(scheduler.delays(), status === 503 ? [30_000] : []);
+  }
+});
+
+test("enqueue and the online event wake the replayer", async (context) => {
+  const { replay } = await fixture(context);
+  const events = new EventTarget();
+  let online = false;
+  const sent: string[] = [];
+  const instance = replay({
+    events,
+    online: () => online,
+    fetch: async (path, options) => {
+      sent.push(String(path));
+      const body = JSON.parse(String(options?.body));
+      return json({ created: true, entry: { ...body, user_id: person.id } });
+    },
+  });
+  const until = (check: (snapshot: QueueSnapshot) => boolean) =>
+    new Promise<void>((resolve) => {
+      const stop = instance.subscribe((snapshot) => {
+        if (!check(snapshot)) return;
+        stop();
+        resolve();
+      });
+    });
+  const drained = (count: number) =>
+    until(
+      (snapshot) =>
+        sent.length === count &&
+        snapshot.type === "ready" &&
+        snapshot.session.session !== null &&
+        snapshot.records.length === 0,
+    );
+  await instance.start();
+  await instance.enqueue("intake", {}, person);
+  await until(
+    (snapshot) =>
+      snapshot.type === "ready" && snapshot.last_pass?.type === "offline",
+  );
+  online = true;
+  events.dispatchEvent(new Event("online"));
+  await drained(1);
+  await instance.enqueue("weight", {}, person);
+  await drained(2);
+  assert.deepEqual(sent, ["/api/intake", "/api/weights"]);
+});
+
 test("external abort releases the lock, publishes nothing and suppresses a queued rerun", async (context) => {
   const { store, replay, scheduler } = await fixture(context);
   await store.enqueue("intake", {}, person);
@@ -272,13 +355,15 @@ test("storage failures remain visible and broadcast receivers reread without rep
   await store.enqueue("intake", {}, person);
   assert.equal(broadcasts, 1);
   await instance.wake();
-  const peer = await open();
-  await peer.enqueue("weight", {}, person);
+  const current = deferred<void>();
   const published = deferred<void>();
   instance.subscribe((snapshot) => {
-    if (snapshot.type === "ready" && snapshot.pending === 2)
-      published.resolve();
+    if (snapshot.type !== "ready") return;
+    if (snapshot.pending === 1) current.resolve();
+    if (snapshot.pending === 2) published.resolve();
   });
+  await current.promise;
+  await (await open()).enqueue("weight", {}, person);
   const before = broadcasts;
   channel.dispatchEvent(new Event("message"));
   await published.promise;

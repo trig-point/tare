@@ -324,8 +324,9 @@ export class OutboxReplay {
         const result = await writeEntry(entry, this.#options, signal);
         if (signal.aborted || result.type === "aborted")
           return this.#result("aborted", cache);
-        if ((await this.#options.store.session()).version !== cache.version)
-          return this.#result("stale", cache);
+        // The server's response stands after a session change: a lost
+        // acknowledgement would resend an edit as already_saved, and a lost
+        // retry would skip the backoff.
         if (result.type === "acknowledged") {
           await this.#options.store.settle(
             entry,
@@ -337,11 +338,14 @@ export class OutboxReplay {
           await this.#options.store.settle(entry, {
             error_code: result.error_code,
           });
-        else {
-          if (result.type === "retry" && result.identity)
-            await this.#options.onIdentityRefused?.();
-          return this.#result(result.type, cache);
-        }
+        else if (result.type === "retry") {
+          if (result.identity) await this.#options.onIdentityRefused?.();
+          return this.#result("retry", cache);
+        } else if (
+          (await this.#options.store.session()).version !== cache.version
+        )
+          return this.#result("stale", cache);
+        else return this.#result(result.type, cache);
       }
     } catch (error) {
       return this.#result("retry", cache, error);
