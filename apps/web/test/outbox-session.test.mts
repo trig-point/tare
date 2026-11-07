@@ -164,7 +164,7 @@ test("the shell table scopes records and preserves rejected entries and warnings
     ["retry", false, true, "outage", "Couldn’t sync", false],
     ["sign_in_needed", true, true, "app", "Sign in needed", true],
     ["sign_in_needed", false, true, "sign_in_needed", "Sign in needed", true],
-    ["signed_out", false, true, "signed_out", "Synced", false],
+    ["signed_out", false, true, "signed_out", "Signed out", false],
   ] as const) {
     const snapshot = {
       ...base,
