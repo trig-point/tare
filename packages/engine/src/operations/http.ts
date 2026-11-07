@@ -144,6 +144,7 @@ export function mountOperations(
           );
         if (result.effects?.clearSessionCookie)
           deleteCookie(context, "tare_session", cookieOptions);
+        // A fixed target: no operation can turn a redirect into an open redirect.
         if (result.status === 302) return context.redirect("/", 302);
         return result.status === 204
           ? context.body(null, 204)
