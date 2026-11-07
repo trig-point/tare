@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readSessionOutcome, type SessionOutcome } from "../src/outbox-http.ts";
+import type { QueueSnapshot } from "../src/outbox-replay.ts";
 import {
   deferred,
   fixture,
@@ -7,11 +8,12 @@ import {
   ManualScheduler,
   other,
   person,
+  server,
   session,
 } from "./outbox-support.mts";
 import { test } from "./support.mts";
 
-test("deadlines cover hung session, write headers and body, and external abort reaches fetch", async (context) => {
+test("deadline bookkeeping against a fake fetch covers hung session, write headers and body, and external abort reaches fetch", async (context) => {
   const { store } = await fixture(context);
   const entry = await store.enqueue("intake", {}, person);
   const { writeEntry } = await import("../src/outbox-http.ts");
@@ -51,16 +53,14 @@ test("the timer retries after partial progress, caps backoff, and a rejection le
   for (const kcal of [100, 200, 300])
     await store.enqueue("intake", { kcal }, person);
   let statuses = [201, 503];
+  const endpoint = server();
   const instance = replay({
     fetch: async (_path, options) => {
       const status = statuses.shift() ?? 503;
       const body = JSON.parse(String(options?.body));
-      return json(
-        status === 201
-          ? { created: true, entry: { ...body, user_id: 1 } }
-          : { error: { code: "invalid_entry" } },
-        status,
-      );
+      return status === 201
+        ? endpoint.reply(body)
+        : json({ error: { code: "invalid_entry" } }, status);
     },
   });
   await instance.wake();
@@ -96,17 +96,15 @@ test("missing and throwing Web Locks allow two tabs to send one key safely", asy
     await store.enqueue("weight", { weight_kg: 70 }, person);
     const entered = deferred<void>();
     const release = deferred<void>();
-    const rows = new Map<string, object>();
+    const endpoint = server();
     let calls = 0;
     const fetcher: typeof fetch = async (_path, options) => {
-      const body = JSON.parse(String(options?.body));
-      const created = !rows.has(body.client_id);
-      rows.set(body.client_id, { ...body, user_id: person.id });
+      const reply = endpoint.reply(JSON.parse(String(options?.body)));
       if (++calls === 1) {
         entered.resolve();
         await release.promise;
       }
-      return json({ created, entry: rows.get(body.client_id) });
+      return reply;
     };
     const options = {
       fetch: fetcher,
@@ -124,7 +122,7 @@ test("missing and throwing Web Locks allow two tabs to send one key safely", asy
     release.resolve();
     await work;
     assert.equal(calls, 2);
-    assert.equal(rows.size, 1);
+    assert.equal(endpoint.rows.size, 1);
     assert.deepEqual(await store.entries(), []);
   }
 });
@@ -135,15 +133,16 @@ test("an edit survives a late acknowledgement and duplicate replay retains both 
     const original = await store.enqueue(kind, { note: "Original" }, person);
     const entered = deferred<void>();
     const release = deferred<void>();
-    const server = { ...original.body, user_id: person.id };
+    const endpoint = server();
     let calls = 0;
     const instance = replay({
-      fetch: async () => {
+      fetch: async (_path, options) => {
+        const reply = endpoint.reply(JSON.parse(String(options?.body)));
         if (++calls === 1) {
           entered.resolve();
           await release.promise;
         }
-        return json({ created: calls === 1, entry: server });
+        return reply;
       },
     });
     const work = instance.wake();
@@ -158,16 +157,118 @@ test("an edit survives a late acknowledgement and duplicate replay retains both 
     assert.ok(saved);
     assert.equal(saved.error_code, "already_saved");
     assert.equal(saved.body.note, undefined);
-    assert.deepEqual(saved.server_row, server);
+    assert.deepEqual(saved.server_row, {
+      ...original.body,
+      user_id: person.id,
+    });
     assert.equal(await store.edit(saved, {}), false);
     assert.equal(await store.resend(saved), false);
     assert.equal(calls, 2);
   }
 });
 
+test("a session bump during a write keeps the acknowledgement and the retry backoff", async (context) => {
+  for (const status of [201, 503]) {
+    const { store, replay, scheduler } = await fixture(context);
+    const queued = await store.enqueue("weight", { note: "Original" }, person);
+    await store.settle(queued, { error_code: "invalid_request" });
+    const [rejected] = await store.entries();
+    assert.ok(rejected);
+    await store.edit(rejected, { note: "Edited" });
+    const entered = deferred<void>();
+    const release = deferred<void>();
+    const endpoint = server();
+    let calls = 0;
+    const instance = replay({
+      fetch: async (_path, options) => {
+        const body = JSON.parse(String(options?.body));
+        calls++;
+        entered.resolve();
+        await release.promise;
+        if (status === 503) return json({ error: { code: "down" } }, 503);
+        return endpoint.reply(body);
+      },
+    });
+    const work = instance.wake();
+    await entered.promise;
+    await store.cacheSession((await store.session()).version, session());
+    release.resolve();
+    await work;
+    assert.equal(calls, 1);
+    assert.deepEqual(
+      (await store.entries()).map((entry) => entry.state),
+      status === 503 ? ["pending"] : [],
+    );
+    assert.deepEqual(scheduler.delays(), status === 503 ? [30_000] : []);
+  }
+});
+
+test("enqueue, resend and the online event wake the replayer", async (context) => {
+  const { store, replay } = await fixture(context);
+  const events = new EventTarget();
+  const endpoint = server();
+  let online = false;
+  let reject = false;
+  const sent: string[] = [];
+  const instance = replay({
+    events,
+    online: () => online,
+    fetch: async (path, options) => {
+      sent.push(String(path));
+      const body = JSON.parse(String(options?.body));
+      return reject
+        ? json({ error: { code: "invalid_entry" } }, 422)
+        : endpoint.reply(body);
+    },
+  });
+  const until = (check: (snapshot: QueueSnapshot) => boolean) =>
+    new Promise<void>((resolve) => {
+      const stop = instance.subscribe((snapshot) => {
+        if (!check(snapshot)) return;
+        stop();
+        resolve();
+      });
+    });
+  const drained = (count: number) =>
+    until(
+      (snapshot) =>
+        sent.length === count &&
+        snapshot.type === "ready" &&
+        snapshot.session.session !== null &&
+        snapshot.records.length === 0,
+    );
+  await instance.start();
+  await instance.enqueue("intake", {}, person);
+  await until(
+    (snapshot) =>
+      snapshot.type === "ready" && snapshot.last_pass?.type === "offline",
+  );
+  online = true;
+  events.dispatchEvent(new Event("online"));
+  await drained(1);
+  await instance.enqueue("weight", {}, person);
+  await drained(2);
+  reject = true;
+  await instance.enqueue("intake", {}, person);
+  await until(
+    (snapshot) => snapshot.type === "ready" && snapshot.rejected === 1,
+  );
+  reject = false;
+  const [rejected] = await store.entries();
+  assert.ok(rejected && (await instance.resend(rejected)));
+  await drained(4);
+  assert.deepEqual(sent, [
+    "/api/intake",
+    "/api/weights",
+    "/api/intake",
+    "/api/intake",
+  ]);
+});
+
 test("external abort releases the lock, publishes nothing and suppresses a queued rerun", async (context) => {
   const { store, replay, scheduler } = await fixture(context);
   await store.enqueue("intake", {}, person);
+  await store.persistence();
   const entered = deferred<void>();
   let released = false;
   let acquired = 0;
@@ -271,13 +372,15 @@ test("storage failures remain visible and broadcast receivers reread without rep
   await store.enqueue("intake", {}, person);
   assert.equal(broadcasts, 1);
   await instance.wake();
-  const peer = await open();
-  await peer.enqueue("weight", {}, person);
+  const current = deferred<void>();
   const published = deferred<void>();
   instance.subscribe((snapshot) => {
-    if (snapshot.type === "ready" && snapshot.pending === 2)
-      published.resolve();
+    if (snapshot.type !== "ready") return;
+    if (snapshot.pending === 1) current.resolve();
+    if (snapshot.pending === 2) published.resolve();
   });
+  await current.promise;
+  await (await open()).enqueue("weight", {}, person);
   const before = broadcasts;
   channel.dispatchEvent(new Event("message"));
   await published.promise;

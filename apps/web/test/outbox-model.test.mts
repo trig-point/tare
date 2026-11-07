@@ -1,8 +1,15 @@
 import assert from "node:assert/strict";
 import type { TestContext } from "node:test";
-import { readSessionOutcome } from "../src/outbox-http.ts";
+import { readSessionOutcome, writeEntry } from "../src/outbox-http.ts";
 import type { QueueEntry } from "../src/outbox-store.ts";
-import { fixture, json, other, person, session } from "./outbox-support.mts";
+import {
+  acknowledgement,
+  fixture,
+  json,
+  other,
+  person,
+  session,
+} from "./outbox-support.mts";
 import { test } from "./support.mts";
 
 const replies: [number, string, string?][] = [
@@ -34,9 +41,15 @@ async function trace(context: TestContext, actions: string[]) {
   let failures = 0;
   let delay: number[] = [];
   const sent: string[] = [];
+  const queued = new Map<string, QueueEntry>();
+  let identityRefusals = 0;
+  let expectedRefusals = 0;
   const instance = replay({
     online: () => online,
     readSession: undefined,
+    onIdentityRefused: () => {
+      identityRefusals++;
+    },
     fetch: async (path, options) => {
       if (path === "/api/session")
         return signedOut
@@ -54,9 +67,15 @@ async function trace(context: TestContext, actions: string[]) {
         String(active.id),
       );
       assert.equal(options?.redirect, "manual");
+      assert.equal(options?.method, "POST");
+      const row = queued.get(body.client_id);
+      assert.equal(
+        path,
+        row?.kind === "intake" ? "/api/intake" : "/api/weights",
+      );
+      assert.deepEqual(row?.body, body);
       sent.push(body.client_id);
       const [status, outcome, code] = response;
-      const entry = { ...body, user_id: code === "wrong_ack" ? -1 : active.id };
       if (code === "html" || code === "malformed")
         return new Response(code === "html" ? "<html>" : "{", {
           status,
@@ -64,12 +83,15 @@ async function trace(context: TestContext, actions: string[]) {
             "Content-Type": code === "html" ? "text/html" : "application/json",
           },
         });
-      return json(
-        outcome === "ack" || outcome === "duplicate" || code === "wrong_ack"
-          ? { created: outcome === "ack", entry }
-          : { error: { code } },
-        status,
-      );
+      return outcome === "ack" ||
+        outcome === "duplicate" ||
+        code === "wrong_ack"
+        ? acknowledgement(
+            body,
+            outcome === "ack",
+            code === "wrong_ack" ? -1 : active.id,
+          )
+        : json({ error: { code } }, status);
     },
   });
   await instance.start();
@@ -79,6 +101,7 @@ async function trace(context: TestContext, actions: string[]) {
       const kind = model.length % 2 ? "weight" : "intake";
       const row = await store.enqueue(kind, { note: "Optional" }, active);
       model.push(structuredClone(row));
+      queued.set(row.client_id, model.at(-1) as QueueEntry);
       assert.equal(
         row.body[kind === "intake" ? "eaten_at" : "measured_at"],
         "2026-01-01T06:00:00.000Z",
@@ -101,9 +124,10 @@ async function trace(context: TestContext, actions: string[]) {
             : await (action === "resend"
                 ? store.resend(first)
                 : store.discard(first));
-        assert.equal(changed, action === "discard" || editable);
-        if (action === "discard") model.shift();
-        else if (editable) {
+        const discarded = action === "discard" && first.state === "rejected";
+        assert.equal(changed, discarded || (action !== "discard" && editable));
+        if (discarded) model.shift();
+        else if (action !== "discard" && editable) {
           if (action === "edit") {
             delete first.body.note;
             first.body.value = 200;
@@ -145,6 +169,8 @@ async function trace(context: TestContext, actions: string[]) {
             row.server_row = { ...row.body, user_id: active.id };
           return [row];
         });
+      if (stopped && (code === "person_mismatch" || code === "not_a_member"))
+        expectedRefusals++;
       if (!pending || online) {
         if (stopped && outcome === "retry")
           delay = [Math.min(30_000 * 2 ** failures++, 900_000)];
@@ -159,6 +185,7 @@ async function trace(context: TestContext, actions: string[]) {
     }
     assert.deepEqual(await store.entries(), model, JSON.stringify(actions));
     assert.deepEqual(scheduler.delays(), delay, JSON.stringify(actions));
+    assert.equal(identityRefusals, expectedRefusals, JSON.stringify(actions));
   }
   await instance.close();
   store.close();
@@ -210,7 +237,35 @@ test("independent oracle covers bounded response sequences, two people, retry/re
     (await readSessionOutcome({ online: () => false })).type,
     "offline",
   );
+  const accessExpired = () => [
+    Object.defineProperty(Response.error(), "type", {
+      value: "opaqueredirect",
+    }),
+    new Response("<html>", {
+      status: 401,
+      headers: { "Content-Type": "text/html" },
+    }),
+  ];
+  for (const response of accessExpired())
+    assert.equal(
+      (
+        await writeEntry(
+          {
+            seq: 1,
+            client_id: "access",
+            kind: "intake",
+            person_id: 1,
+            body: {},
+            state: "pending",
+            revision: 0,
+          },
+          { fetch: async () => response },
+        )
+      ).type,
+      "sign_in_needed",
+    );
   for (const [response, expected] of [
+    ...accessExpired().map((response) => [response, "sign_in_needed"] as const),
     [json({}), "sign_in_needed"],
     [new Response("<html>"), "sign_in_needed"],
     [new Response(null, { status: 302 }), "sign_in_needed"],
