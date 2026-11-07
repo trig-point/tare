@@ -21,6 +21,7 @@ export const dayReadOperations = [
     input: zod.strictObject({}),
     output: ledgerSchema.extend({
       weights: zod.array(weightRow),
+      timezone: zod.string(),
       target: targetSchema,
       remaining: zod.strictObject({
         kcal: zod.number().nullable(),
@@ -54,6 +55,7 @@ export const dayReadOperations = [
         status: 200,
         body: {
           ...ledger,
+          timezone: person.timezone,
           weights: selectTodayWeights(context.database, {
             user_id: person.id,
             day,

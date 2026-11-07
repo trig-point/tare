@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { Session } from "./api.ts";
 import { api } from "./api.ts";
-import type { OutboxReplay } from "./outbox-replay.ts";
+import type { OutboxReplay, QueueSnapshot } from "./outbox-replay.ts";
 
 const nutrient = z.number().nonnegative().nullable();
 const total = z.object({
@@ -33,6 +33,8 @@ export const intakeSchema = z.object({
   eaten_at: z.string(),
   provenance: z.enum(["verified", "label", "estimated"]),
   source: z.string().nullable(),
+  kcal_low: nutrient,
+  kcal_high: nutrient,
   kcal: nutrient,
   protein_g: nutrient,
   carbs_g: nutrient,
@@ -49,6 +51,7 @@ export const weightSchema = z.object({
 export type Weight = z.infer<typeof weightSchema>;
 export const todaySchema = z.object({
   day: z.string(),
+  timezone: z.string(),
   entries: z.array(intakeSchema),
   weights: z.array(weightSchema),
   totals: z.object({
@@ -66,8 +69,8 @@ export async function readToday(signal: AbortSignal) {
 }
 export function totalText(value: z.infer<typeof total>) {
   return value.complete && value.total !== null
-    ? String(value.total)
-    : `${value.known_subtotal} + Incomplete`;
+    ? displayNumber(value.total)
+    : `${displayNumber(value.known_subtotal)} + Incomplete`;
 }
 export async function changeIntake(
   id: number,
@@ -112,4 +115,54 @@ export async function enqueueWeight(
     { weight_kg: value, measured_at: new Date().toISOString() },
     person,
   );
+}
+
+export function settledSince(
+  previousPending: Set<string>,
+  snapshot: QueueSnapshot,
+  personId: number,
+) {
+  if (snapshot.type !== "ready")
+    return { pending: previousPending, settled: false };
+  const pending = new Set(
+    snapshot.records
+      .filter(
+        (entry) => entry.person_id === personId && entry.state === "pending",
+      )
+      .map((entry) => entry.client_id),
+  );
+  return {
+    pending,
+    settled: [...previousPending].some((clientId) => !pending.has(clientId)),
+  };
+}
+export function intakeChanges(entry: Intake, values: Record<string, string>) {
+  const changes: Record<string, unknown> = {};
+  for (const key of nutrients) {
+    const value = values[key] === "" ? null : Number(values[key]);
+    if (value !== entry[key]) changes[key] = value;
+  }
+  if (Object.keys(changes).length === 0) return changes;
+  if (entry.provenance === "label")
+    Object.assign(changes, { provenance: "label", source: entry.source });
+  const kcal = changes.kcal;
+  if (
+    typeof kcal === "number" &&
+    ((entry.kcal_low !== null && kcal < entry.kcal_low) ||
+      (entry.kcal_high !== null && kcal > entry.kcal_high))
+  )
+    Object.assign(changes, { kcal_low: null, kcal_high: null });
+  return changes;
+}
+export function displayNumber(value: number) {
+  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(
+    value,
+  );
+}
+export function sourceName(source: string) {
+  return source === "usda"
+    ? "USDA"
+    : source === "off"
+      ? "Open Food Facts"
+      : source;
 }

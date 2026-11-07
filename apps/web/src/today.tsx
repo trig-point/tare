@@ -6,11 +6,15 @@ import type { QueueEntry } from "./outbox-store.ts";
 import {
   changeIntake,
   changeWeight,
+  displayNumber,
   enqueueWeight,
   type Intake,
+  intakeChanges,
   nutrientLabels,
   nutrients,
   readToday,
+  settledSince,
+  sourceName,
   todayKey,
   totalText,
   type Weight,
@@ -34,12 +38,11 @@ export function Today({
     enabled: online,
   });
   useEffect(() => {
+    let previousPending = new Set<string>();
     const unsubscribe = replay.subscribe((snapshot) => {
-      if (
-        snapshot.type === "ready" &&
-        snapshot.session.session?.user.id === person.id &&
-        snapshot.last_pass?.type === "drained"
-      )
+      const changes = settledSince(previousPending, snapshot, person.id);
+      previousPending = changes.pending;
+      if (changes.settled)
         void client.invalidateQueries({ queryKey: todayKey(person.id) });
     });
     return () => {
@@ -58,7 +61,7 @@ export function Today({
     <section aria-label="Today">
       <h1>Today</h1>
       {today.isError && <p role="alert">Couldn’t load today</p>}
-      {!today.data && (
+      {!today.data && !today.isError && (
         <p>{online ? "Loading..." : "Today unavailable offline"}</p>
       )}
       {today.data && (
@@ -89,6 +92,7 @@ export function Today({
               <WeightEntry
                 key={entry.id}
                 entry={entry}
+                timezone={today.data.timezone}
                 online={online}
                 refresh={() =>
                   client.invalidateQueries({ queryKey: todayKey(person.id) })
@@ -104,7 +108,7 @@ export function Today({
           <li key={entry.client_id}>
             <strong>
               {entry.kind === "weight"
-                ? `${entry.body.weight_kg} kg`
+                ? `${displayNumber(Number(entry.body.weight_kg))} kg`
                 : String(entry.body.name ?? "Food")}
             </strong>{" "}
             <span>Pending</span>
@@ -167,6 +171,7 @@ function IntakeEntry({
 }) {
   const [editing, setEditing] = useState(false);
   const mutation = useMutation({
+    networkMode: "always",
     mutationFn: async (changes: Record<string, unknown> | undefined) => {
       if (!online || !navigator.onLine) throw new Error("Offline");
       await changeIntake(entry.id, changes);
@@ -181,9 +186,13 @@ function IntakeEntry({
       <strong>{entry.name ?? "Food"}</strong>
       <span>
         {entry.provenance}
-        {entry.source && ` · ${entry.source}`}
+        {entry.source && ` · ${sourceName(entry.source)}`}
       </span>
-      <span>{entry.kcal === null ? "Incomplete" : `${entry.kcal} kcal`}</span>
+      <span>
+        {entry.kcal === null
+          ? "Incomplete"
+          : `${displayNumber(entry.kcal)} kcal`}
+      </span>
       <button
         type="button"
         disabled={!online || mutation.isPending}
@@ -235,16 +244,13 @@ function IntakeForm({
     <form
       onSubmit={(event) => {
         event.preventDefault();
-        save(
-          reference
-            ? { servings: Number(servings) }
-            : Object.fromEntries(
-                nutrients.map((key) => [
-                  key,
-                  values[key] === "" ? null : Number(values[key]),
-                ]),
-              ),
-        );
+        const changes = reference
+          ? Number(servings) === entry.servings
+            ? {}
+            : { servings: Number(servings) }
+          : intakeChanges(entry, values);
+        if (Object.keys(changes).length === 0) cancel();
+        else save(changes);
       }}
     >
       <fieldset disabled={disabled}>
@@ -288,16 +294,19 @@ function IntakeForm({
 
 function WeightEntry({
   entry,
+  timezone,
   online,
   refresh,
 }: {
   entry: Weight;
+  timezone: string;
   online: boolean;
   refresh: () => Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
   const [weight, setWeight] = useState(String(entry.weight_kg));
   const mutation = useMutation({
+    networkMode: "always",
     mutationFn: async (changes: Record<string, unknown> | undefined) => {
       if (!online || !navigator.onLine) throw new Error("Offline");
       await changeWeight(entry.id, changes);
@@ -309,15 +318,15 @@ function WeightEntry({
   });
   return (
     <li>
-      <strong>{entry.weight_kg} kg</strong>
-      <span>{entry.source ?? "Manual"}</span>
+      <strong>{displayNumber(entry.weight_kg)} kg</strong>
+      {entry.source && <span>{sourceName(entry.source)}</span>}
       <time dateTime={entry.measured_at}>
         {new Date(entry.measured_at).toLocaleTimeString([], {
           hour: "numeric",
           minute: "2-digit",
-          timeZone: "America/New_York",
-        })}{" "}
-        ET
+          timeZone: timezone,
+          timeZoneName: "short",
+        })}
       </time>
       <button
         type="button"

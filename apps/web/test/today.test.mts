@@ -12,7 +12,10 @@ import {
   changeIntake,
   changeWeight,
   enqueueWeight,
+  intakeChanges,
+  nutrients,
   readToday,
+  settledSince,
   todayKey,
 } from "../src/today-api.ts";
 import "fake-indexeddb/auto";
@@ -61,13 +64,18 @@ async function setup(context: Parameters<typeof twoUsers>[0]) {
 }
 function render(
   person: { id: number; username: string },
-  data: Awaited<ReturnType<typeof readToday>>,
+  data: Awaited<ReturnType<typeof readToday>> | undefined,
   records: Parameters<typeof Today>[0]["records"] = [],
 ) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: Infinity } },
   });
-  client.setQueryData(todayKey(person.id), data);
+  if (data) client.setQueryData(todayKey(person.id), data);
+  else
+    client
+      .getQueryCache()
+      .build(client, { queryKey: todayKey(person.id) })
+      .setState({ status: "error", error: new Error("Unavailable") });
   return renderToStaticMarkup(
     createElement(
       QueryClientProvider,
@@ -84,16 +92,24 @@ function render(
 test("today renders engine totals and provenance", async (context) => {
   const setupData = await setup(context);
   const html = render(setupData.person, await setupData.read());
-  for (const expected of [
-    "200",
-    "10",
-    "20",
-    "5",
-    "3",
-    "Example meal",
-    "estimated",
+  for (const pair of [
+    /Calories<\/dt><dd>200</,
+    /Protein \(g\)<\/dt><dd>10</,
+    /Carbs \(g\)<\/dt><dd>20</,
+    /Fat \(g\)<\/dt><dd>5</,
+    /Fiber \(g\)<\/dt><dd>3</,
   ])
-    assert.ok(html.includes(expected), expected);
+    assert.match(html, pair);
+  assert.match(html, /Example meal.*estimated/s);
+  const rounded = await setupData.read();
+  rounded.totals.kcal.total = 220.00000000000003;
+  const meal = rounded.entries[0];
+  assert.ok(meal);
+  meal.kcal = 220.00000000000003;
+  meal.source = "off";
+  assert.match(render(setupData.person, rounded), /Calories<\/dt><dd>220</);
+  assert.match(render(setupData.person, rounded), /220 kcal/);
+  assert.match(render(setupData.person, rounded), /Open Food Facts/);
 });
 test("unknown totals are incomplete; missing and malformed responses fail", async (context) => {
   const setupData = await setup(context);
@@ -102,12 +118,15 @@ test("unknown totals are incomplete; missing and malformed responses fail", asyn
     render(setupData.person, await setupData.read()),
     /0 \+ Incomplete/,
   );
+  const error = render(setupData.person, undefined);
+  assert.match(error, /Couldn’t load today/);
+  assert.doesNotMatch(error, /Loading\.\.\.|Today unavailable offline/);
   for (const body of [{}, { day: 42 }]) {
     context.mock.method(globalThis, "fetch", async () => Response.json(body));
     await assert.rejects(setupData.read());
   }
 });
-test("weight writes use the durable queue and preserve measured time", async (context) => {
+test("queued weights preserve measured time and refresh only after settlement", async (context) => {
   const store = await openOutboxStore({ name: `today-${crypto.randomUUID()}` });
   const replay = new OutboxReplay({
     store,
@@ -120,6 +139,7 @@ test("weight writes use the durable queue and preserve measured time", async (co
     store.close();
   });
   const person = { id: 1, username: "example-person" };
+  await store.cacheSession(0, { user: person, mode: "fallback" });
   for (const value of ["", "no", "0"])
     await assert.rejects(enqueueWeight(replay, person, value));
   await enqueueWeight(replay, person, "70");
@@ -128,6 +148,31 @@ test("weight writes use the durable queue and preserve measured time", async (co
   assert.deepEqual(
     [entry.kind, entry.body.weight_kg, entry.state],
     ["weight", 70, "pending"],
+  );
+  const snapshot = await replay.snapshot();
+  assert.equal(snapshot.type, "ready");
+  if (snapshot.type !== "ready") throw new Error("Queue unavailable");
+  const first = settledSince(new Set(), snapshot, person.id);
+  assert.equal(first.settled, false);
+  for (const last_pass of [
+    null,
+    {
+      type: "retry" as const,
+      person_id: person.id,
+      session_version: 1,
+    },
+  ])
+    assert.equal(
+      settledSince(
+        first.pending,
+        { ...snapshot, records: [], last_pass },
+        person.id,
+      ).settled,
+      true,
+    );
+  assert.deepEqual(
+    [...settledSince(new Set(), snapshot, person.id + 1).pending],
+    [],
   );
 });
 test("pending markers are shown without duplicate synced entries", async (context) => {
@@ -146,14 +191,24 @@ test("pending markers are shown without duplicate synced entries", async (contex
   data.weights.push({
     id: 1,
     client_id: pending.client_id,
-    weight_kg: 70,
+    weight_kg: 70.04,
     measured_at: "2026-01-02T12:00:00.000Z",
     source: null,
   });
-  assert.doesNotMatch(
-    render(setupData.person, data, [pending]),
-    /<span>Pending<\/span>/,
+  const synced = render(setupData.person, data, [pending]);
+  assert.doesNotMatch(synced, /Manual/);
+  assert.match(synced, /<strong>70 kg<\/strong>/);
+  assert.ok(
+    synced.includes(
+      new Date(data.weights[0]?.measured_at ?? "").toLocaleTimeString([], {
+        hour: "numeric",
+        minute: "2-digit",
+        timeZone: data.timezone,
+        timeZoneName: "short",
+      }),
+    ),
   );
+  assert.doesNotMatch(synced, /<span>Pending<\/span>/);
 });
 test("edit updates totals and weight values", async (context) => {
   const setupData = await setup(context);
@@ -180,4 +235,44 @@ test("delete updates totals and removes weights; empty days render", async (cont
   assert.equal(data.totals.kcal.total, 0);
   assert.deepEqual(data.weights, []);
   assert.match(render(setupData.person, data), /No food entries/);
+});
+
+test("intake changes preserve label claims and clear only exceeded calorie bounds", async (context) => {
+  const { entry } = await setup(context);
+  const original = {
+    ...entry,
+    provenance: "label" as const,
+    source: "Example box",
+    kcal_low: 180,
+    kcal_high: 220,
+  };
+  const values = Object.fromEntries(
+    nutrients.map((key) => [key, String(original[key])]),
+  );
+  const cases: [Record<string, string>, Record<string, unknown>][] = [
+    [{}, {}],
+    [
+      { protein_g: "11" },
+      { protein_g: 11, provenance: "label", source: "Example box" },
+    ],
+    [
+      { kcal: "250" },
+      {
+        kcal: 250,
+        kcal_low: null,
+        kcal_high: null,
+        provenance: "label",
+        source: "Example box",
+      },
+    ],
+    [
+      { kcal: "210" },
+      { kcal: 210, provenance: "label", source: "Example box" },
+    ],
+  ];
+  for (const [patch, expected] of cases)
+    assert.deepEqual(
+      intakeChanges(original, { ...values, ...patch }),
+      expected,
+    );
 });

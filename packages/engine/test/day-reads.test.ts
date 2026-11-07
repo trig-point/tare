@@ -203,6 +203,7 @@ for (const mode of ["fallback", "access"] as const)
         201,
       );
     const before = await send(admin, "/api/today");
+    assert.equal(before.timezone, "Asia/Dubai");
     assert.deepEqual(
       [before.day, before.entries, before.totals.kcal.total],
       ["2025-12-31", [entry], 200],
