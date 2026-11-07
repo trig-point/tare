@@ -49,6 +49,7 @@ test("enqueue commits ordered person-bound snapshots and retries persistent stor
   assert.deepEqual(await store.entries(), []);
   assert.deepEqual(await store.session(), { session: null, version: 0 });
   const first = await store.enqueue("intake", { kcal: 100 }, person);
+  await store.persistence();
   assert.match(
     first.client_id,
     /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/,
@@ -65,7 +66,9 @@ test("enqueue commits ordered person-bound snapshots and retries persistent stor
     { weight_kg: 70, measured_at: "2026-01-01T05:00:00.000Z" },
     other,
   );
+  await reopened.persistence();
   await reopened.enqueue("intake", { kcal: 200 }, person);
+  await reopened.persistence();
   await reopened.enqueue("intake", { kcal: 300 }, person);
   const records = await reopened.entries();
   assert.deepEqual(
@@ -83,6 +86,41 @@ test("enqueue commits ordered person-bound snapshots and retries persistent stor
   assert.equal(calls, 3);
 });
 
+test("enqueue commits and resolves without waiting for the persistent-storage answer", async (context) => {
+  let markAsked = () => {};
+  const asked = new Promise<void>((resolve) => {
+    markAsked = resolve;
+  });
+  let answer = (_granted: boolean) => {};
+  let calls = 0;
+  const { store, open } = await fixture(context, {
+    persist: () => {
+      calls++;
+      markAsked();
+      return new Promise((resolve) => {
+        answer = resolve;
+      });
+    },
+  });
+  const observer = await open();
+  const first = await Promise.race([
+    store.enqueue("intake", { kcal: 100 }, person),
+    asked.then(() => undefined),
+  ]);
+  assert.ok(
+    first,
+    "persistent storage was requested before the entry committed",
+  );
+  await asked;
+  await store.enqueue("weight", { weight_kg: 70 }, person);
+  assert.equal(calls, 1);
+  assert.equal((await observer.entries()).length, 2);
+  assert.equal((await observer.session()).persistent, undefined);
+  answer(true);
+  assert.equal(await store.persistence(), true);
+  assert.equal((await observer.session()).persistent, true);
+});
+
 test("failed inserts and malformed input leave the durable queue and notifications unchanged", async (context) => {
   const { store, open } = await fixture(context, {
     crypto: {
@@ -96,6 +134,7 @@ test("failed inserts and malformed input leave the durable queue and notificatio
     notifications.push(observer.entries());
   });
   const first = await store.enqueue("intake", {}, person);
+  await store.persistence();
   assert.deepEqual(await notifications[0], [first]);
   await assert.rejects(store.enqueue("weight", {}, other), {
     name: "ConstraintError",
@@ -107,11 +146,23 @@ test("failed inserts and malformed input leave the durable queue and notificatio
   ];
   for (const fields of malformed)
     await assert.rejects(store.enqueue("intake", fields, person));
+  const { put } = IDBObjectStore.prototype;
+  IDBObjectStore.prototype.put = function (...args) {
+    const request = put.apply(this, args);
+    request.addEventListener("success", () => request.transaction?.abort());
+    return request;
+  };
+  try {
+    await assert.rejects(store.bumpSession(), { name: "AbortError" });
+  } finally {
+    IDBObjectStore.prototype.put = put;
+  }
+  assert.equal((await observer.session()).version, 0);
   assert.equal((await observer.entries()).length, 1);
-  assert.equal(notifications.length, 1);
+  assert.equal(notifications.length, 2);
   unsubscribe();
   await store.clearSession();
-  assert.equal(notifications.length, 1);
+  assert.equal(notifications.length, 2);
 });
 
 test("revision checks preserve edits against late acknowledgements and already_saved survives reload", async (context) => {
@@ -128,6 +179,12 @@ test("revision checks preserve edits against late acknowledgements and already_s
     const original = await store.enqueue(kind, fields, person);
     assert.equal(await store.edit(original, { [value]: 20 }), false);
     assert.equal(await store.resend(original), false);
+    assert.equal(await store.discard(original), false);
+    for (const rejection of [
+      { error_code: "already_saved" },
+      { error_code: "invalid_request", server_row: {} },
+    ])
+      await assert.rejects(store.settle(original, rejection));
     await store.settle(original, { error_code: "invalid_request" });
     let [rejected] = await store.entries();
     assert.ok(rejected);

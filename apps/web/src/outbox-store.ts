@@ -92,6 +92,8 @@ export class OutboxStore {
   #database: IDBPDatabase<OutboxSchema>;
   #options: StoreOptions;
   #events = new EventTarget();
+  #persistence?: Promise<boolean>;
+  #persisting = false;
 
   constructor(database: IDBPDatabase<OutboxSchema>, options: StoreOptions) {
     this.#database = database;
@@ -136,18 +138,6 @@ export class OutboxStore {
     if (body[timeField] === undefined)
       body[timeField] = (this.#options.clock?.() ?? new Date()).toISOString();
     requireTime(kind, body);
-    let persistent = (await this.session()).persistent === true;
-    if (!persistent) {
-      try {
-        persistent = this.#options.persist
-          ? await this.#options.persist()
-          : globalThis.navigator?.storage
-            ? await navigator.storage.persist()
-            : false;
-      } catch {
-        persistent = false;
-      }
-    }
     const record: StoredEntry = {
       client_id,
       kind,
@@ -156,24 +146,54 @@ export class OutboxStore {
       state: "pending",
       revision: 0,
     };
-    const seq = await this.#write(
-      ["entries", "session"],
-      async (transaction) => {
-        const cache = requireCache(
-          await transaction.objectStore("session").get("current"),
-        );
-        const seq = await transaction.objectStore("entries").add(record);
-        await transaction
-          .objectStore("session")
-          .put(
-            { ...cache, persistent: cache.persistent === true || persistent },
-            "current",
-          );
-        return seq;
-      },
+    const seq = await this.#write(["entries"], (transaction) =>
+      transaction.objectStore("entries").add(record),
     );
     this.#events.dispatchEvent(new Event("change"));
+    this.#requestPersistence();
     return { ...record, seq };
+  }
+
+  /** Latest persistent-storage request; rejects if its result cannot be stored. */
+  persistence() {
+    return this.#persistence;
+  }
+
+  // Firefox waits for the person to answer a prompt, so the entry commits first
+  // and enqueue never waits for the answer.
+  #requestPersistence() {
+    if (this.#persisting) return;
+    this.#persisting = true;
+    const request = this.#recordPersistence().finally(() => {
+      this.#persisting = false;
+    });
+    // Callers read failures through persistence(); nothing else awaits this request.
+    request.catch(() => undefined);
+    this.#persistence = request;
+  }
+
+  async #recordPersistence() {
+    if ((await this.session()).persistent === true) return true;
+    let granted: boolean;
+    try {
+      granted = this.#options.persist
+        ? await this.#options.persist()
+        : globalThis.navigator?.storage
+          ? await navigator.storage.persist()
+          : false;
+    } catch {
+      granted = false;
+    }
+    const updated = await this.#write(["session"], async (transaction) => {
+      const store = transaction.objectStore("session");
+      const cache = requireCache(await store.get("current"));
+      const persistent = cache.persistent === true || granted;
+      if (cache.persistent === persistent) return null;
+      await store.put({ ...cache, persistent }, "current");
+      return persistent;
+    });
+    if (updated !== null) this.#events.dispatchEvent(new Event("change"));
+    return updated ?? granted;
   }
 
   async edit(entry: QueueEntry, patch: Record<string, JsonValue | undefined>) {
@@ -208,17 +228,26 @@ export class OutboxStore {
     });
   }
 
+  // A pending entry may be in flight, so only an acknowledgement removes it.
   async discard(entry: QueueEntry) {
-    return this.#mutate(entry, () => null);
+    return this.#mutate(entry, (record) =>
+      record.state === "rejected" ? null : false,
+    );
   }
 
   async settle(entry: QueueEntry, rejection?: Rejection) {
     return this.#mutate(entry, (record) => {
       if (record.state !== "pending") return false;
       if (!rejection) return null;
-      if (rejection.error_code === "already_saved" && !rejection.server_row)
-        throw new Error("Stored entry required");
-      return { ...record, ...rejection, state: "rejected" };
+      const { error_code, server_row } = rejection;
+      if ((error_code === "already_saved") !== (server_row !== undefined))
+        throw new Error("Stored entry belongs only to already_saved");
+      return {
+        ...record,
+        state: "rejected",
+        error_code,
+        ...(server_row && { server_row }),
+      };
     });
   }
 
