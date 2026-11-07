@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 const person = z.object({ id: z.number(), username: z.string() });
-const sessionSchema = z.discriminatedUnion("mode", [
+export const sessionSchema = z.discriminatedUnion("mode", [
   z.object({ user: person, mode: z.literal("fallback") }),
   z.object({
     user: person,
@@ -19,15 +19,16 @@ export class ApiError extends Error {
   }
 }
 
-async function request(
+export async function request(
   path: string,
   options: RequestInit = {},
+  fetcher: typeof fetch = fetch,
 ): Promise<Response> {
   const headers = new Headers(options.headers);
   headers.set("X-Requested-With", "XMLHttpRequest");
   if (options.body !== undefined)
     headers.set("Content-Type", "application/json");
-  return fetch(path, {
+  return fetcher(path, {
     ...options,
     headers,
     credentials: "same-origin",
