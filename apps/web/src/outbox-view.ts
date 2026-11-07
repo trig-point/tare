@@ -9,10 +9,23 @@ export function outboxView(
   failed = false,
 ) {
   const ready = queue?.type === "ready" ? queue : null;
-  const current =
+  let current =
     !ready || (state && state.version >= ready.session.version)
       ? state?.outcome
       : undefined;
+  // Another tab can clear the cache before this tab's query changes.
+  if (
+    !current &&
+    ready &&
+    state?.outcome.type === "person" &&
+    ready.session.session === null
+  )
+    current = {
+      type:
+        state.outcome.session.mode === "fallback"
+          ? "signed_out"
+          : "sign_in_needed",
+    };
   const live = current?.type === "person" ? current.session : null;
   const session: Session | null =
     current?.type === "signed_out"

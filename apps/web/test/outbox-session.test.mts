@@ -214,4 +214,20 @@ test("the shell table scopes records and preserves rejected entries and warnings
     ).status,
     "1 pending",
   );
+  for (const mode of ["fallback", "access"] as const) {
+    const previous =
+      mode === "fallback"
+        ? session()
+        : { mode, user: person, logout_url: "https://example.com/logout" };
+    const view = outboxView(
+      { outcome: { type: "person", session: previous }, version: 1 },
+      { ...base, session: { session: null, version: 2 } },
+      true,
+    );
+    assert.equal(
+      view.screen,
+      mode === "fallback" ? "signed_out" : "sign_in_needed",
+    );
+    assert.equal(view.session, null);
+  }
 });
