@@ -2,7 +2,14 @@ import assert from "node:assert/strict";
 import type { TestContext } from "node:test";
 import { readSessionOutcome, writeEntry } from "../src/outbox-http.ts";
 import type { QueueEntry } from "../src/outbox-store.ts";
-import { fixture, json, other, person, session } from "./outbox-support.mts";
+import {
+  acknowledgement,
+  fixture,
+  json,
+  other,
+  person,
+  session,
+} from "./outbox-support.mts";
 import { test } from "./support.mts";
 
 const replies: [number, string, string?][] = [
@@ -35,9 +42,14 @@ async function trace(context: TestContext, actions: string[]) {
   let delay: number[] = [];
   const sent: string[] = [];
   const queued = new Map<string, QueueEntry>();
+  let identityRefusals = 0;
+  let expectedRefusals = 0;
   const instance = replay({
     online: () => online,
     readSession: undefined,
+    onIdentityRefused: () => {
+      identityRefusals++;
+    },
     fetch: async (path, options) => {
       if (path === "/api/session")
         return signedOut
@@ -64,7 +76,6 @@ async function trace(context: TestContext, actions: string[]) {
       assert.deepEqual(row?.body, body);
       sent.push(body.client_id);
       const [status, outcome, code] = response;
-      const entry = { ...body, user_id: code === "wrong_ack" ? -1 : active.id };
       if (code === "html" || code === "malformed")
         return new Response(code === "html" ? "<html>" : "{", {
           status,
@@ -72,12 +83,15 @@ async function trace(context: TestContext, actions: string[]) {
             "Content-Type": code === "html" ? "text/html" : "application/json",
           },
         });
-      return json(
-        outcome === "ack" || outcome === "duplicate" || code === "wrong_ack"
-          ? { created: outcome === "ack", entry }
-          : { error: { code } },
-        status,
-      );
+      return outcome === "ack" ||
+        outcome === "duplicate" ||
+        code === "wrong_ack"
+        ? acknowledgement(
+            body,
+            outcome === "ack",
+            code === "wrong_ack" ? -1 : active.id,
+          )
+        : json({ error: { code } }, status);
     },
   });
   await instance.start();
@@ -155,6 +169,8 @@ async function trace(context: TestContext, actions: string[]) {
             row.server_row = { ...row.body, user_id: active.id };
           return [row];
         });
+      if (stopped && (code === "person_mismatch" || code === "not_a_member"))
+        expectedRefusals++;
       if (!pending || online) {
         if (stopped && outcome === "retry")
           delay = [Math.min(30_000 * 2 ** failures++, 900_000)];
@@ -169,6 +185,7 @@ async function trace(context: TestContext, actions: string[]) {
     }
     assert.deepEqual(await store.entries(), model, JSON.stringify(actions));
     assert.deepEqual(scheduler.delays(), delay, JSON.stringify(actions));
+    assert.equal(identityRefusals, expectedRefusals, JSON.stringify(actions));
   }
   await instance.close();
   store.close();

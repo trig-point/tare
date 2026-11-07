@@ -4,7 +4,11 @@ import { deleteDB } from "idb";
 import type { Session } from "../src/api.ts";
 import type { Scheduler } from "../src/outbox-http.ts";
 import { OutboxReplay } from "../src/outbox-replay.ts";
-import { type OutboxStore, openOutboxStore } from "../src/outbox-store.ts";
+import {
+  type EntryBody,
+  type OutboxStore,
+  openOutboxStore,
+} from "../src/outbox-store.ts";
 
 export const person = { id: 1, username: "example-person" };
 export const other = { id: 2, username: "example-other" };
@@ -12,6 +16,25 @@ export const session = (user = person): Session => ({ mode: "fallback", user });
 export const json = (body: unknown, status = 200) =>
   Response.json(body, { status });
 export const deferred = <Value,>() => Promise.withResolvers<Value>();
+export const acknowledgement = (
+  body: EntryBody,
+  created: boolean,
+  userId = person.id,
+) =>
+  json({ created, entry: { ...body, user_id: userId } }, created ? 201 : 200);
+/** Write endpoints are keyed by client_id: repeat requests return the first stored body. */
+export function server() {
+  const rows = new Map<string, EntryBody>();
+  return {
+    rows,
+    reply(body: EntryBody) {
+      const key = String(body.client_id);
+      const created = !rows.has(key);
+      if (created) rows.set(key, body);
+      return acknowledgement(rows.get(key) ?? body, created);
+    },
+  };
+}
 export class ManualScheduler implements Scheduler {
   tasks = new Map<object, { callback: () => void; delay: number }>();
   schedule(callback: () => void, delay: number) {

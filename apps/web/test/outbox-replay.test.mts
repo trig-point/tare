@@ -8,11 +8,12 @@ import {
   ManualScheduler,
   other,
   person,
+  server,
   session,
 } from "./outbox-support.mts";
 import { test } from "./support.mts";
 
-test("deadlines cover hung session, write headers and body, and external abort reaches fetch", async (context) => {
+test("deadline bookkeeping against a fake fetch covers hung session, write headers and body, and external abort reaches fetch", async (context) => {
   const { store } = await fixture(context);
   const entry = await store.enqueue("intake", {}, person);
   const { writeEntry } = await import("../src/outbox-http.ts");
@@ -52,16 +53,14 @@ test("the timer retries after partial progress, caps backoff, and a rejection le
   for (const kcal of [100, 200, 300])
     await store.enqueue("intake", { kcal }, person);
   let statuses = [201, 503];
+  const endpoint = server();
   const instance = replay({
     fetch: async (_path, options) => {
       const status = statuses.shift() ?? 503;
       const body = JSON.parse(String(options?.body));
-      return json(
-        status === 201
-          ? { created: true, entry: { ...body, user_id: 1 } }
-          : { error: { code: "invalid_entry" } },
-        status,
-      );
+      return status === 201
+        ? endpoint.reply(body)
+        : json({ error: { code: "invalid_entry" } }, status);
     },
   });
   await instance.wake();
@@ -97,17 +96,15 @@ test("missing and throwing Web Locks allow two tabs to send one key safely", asy
     await store.enqueue("weight", { weight_kg: 70 }, person);
     const entered = deferred<void>();
     const release = deferred<void>();
-    const rows = new Map<string, object>();
+    const endpoint = server();
     let calls = 0;
     const fetcher: typeof fetch = async (_path, options) => {
-      const body = JSON.parse(String(options?.body));
-      const created = !rows.has(body.client_id);
-      rows.set(body.client_id, { ...body, user_id: person.id });
+      const reply = endpoint.reply(JSON.parse(String(options?.body)));
       if (++calls === 1) {
         entered.resolve();
         await release.promise;
       }
-      return json({ created, entry: rows.get(body.client_id) });
+      return reply;
     };
     const options = {
       fetch: fetcher,
@@ -125,7 +122,7 @@ test("missing and throwing Web Locks allow two tabs to send one key safely", asy
     release.resolve();
     await work;
     assert.equal(calls, 2);
-    assert.equal(rows.size, 1);
+    assert.equal(endpoint.rows.size, 1);
     assert.deepEqual(await store.entries(), []);
   }
 });
@@ -136,15 +133,16 @@ test("an edit survives a late acknowledgement and duplicate replay retains both 
     const original = await store.enqueue(kind, { note: "Original" }, person);
     const entered = deferred<void>();
     const release = deferred<void>();
-    const server = { ...original.body, user_id: person.id };
+    const endpoint = server();
     let calls = 0;
     const instance = replay({
-      fetch: async () => {
+      fetch: async (_path, options) => {
+        const reply = endpoint.reply(JSON.parse(String(options?.body)));
         if (++calls === 1) {
           entered.resolve();
           await release.promise;
         }
-        return json({ created: calls === 1, entry: server });
+        return reply;
       },
     });
     const work = instance.wake();
@@ -159,7 +157,10 @@ test("an edit survives a late acknowledgement and duplicate replay retains both 
     assert.ok(saved);
     assert.equal(saved.error_code, "already_saved");
     assert.equal(saved.body.note, undefined);
-    assert.deepEqual(saved.server_row, server);
+    assert.deepEqual(saved.server_row, {
+      ...original.body,
+      user_id: person.id,
+    });
     assert.equal(await store.edit(saved, {}), false);
     assert.equal(await store.resend(saved), false);
     assert.equal(calls, 2);
@@ -176,7 +177,7 @@ test("a session bump during a write keeps the acknowledgement and the retry back
     await store.edit(rejected, { note: "Edited" });
     const entered = deferred<void>();
     const release = deferred<void>();
-    const saved = new Set<string>();
+    const endpoint = server();
     let calls = 0;
     const instance = replay({
       fetch: async (_path, options) => {
@@ -185,9 +186,7 @@ test("a session bump during a write keeps the acknowledgement and the retry back
         entered.resolve();
         await release.promise;
         if (status === 503) return json({ error: { code: "down" } }, 503);
-        const created = !saved.has(body.client_id);
-        saved.add(body.client_id);
-        return json({ created, entry: { ...body, user_id: person.id } });
+        return endpoint.reply(body);
       },
     });
     const work = instance.wake();
@@ -204,10 +203,12 @@ test("a session bump during a write keeps the acknowledgement and the retry back
   }
 });
 
-test("enqueue and the online event wake the replayer", async (context) => {
-  const { replay } = await fixture(context);
+test("enqueue, resend and the online event wake the replayer", async (context) => {
+  const { store, replay } = await fixture(context);
   const events = new EventTarget();
+  const endpoint = server();
   let online = false;
+  let reject = false;
   const sent: string[] = [];
   const instance = replay({
     events,
@@ -215,7 +216,9 @@ test("enqueue and the online event wake the replayer", async (context) => {
     fetch: async (path, options) => {
       sent.push(String(path));
       const body = JSON.parse(String(options?.body));
-      return json({ created: true, entry: { ...body, user_id: person.id } });
+      return reject
+        ? json({ error: { code: "invalid_entry" } }, 422)
+        : endpoint.reply(body);
     },
   });
   const until = (check: (snapshot: QueueSnapshot) => boolean) =>
@@ -245,7 +248,21 @@ test("enqueue and the online event wake the replayer", async (context) => {
   await drained(1);
   await instance.enqueue("weight", {}, person);
   await drained(2);
-  assert.deepEqual(sent, ["/api/intake", "/api/weights"]);
+  reject = true;
+  await instance.enqueue("intake", {}, person);
+  await until(
+    (snapshot) => snapshot.type === "ready" && snapshot.rejected === 1,
+  );
+  reject = false;
+  const [rejected] = await store.entries();
+  assert.ok(rejected && (await instance.resend(rejected)));
+  await drained(4);
+  assert.deepEqual(sent, [
+    "/api/intake",
+    "/api/weights",
+    "/api/intake",
+    "/api/intake",
+  ]);
 });
 
 test("external abort releases the lock, publishes nothing and suppresses a queued rerun", async (context) => {
