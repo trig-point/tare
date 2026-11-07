@@ -33,6 +33,7 @@ export default defineConfig({
           /^\/api(?:[/?]|$)/,
           /^\/mcp(?:[/?]|$)/,
           /^\/health(?:[/?]|$)/,
+          /^\/cdn-cgi\//,
         ],
         runtimeCaching: [],
         manifestTransforms: [
