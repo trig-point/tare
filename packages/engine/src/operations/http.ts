@@ -5,6 +5,7 @@ import { TrieRouter } from "hono/router/trie-router";
 import {
   type AuthEnv,
   authenticatedPerson,
+  currentPerson,
   requireRequestedWith,
   sessionAuth,
 } from "../auth/middleware.ts";
@@ -65,14 +66,10 @@ export function mountOperations(
       ? authenticatedPerson
       : sessionAuth(deps.database, deps.clock);
   const personGuard: MiddlewareHandler<AuthEnv> = async (context, next) => {
-    const person = context.get("person");
+    const person = currentPerson(context);
     const expectedPerson = context.req.header("X-Tare-Person");
     // A queued write must not follow a session into another person's account.
-    if (
-      person &&
-      expectedPerson !== undefined &&
-      expectedPerson !== String(person.id)
-    )
+    if (expectedPerson !== undefined && expectedPerson !== String(person.id))
       return context.json({ error: { code: "person_mismatch" } }, 409);
     await next();
   };
