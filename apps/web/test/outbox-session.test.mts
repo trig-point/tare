@@ -99,6 +99,7 @@ test("the typed session query discards bumped results without updating cache, qu
       const work = controller.refresh();
       await entered.promise;
       const newer = await store.bumpSession();
+      assert.ok(newer);
       result.resolve(response);
       assert.deepEqual(await work, { accepted: false });
       assert.deepEqual(await store.session(), newer);
