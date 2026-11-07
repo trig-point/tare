@@ -124,6 +124,7 @@ function WeightForm({
 }) {
   const [weight, setWeight] = useState("");
   const save = useMutation({
+    networkMode: "always",
     mutationFn: async () => {
       await enqueueWeight(replay, person, weight);
     },
