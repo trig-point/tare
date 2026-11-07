@@ -1,4 +1,9 @@
 import { type FormEvent, useState } from "react";
+import {
+  editorAfterChange,
+  removableFields,
+  saveEntry,
+} from "./outbox-edit.ts";
 import type { OutboxReplay } from "./outbox-replay.ts";
 import type { EntryBody, JsonValue, QueueEntry } from "./outbox-store.ts";
 
@@ -41,11 +46,12 @@ export function RejectedEntries({
   const [editing, setEditing] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  async function change(work: () => Promise<boolean>) {
+  async function change(entry: QueueEntry, work: () => Promise<boolean>) {
     setBusy(true);
     setError("");
     try {
-      if (await work()) setEditing(null);
+      if (await work())
+        setEditing((current) => editorAfterChange(current, entry.seq));
       else setError("This entry changed");
     } catch {
       setError("Couldn’t update entry");
@@ -67,7 +73,9 @@ export function RejectedEntries({
                 key={`${entry.seq}:${entry.revision}`}
                 entry={entry}
                 busy={busy}
-                save={(patch) => change(() => replay.edit(entry, patch))}
+                save={(patch) =>
+                  change(entry, () => saveEntry(replay, entry, patch))
+                }
                 cancel={() => setEditing(null)}
               />
             ) : (
@@ -85,7 +93,9 @@ export function RejectedEntries({
                     <button
                       type="button"
                       disabled={busy}
-                      onClick={() => void change(() => replay.resend(entry))}
+                      onClick={() =>
+                        void change(entry, () => replay.resend(entry))
+                      }
                     >
                       Resend
                     </button>
@@ -104,7 +114,7 @@ export function RejectedEntries({
               disabled={busy}
               onClick={() => {
                 if (window.confirm("Discard this entry?"))
-                  void change(() => replay.discard(entry));
+                  void change(entry, () => replay.discard(entry));
               }}
             >
               Discard
@@ -134,6 +144,15 @@ function EntryEditor({
     ),
   );
   const [error, setError] = useState("");
+  const removable = removableFields(
+    entry.kind,
+    Object.fromEntries(
+      Object.entries(values).map(([name, value]) => [
+        name,
+        value === "null" ? null : value,
+      ]),
+    ),
+  );
   function submit(event: FormEvent) {
     event.preventDefault();
     try {
@@ -165,7 +184,7 @@ function EntryEditor({
               setValues({ ...values, [name]: event.target.value })
             }
           />
-          {name !== "eaten_at" && name !== "measured_at" && (
+          {(values[name] === undefined || removable.has(name)) && (
             <button
               type="button"
               disabled={busy}

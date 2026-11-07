@@ -17,12 +17,14 @@ export function outboxView(
   if (
     !current &&
     ready &&
-    state?.outcome.type === "person" &&
-    ready.session.session === null
+    ready.session.session === null &&
+    ready.session.version > (state?.version ?? 0)
   )
     current = {
       type:
-        state.outcome.session.mode === "fallback"
+        state?.outcome.type === "signed_out" ||
+        (state?.outcome.type === "person" &&
+          state.outcome.session.mode === "fallback")
           ? "signed_out"
           : "sign_in_needed",
     };
@@ -69,9 +71,11 @@ export function outboxView(
           ? `${pending} pending`
           : rejected
             ? `${rejected} rejected`
-            : ready
+            : ready && session
               ? "Synced"
-              : "Loading...";
+              : current?.type === "signed_out"
+                ? "Signed out"
+                : "Loading...";
   return {
     screen,
     session,

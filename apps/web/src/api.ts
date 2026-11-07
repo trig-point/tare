@@ -48,25 +48,6 @@ export async function api(
   return response.json();
 }
 
-export async function readSession(): Promise<Session | null> {
-  const response = await request("/api/session");
-  if (!response.ok && response.status !== 401)
-    throw new ApiError(response.status);
-  if (!response.headers.get("Content-Type")?.includes("application/json"))
-    throw new Error("Invalid response");
-  const body: unknown = await response.json();
-  if (
-    response.status === 401 &&
-    response.headers.get("X-Tare-Auth-Mode") === "fallback" &&
-    z
-      .object({ error: z.object({ code: z.literal("unauthenticated") }) })
-      .safeParse(body).success
-  )
-    return null;
-  if (!response.ok) throw new ApiError(response.status);
-  return sessionSchema.parse(body);
-}
-
 export type SessionDeletion = { method: "DELETE"; path: string };
 
 export async function endSession(target: SessionDeletion) {

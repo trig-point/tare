@@ -153,7 +153,7 @@ function SessionHome({ runtime }: { runtime: Runtime }) {
       </output>
       {view.storageWarning && <p>Storage may be cleared</p>}
       {view.screen === "loading" && <output>Loading...</output>}
-      {view.screen === "offline" && <p>You're offline.</p>}
+      {view.screen === "offline" && <p>You’re offline.</p>}
       {view.screen === "outage" && (
         <>
           <p>Couldn’t connect</p>
@@ -161,11 +161,6 @@ function SessionHome({ runtime }: { runtime: Runtime }) {
             Try again
           </button>
         </>
-      )}
-      {view.screen === "sign_in_needed" && !view.signIn && (
-        <a className="button" href="/api/sign-in">
-          Sign in
-        </a>
       )}
       {view.screen === "signed_out" && <SignIn sessions={runtime.sessions} />}
       {view.screen === "app" && view.session && (

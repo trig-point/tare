@@ -2,11 +2,7 @@ import assert from "node:assert/strict";
 import { isCancelledError, QueryClient } from "@tanstack/react-query";
 import type { SessionOutcome } from "../src/outbox-http.ts";
 import type { QueueSnapshot } from "../src/outbox-replay.ts";
-import {
-  OutboxSession,
-  type SessionState,
-  sessionKey,
-} from "../src/outbox-session.ts";
+import { OutboxSession, type SessionState } from "../src/outbox-session.ts";
 import { outboxView } from "../src/outbox-view.ts";
 import {
   deferred,
@@ -18,7 +14,18 @@ import {
 } from "./outbox-support.mts";
 import { test } from "./support.mts";
 
-test("new session data cancels a TanStack query before installation; stale success, null and error cannot overwrite it", async (context) => {
+const clearedQueue = (version: number): QueueSnapshot => ({
+  type: "ready",
+  session: { session: null, version },
+  records: [],
+  pending: 0,
+  rejected: 0,
+  last_pass: null,
+  storage_warning: false,
+  channel_error: false,
+});
+
+test("new session data cancels a TanStack query before installation; stale person, signed-out and retry results cannot overwrite it", async (context) => {
   for (const populated of [false, true])
     for (const outcome of [
       { type: "person", session: session(other) },
@@ -27,6 +34,7 @@ test("new session data cancels a TanStack query before installation; stale succe
     ] satisfies SessionOutcome[]) {
       const { store } = await fixture(context);
       const client = new QueryClient();
+      const controller = new OutboxSession(store, client);
       context.after(() => client.clear());
       if (populated) await store.cacheSession(0, session());
       const captured = await store.session();
@@ -34,7 +42,7 @@ test("new session data cancels a TanStack query before installation; stale succe
       const entered = deferred<void>();
       const work = client
         .fetchQuery({
-          queryKey: sessionKey,
+          queryKey: controller.query().queryKey,
           retry: false,
           queryFn: () => {
             entered.resolve();
@@ -48,11 +56,10 @@ test("new session data cancels a TanStack query before installation; stale succe
       const kept: SessionOutcome = populated
         ? { type: "person", session: session() }
         : { type: "signed_out" };
-      const controller = new OutboxSession(store, client);
       assert.equal(await controller.accept(kept, newer.version), true);
       result.resolve({ outcome, version: captured.version });
       assert.equal(isCancelledError(await work), true);
-      assert.deepEqual(client.getQueryData(sessionKey), {
+      assert.deepEqual(client.getQueryData(controller.query().queryKey), {
         outcome: kept,
         version: newer.version,
       });
@@ -95,7 +102,12 @@ test("the typed session query discards bumped results without updating cache, qu
       result.resolve(response);
       assert.deepEqual(await work, { accepted: false });
       assert.deepEqual(await store.session(), newer);
-      assert.equal(client.getQueryData(sessionKey), undefined);
+      assert.equal(client.getQueryData(controller.query().queryKey), undefined);
+      if (!populated)
+        assert.equal(
+          outboxView(undefined, clearedQueue(newer.version), true).screen,
+          "sign_in_needed",
+        );
       assert.equal(wakes, 0);
     }
 });
@@ -129,13 +141,51 @@ test("sign-in bumps before its follow-up read, identity rereads wake only for a 
     { mode: "access", user: other, logout_url: "https://example.com/logout" },
     (href) => {
       assert.equal(href, "https://example.com/logout");
-      const state = client.getQueryData<SessionState>(sessionKey);
+      const state = client.getQueryData<SessionState>(
+        controller.query().queryKey,
+      );
       assert.equal(state?.outcome.type, "sign_in_needed");
       navigated = true;
     },
   );
   assert.equal(navigated, true);
   assert.equal((await store.session()).session, null);
+});
+
+test("an identity refusal cancels an in-flight same-person shell read without waking replay", async (context) => {
+  const { store } = await fixture(context);
+  await store.cacheSession(0, session());
+  const client = new QueryClient();
+  context.after(() => client.clear());
+  const entered = deferred<void>(),
+    rereading = deferred<void>(),
+    result = deferred<Response>();
+  let reads = 0,
+    wakes = 0;
+  const controller = new OutboxSession(store, client, {
+    fetch: async () => {
+      if (++reads !== 1) return json(session());
+      entered.resolve();
+      return result.promise;
+    },
+  });
+  controller.wake = () => {
+    wakes++;
+  };
+  const refresh = controller.refresh.bind(controller);
+  context.mock.method(controller, "refresh", (wake = true) => {
+    const work = refresh(wake);
+    if (!wake) rereading.resolve();
+    return work;
+  });
+  const original = controller.refresh();
+  await entered.promise;
+  const refused = controller.identityRefused();
+  await rereading.promise;
+  result.resolve(json(session()));
+  await Promise.all([original, refused]);
+  assert.equal(wakes, 0);
+  assert.equal(reads, 2);
 });
 
 test("the shell table scopes records and preserves rejected entries and warnings under every connection screen", async (context) => {
@@ -180,8 +230,8 @@ test("the shell table scopes records and preserves rejected entries and warnings
       [screen, status, link],
     );
     assert.equal(view.records.length, cached ? 1 : 0);
-    assert.equal(view.storageWarning, true);
   }
+  assert.equal(outboxView(undefined, base, true).storageWarning, true);
   assert.equal(
     outboxView(
       undefined,
@@ -214,20 +264,32 @@ test("the shell table scopes records and preserves rejected entries and warnings
     ).status,
     "1 pending",
   );
-  for (const mode of ["fallback", "access"] as const) {
-    const previous =
-      mode === "fallback"
-        ? session()
-        : { mode, user: person, logout_url: "https://example.com/logout" };
+  for (const outcome of [
+    { type: "person", session: session() },
+    {
+      type: "person",
+      session: {
+        mode: "access",
+        user: person,
+        logout_url: "https://example.com/logout",
+      },
+    },
+    { type: "signed_out" },
+    { type: "retry" },
+    { type: "offline" },
+    { type: "sign_in_needed" },
+    undefined,
+  ] satisfies (SessionOutcome | undefined)[]) {
     const view = outboxView(
-      { outcome: { type: "person", session: previous }, version: 1 },
-      { ...base, session: { session: null, version: 2 } },
+      outcome ? { outcome, version: 1 } : undefined,
+      clearedQueue(2),
       true,
     );
-    assert.equal(
-      view.screen,
-      mode === "fallback" ? "signed_out" : "sign_in_needed",
-    );
+    const signedOut =
+      outcome?.type === "signed_out" ||
+      (outcome?.type === "person" && outcome.session.mode === "fallback");
+    assert.equal(view.screen, signedOut ? "signed_out" : "sign_in_needed");
     assert.equal(view.session, null);
+    assert.equal(view.signIn, !signedOut);
   }
 });

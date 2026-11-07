@@ -11,7 +11,7 @@ import {
 } from "./outbox-http.ts";
 import type { OutboxStore } from "./outbox-store.ts";
 
-export const sessionKey = ["session"];
+const sessionKey = ["session"];
 export type SessionState = { outcome: SessionOutcome; version: number };
 export class OutboxSession {
   #store: OutboxStore;
@@ -79,6 +79,8 @@ export class OutboxSession {
     }
   }
   async identityRefused() {
+    // A deduplicated shell read can wake replay for the unchanged person.
+    await this.#client.cancelQueries({ queryKey: sessionKey });
     const previous = (await this.#store.session()).session?.user.id;
     const result = await this.refresh(false);
     if (
