@@ -30,18 +30,26 @@ export interface OperationResult {
 export class OperationError extends Error {
   readonly status: 400 | 401 | 403 | 404 | 409 | 413 | 500 | 503;
   readonly code: string;
+  readonly issues?: string[];
   readonly headers: Record<string, string>;
 
-  constructor(status: OperationError["status"], code: string, headers = {}) {
+  constructor(
+    status: OperationError["status"],
+    code: string,
+    headers = {},
+    issues?: string[],
+  ) {
     super(code);
     this.status = status;
     this.code = code;
     this.headers = headers;
+    this.issues = issues;
   }
 }
 
 export interface Operation<Input extends zod.ZodType = zod.ZodType> {
   name: string;
+  description?: string;
   method: "GET" | "POST" | "PATCH" | "DELETE";
   path: string;
   modes: ("access" | "fallback")[];
@@ -130,6 +138,10 @@ export async function executeOperation(
     throw new OperationError(
       operation.inputError === "not_found" ? 404 : 400,
       operation.inputError ?? "invalid_request",
+      {},
+      operation.name === "log_food"
+        ? input.error.issues.map((issue) => issue.message)
+        : undefined,
     );
   const result = await operation.handler(input.data, {
     ...deps,

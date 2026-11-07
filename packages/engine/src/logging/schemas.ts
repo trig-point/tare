@@ -61,18 +61,35 @@ export const logFoodInput = zod
     const references =
       Number(input.food_id !== undefined) +
       Number(input.source_food_id !== undefined);
-    const valid =
-      references > 0
-        ? references === 1 &&
-          input.servings !== undefined &&
-          input.name === undefined &&
-          input.source === undefined &&
-          !nutrientKeys.some((key) => input[key] !== undefined)
-        : input.servings === undefined &&
-          input.name !== undefined &&
-          nutrientKeys.slice(0, 5).some((key) => input[key] != null);
-    if (!valid)
-      context.addIssue({ code: "custom", message: "Invalid food input" });
+    if (references === 0 && input.servings !== undefined)
+      context.addIssue({
+        code: "custom",
+        message: "Servings needs a food reference",
+      });
+    if (references > 0) {
+      if (references !== 1 || input.servings === undefined)
+        context.addIssue({
+          code: "custom",
+          message: "Use one food reference with servings",
+        });
+      if (
+        input.name !== undefined ||
+        input.source !== undefined ||
+        nutrientKeys.some((key) => input[key] !== undefined)
+      )
+        context.addIssue({
+          code: "custom",
+          message: "A food reference takes no name, source or nutrients",
+        });
+    } else if (
+      input.name === undefined ||
+      !nutrientKeys.slice(0, 5).some((key) => input[key] != null)
+    )
+      context.addIssue({
+        code: "custom",
+        message:
+          "Ad hoc food needs a name and kcal, protein, carbs, fat or fiber",
+      });
   });
 export const idInput = zod.strictObject({
   id: zod.coerce.number().int().positive(),
