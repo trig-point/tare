@@ -35,7 +35,6 @@ function App() {
         Tare
       </header>
       <Outlet />
-      <footer>A little more balance, every day.</footer>
     </main>
   );
 }
@@ -67,9 +66,7 @@ function Home() {
   const target = signOutTarget(session.data);
   return (
     <section>
-      <p className="eyebrow">YOUR EVERYDAY COMPANION</p>
       <h1>Hello, {session.data.user.username}.</h1>
-      <p className="description">A fresh space for your daily habits.</p>
       {"href" in target ? (
         <a className="button" href={target.href}>
           Sign out
@@ -113,9 +110,7 @@ function SignIn() {
   }
   return (
     <section>
-      <p className="eyebrow">WELCOME TO TARE</p>
-      <h1>Make room for you.</h1>
-      <p className="description">Sign in to your daily space.</p>
+      <h1>Sign in</h1>
       <form onSubmit={submit}>
         <label htmlFor="username">Username</label>
         <input

@@ -37,11 +37,6 @@ main {
 section {
   padding: clamp(2rem, 8vh, 5rem) 0;
 }
-.eyebrow {
-  font-size: 0.7rem;
-  letter-spacing: 0.18em;
-  font-weight: 700;
-}
 h1 {
   font-family: Georgia, "Times New Roman", serif;
   font-weight: 400;
@@ -49,11 +44,6 @@ h1 {
   line-height: 1.1;
   margin: 1rem 0;
   overflow-wrap: anywhere;
-}
-.description {
-  color: #59695f;
-  line-height: 1.6;
-  margin-bottom: 2rem;
 }
 form {
   display: grid;
@@ -98,10 +88,4 @@ button:disabled {
 [role="alert"] {
   color: #9b3025;
   line-height: 1.5;
-}
-footer {
-  padding: 2rem 0;
-  border-top: 1px solid #d7dccf;
-  color: #59695f;
-  font-size: 0.8rem;
 }
