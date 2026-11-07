@@ -2,6 +2,7 @@ import * as oauth from "oauth4webapi";
 import { z as zod } from "zod";
 import type { Config } from "../config.ts";
 import { OperationError } from "../operations/registry.ts";
+import type { RefreshFailure } from "./refresh-result.ts";
 
 export const requestedScopes = ["daily", "workout"];
 const metadata = {
@@ -71,5 +72,62 @@ export async function exchangeCode(
     return result.data;
   } catch {
     throw new OperationError(400, "oura_token_invalid");
+  }
+}
+
+export type RefreshGrant = zod.infer<typeof tokenResponse> & {
+  expiresAt: string;
+};
+
+export async function refreshGrant(
+  app: NonNullable<Config["oura"]>,
+  refreshToken: string,
+  dispatchedAt: Date,
+  signal: AbortSignal,
+  validated: (grant: RefreshGrant) => void,
+  transport?: TokenTransport,
+): Promise<RefreshGrant | RefreshFailure> {
+  let status: number | undefined;
+  try {
+    const client = { client_id: app.clientId };
+    const response = await oauth.refreshTokenGrantRequest(
+      metadata,
+      client,
+      oauth.ClientSecretPost(app.clientSecret),
+      refreshToken,
+      { signal, ...(transport ? { [oauth.customFetch]: transport } : {}) },
+    );
+    status = response.status;
+    if (status === 429) return "oura_rate_limited";
+    if (status === 401) return "oura_client_rejected";
+    if (status !== 200 && status !== 400) return "oura_unavailable";
+    const sent = response.clone();
+    await oauth.processRefreshTokenResponse(metadata, client, response);
+    const parsed = tokenResponse.safeParse(await sent.json());
+    if (!parsed.success) return "oura_unavailable";
+    const expires = dispatchedAt.getTime() + parsed.data.expires_in * 1000;
+    if (!Number.isFinite(expires) || Math.abs(expires) > 8.64e15)
+      return "oura_unavailable";
+    const grant = {
+      ...parsed.data,
+      expiresAt: new Date(expires).toISOString(),
+    };
+    validated(grant);
+    return grant;
+  } catch (error) {
+    if (status === 400 && error instanceof oauth.ResponseBodyError) {
+      if (error.error === "invalid_grant") return "oura_reconnect_required";
+      if (
+        [
+          "invalid_client",
+          "unauthorized_client",
+          "unsupported_grant_type",
+          "invalid_request",
+          "invalid_scope",
+        ].includes(error.error)
+      )
+        return "oura_client_rejected";
+    }
+    return "oura_unavailable";
   }
 }

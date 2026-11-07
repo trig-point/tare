@@ -15,6 +15,8 @@ import {
   exchangeCode,
   type TokenTransport,
 } from "./provider.ts";
+import { refreshAccess } from "./refresh.ts";
+import { createRefreshCallers } from "./refresh-attempts.ts";
 
 export interface OuraOptions {
   database: Database;
@@ -31,6 +33,7 @@ export function createOura({
 }: OuraOptions) {
   const controller = new AbortController();
   const pending = new Set<Promise<boolean>>();
+  const refreshCallers = createRefreshCallers();
   function cleanup() {
     deleteExpiredStates(database, { now: clock.now().toISOString() });
   }
@@ -85,6 +88,11 @@ export function createOura({
     }
   }
   return {
+    refreshAccess(owner: number) {
+      return refreshCallers.refresh(database, owner, (attempt) =>
+        refreshAccess(database, owner, config, clock, attempt, transport),
+      );
+    },
     async connect(owner: number) {
       if (!config.oura) throw new OperationError(503, "oura_not_configured");
       if (!config.ouraTokenKey)
@@ -129,7 +137,8 @@ export function createOura({
     },
     async stop() {
       controller.abort();
-      await Promise.allSettled([...pending]);
+      const refreshing = refreshCallers.stop();
+      await Promise.allSettled([...pending, refreshing]);
     },
   };
 }
