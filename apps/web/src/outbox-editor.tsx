@@ -1,23 +1,16 @@
 import { type FormEvent, useState } from "react";
 import {
+  type EditorValues,
   editorAfterChange,
+  editorPatch,
+  inputValue,
   removableFields,
   saveEntry,
 } from "./outbox-edit.ts";
 import type { OutboxReplay } from "./outbox-replay.ts";
 import type { EntryBody, JsonValue, QueueEntry } from "./outbox-store.ts";
 
-const textFields = new Set([
-  "name",
-  "source",
-  "provenance",
-  "portion_note",
-  "eaten_at",
-  "measured_at",
-]);
 const label = (name: string) => name.replaceAll("_", " ");
-const inputValue = (value: JsonValue) =>
-  typeof value === "string" ? value : JSON.stringify(value);
 function Values({ body }: { body: EntryBody }) {
   return (
     <dl>
@@ -138,32 +131,17 @@ function EntryEditor({
   const fields = Object.entries(entry.body).filter(
     ([name]) => name !== "client_id",
   );
-  const [values, setValues] = useState<Record<string, string | undefined>>(() =>
+  const [values, setValues] = useState<EditorValues>(() =>
     Object.fromEntries(
       fields.map(([name, value]) => [name, inputValue(value)]),
     ),
   );
   const [error, setError] = useState("");
-  const removable = removableFields(
-    entry.kind,
-    Object.fromEntries(
-      Object.entries(values).map(([name, value]) => [
-        name,
-        value === "null" ? null : value,
-      ]),
-    ),
-  );
+  const removable = removableFields(entry.kind, values);
   function submit(event: FormEvent) {
     event.preventDefault();
     try {
-      const patch: Record<string, JsonValue | undefined> = {};
-      for (const [name, original] of fields) {
-        const value = values[name];
-        if (value === undefined) patch[name] = undefined;
-        else if (typeof original === "string" || textFields.has(name))
-          patch[name] = value;
-        else patch[name] = JSON.parse(value);
-      }
+      const patch = editorPatch(entry.body, values);
       setError("");
       void save(patch);
     } catch {

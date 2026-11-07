@@ -5,6 +5,8 @@ import {
 } from "../../../packages/engine/src/logging/schemas.ts";
 import {
   editorAfterChange,
+  editorPatch,
+  inputValue,
   removableFields,
   saveEntry,
 } from "../src/outbox-edit.ts";
@@ -97,6 +99,52 @@ test("an unchanged save resends revision zero so a lost acknowledgement drains",
     }),
     true,
   );
+  await queue.wake();
+  assert.deepEqual(await store.entries(person.id), []);
+});
+
+test("unchanged null text fields stay null and resend while typed null stays text", async (context) => {
+  const { store, replay } = await fixture(context);
+  const entry = await store.enqueue(
+    "intake",
+    {
+      name: "Example food",
+      kcal: 100,
+      protein_g: null,
+      source: null,
+      portion_note: null,
+    },
+    person,
+  );
+  await store.settle(entry, { error_code: "invalid_request" });
+  const [rejected] = await store.entries(person.id);
+  assert.ok(rejected);
+  const values = Object.fromEntries(
+    Object.entries(entry.body).map(([name, value]) => [
+      name,
+      inputValue(value),
+    ]),
+  );
+  const patch = editorPatch(entry.body, values);
+  assert.deepEqual({ ...patch, client_id: entry.client_id }, entry.body);
+  assert.equal(patch.source, null);
+  assert.equal(patch.portion_note, null);
+  for (const protein of [null, "null"])
+    assert.equal(
+      removableFields("intake", { ...values, protein_g: protein }).has("kcal"),
+      false,
+    );
+  const typed = editorPatch(entry.body, {
+    ...values,
+    source: "null",
+    portion_note: "null",
+  });
+  assert.equal(typed.source, "null");
+  assert.equal(typed.portion_note, "null");
+  const queue = replay({
+    fetch: async () => acknowledgement(entry.body, false),
+  });
+  assert.equal(await saveEntry(queue, rejected, patch), true);
   await queue.wake();
   assert.deepEqual(await store.entries(person.id), []);
 });
