@@ -192,14 +192,29 @@ for (const mode of ["fallback", "access"] as const)
     });
     assert.equal(logged.status, 201);
     const { entry } = await logged.json();
+    for (const person of [admin, member])
+      assert.equal(
+        (
+          await person.request("/api/weights", {
+            method: "POST",
+            body: JSON.stringify({ client_id: "today-weight", weight_kg: 70 }),
+          })
+        ).status,
+        201,
+      );
     const before = await send(admin, "/api/today");
     assert.deepEqual(
       [before.day, before.entries, before.totals.kcal.total],
       ["2025-12-31", [entry], 200],
     );
     assert.deepEqual((await send(member, "/api/today")).entries, []);
+    assert.deepEqual(
+      before.weights.map((weight: { user_id: number }) => weight.user_id),
+      [admin.user.id],
+    );
     setNow("2026-01-01T00:00:00.000Z");
     const after = await send(admin, "/api/today");
+    assert.deepEqual(after.weights, []);
     assert.deepEqual(
       [after.day, after.entries, after.totals.kcal.total],
       ["2026-01-01", [], 0],
