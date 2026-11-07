@@ -101,9 +101,10 @@ async function trace(context: TestContext, actions: string[]) {
             : await (action === "resend"
                 ? store.resend(first)
                 : store.discard(first));
-        assert.equal(changed, action === "discard" || editable);
-        if (action === "discard") model.shift();
-        else if (editable) {
+        const discarded = action === "discard" && first.state === "rejected";
+        assert.equal(changed, discarded || (action !== "discard" && editable));
+        if (discarded) model.shift();
+        else if (action !== "discard" && editable) {
           if (action === "edit") {
             delete first.body.note;
             first.body.value = 200;

@@ -168,6 +168,7 @@ test("an edit survives a late acknowledgement and duplicate replay retains both 
 test("external abort releases the lock, publishes nothing and suppresses a queued rerun", async (context) => {
   const { store, replay, scheduler } = await fixture(context);
   await store.enqueue("intake", {}, person);
+  await store.persistence();
   const entered = deferred<void>();
   let released = false;
   let acquired = 0;
