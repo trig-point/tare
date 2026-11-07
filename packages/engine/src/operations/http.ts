@@ -5,6 +5,7 @@ import { TrieRouter } from "hono/router/trie-router";
 import {
   type AuthEnv,
   authenticatedPerson,
+  currentPerson,
   requireRequestedWith,
   sessionAuth,
 } from "../auth/middleware.ts";
@@ -64,6 +65,14 @@ export function mountOperations(
     deps.config.identity.mode === "access"
       ? authenticatedPerson
       : sessionAuth(deps.database, deps.clock);
+  const personGuard: MiddlewareHandler<AuthEnv> = async (context, next) => {
+    const person = currentPerson(context);
+    const expectedPerson = context.req.header("X-Tare-Person");
+    // A queued write must not follow a session into another person's account.
+    if (expectedPerson !== undefined && expectedPerson !== String(person.id))
+      return context.json({ error: { code: "person_mismatch" } }, 409);
+    await next();
+  };
   const cookieOptions = {
     httpOnly: true,
     sameSite: "Lax" as const,
@@ -98,7 +107,9 @@ export function mountOperations(
     app.on(
       [operation.method],
       [operation.path],
-      ...(operation.callerClass === "public" ? [] : [authenticate]),
+      ...(operation.callerClass === "public"
+        ? []
+        : [authenticate, personGuard]),
       caller,
       requireRequestedWith,
       admin,
