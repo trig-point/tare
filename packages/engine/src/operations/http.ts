@@ -144,6 +144,7 @@ export function mountOperations(
           );
         if (result.effects?.clearSessionCookie)
           deleteCookie(context, "tare_session", cookieOptions);
+        if (result.status === 302) return context.redirect("/", 302);
         return result.status === 204
           ? context.body(null, 204)
           : context.json(result.body, result.status);

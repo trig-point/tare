@@ -24,12 +24,32 @@ test("API sends the browser header and credentials; sign-out accepts empty 204",
   assert.equal(await api("/api/session", { method: "DELETE" }), undefined);
 });
 
-test("session read distinguishes signed-out, malformed and valid responses", async (context) => {
+test("session read selects the password form only for Tare's fallback JSON 401", async (context) => {
   const response = context.mock.method(globalThis, "fetch");
-  response.mock.mockImplementation(
-    async () => new Response(null, { status: 401 }),
+  response.mock.mockImplementation(async () =>
+    Response.json(
+      { error: { code: "unauthenticated" } },
+      {
+        status: 401,
+        headers: { "X-Tare-Auth-Mode": "fallback" },
+      },
+    ),
   );
   assert.equal(await readSession(), null);
+  const redirect = Response.error();
+  Object.defineProperty(redirect, "type", { value: "opaqueredirect" });
+  for (const refused of [
+    new Response(null, { status: 401 }),
+    Response.json({ error: { code: "unauthenticated" } }, { status: 401 }),
+    Response.json(
+      {},
+      { status: 401, headers: { "X-Tare-Auth-Mode": "fallback" } },
+    ),
+    redirect,
+  ]) {
+    response.mock.mockImplementation(async () => refused);
+    await assert.rejects(readSession());
+  }
   response.mock.mockImplementation(async () => Response.json({}));
   await assert.rejects(readSession());
   response.mock.mockImplementation(

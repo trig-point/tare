@@ -4,6 +4,8 @@ import { ensureFirstUser } from "../src/auth/bootstrap.ts";
 import { hashPassword, verifyPassword } from "../src/auth/password.ts";
 import { loadConfig } from "../src/config.ts";
 import {
+  accessFixture,
+  assertionHeader,
   cookie,
   credentials,
   dummyHash,
@@ -11,8 +13,36 @@ import {
   publicUser,
   rejection,
   requestedWith,
+  signAccessToken,
 } from "./auth-support.ts";
 import { test } from "./support/hang-ceiling.ts";
+
+test("sign-in navigation redirects to the app in both modes and ignores redirect input", async (context) => {
+  const fallback = fixture(context);
+  const access = accessFixture(context);
+  const refused = await access.app.request("/api/session");
+  assert.equal(refused.headers.get("X-Tare-Auth-Mode"), null);
+  const signedOut = await fallback.app.request("/api/session");
+  assert.equal(signedOut.status, 401);
+  assert.equal(signedOut.headers.get("X-Tare-Auth-Mode"), "fallback");
+  await rejection(
+    await access.app.request("/api/sign-in"),
+    401,
+    "unauthenticated",
+  );
+  for (const [app, headers] of [
+    [fallback.app, {}],
+    [access.app, assertionHeader(await signAccessToken())],
+  ] as const) {
+    const response = await app.request(
+      "/api/sign-in?redirect=https://example.com",
+      { headers },
+    );
+    assert.equal(response.status, 302);
+    assert.equal(response.headers.get("Location"), "/");
+    assert.equal(response.headers.get("Cache-Control"), "no-store");
+  }
+});
 
 test("bootstrap administrator signs in with the real verifier and exact password", async (context) => {
   const settings = {

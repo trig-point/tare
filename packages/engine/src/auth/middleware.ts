@@ -102,8 +102,11 @@ export function sessionAuth(
           now: clock.now().toISOString(),
         })
       : null;
-    if (!person)
+    if (!person) {
+      // Access also returns JSON 401s; the form needs an explicit fallback marker.
+      context.header("X-Tare-Auth-Mode", "fallback");
       return context.json({ error: { code: "unauthenticated" } }, 401);
+    }
     const { expires_at: _expiresAt, ...authenticated } = person;
     context.set("person", authenticated);
     context.set("credential", "session");

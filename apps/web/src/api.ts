@@ -19,20 +19,27 @@ export class ApiError extends Error {
   }
 }
 
-export async function api(
+async function request(
   path: string,
   options: RequestInit = {},
-): Promise<unknown> {
+): Promise<Response> {
   const headers = new Headers(options.headers);
   headers.set("X-Requested-With", "XMLHttpRequest");
   if (options.body !== undefined)
     headers.set("Content-Type", "application/json");
-  const response = await fetch(path, {
+  return fetch(path, {
     ...options,
     headers,
     credentials: "same-origin",
     redirect: "manual",
   });
+}
+
+export async function api(
+  path: string,
+  options: RequestInit = {},
+): Promise<unknown> {
+  const response = await request(path, options);
   if (!response.ok) throw new ApiError(response.status);
   if (response.status === 204) return undefined;
   if (!response.headers.get("Content-Type")?.includes("application/json"))
@@ -41,12 +48,22 @@ export async function api(
 }
 
 export async function readSession(): Promise<Session | null> {
-  try {
-    return sessionSchema.parse(await api("/api/session"));
-  } catch (error) {
-    if (error instanceof ApiError && error.status === 401) return null;
-    throw error;
-  }
+  const response = await request("/api/session");
+  if (!response.ok && response.status !== 401)
+    throw new ApiError(response.status);
+  if (!response.headers.get("Content-Type")?.includes("application/json"))
+    throw new Error("Invalid response");
+  const body: unknown = await response.json();
+  if (
+    response.status === 401 &&
+    response.headers.get("X-Tare-Auth-Mode") === "fallback" &&
+    z
+      .object({ error: z.object({ code: z.literal("unauthenticated") }) })
+      .safeParse(body).success
+  )
+    return null;
+  if (!response.ok) throw new ApiError(response.status);
+  return sessionSchema.parse(body);
 }
 
 export type SessionDeletion = { method: "DELETE"; path: string };

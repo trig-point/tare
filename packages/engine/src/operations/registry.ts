@@ -22,7 +22,7 @@ export function operationPerson(identity: OperationIdentity): Person {
   return identity.person;
 }
 export interface OperationResult {
-  status: 200 | 201 | 204;
+  status: 200 | 201 | 204 | 302;
   body?: unknown;
   effects?: { setSessionCookie?: string; clearSessionCookie?: true };
 }
@@ -64,14 +64,20 @@ export function defineOperation<Input extends zod.ZodType>(
   if (
     operation.callerClass === "public" &&
     !(
-      operation.name === "sign_in" &&
-      operation.method === "POST" &&
-      operation.path === "/api/session" &&
-      operation.modes.length === 1 &&
-      operation.modes[0] === "fallback"
+      (operation.name === "sign_in" &&
+        operation.method === "POST" &&
+        operation.path === "/api/session" &&
+        operation.modes.length === 1 &&
+        operation.modes[0] === "fallback") ||
+      (operation.name === "open_sign_in" &&
+        operation.method === "GET" &&
+        operation.path === "/api/sign-in" &&
+        operation.modes.length === 2 &&
+        operation.modes.includes("fallback") &&
+        operation.modes.includes("access"))
     )
   )
-    throw new Error("Only fallback sign-in may be public");
+    throw new Error("Only sign-in operations may be public");
   if (operation.admin && operation.callerClass !== "browser")
     throw new Error("Administrator operations must be browser only");
   return operation;
@@ -130,7 +136,8 @@ export async function executeOperation(
     ...identity,
     mode: deps.config.identity.mode,
   });
-  if (result.status === 204) return { status: 204, effects: result.effects };
+  if (result.status === 204 || result.status === 302)
+    return { status: result.status, effects: result.effects };
   const output = operation.output.safeParse(result.body);
   if (!output.success) {
     // Name only: the rejected body can hold private fields.
