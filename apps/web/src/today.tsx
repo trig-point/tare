@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import type { Session } from "./api.ts";
 import type { OutboxReplay } from "./outbox-replay.ts";
 import type { QueueEntry } from "./outbox-store.ts";
@@ -13,6 +13,7 @@ import {
   nutrientLabels,
   nutrients,
   readToday,
+  refreshToday,
   settledSince,
   sourceName,
   todayKey,
@@ -37,13 +38,20 @@ export function Today({
     queryFn: ({ signal }) => readToday(signal),
     enabled: online,
   });
+  const currentRecords = useRef(records);
+  currentRecords.current = records;
   useEffect(() => {
-    let previousPending = new Set<string>();
+    let previousPending = new Set(
+      currentRecords.current
+        .filter(
+          (entry) => entry.person_id === person.id && entry.state === "pending",
+        )
+        .map((entry) => entry.client_id),
+    );
     const unsubscribe = replay.subscribe((snapshot) => {
       const changes = settledSince(previousPending, snapshot, person.id);
       previousPending = changes.pending;
-      if (changes.settled)
-        void client.invalidateQueries({ queryKey: todayKey(person.id) });
+      if (changes.settled) void refreshToday(client, person.id);
     });
     return () => {
       unsubscribe();
@@ -195,6 +203,7 @@ function IntakeEntry({
       </span>
       <button
         type="button"
+        aria-label={`Edit ${entry.name ?? "food"}`}
         disabled={!online || mutation.isPending}
         onClick={() => setEditing(true)}
       >
@@ -202,6 +211,7 @@ function IntakeEntry({
       </button>
       <button
         type="button"
+        aria-label={`Delete ${entry.name ?? "food"}`}
         disabled={!online || mutation.isPending}
         onClick={() => mutation.mutate(undefined)}
       >
@@ -230,25 +240,27 @@ function IntakeForm({
   save: (changes: Record<string, unknown>) => void;
   cancel: () => void;
 }) {
-  const reference = entry.food_id !== null || entry.source_food_id !== null;
+  const [original] = useState(entry);
+  const reference =
+    original.food_id !== null || original.source_food_id !== null;
   const [values, setValues] = useState(() =>
     Object.fromEntries(
       nutrients.map((key) => [
         key,
-        entry[key] === null ? "" : String(entry[key]),
+        original[key] === null ? "" : String(original[key]),
       ]),
     ),
   );
-  const [servings, setServings] = useState(String(entry.servings ?? 1));
+  const [servings, setServings] = useState(String(original.servings ?? 1));
   return (
     <form
       onSubmit={(event) => {
         event.preventDefault();
         const changes = reference
-          ? Number(servings) === entry.servings
+          ? Number(servings) === original.servings
             ? {}
             : { servings: Number(servings) }
-          : intakeChanges(entry, values);
+          : intakeChanges(original, values);
         if (Object.keys(changes).length === 0) cancel();
         else save(changes);
       }}
@@ -284,10 +296,10 @@ function IntakeForm({
           ))
         )}
         <button type="submit">Save</button>
-        <button type="button" onClick={cancel}>
-          Cancel
-        </button>
       </fieldset>
+      <button type="button" onClick={cancel}>
+        Cancel
+      </button>
     </form>
   );
 }
@@ -330,6 +342,7 @@ function WeightEntry({
       </time>
       <button
         type="button"
+        aria-label={`Edit ${displayNumber(entry.weight_kg)} kg`}
         disabled={!online || mutation.isPending}
         onClick={() => {
           setWeight(String(entry.weight_kg));
@@ -340,6 +353,7 @@ function WeightEntry({
       </button>
       <button
         type="button"
+        aria-label={`Delete ${displayNumber(entry.weight_kg)} kg`}
         disabled={!online || mutation.isPending}
         onClick={() => mutation.mutate(undefined)}
       >

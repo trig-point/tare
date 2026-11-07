@@ -1,3 +1,4 @@
+import type { QueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import type { Session } from "./api.ts";
 import { api } from "./api.ts";
@@ -165,4 +166,10 @@ export function sourceName(source: string) {
     : source === "off"
       ? "Open Food Facts"
       : source;
+}
+
+export async function refreshToday(client: QueryClient, personId: number) {
+  const queryKey = todayKey(personId);
+  await client.cancelQueries({ queryKey });
+  await client.invalidateQueries({ queryKey });
 }
