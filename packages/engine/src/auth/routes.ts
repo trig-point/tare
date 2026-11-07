@@ -71,6 +71,15 @@ const browserOperation = {
 export const authOperations = [
   defineOperation({
     ...browserOperation,
+    name: "open_sign_in",
+    method: "GET",
+    path: "/api/sign-in",
+    callerClass: "public",
+    output: zod.never(),
+    handler: () => ({ status: 302 }),
+  }),
+  defineOperation({
+    ...browserOperation,
     name: "whoami",
     method: "GET",
     path: "/api/me",

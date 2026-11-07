@@ -96,7 +96,7 @@ test("registry constrains public and administrator operations and inventories ev
     operations
       .filter((operation) => operation.callerClass === "public")
       .map((operation) => operation.name),
-    ["sign_in"],
+    ["open_sign_in", "sign_in"],
   );
   for (const operation of operations) {
     assert.ok(!operation.admin || operation.callerClass === "browser");

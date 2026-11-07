@@ -56,10 +56,9 @@ function Home() {
   if (session.isError)
     return (
       <section>
-        <h1>Couldn’t load your account</h1>
-        <button type="button" onClick={() => session.refetch()}>
-          Try again
-        </button>
+        <a className="button" href="/api/sign-in">
+          Sign in
+        </a>
       </section>
     );
   if (session.data === null) return <SignIn />;

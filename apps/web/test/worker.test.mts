@@ -71,6 +71,7 @@ test("built worker verifies its HTML and only caches built assets", async () => 
   assert.ok(
     denylist.some((rule) => rule.test("/cdn-cgi/access/authorized?token=x")),
   );
+  assert.ok(denylist.some((rule) => rule.test("/api/sign-in")));
   assert.ok(denylist.every((rule) => !rule.test("/history/day")));
   const fallback = named("createHandlerBoundToURL")[0]?.arguments[0];
   assert.ok(fallback && ts.isStringLiteral(fallback));
