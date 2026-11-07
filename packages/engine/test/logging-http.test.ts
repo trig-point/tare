@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { logFoodInput } from "../src/logging/schemas.ts";
 import { updateIntake } from "../src/queries/update-intake.ts";
 import { test } from "./support/hang-ceiling.ts";
 import { twoUsers } from "./support/two-users.ts";
@@ -35,17 +34,10 @@ test("logging HTTP writes preserve snapshots, replay, ownership and patch semant
     ],
     [
       { client_id: "bad", name: "Example" },
-      "Ad hoc food needs a name and kcal, protein, carbs, fat or fiber",
+      "Ad hoc food needs a name and one of kcal, protein, carbs, fat or fiber",
     ],
     [{ client_id: "bad", food_id: 1 }, "Use one food reference with servings"],
   ] as const) {
-    const parsed = logFoodInput.safeParse(input);
-    assert.equal(parsed.success, false);
-    if (!parsed.success)
-      assert.deepEqual(
-        parsed.error.issues.map((issue) => issue.message),
-        [message],
-      );
     assert.deepEqual(await send("/api/intake", input), {
       status: 400,
       error: { code: "invalid_request", issues: [message] },

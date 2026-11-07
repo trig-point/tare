@@ -88,7 +88,7 @@ export const logFoodInput = zod
       context.addIssue({
         code: "custom",
         message:
-          "Ad hoc food needs a name and kcal, protein, carbs, fat or fiber",
+          "Ad hoc food needs a name and one of kcal, protein, carbs, fat or fiber",
       });
   });
 export const idInput = zod.strictObject({

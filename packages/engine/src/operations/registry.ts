@@ -59,6 +59,7 @@ export interface Operation<Input extends zod.ZodType = zod.ZodType> {
   noStoreSubpaths?: boolean;
   input: Input;
   inputError?: "not_found";
+  inputIssues?: true;
   output: zod.ZodType;
   handler(
     input: zod.output<Input>,
@@ -139,7 +140,7 @@ export async function executeOperation(
       operation.inputError === "not_found" ? 404 : 400,
       operation.inputError ?? "invalid_request",
       {},
-      operation.name === "log_food"
+      operation.inputIssues
         ? input.error.issues.map((issue) => issue.message)
         : undefined,
     );

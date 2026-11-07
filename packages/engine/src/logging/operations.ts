@@ -42,6 +42,7 @@ const logFood = defineOperation({
   method: "POST",
   path: "/api/intake",
   input: logFoodInput,
+  inputIssues: true,
   output: zod.object({ entry: intakeRow, created: zod.boolean() }),
   handler(input, context) {
     const body = writeTransaction(context.database, (scope) =>

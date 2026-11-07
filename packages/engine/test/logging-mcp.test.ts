@@ -60,7 +60,7 @@ test("MCP advertises food fields and logs, edits and deletes intake", async (con
     ],
     [
       { name: "Example" },
-      "Ad hoc food needs a name and kcal, protein, carbs, fat or fiber",
+      "Ad hoc food needs a name and one of kcal, protein, carbs, fat or fiber",
     ],
   ] as const) {
     const result = await rpc("tools/call", {
