@@ -26,6 +26,7 @@ import { OutboxReplay, type QueueSnapshot } from "./outbox-replay.ts";
 import { OutboxSession } from "./outbox-session.ts";
 import { openOutboxStore } from "./outbox-store.ts";
 import { outboxView } from "./outbox-view.ts";
+import { Today } from "./today.tsx";
 import "./style.css";
 
 const client = new QueryClient();
@@ -165,7 +166,13 @@ function SessionHome({ runtime }: { runtime: Runtime }) {
       {view.screen === "signed_out" && <SignIn sessions={runtime.sessions} />}
       {view.screen === "app" && view.session && (
         <>
-          <h1>Hello, {view.session.user.username}.</h1>
+          <Today
+            key={view.session.user.id}
+            person={view.session.user}
+            replay={runtime.queue}
+            records={view.records}
+            online={online}
+          />
           <button
             type="button"
             disabled={signOut.isPending}
