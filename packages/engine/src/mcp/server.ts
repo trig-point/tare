@@ -75,7 +75,11 @@ export function mountMcp(app: Hono<AuthEnv>, deps: OperationDependencies) {
     for (const operation of agentOperationsFor("access")) {
       server.registerTool(
         operation.name,
-        { inputSchema: operation.input, outputSchema: operation.output },
+        {
+          description: operation.description,
+          inputSchema: operation.input,
+          outputSchema: operation.output,
+        },
         async (input) => {
           try {
             const { body } = await executeOperation(

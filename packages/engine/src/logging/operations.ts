@@ -37,9 +37,12 @@ const base = { ...shared, modes: [...shared.modes], bodyLimit: 8192 };
 const logFood = defineOperation({
   ...base,
   name: "log_food",
+  description:
+    "Use one food_id or source_food_id with servings and no name, source or nutrients. For ad hoc food, omit servings and provide a name and at least one of kcal, protein_g, carbs_g, fat_g or fiber_g.",
   method: "POST",
   path: "/api/intake",
   input: logFoodInput,
+  inputIssues: true,
   output: zod.object({ entry: intakeRow, created: zod.boolean() }),
   handler(input, context) {
     const body = writeTransaction(context.database, (scope) =>

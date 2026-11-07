@@ -56,7 +56,15 @@ export function createApp(
     if (error instanceof OperationError) {
       for (const [name, value] of Object.entries(error.headers))
         context.header(name, value);
-      return context.json({ error: { code: error.code } }, error.status);
+      return context.json(
+        {
+          error: {
+            code: error.code,
+            ...(error.issues ? { issues: error.issues } : {}),
+          },
+        },
+        error.status,
+      );
     }
     // Name only: messages can carry request data, which stays out of logs.
     console.error("request_failed", error.name);

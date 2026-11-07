@@ -41,6 +41,7 @@ test("MCP advertises food fields and logs, edits and deletes intake", async (con
   });
   const tools = (await rpc("tools/list", {})).tools;
   const food = tools.find((tool: { name: string }) => tool.name === "log_food");
+  assert.match(food.description, /omit servings/);
   assert.ok(food.inputSchema.properties.client_id);
   assert.ok(food.inputSchema.properties.source_food_id);
   const call = async (name: string, args: unknown) => {
@@ -48,6 +49,31 @@ test("MCP advertises food fields and logs, edits and deletes intake", async (con
     assert.equal(result.isError, undefined);
     return result.structuredContent;
   };
+  for (const [input, message] of [
+    [
+      { name: "Example", kcal: 100, servings: 1 },
+      "Servings needs a food reference",
+    ],
+    [
+      { food_id: 1, servings: 1, name: "Example" },
+      "A food reference takes no name, source or nutrients",
+    ],
+    [
+      { name: "Example" },
+      "Ad hoc food needs a name and one of kcal, protein, carbs, fat or fiber",
+    ],
+  ] as const) {
+    const result = await rpc("tools/call", {
+      name: "log_food",
+      arguments: { client_id: "bad", ...input },
+    });
+    assert.equal(result.isError, true);
+    assert.ok(
+      result.content.some((item: { text: string }) =>
+        item.text.includes(message),
+      ),
+    );
+  }
   const logged = await call("log_food", {
     client_id: "mcp",
     name: "Example soup",

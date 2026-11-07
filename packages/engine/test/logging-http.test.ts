@@ -26,6 +26,23 @@ test("logging HTTP writes preserve snapshots, replay, ownership and patch semant
     kcal: 100,
     ...extra,
   });
+  for (const [input, message] of [
+    [log("bad", { servings: 1 }), "Servings needs a food reference"],
+    [
+      log("bad", { food_id: 1, servings: 1 }),
+      "A food reference takes no name, source or nutrients",
+    ],
+    [
+      { client_id: "bad", name: "Example" },
+      "Ad hoc food needs a name and one of kcal, protein, carbs, fat or fiber",
+    ],
+    [{ client_id: "bad", food_id: 1 }, "Use one food reference with servings"],
+  ] as const) {
+    assert.deepEqual(await send("/api/intake", input), {
+      status: 400,
+      error: { code: "invalid_request", issues: [message] },
+    });
+  }
   const first = await send("/api/intake", log("same"));
   assert.equal(first.status, 201);
   assert.deepEqual(
