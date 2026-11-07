@@ -42,7 +42,15 @@ Queue requests SHALL use `redirect: "manual"`. When a replay gets a 401, a redir
 - **THEN** Cloudflare Access's sign-in page opens in Access mode, or Tare's sign-in screen in fallback mode, and after signing in the person is back in the app and the queued entries replay
 
 ### Requirement: Rejected entries
-Responses SHALL be classified in this order: any 5xx, 408 or 429 is retried later; a 401, a redirect or a non-JSON body is sign-in needed; only then does any other JSON 4xx error reject the entry. When an entry is rejected, the queue SHALL mark it rejected with the error code, keep it visible, and continue with later entries. The person SHALL be able to edit and resend a rejected entry or discard it.
+Responses SHALL be classified in this order: network failures and deadlines retry; redirects need sign-in; any 5xx, 408 or 429 retries; a 401 or completed non-JSON body needs sign-in. A matching JSON acknowledgement SHALL remove the entry, except that an edited entry answered with `created: false` SHALL become rejected with `already_saved`, retaining its body and the stored server row. JSON 409 `person_mismatch` and 403 `not_a_member` SHALL remain pending and trigger a session reread; replay SHALL wake from that reread only if the person changes. Other JSON 4xx errors SHALL reject the entry with its code, and later entries SHALL continue. Other responses SHALL retry. Rejected entries SHALL stay visible until edited and resent or discarded; `already_saved` SHALL allow Discard only and is the sole rejection without a JSON 4xx response.
+
+#### Scenario: Identity changed before a write
+- **WHEN** a replay gets JSON 409 `person_mismatch` or 403 `not_a_member`
+- **THEN** the entry stays pending, the app rereads the session, and a different confirmed person wakes replay without sending another person's entries
+
+#### Scenario: An edited entry was already saved
+- **WHEN** a replay of an edited entry gets a matching JSON acknowledgement with `created: false`
+- **THEN** the queue keeps both value sets as `already_saved`, including across reload, and offers Discard only
 
 #### Scenario: Temporary outage
 - **WHEN** a replay gets a 503, with or without a JSON body
