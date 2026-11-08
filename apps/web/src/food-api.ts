@@ -53,6 +53,19 @@ export type CatalogResult = {
   foods: FoodChoice[];
 };
 
+export function mergeChoices(
+  catalogFoods: FoodChoice[],
+  onlineFoods: FoodChoice[],
+) {
+  const seen = new Set<string>();
+  return [...catalogFoods, ...onlineFoods].filter((food) => {
+    const key = `${food.reference.kind}-${food.reference.id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export function catalogQuery(person: number, name: string) {
   const term = name.trim();
   return {

@@ -3,14 +3,21 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { upsertSourceFood } from "../../../packages/engine/src/queries/upsert-source-food.ts";
 import { twoUsers } from "../../../packages/engine/test/support/two-users.ts";
-import { catalogQuery, enqueueNumbers, searchOnline } from "../src/food-api.ts";
+import {
+  catalogQuery,
+  enqueueFood,
+  enqueueNumbers,
+  type FoodChoice,
+  mergeChoices,
+  searchOnline,
+} from "../src/food-api.ts";
 import { OutboxReplay } from "../src/outbox-replay.ts";
 import { openOutboxStore } from "../src/outbox-store.ts";
 import "fake-indexeddb/auto";
 import { test } from "./support.mts";
 import "./tsx.mts";
 
-const { CatalogMiss } = await import("../src/add-food.tsx");
+const { CatalogMiss, OnlineMiss } = await import("../src/add-food.tsx");
 const onlineFood = {
   source_food_id: 7,
   source: "usda" as const,
@@ -90,6 +97,14 @@ test("search online calls once and offers only exact matches", async (context) =
   }
   context.mock.method(globalThis, "fetch", async () => Response.json({}));
   await assert.rejects(searchOnline("Example rolled oats"));
+  const [online] = foods;
+  assert.ok(online);
+  const other = {
+    ...online,
+    reference: { kind: "source_food" as const, id: 8 },
+  };
+  assert.deepEqual(mergeChoices([online], [{ ...online }]), [online]);
+  assert.deepEqual(mergeChoices([online], [other]), [online, other]);
 });
 
 test("a miss offers manual entry", () => {
@@ -100,6 +115,12 @@ test("a miss offers manual entry", () => {
   for (const result of ["no_match", "ambiguous"] as const)
     assert.match(render(result), /No match.*Enter manually/);
   assert.equal(render("match"), "");
+  assert.match(
+    renderToStaticMarkup(
+      createElement(OnlineMiss, { enterManually: () => {} }),
+    ),
+    /No exact match.*Enter manually/,
+  );
 });
 
 test("quick add stores an estimated entry", async (context) => {
@@ -138,4 +159,44 @@ test("quick add stores an estimated entry", async (context) => {
     [stored.name, stored.kcal, stored.protein_g, stored.provenance],
     ["Quick add", 320, null, "estimated"],
   );
+});
+
+test("a matched food logs by reference with servings", async (context) => {
+  const setup = await twoUsers(context, "fallback");
+  const { source_food_id: _id, ...row } = onlineFood;
+  const seeded = upsertSourceFood(setup.database, row);
+  assert.ok(seeded);
+  const store = await openOutboxStore({ name: `food-${crypto.randomUUID()}` });
+  const replay = new OutboxReplay({
+    store,
+    online: () => false,
+    channel: null,
+    events: null,
+  });
+  context.after(async () => {
+    await replay.close();
+    store.close();
+  });
+  const owner = setup.admin.user;
+  await store.cacheSession(0, { user: owner, mode: "fallback" });
+  const food: FoodChoice = {
+    reference: { kind: "source_food", id: seeded.id },
+    name: row.name,
+    brand: row.brand,
+    serving: "40 g",
+    kcal: row.kcal,
+    protein_g: row.protein_g,
+  };
+  for (const servings of ["", "0", "-1", "abc"])
+    await assert.rejects(enqueueFood(replay, owner, food, servings));
+  await enqueueFood(replay, owner, food, "0.5");
+  const [entry] = await store.entries(owner.id);
+  assert.ok(entry);
+  const response = await setup.admin.request("/api/intake", {
+    method: "POST",
+    body: JSON.stringify(entry.body),
+  });
+  assert.equal(response.status, 201);
+  const { entry: stored } = await response.json();
+  assert.deepEqual([stored.source_food_id, stored.servings], [seeded.id, 0.5]);
 });

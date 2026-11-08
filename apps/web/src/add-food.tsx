@@ -7,6 +7,7 @@ import {
   enqueueFood,
   enqueueNumbers,
   type FoodChoice,
+  mergeChoices,
   searchOnline,
 } from "./food-api.ts";
 import type { OutboxReplay } from "./outbox-replay.ts";
@@ -39,10 +40,14 @@ export function AddFood({ person, replay, online }: Props) {
     },
   });
   const searched = lookup.variables === term ? lookup : undefined;
-  const choices = [
-    ...(catalog.data?.result === "match" ? catalog.data.foods : []),
-    ...(searched?.data ?? []),
-  ];
+  const choices = mergeChoices(
+    catalog.data?.result === "match" ? catalog.data.foods : [],
+    searched?.data ?? [],
+  );
+  const catalogMissed =
+    term !== "" &&
+    catalog.data !== undefined &&
+    catalog.data.result !== "match";
   return (
     <div className="add-food">
       <h2>Add food</h2>
@@ -73,7 +78,11 @@ export function AddFood({ person, replay, online }: Props) {
       )}
       {searched?.isPending && <p>Searching...</p>}
       {searched?.isError && <p role="alert">Couldn’t search online</p>}
-      {searched?.data?.length === 0 && <p>No exact match</p>}
+      {searched?.data?.length === 0 && (
+        <OnlineMiss
+          enterManually={catalogMissed ? undefined : () => setManual(term)}
+        />
+      )}
       {choices.length > 0 && (
         <>
           <label htmlFor="food-servings">Servings</label>
@@ -147,6 +156,19 @@ export function CatalogMiss({
       <button type="button" onClick={enterManually}>
         Enter manually
       </button>
+    </p>
+  );
+}
+
+export function OnlineMiss({ enterManually }: { enterManually?: () => void }) {
+  return (
+    <p>
+      No exact match{" "}
+      {enterManually && (
+        <button type="button" onClick={enterManually}>
+          Enter manually
+        </button>
+      )}
     </p>
   );
 }
