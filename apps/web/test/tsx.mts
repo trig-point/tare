@@ -3,16 +3,13 @@ import { registerHooks } from "node:module";
 import ts from "typescript";
 
 registerHooks({
-  resolve(specifier, context, next) {
-    if (specifier !== "virtual:pwa-register/react")
-      return next(specifier, context);
-    const source =
-      "export const useRegisterSW = (options) => globalThis.registerStub(options);";
-    return {
-      url: `data:text/javascript,${encodeURIComponent(source)}`,
-      shortCircuit: true,
-    };
-  },
+  resolve: (specifier, context, next) =>
+    specifier === "virtual:pwa-register/react"
+      ? {
+          url: "data:text/javascript,export const useRegisterSW = () => globalThis.registerStub()",
+          shortCircuit: true,
+        }
+      : next(specifier, context),
   load(url, context, next) {
     if (!url.endsWith(".tsx")) return next(url, context);
     return {
