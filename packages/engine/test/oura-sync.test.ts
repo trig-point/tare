@@ -25,8 +25,8 @@ function bodies(owner: number, sleep = true) {
       day: today,
       activity: kind,
       calories: 100,
-      start_datetime: `2026-01-01T1${index}:00:00.000+00:00`,
-      end_datetime: `2026-01-01T1${index}:30:00.000+00:00`,
+      start_datetime: `2026-01-01T${["02", "11"][index]}:00:00.000+00:00`,
+      end_datetime: `2026-01-01T${["02", "11"][index]}:30:00.000+00:00`,
     })),
   };
 }
@@ -89,6 +89,9 @@ test("a run stores each person's own signals and last sync; re-runs and overlapp
     { user_id: 2, value: 2000 },
   ]);
   assert.equal(sync.row(1)?.last_synced_at, new Date(origin).toISOString());
+  const early =
+    "SELECT day FROM activity_sessions WHERE source_record_id = '1-run'";
+  assert.deepEqual(sync.database.prepare(early).get(), { day: "2025-12-31" });
   await sync.run();
   await Promise.all([sync.run(), sync.run()]);
   assert.deepEqual(

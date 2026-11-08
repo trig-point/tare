@@ -101,7 +101,7 @@ export function createOuraSyncJob({
         upsertSourceActivity(database, {
           ...source,
           source_record_id: session.recordId,
-          day: session.day,
+          day: local(session.startedAt),
           started_at: session.startedAt,
           duration_minutes: session.durationMinutes,
           kind: session.kind,
