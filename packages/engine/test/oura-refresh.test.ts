@@ -153,7 +153,9 @@ test("malformed responses, challenges, network and timeout failures discard toke
     );
     assert.deepEqual(fixture.row(), before);
   }
-  assert.deepEqual(captured, []);
+  for (const line of captured)
+    assert.equal((line as unknown[])[0], "oura_token_body_rejected");
+  assert.ok(!JSON.stringify(captured).includes(canary));
 });
 
 test("key, missing row, unreadable, reconnect and app checks follow flow order", async (context) => {

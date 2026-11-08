@@ -537,3 +537,35 @@ test("Oura stale grants cannot replace a newer pair and save failures stay fixed
     { count: 0 },
   );
 });
+
+test("Oura exchange ignores id_token, null or string", async (context) => {
+  const setup = await setupOura(context);
+  for (const idToken of [null, "invented-id-token"]) {
+    setup.respond(async () => Response.json({ ...tokens, id_token: idToken }));
+    redirect(await setup.admin.finish(), true);
+    const body = await (await setup.admin.request("/api/oura")).json();
+    assert.partialDeepStrictEqual(body, {
+      status: "connected",
+      credentials: "readable",
+    });
+  }
+});
+
+test("Oura logs a rejected token body as field names and types only", async (context) => {
+  const setup = await setupOura(context);
+  const captured: unknown[][] = [];
+  context.mock.method(console, "error", (...args: unknown[]) => {
+    captured.push(args);
+  });
+  setup.respond(async () =>
+    Response.json({ ...tokens, expires_in: null, id_token: "invented-id" }),
+  );
+  redirect(await setup.admin.finish());
+  assert.deepEqual(captured[0], [
+    "oura_token_body_rejected",
+    "access_token:string refresh_token:string token_type:string expires_in:null id_token:string",
+  ]);
+  const logged = JSON.stringify(captured);
+  for (const secret of [...Object.values(pair), "invented-id"])
+    assert.ok(!logged.includes(secret));
+});
