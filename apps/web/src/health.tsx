@@ -77,6 +77,7 @@ export function OuraStatus({
     mutationFn: () =>
       connectOura(navigate).then(() => new Promise<never>(() => {})),
   });
+  if (connection.isError) return <p role="alert">Couldn’t load Oura</p>;
   if (!connection.data) return null;
   const view = ouraView(connection.data);
   if (view.state === "hidden") return null;

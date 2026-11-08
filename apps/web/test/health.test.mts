@@ -133,3 +133,20 @@ test("a connection needing reconnect after a restore says so", () => {
       /Oura needs reconnecting after a restore.*Reconnect Oura/s,
     );
 });
+
+test("a failed Oura read shows an error, not a connection state", () => {
+  const client = new QueryClient();
+  client
+    .getQueryCache()
+    .build(client, { queryKey: health.ouraKey(1) })
+    .setState({ status: "error", error: new Error("Unavailable") });
+  const html = renderToStaticMarkup(
+    createElement(
+      QueryClientProvider,
+      { client },
+      createElement(OuraStatus, { person: 1, timezone: "UTC", online: false }),
+    ),
+  );
+  assert.match(html, /role="alert">Couldn’t load Oura</);
+  assert.doesNotMatch(html, /Connect Oura|Oura connected/);
+});
