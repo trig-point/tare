@@ -26,6 +26,11 @@ export function chooseDecoder(supported: readonly string[] | null): Decoder {
     : "wasm";
 }
 
+const readerOverrides = new Map<
+  string,
+  { locateFile: (path: string, prefix: string) => string }
+>();
+
 export async function createDetector(
   wasmUrl: string,
   native: NativeDetector | undefined = (
@@ -41,14 +46,23 @@ export async function createDetector(
       detector: new native({ formats: [...retailFormats] }),
     };
   const ponyfill = await import("barcode-detector/ponyfill");
-  // Loading eagerly turns a missing .wasm file into a start failure, not a silent scan miss.
-  await ponyfill.prepareZXingModule({
-    overrides: {
+  // The ponyfill reuses its compiled module only for the same overrides object.
+  let overrides = readerOverrides.get(wasmUrl);
+  if (!overrides) {
+    overrides = {
       locateFile: (path: string, prefix: string) =>
         path.endsWith(".wasm") ? wasmUrl : prefix + path,
-    },
-    fireImmediately: true,
-  });
+    };
+    readerOverrides.set(wasmUrl, overrides);
+  }
+  // Loading eagerly turns a missing .wasm file into a start failure, not a silent scan miss.
+  try {
+    await ponyfill.prepareZXingModule({ overrides, fireImmediately: true });
+  } catch (error) {
+    // A failed load stays cached otherwise, so the next scan could never retry.
+    ponyfill.purgeZXingModule();
+    throw error;
+  }
   return {
     decoder: "wasm",
     detector: new ponyfill.BarcodeDetector({ formats: [...retailFormats] }),

@@ -62,7 +62,10 @@ export function AddFood({ person, replay, online }: Props) {
         type="search"
         autoComplete="off"
         value={name}
-        onChange={(event) => setName(event.target.value)}
+        onChange={(event) => {
+          setName(event.target.value);
+          barcode.reset();
+        }}
       />
       {term !== "" && !online && <p>Search unavailable offline</p>}
       {catalog.isError && <p role="alert">Couldn’t search foods</p>}

@@ -42,7 +42,10 @@ export function BarcodeScanner({ online, onCode }: Props) {
         return;
       }
       const element = video.current;
-      if (stopped || !element) return;
+      if (stopped || !element) {
+        for (const track of stream.getTracks()) track.stop();
+        return;
+      }
       const track = stream.getVideoTracks()[0];
       setTorch(track && hasTorch(track) ? track : null);
       try {
@@ -53,6 +56,7 @@ export function BarcodeScanner({ online, onCode }: Props) {
           await nextFrame(element);
           if (stopped) return;
           const found = retailCode(await detector.detect(element));
+          if (stopped) return;
           if (found) {
             setCode(found);
             finish(null);

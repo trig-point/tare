@@ -77,6 +77,7 @@ test("wasm reader loads the engine-served file and decodes a sample EAN-13", asy
     nativeReporting(["ean_13", "qr_code"]),
   );
   assert.equal(decoder, "wasm");
+  await createDetector(path, nativeReporting([]));
   assert.deepEqual(served, [`${path} 200 application/wasm`]);
   const image = await readFile(
     new URL("fixtures/ean13-2001234567893.png", import.meta.url),
