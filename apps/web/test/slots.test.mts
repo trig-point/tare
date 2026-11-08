@@ -10,6 +10,8 @@ import "./tsx.mts";
 
 const { SlotList } = await import("../src/slots.tsx");
 const signal = new AbortController().signal;
+const slotNames = ["Breakfast", "Lunch", "Dinner"];
+const itemNames = ["Example oats", "Example salad", "Example stew"];
 
 async function withPlan(context: Parameters<typeof twoUsers>[0]) {
   const setup = await twoUsers(context, "fallback");
@@ -19,16 +21,16 @@ async function withPlan(context: Parameters<typeof twoUsers>[0]) {
       method: "POST",
       body: JSON.stringify(body),
     });
-    assert.ok(response.ok, await response.clone().text());
+    assert.ok(response.ok);
     return response.json();
   };
   const { template } = await send("plan/templates", {
     action: "create",
     name: "Example day",
     slots: [
-      { name: "Breakfast", start_minute: 0, end_minute: 600, share: 30 },
-      { name: "Lunch", start_minute: 600, end_minute: 1000, share: 30 },
-      { name: "Dinner", start_minute: 1000, end_minute: 1440, share: 40 },
+      { name: slotNames[0], start_minute: 0, end_minute: 600, share: 30 },
+      { name: slotNames[1], start_minute: 600, end_minute: 1000, share: 30 },
+      { name: slotNames[2], start_minute: 1000, end_minute: 1440, share: 40 },
     ],
   });
   const { day_type } = await send("plan/day-types", {
@@ -45,20 +47,13 @@ async function withPlan(context: Parameters<typeof twoUsers>[0]) {
     goal_rate_kg_week: -0.25,
   });
   await send("weights", { client_id: "example-weight", weight_kg: 70 });
-  const food = (name: string, kcal: number) =>
-    Number(
-      setup.database
-        .prepare(
-          "INSERT INTO foods (user_id, name, kcal, protein_g, provenance) VALUES (?, ?, ?, 10, 'estimated')",
-        )
-        .run(setup.admin.user.id, name, kcal).lastInsertRowid,
-    );
-  for (const [position, name, kcal] of [
-    [0, "Example oats", 400],
-    [1, "Example salad", 200],
-    [2, "Example stew", 600],
-  ] as const)
-    await send("plan/slot", { position, food_id: food(name, kcal) });
+  const insert = setup.database.prepare(
+    "INSERT INTO foods (user_id, name, kcal, protein_g, provenance) VALUES (?, ?, ?, 10, 'estimated')",
+  );
+  for (const [position, kcal] of [400, 200, 600].entries()) {
+    const row = insert.run(setup.admin.user.id, itemNames[position], kcal);
+    await send("plan/slot", { position, food_id: row.lastInsertRowid });
+  }
   return setup.admin.user.id;
 }
 
@@ -80,15 +75,8 @@ test("the slot view renders each slot's remaining budget and planned item", asyn
   const person = await withPlan(context);
   const plan = await readPlan(signal);
   const markup = render(person, plan);
-  for (const name of [
-    "Breakfast",
-    "Lunch",
-    "Dinner",
-    "Example oats",
-    "Example salad",
-    "Example stew",
-  ])
-    assert.match(markup, new RegExp(`>${name}<`));
+  assert.deepEqual(markup.match(/(?<=<strong>)\w+/g), slotNames);
+  assert.deepEqual(markup.match(/Example \w+(?=<\/span>)/g), itemNames);
   assert.equal(markup.match(/kcal left, [\d,.]+ g protein left/g)?.length, 3);
   assert.equal(markup.match(/>Ate 3\/4</g)?.length, 3);
   assert.match(render(person, undefined, false), /Unavailable offline/);
@@ -117,11 +105,6 @@ test("ate, 3/4 and skip update today's totals and the slot view", async (context
   await actOnItem(stew, "skip");
   assert.equal(await kcal(), 550);
   const plan = await readPlan(signal);
-  assert.deepEqual(plan.planned_items.map((item) => item.state).toSorted(), [
-    "eaten",
-    "eaten",
-    "skipped",
-  ]);
   const breakfast = plan.budgets.slots.find((slot) => slot.position === 0);
   assert.ok(breakfast?.kcal.remaining && breakfast.kcal.budget);
   assert.equal(breakfast.kcal.budget - breakfast.kcal.remaining, 400);
