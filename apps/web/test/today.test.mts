@@ -94,6 +94,18 @@ test("today renders engine totals and provenance", async (context) => {
   assert.match(roundedHtml, /Calories<\/dt><dd>220</);
   assert.match(roundedHtml, /220 kcal/);
   assert.match(roundedHtml, /Open Food Facts/);
+  assert.doesNotMatch(roundedHtml, /Target changed/);
+  rounded.target_notice = {
+    id: 1,
+    old_kcal: 2100,
+    old_protein_g: 112,
+    new_kcal: 1820,
+    new_protein_g: 140,
+  };
+  assert.match(
+    render(setupData.person, rounded),
+    /Target changed: 2,100 to 1,820 kcal, 112 to 140 g protein/,
+  );
 });
 test("unknown totals are incomplete; missing and malformed responses fail", async (context) => {
   const setupData = await setup(context);

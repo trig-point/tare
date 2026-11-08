@@ -12,6 +12,7 @@ import { DaySignOff } from "./sign-off.tsx";
 import {
   changeIntake,
   changeWeight,
+  dismissTargetNotice,
   displayNumber,
   enqueueWeight,
   type Intake,
@@ -22,6 +23,7 @@ import {
   refreshToday,
   settledSince,
   sourceName,
+  type TodayData,
   todayKey,
   totalText,
   type Weight,
@@ -86,6 +88,13 @@ export function Today({
       {today.data && (
         <>
           <p>{today.data.day}</p>
+          {today.data.target_notice && (
+            <TargetNotice
+              notice={today.data.target_notice}
+              online={online}
+              refresh={() => refreshToday(client, person.id)}
+            />
+          )}
           <TargetCard today={today.data} />
           <div className="day-summary">
             <dl className="totals">
@@ -160,6 +169,42 @@ export function Today({
       <WeightForm person={person} replay={replay} />
       <WeightChart person={person.id} online={online} />
       <ProfileSection person={person.id} online={online} />
+    </section>
+  );
+}
+function TargetNotice({
+  notice,
+  online,
+  refresh,
+}: {
+  notice: NonNullable<TodayData["target_notice"]>;
+  online: boolean;
+  refresh: () => Promise<void>;
+}) {
+  const dismiss = useMutation({
+    networkMode: "always",
+    mutationFn: async () => {
+      if (!online || !navigator.onLine) throw new Error("Offline");
+      await dismissTargetNotice(notice.id);
+    },
+    onSuccess: refresh,
+  });
+  return (
+    <section className="target-notice" aria-label="Target changed">
+      <p>
+        Target changed: {displayNumber(notice.old_kcal)} to{" "}
+        {displayNumber(notice.new_kcal)} kcal,{" "}
+        {displayNumber(notice.old_protein_g)} to{" "}
+        {displayNumber(notice.new_protein_g)} g protein
+      </p>
+      <button
+        type="button"
+        disabled={!online || dismiss.isPending}
+        onClick={() => dismiss.mutate()}
+      >
+        Dismiss
+      </button>
+      {dismiss.isError && <p role="alert">Couldn’t dismiss</p>}
     </section>
   );
 }

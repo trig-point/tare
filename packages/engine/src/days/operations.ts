@@ -2,7 +2,9 @@ import { z as zod } from "zod";
 import { localDay } from "../logging/day.ts";
 import { weightRow } from "../logging/schemas.ts";
 import { defineOperation, operationPerson } from "../operations/registry.ts";
+import { selectTargetNotice } from "../queries/select-target-notice.ts";
 import { selectTodayWeights } from "../queries/select-today-weights.ts";
+import { targetNoticeSchema } from "../target/operations.ts";
 import { readTarget, targetSchema } from "../target/reader.ts";
 import { findFood, findFoodInput, findFoodOutput } from "./find-food.ts";
 import { ledgerSchema, readLedger } from "./ledger.ts";
@@ -23,6 +25,7 @@ export const dayReadOperations = [
       weights: zod.array(weightRow),
       timezone: zod.string(),
       target: targetSchema,
+      target_notice: targetNoticeSchema,
       remaining: zod.strictObject({
         kcal: zod.number().nullable(),
         protein_g: zod.number().nullable(),
@@ -61,6 +64,9 @@ export const dayReadOperations = [
             day,
           }),
           target,
+          target_notice: selectTargetNotice(context.database, {
+            user_id: person.id,
+          }),
           remaining: {
             kcal: remaining("kcal"),
             protein_g: remaining("protein_g"),
