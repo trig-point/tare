@@ -121,6 +121,16 @@ dd {
   margin: 0;
   overflow-wrap: anywhere;
 }
+.day-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1rem;
+}
+.day-summary > *,
+.signals {
+  margin: 0;
+  padding: 0;
+}
 .totals {
   padding: 1rem;
   background: #e9eddf;
