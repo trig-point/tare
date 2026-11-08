@@ -70,7 +70,7 @@ export function AddFood({ person, replay, online }: Props) {
       {term !== "" && online && (
         <button
           type="button"
-          disabled={lookup.isPending}
+          disabled={searched?.isPending ?? false}
           onClick={() => lookup.mutate(term)}
         >
           Search online

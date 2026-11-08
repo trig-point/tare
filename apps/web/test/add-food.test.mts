@@ -121,6 +121,9 @@ test("a miss offers manual entry", () => {
     ),
     /No exact match.*Enter manually/,
   );
+  const withoutManual = renderToStaticMarkup(createElement(OnlineMiss, {}));
+  assert.match(withoutManual, /No exact match/);
+  assert.doesNotMatch(withoutManual, /Enter manually/);
 });
 
 test("quick add stores an estimated entry", async (context) => {
