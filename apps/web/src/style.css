@@ -126,9 +126,11 @@ dd {
   grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
   gap: 1rem;
 }
-.day-summary > *,
-.signals {
+.day-summary dl {
   margin: 0;
+}
+.signals,
+.oura {
   padding: 0;
 }
 .totals {
