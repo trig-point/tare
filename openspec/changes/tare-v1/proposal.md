@@ -19,7 +19,7 @@ Tare exists to close the loop between what a person eats and what their weight d
 
 ### New Capabilities
 
-- `accounts-and-access`: identity mode, Cloudflare Access identity, fallback password login, agent service tokens, tenant isolation, adding a second user.
+- `accounts-and-access`: identity mode, Cloudflare Access identity, fallback password login, agent service tokens, tenant isolation, and the add-user operation (no add-user screen in V1).
 - `agent-interface`: the operation registry, HTTP routes, the MCP server, and the provenance argument on writes.
 - `offline-pwa`: the installable app shell, the offline write queue, and its sign-in-needed state.
 - `deployment-and-backup`: container image, backups and restore, migration safety, and the repository hygiene check.
@@ -42,4 +42,5 @@ None. No specs exist yet.
 - New runtime dependencies, each named by the task that adds it: jose, zod and @hono/zod-validator, @hono/mcp with the MCP TypeScript SDK, croner, rate-limiter-flexible, mailauth, mailparser, oauth4webapi, async-mutex, request-filtering-agent, node-ical and mqtt (mqtt.js) in the engine; unicode-case-folding in packages/nutrition; the openai SDK in packages/order-parser; vite-plugin-pwa (Workbox), TanStack Router and TanStack Query, idb, barcode-detector and uPlot in the PWA.
 - External services, each optional and configured by the operator: an OpenAI-compatible model endpoint, USDA FoodData Central (API key), Open Food Facts (no key, rate limited), Oura (an OAuth app per install), and an MQTT broker.
 - Out of this repository: agent skills that use the MCP interface (meal-kit picking and nutrition answering) live in the operator's own agent configuration and are tracked separately.
+- Post version 1, beyond the specified add-user operation: adding a second user from the app and sign-up, since version 1 serves one person.
 - Post version 1, not specified here: a pantry (Grocy) and a pantry-aware meal solver, a CLI, a HACS package, more health sources, paid nutrition providers, and image-based logging.

@@ -50,13 +50,8 @@ export function AccountSettings({
           {session.mode === "access" && (
             <AgentMappings account={account.data} online={online} />
           )}
-          {account.data.is_admin && (
-            <>
-              <AddUserForm mode={session.mode} online={online} />
-              {session.mode === "access" && (
-                <MapClientIdForm person={account.data.id} online={online} />
-              )}
-            </>
+          {account.data.is_admin && session.mode === "access" && (
+            <MapClientIdForm person={account.data.id} online={online} />
           )}
         </>
       )}
@@ -211,6 +206,7 @@ export function MappingList({
   );
 }
 
+// Adding users is post-V1 (single person); kept for later, not rendered.
 export function AddUserForm({
   mode,
   online,

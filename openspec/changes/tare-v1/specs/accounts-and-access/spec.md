@@ -95,6 +95,8 @@ The system SHALL create the first user, as an administrator, from configuration 
 ### Requirement: Administrator adds a user
 An administrator SHALL be able to add another person, who gets their own data. In Access mode the administrator gives a username and the person's Access email, and the person signs in through Access. Every write path SHALL store an Access email trimmed and lowercased and reject an empty one, so uniqueness and sign-in matching ignore letter case; in fallback mode the administrator gives a username and an initial password. Adding a user, like every administrator operation, SHALL be browser only: an agent service token is never accepted for it, whoever it maps to.
 
+The operation exists in V1, but the app does not expose it; adding people from the app is post-V1.
+
 #### Scenario: Second person added in Access mode
 - **WHEN** an administrator adds a user with a username and Access email
 - **THEN** that person's requests through Access act as them, and they see none of the first person's data
