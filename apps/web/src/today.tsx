@@ -137,6 +137,7 @@ export function Today({
           <DaySignOff
             person={person.id}
             today={today.data.day}
+            timezone={today.data.timezone}
             online={online}
           />
         </>

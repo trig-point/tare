@@ -20,6 +20,8 @@ import "./tsx.mts";
 
 const { DayReview, UnsignedDays } = await import("../src/sign-off.tsx");
 const signal = new AbortController().signal;
+const fixtureTimezone = "Asia/Kolkata";
+const blank = { hunger: "", fullness: "", notes: "" };
 const unsigned = async () =>
   (await readUnsignedDays(signal)).map((entry) => entry.day);
 
@@ -49,6 +51,7 @@ async function review(person: number, day: string, next: string | null) {
   const node: ReactElement = createElement(DayReview, {
     person,
     day,
+    timezone: fixtureTimezone,
     online: true,
     next,
     open: () => {},
@@ -67,7 +70,7 @@ test("sign-off from the screen records the time and shows the complete marker", 
   assert.match(before, /Not signed off/);
   assert.match(before, /<button type="submit">Sign off<\/button>/);
   const values = signOffValues(await readDay("2025-12-30", signal));
-  await signOffDay("2025-12-30", {
+  await signOffDay("2025-12-30", values, {
     ...values,
     hunger: "3",
     fullness: "4",
@@ -80,7 +83,16 @@ test("sign-off from the screen records the time and shows the complete marker", 
     [3, 4, "Example note"],
   );
   const after = await review(person, "2025-12-30", null);
-  assert.match(after, /Complete <time dateTime="2026-01-01T00:00:00.000Z">/);
+  const shown = new Date("2026-01-01T00:00:00.000Z").toLocaleString([], {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: fixtureTimezone,
+  });
+  assert.ok(
+    after.includes(
+      `Complete <time dateTime="2026-01-01T00:00:00.000Z">${shown}</time>`,
+    ),
+  );
   assert.doesNotMatch(after, /Sign off<\/button>/);
 });
 
@@ -119,14 +131,16 @@ test("unsigned days are listed and reviewed in turn", async (context) => {
   assert.match(await review(person, "2025-12-30", next), /Next day/);
   const [first] = days;
   assert.ok(first);
-  await signOffDay("2025-12-30", signOffValues(first));
+  await signOffDay("2025-12-30", signOffValues(first), signOffValues(first));
   const remaining = await readUnsignedDays(signal);
   assert.deepEqual(
     remaining.map((entry) => entry.day),
     ["2025-12-29", "2025-12-28"],
   );
-  assert.equal(nextUnsignedDay(remaining, "2025-12-28"), "2025-12-29");
-  assert.doesNotMatch(await review(person, "2025-12-28", null), /Next day/);
+  assert.equal(nextUnsignedDay(remaining, "2025-12-29"), "2025-12-28");
+  const last = nextUnsignedDay(remaining, "2025-12-28");
+  assert.equal(last, null);
+  assert.doesNotMatch(await review(person, "2025-12-28", last), /Next day/);
 });
 
 test("imported days are listed until signed off", async (context) => {
@@ -140,14 +154,14 @@ test("imported days are listed until signed off", async (context) => {
   );
   await importFiles(setup.database, setup.admin.user.username, { days: file });
   assert.deepEqual(await unsigned(), ["2025-12-20"]);
-  await signOffDay("2025-12-20", { hunger: "2", fullness: "", notes: "" });
+  await signOffDay("2025-12-20", blank, blank);
   assert.deepEqual(await unsigned(), []);
 });
 
 test("an intake change clears the sign-off and returns the day to the list", async (context) => {
   const { person, eat } = await engine(context);
   const id = await eat("2025-12-30", "Example stew");
-  await signOffDay("2025-12-30", { hunger: "", fullness: "", notes: "" });
+  await signOffDay("2025-12-30", blank, blank);
   assert.deepEqual(await unsigned(), []);
   const response = await fetch(`/api/intake/${id}`, {
     method: "PATCH",
@@ -157,4 +171,20 @@ test("an intake change clears the sign-off and returns the day to the list", asy
   assert.deepEqual(await unsigned(), ["2025-12-30"]);
   assert.equal((await readDay("2025-12-30", signal)).signed_off_at, null);
   assert.match(await review(person, "2025-12-30", null), /Not signed off/);
+});
+
+test("sign-off keeps a note added after the form opened", async (context) => {
+  const { eat } = await engine(context);
+  await eat("2025-12-30", "Example salad");
+  const seeded = signOffValues(await readDay("2025-12-30", signal));
+  const note = await fetch("/api/days/note", {
+    method: "POST",
+    body: JSON.stringify({ day: "2025-12-30", note: "Example agent note" }),
+  });
+  assert.ok(note.ok);
+  await signOffDay("2025-12-30", seeded, seeded);
+  assert.match(
+    (await readDay("2025-12-30", signal)).notes ?? "",
+    /Example agent note/,
+  );
 });

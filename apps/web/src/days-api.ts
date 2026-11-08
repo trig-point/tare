@@ -48,23 +48,28 @@ export function signOffValues(day: DayMetadata): SignOffValues {
   };
 }
 
-export async function signOffDay(day: string, values: SignOffValues) {
-  const score = (value: string) => (value === "" ? null : Number(value));
+export async function signOffDay(
+  day: string,
+  seeded: SignOffValues,
+  values: SignOffValues,
+) {
+  // Unchanged fields stay out of the body so the engine keeps notes or ratings stored since the form opened.
+  const body: Record<string, unknown> = { day };
+  for (const name of ["hunger", "fullness"] as const)
+    if (values[name] !== seeded[name])
+      body[name] = values[name] === "" ? null : Number(values[name]);
+  if (values.notes !== seeded.notes)
+    body.notes = values.notes.trim() === "" ? null : values.notes;
   return metadata.parse(
     await api("/api/days/sign-off", {
       method: "POST",
-      body: JSON.stringify({
-        day,
-        hunger: score(values.hunger),
-        fullness: score(values.fullness),
-        notes: values.notes.trim() === "" ? null : values.notes,
-      }),
+      body: JSON.stringify(body),
     }),
   );
 }
 
 export function nextUnsignedDay(days: DayMetadata[], current: string) {
-  return days.find((entry) => entry.day !== current)?.day ?? null;
+  return days.find((entry) => entry.day < current)?.day ?? null;
 }
 
 export async function refreshDays(client: QueryClient, person: number) {

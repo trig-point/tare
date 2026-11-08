@@ -23,10 +23,12 @@ import {
 export function DaySignOff({
   person,
   today,
+  timezone,
   online,
 }: {
   person: number;
   today: string;
+  timezone: string;
   online: boolean;
 }) {
   const [open, setOpen] = useState<string | null>(null);
@@ -47,6 +49,7 @@ export function DaySignOff({
         <DayReview
           person={person}
           day={open}
+          timezone={timezone}
           online={online}
           next={nextUnsignedDay(unsigned.data ?? [], open)}
           open={setOpen}
@@ -62,7 +65,9 @@ export function DaySignOff({
             >
               Review today
             </button>{" "}
-            {current.data && <DayStatus day={current.data} />}
+            {current.data && (
+              <DayStatus day={current.data} timezone={timezone} />
+            )}
           </p>
           <UnsignedDays
             days={unsigned.data}
@@ -109,7 +114,13 @@ export function UnsignedDays({
   );
 }
 
-export function DayStatus({ day }: { day: DayMetadata }) {
+export function DayStatus({
+  day,
+  timezone,
+}: {
+  day: DayMetadata;
+  timezone: string;
+}) {
   if (day.signed_off_at === null)
     return <span className="day-status">Not signed off</span>;
   return (
@@ -119,6 +130,7 @@ export function DayStatus({ day }: { day: DayMetadata }) {
         {new Date(day.signed_off_at).toLocaleString([], {
           dateStyle: "medium",
           timeStyle: "short",
+          timeZone: timezone,
         })}
       </time>
     </span>
@@ -128,6 +140,7 @@ export function DayStatus({ day }: { day: DayMetadata }) {
 export function DayReview({
   person,
   day,
+  timezone,
   online,
   next,
   open,
@@ -135,6 +148,7 @@ export function DayReview({
 }: {
   person: number;
   day: string;
+  timezone: string;
   online: boolean;
   next: string | null;
   open: (day: string) => void;
@@ -153,7 +167,12 @@ export function DayReview({
         <p>{online ? "Loading..." : "Unavailable offline"}</p>
       )}
       {ledger.data && (
-        <DayLedger person={person} data={ledger.data} online={online} />
+        <DayLedger
+          person={person}
+          data={ledger.data}
+          timezone={timezone}
+          online={online}
+        />
       )}
       {next && (
         <button type="button" onClick={() => open(next)}>
@@ -170,16 +189,18 @@ export function DayReview({
 function DayLedger({
   person,
   data,
+  timezone,
   online,
 }: {
   person: number;
   data: DayData;
+  timezone: string;
   online: boolean;
 }) {
   return (
     <>
       <p>
-        <DayStatus day={data} />
+        <DayStatus day={data} timezone={timezone} />
       </p>
       <dl className="totals">
         {nutrients.map((key) => (
@@ -226,9 +247,10 @@ function SignOffForm({
   online: boolean;
 }) {
   const client = useQueryClient();
-  const [values, setValues] = useState<SignOffValues>(() => signOffValues(day));
+  const [seeded] = useState(() => signOffValues(day));
+  const [values, setValues] = useState<SignOffValues>(seeded);
   const save = useMutation({
-    mutationFn: () => signOffDay(day.day, values),
+    mutationFn: () => signOffDay(day.day, seeded, values),
     onSuccess: async (saved) => {
       client.setQueryData<DayData>(dayKey(person, day.day), (previous) =>
         previous ? { ...previous, ...saved } : previous,
