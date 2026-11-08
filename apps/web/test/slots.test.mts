@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { twoUsers } from "../../../packages/engine/test/support/two-users.ts";
-import { actOnItem, readPlan } from "../src/plan-api.ts";
+import { acceptShares, actOnItem, readPlan } from "../src/plan-api.ts";
 import { readToday } from "../src/today-api.ts";
 import { test } from "./support.mts";
 import "./tsx.mts";
@@ -54,7 +54,7 @@ async function withPlan(context: Parameters<typeof twoUsers>[0]) {
     const row = insert.run(setup.admin.user.id, itemNames[position], kcal);
     await send("plan/slot", { position, food_id: row.lastInsertRowid });
   }
-  return setup.admin.user.id;
+  return setup;
 }
 
 const render = (person: number, plan: unknown, online = true) =>
@@ -72,7 +72,7 @@ const render = (person: number, plan: unknown, online = true) =>
   );
 
 test("the slot view renders each slot's remaining budget and planned item", async (context) => {
-  const person = await withPlan(context);
+  const person = (await withPlan(context)).admin.user.id;
   const plan = await readPlan(signal);
   const markup = render(person, plan);
   assert.deepEqual(markup.match(/(?<=<strong>)\w+/g), slotNames);
@@ -102,7 +102,7 @@ test("the slot view renders each slot's remaining budget and planned item", asyn
 });
 
 test("ate, 3/4 and skip update today's totals and the slot view", async (context) => {
-  const person = await withPlan(context);
+  const person = (await withPlan(context)).admin.user.id;
   const items = (await readPlan(signal)).planned_items;
   const kcal = async () => (await readToday(signal)).totals.kcal.total;
   assert.equal(await kcal(), 0);
@@ -130,4 +130,40 @@ test("ate, 3/4 and skip update today's totals and the slot view", async (context
   assert.equal(markup.match(/>Eaten</g)?.length, 2);
   assert.match(markup, />Skipped</);
   assert.doesNotMatch(markup, />Ate</);
+});
+
+test("accepting suggested shares saves them to the template", async (context) => {
+  const { admin, database } = await withPlan(context);
+  for (let index = 1; index <= 14; index += 1) {
+    const day = `2025-11-${String(index).padStart(2, "0")}`;
+    database
+      .prepare(
+        "INSERT INTO intake_entries (user_id, client_id, eaten_at, day, kcal, provenance, created_at, updated_at) VALUES (?, ?, ?, ?, 500, 'estimated', ?, ?)",
+      )
+      .run(
+        admin.user.id,
+        `history-${index}`,
+        `${day}T12:00:00.000Z`,
+        day,
+        `${day}T00:00:00.000Z`,
+        `${day}T00:00:00.000Z`,
+      );
+    database
+      .prepare(
+        "UPDATE days SET signed_off_at = ? WHERE user_id = ? AND day = ?",
+      )
+      .run(`${day}T23:00:00.000Z`, admin.user.id, day);
+  }
+  const plan = await readPlan(signal);
+  assert.match(
+    render(admin.user.id, plan),
+    /Suggested shares: Breakfast 1%, Lunch 98%, Dinner 1%/,
+  );
+  await acceptShares(plan, plan.suggested_shares ?? []);
+  const saved = await readPlan(signal);
+  assert.deepEqual(
+    saved.slots.map((slot) => slot.share_bp),
+    [100, 9800, 100],
+  );
+  assert.doesNotMatch(render(admin.user.id, saved), /Suggested shares/);
 });

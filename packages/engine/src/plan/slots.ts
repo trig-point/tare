@@ -40,6 +40,55 @@ export function assignSlot(slots: Slot[], minute: number): Slot | null {
   );
 }
 
+function entrySlot(
+  slots: Slot[],
+  entry: Pick<Entry, "eaten_at" | "slot_template_id" | "slot_position">,
+  person: DayPerson,
+) {
+  return (
+    slots.find(
+      (slot) =>
+        slot.template_id === entry.slot_template_id &&
+        slot.position === entry.slot_position,
+    ) ?? assignSlot(slots, minuteOfDay(entry.eaten_at, person))
+  );
+}
+
+export const suggestionMinimumDays = 14;
+
+/** Whole-percent shares from signed-off intake, or null when there is too little history or no intake. */
+export function suggestShares(
+  slots: Slot[],
+  entries: Pick<
+    Entry,
+    "eaten_at" | "slot_template_id" | "slot_position" | "kcal"
+  >[],
+  signedOffDays: number,
+  person: DayPerson,
+) {
+  if (signedOffDays < suggestionMinimumDays || slots.length === 0) return null;
+  const intake = new Map(slots.map((slot) => [slot, 0]));
+  for (const entry of entries) {
+    const slot = entrySlot(slots, entry, person);
+    if (slot) intake.set(slot, (intake.get(slot) ?? 0) + (entry.kcal ?? 0));
+  }
+  const total = [...intake.values()].reduce((sum, kcal) => sum + kcal, 0);
+  if (total <= 0) return null;
+  const largest = slots.reduce((best, slot) =>
+    (intake.get(slot) ?? 0) > (intake.get(best) ?? 0) ? slot : best,
+  );
+  const shares = slots.map((slot) => ({
+    position: slot.position,
+    share: Math.max(1, Math.round(((intake.get(slot) ?? 0) * 100) / total)),
+  }));
+  const largestShare = shares[slots.indexOf(largest)];
+  if (!largestShare) return null;
+  largestShare.share = 0;
+  largestShare.share =
+    100 - shares.reduce((sum, value) => sum + value.share, 0);
+  return largestShare.share >= 1 ? shares : null;
+}
+
 export function slotBudgets(
   slots: Slot[],
   entries: Entry[],
@@ -54,15 +103,7 @@ export function slotBudgets(
   );
   const assigned = entries
     .filter((entry) => entry.day === day)
-    .map((entry) => ({
-      entry,
-      slot:
-        ordered.find(
-          (slot) =>
-            slot.template_id === entry.slot_template_id &&
-            slot.position === entry.slot_position,
-        ) ?? assignSlot(ordered, minuteOfDay(entry.eaten_at, person)),
-    }));
+    .map((entry) => ({ entry, slot: entrySlot(ordered, entry, person) }));
   const rows = ordered.map((slot, index) => {
     const matches = assigned
       .filter((value) => value.slot === slot)

@@ -18,8 +18,18 @@ export const plannedItemSchema = z.object({
 });
 export const planSchema = z.object({
   day: z.string(),
+  template: z
+    .object({ id: z.number().int().positive(), name: z.string() })
+    .nullable(),
   slots: z.array(
-    z.object({ position: z.number().int().nonnegative(), name: z.string() }),
+    z.object({
+      position: z.number().int().nonnegative(),
+      name: z.string(),
+      start_minute: z.number().int(),
+      end_minute: z.number().int(),
+      share_bp: z.number().int().positive(),
+      fill_hint: z.string().nullable(),
+    }),
   ),
   budgets: z.object({
     status: z.enum(["ready", "no_day_type", "needs_profile", "needs_weigh_in"]),
@@ -33,6 +43,11 @@ export const planSchema = z.object({
     ),
   }),
   planned_items: z.array(plannedItemSchema),
+  suggested_shares: z
+    .array(
+      z.object({ position: z.number().int().nonnegative(), share: z.number() }),
+    )
+    .nullable(),
 });
 export type Plan = z.infer<typeof planSchema>;
 export type PlannedItem = z.infer<typeof plannedItemSchema>;
@@ -63,4 +78,26 @@ export async function actOnItem(item: PlannedItem, action: ItemAction) {
         }),
       }),
     );
+}
+
+export async function acceptShares(
+  plan: Plan,
+  shares: NonNullable<Plan["suggested_shares"]>,
+) {
+  if (!plan.template) throw new Error("No template to update");
+  await api("/api/plan/templates", {
+    method: "POST",
+    body: JSON.stringify({
+      action: "update",
+      id: plan.template.id,
+      name: plan.template.name,
+      slots: plan.slots.map((slot) => ({
+        name: slot.name,
+        start_minute: slot.start_minute,
+        end_minute: slot.end_minute,
+        fill_hint: slot.fill_hint,
+        share: shares.find((value) => value.position === slot.position)?.share,
+      })),
+    }),
+  });
 }

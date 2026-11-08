@@ -1,7 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { ApiError } from "./api.ts";
 import { refreshDays } from "./days-api.ts";
 import {
+  acceptShares,
   actOnItem,
   type ItemAction,
   type Plan,
@@ -58,6 +60,7 @@ export function SlotList({
         <p>{online ? "Loading..." : "Unavailable offline"}</p>
       )}
       {status && status !== "ready" && <p>{statusText[status]}</p>}
+      {plan && <Suggestion person={person} plan={plan} online={online} />}
       {plan && plan.slots.length > 0 && (
         <ul className="entries">
           {plan.slots.map((slot) => {
@@ -93,6 +96,58 @@ export function SlotList({
         </ul>
       )}
     </section>
+  );
+}
+
+function Suggestion({
+  person,
+  plan,
+  online,
+}: {
+  person: number;
+  plan: Plan;
+  online: boolean;
+}) {
+  const client = useQueryClient();
+  const [ignored, setIgnored] = useState(false);
+  const shares = plan.suggested_shares;
+  const accept = useMutation({
+    networkMode: "always",
+    mutationFn: async () => {
+      if (!online || !navigator.onLine || !shares) throw new Error("Offline");
+      await acceptShares(plan, shares);
+    },
+    onSuccess: () => client.invalidateQueries({ queryKey: planKey(person) }),
+  });
+  const unchanged = plan.slots.every(
+    (slot) =>
+      shares?.find((value) => value.position === slot.position)?.share ===
+      slot.share_bp / 100,
+  );
+  if (!shares || ignored || unchanged) return null;
+  return (
+    <div className="suggestion">
+      <p>
+        Suggested shares:{" "}
+        {plan.slots
+          .map(
+            (slot) =>
+              `${slot.name} ${shares.find((value) => value.position === slot.position)?.share}%`,
+          )
+          .join(", ")}
+      </p>
+      <button
+        type="button"
+        disabled={!online || accept.isPending}
+        onClick={() => accept.mutate()}
+      >
+        Accept
+      </button>
+      <button type="button" onClick={() => setIgnored(true)}>
+        Ignore
+      </button>
+      {accept.isError && <p role="alert">Couldn’t save shares</p>}
+    </div>
   );
 }
 

@@ -13,6 +13,7 @@ import {
   plannedItemActionOutput,
 } from "../orders/eat.ts";
 import { clearIntakeSlots } from "../queries/clear-intake-slots.ts";
+import { countSignedOffDays } from "../queries/count-signed-off-days.ts";
 import { deleteDayTemplate } from "../queries/delete-day-template.ts";
 import { deleteDayType } from "../queries/delete-day-type.ts";
 import { deleteTemplateSlots } from "../queries/delete-template-slots.ts";
@@ -23,6 +24,7 @@ import { insertTemplateSlot } from "../queries/insert-template-slot.ts";
 import { selectDayTemplate } from "../queries/select-day-template.ts";
 import { selectDayType } from "../queries/select-day-type.ts";
 import { selectLedgerEntries } from "../queries/select-ledger-entries.ts";
+import { selectSignedOffIntake } from "../queries/select-signed-off-intake.ts";
 import { selectTemplateSlots } from "../queries/select-template-slots.ts";
 import { setDayType } from "../queries/set-day-type.ts";
 import { setDefaultDayType } from "../queries/set-default-day-type.ts";
@@ -45,7 +47,12 @@ import {
   templateSchema,
   validateSlots,
 } from "./schema.ts";
-import { assignSlot, minuteOfDay, slotBudgets } from "./slots.ts";
+import {
+  assignSlot,
+  minuteOfDay,
+  slotBudgets,
+  suggestShares,
+} from "./slots.ts";
 
 function readPlan(context: OperationContext) {
   const person = operationPerson(context);
@@ -325,17 +332,35 @@ export const planOperations = [
     input: zod.strictObject({}),
     output: planSchema.safeExtend({
       planned_items: zod.array(plannedItemSchema),
+      suggested_shares: zod
+        .array(
+          zod.strictObject({
+            position: zod.number().int().nonnegative(),
+            share: zod.number().int().min(1).max(100),
+          }),
+        )
+        .nullable(),
     }),
     handler(_input, context) {
       const plan = readPlan(context);
+      const person = operationPerson(context);
+      const user_id = { user_id: person.id };
+      const signedOff = countSignedOffDays(context.database, user_id);
+      if (!signedOff) throw new Error("Signed-off day count returned no row");
       return {
         status: 200,
         body: {
           ...plan,
+          suggested_shares: suggestShares(
+            plan.slots,
+            selectSignedOffIntake(context.database, user_id),
+            signedOff.count,
+            person,
+          ),
           planned_items: plan.template
             ? readPlannedItems(
                 context.database,
-                operationPerson(context).id,
+                person.id,
                 plan.day,
                 plan.template.id,
               )
