@@ -117,15 +117,19 @@ test("chart data holds each day's first reading and the trend line", async (cont
     ["example-c", 81, "2025-12-03T08:00:00.000Z"],
   ] as const)
     await post("/api/weights", { client_id: clientId, weight_kg, measured_at });
-  const [days, readings, trend] = chartData(await readHistory(signal));
+  const [days, ...series] = chartData(await readHistory(signal)).map((values) =>
+    Array.from(values),
+  );
   assert.deepEqual(
-    [...days].map((seconds) =>
-      new Date(seconds * 1000).toISOString().slice(0, 10),
+    days?.map((seconds) =>
+      new Date(Number(seconds) * 1000).toISOString().slice(0, 10),
     ),
     ["2025-12-01", "2025-12-02", "2025-12-03"],
   );
-  assert.deepEqual([...readings], [80, null, 81]);
-  assert.deepEqual([...trend], [80, 80, 80.1]);
+  assert.deepEqual(series, [
+    [80, null, 81],
+    [80, 80, 80.1],
+  ]);
 });
 
 test("weight chart shows an empty state with no weigh-ins", async (context) => {
