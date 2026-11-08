@@ -100,7 +100,7 @@ function remainingText(
   value: Plan["budgets"]["slots"][number]["kcal"],
   unit: string,
 ) {
-  if (value.budget === null) return `No ${unit} budget`;
+  if (value.budget === null) return `${unit} budget unknown`;
   // The engine leaves remaining null while any entry lacks this nutrient.
   const left = value.remaining ?? value.budget - value.known_subtotal;
   const text =
