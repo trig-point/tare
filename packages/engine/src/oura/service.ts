@@ -1,3 +1,5 @@
+import { setTimeout } from "node:timers/promises";
+import { fetchOuraCollection } from "@tare/health-sources";
 import type { Database } from "better-sqlite3";
 import * as oauth from "oauth4webapi";
 import { hashToken } from "../auth/sessions.ts";
@@ -23,26 +25,51 @@ export interface OuraOptions {
   config: Config;
   clock: { now(): Date };
   transport?: TokenTransport;
+  fetch?: typeof fetch;
 }
+export type OuraCallbackResult = "connected" | "no_data" | "failed";
 
 export function createOura({
   database,
   config,
   clock,
   transport,
+  fetch,
 }: OuraOptions) {
   const controller = new AbortController();
-  const pending = new Set<Promise<boolean>>();
+  const pending = new Set<Promise<OuraCallbackResult>>();
   const refreshCallers = createRefreshCallers();
   function cleanup() {
     deleteExpiredStates(database, { now: clock.now().toISOString() });
   }
-  async function complete(owner: number, callback: URL): Promise<boolean> {
+  // Oura can issue a token without the requested scopes and still answer
+  // without a scope field, so one cheap read decides whether it shares data.
+  async function sharesNoData(accessToken: string, signal: AbortSignal) {
+    const day = clock.now().toISOString().slice(0, 10);
+    const next = new Date(Date.parse(day) + 86_400_000).toISOString();
+    const checked = await fetchOuraCollection(
+      {
+        accessToken,
+        startDate: day,
+        endDate: next.slice(0, 10),
+        signal,
+        wait: (milliseconds, waitSignal) =>
+          setTimeout(milliseconds, undefined, { signal: waitSignal }),
+        ...(fetch ? { fetch } : {}),
+      },
+      "daily_activity",
+    );
+    return checked === "oura_unauthorized";
+  }
+  async function complete(
+    owner: number,
+    callback: URL,
+  ): Promise<OuraCallbackResult> {
     try {
       const states = callback.searchParams.getAll("state");
       const state = states[0];
       if (states.length !== 1 || !state || !/^[A-Za-z0-9_-]{43}$/.test(state))
-        return false;
+        return "failed";
       const [consumed] = writeTransaction(database, () =>
         consumeState(database, {
           state_hash: hashToken(state),
@@ -50,7 +77,7 @@ export function createOura({
           now: clock.now().toISOString(),
         }),
       );
-      if (!consumed || !config.oura || !config.ouraTokenKey) return false;
+      if (!consumed || !config.oura || !config.ouraTokenKey) return "failed";
       const signal = AbortSignal.any([
         controller.signal,
         AbortSignal.timeout(15_000),
@@ -65,8 +92,12 @@ export function createOura({
         transport,
       );
       signal.throwIfAborted();
+      const noData =
+        tokens.scope === undefined &&
+        (await sharesNoData(tokens.access_token, signal));
+      signal.throwIfAborted();
       const now = clock.now();
-      return storeOuraConnection(
+      const stored = storeOuraConnection(
         database,
         owner,
         consumed.generation,
@@ -82,7 +113,10 @@ export function createOura({
         },
         config.ouraTokenKey,
         now,
+        noData,
       );
+      if (!stored) return "failed";
+      return noData ? "no_data" : "connected";
     } catch (error) {
       // Message and class only: the error's cause can carry code, state or tokens.
       if (error instanceof Error)
@@ -92,7 +126,7 @@ export function createOura({
           error.message,
         );
       else console.error("oura_callback_failed", typeof error);
-      return false;
+      return "failed";
     }
   }
   return {

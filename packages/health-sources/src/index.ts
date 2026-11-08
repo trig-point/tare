@@ -1,5 +1,6 @@
 export {
   fetchOura,
+  fetchOuraCollection,
   type OuraData,
   type OuraFailure,
   type OuraFetchOptions,

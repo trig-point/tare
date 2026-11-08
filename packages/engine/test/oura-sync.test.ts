@@ -133,3 +133,13 @@ test("a 403 on data marks only that person as needing membership", async (contex
   assert.equal(await sync.run(), "oura_synced:2");
   assert.equal(sync.row(2)?.status, "connected");
 });
+
+test("a 401 on data marks only that person as needing reconnect", async (context) => {
+  const sync = harness(context);
+  sync.replies.set(2, () => new Response(null, { status: 401 }));
+  await assert.rejects(sync.run());
+  assert.deepEqual(
+    [sync.row(1)?.status, sync.row(2)?.status],
+    ["connected", "reconnect_required"],
+  );
+});

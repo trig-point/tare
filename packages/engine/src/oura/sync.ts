@@ -9,7 +9,9 @@ import { writeTransaction } from "../db.ts";
 import { localDay } from "../logging/day.ts";
 import { listSyncPeople } from "../queries/oura/list-sync-people.ts";
 import { markMembership } from "../queries/oura/mark-membership.ts";
+import { markReconnect } from "../queries/oura/mark-reconnect.ts";
 import { recordSync } from "../queries/oura/record-sync.ts";
+import { selectConnection } from "../queries/oura/select-connection.ts";
 import { upsertSignal } from "../queries/upsert-signal.ts";
 import { upsertSleepPeriod } from "../queries/upsert-sleep-period.ts";
 import { upsertSourceActivity } from "../queries/upsert-source-activity.ts";
@@ -45,6 +47,9 @@ export function createOuraSyncJob({
   ) {
     const owner = person.user_id;
     const access = await oura.refreshAccess(owner);
+    const generation = selectConnection(database, {
+      user_id: owner,
+    })?.generation;
     const local = (instant: string) =>
       localDay(instant, person.timezone, person.day_start_hour);
     const today = local(clock.now().toISOString());
@@ -69,6 +74,10 @@ export function createOuraSyncJob({
             { now: clock.now().toISOString() },
             { user_id: owner },
           ),
+        );
+      if (fetched === "oura_unauthorized" && generation !== undefined)
+        writeTransaction(database, () =>
+          markReconnect(database, { user_id: owner, generation }),
         );
       throw new Error(fetched);
     }

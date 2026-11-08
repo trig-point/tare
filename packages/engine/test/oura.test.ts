@@ -76,10 +76,12 @@ async function setupOura(
   const clock = { now: () => now };
   let respond: TokenTransport = async () => Response.json(tokens);
   let exchanges = 0;
+  let dataReply = () => Response.json({ data: [] });
   const oura = createOura({
     database: setup.database,
     config,
     clock,
+    fetch: (async () => dataReply()) as typeof fetch,
     transport: async (url, options) => {
       exchanges++;
       assert.equal(setup.database.inTransaction, false);
@@ -151,11 +153,27 @@ async function setupOura(
     respond: (value: TokenTransport) => {
       respond = value;
     },
+    dataReply: (value: () => Response) => {
+      dataReply = value;
+    },
     setTime: (value: Date) => {
       now = value;
     },
   };
 }
+
+test("a scopeless token that gets 401 on the daily check stores reconnect, not connected", async (context) => {
+  const setup = await setupOura(context);
+  setup.respond(async () => Response.json({ ...tokens, scope: null }));
+  setup.dataReply(() => new Response(null, { status: 401 }));
+  const response = await setup.admin.finish();
+  assert.equal(response.headers.get("Location"), "/?oura=no_data");
+  const body = await (await setup.admin.request("/api/oura")).json();
+  assert.partialDeepStrictEqual(body, {
+    status: "reconnect_required",
+    reconnect_required: true,
+  });
+});
 
 for (const mode of ["access", "fallback"] as const)
   test(`Oura state belongs to its browser owner, expires strictly and exchanges once (${mode})`, async (context) => {

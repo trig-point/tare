@@ -117,7 +117,14 @@ export function OuraStatus({
         </>
       )}
       {view.state === "membership" && <p>Oura membership required</p>}
-      {view.state === "authorization" && <p>Oura sign-in expired</p>}
+      {view.state === "authorization" && (
+        <p>
+          {new URLSearchParams(globalThis.location?.search).get("oura") ===
+          "no_data"
+            ? "Oura shared no data. Reconnect and allow Daily."
+            : "Oura sign-in expired"}
+        </p>
+      )}
       {view.state === "restored" && (
         <p>Oura needs reconnecting after a restore</p>
       )}
