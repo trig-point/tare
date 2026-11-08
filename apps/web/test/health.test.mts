@@ -56,12 +56,15 @@ test("today renders the Body card beside intake and no Oura card", async (contex
     today.day,
     new AbortController().signal,
   );
-  const renderDay = (day: health.Signals) =>
+  const renderDay = (
+    day: health.Signals,
+    connection: Partial<health.OuraConnection> = { status: null },
+  ) =>
     withData(
       [
         [todayKey(admin.user.id), today],
         [health.signalsKey(admin.user.id, today.day), day],
-        [health.ouraKey(admin.user.id), oura({ status: null })],
+        [health.ouraKey(admin.user.id), oura(connection)],
       ],
       createElement(Today, {
         person: admin.user,
@@ -77,6 +80,12 @@ test("today renders the Body card beside intake and no Oura card", async (contex
   const empty = renderDay({ ...signals, signals: [] });
   assert.match(empty, /<a href="#settings">Connect a source in Settings</);
   assert.doesNotMatch(empty, /Connect Oura|Connected sources/);
+  const blocked = renderDay(
+    { ...signals, signals: [] },
+    { status: "membership_required" },
+  );
+  assert.match(blocked, /No signals/);
+  assert.doesNotMatch(blocked, /#settings/);
 });
 
 test("connect starts the Oura flow at the authorization URL", async (context) => {
@@ -182,8 +191,8 @@ test("two sources for one metric render only the preferred one", () => {
           day,
           activities: [],
           signals: [
-            { ...steps, value: 800, source: "oura" },
             { ...steps, value: 750, source: "manual" },
+            { ...steps, value: 800, source: "oura" },
             { metric: "hrv", unit: "ms", value: 41, source: "agent" },
             { metric: "hrv", unit: "ms", value: 45, source: "oura" },
           ],
