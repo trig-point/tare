@@ -47,9 +47,6 @@ export function createOuraSyncJob({
   ) {
     const owner = person.user_id;
     const access = await oura.refreshAccess(owner);
-    const generation = selectConnection(database, {
-      user_id: owner,
-    })?.generation;
     const local = (instant: string) =>
       localDay(instant, person.timezone, person.day_start_hour);
     const today = local(clock.now().toISOString());
@@ -75,10 +72,21 @@ export function createOuraSyncJob({
             { user_id: owner },
           ),
         );
-      if (fetched === "oura_unauthorized" && generation !== undefined)
-        writeTransaction(database, () =>
-          markReconnect(database, { user_id: owner, generation }),
-        );
+      // An unexpired token that is still the stored one proves the grant is
+      // gone; an expired or replaced token only needs the next refresh.
+      if (fetched === "oura_unauthorized")
+        writeTransaction(database, () => {
+          const current = selectConnection(database, { user_id: owner });
+          if (
+            current &&
+            current.access_expires_at === access.accessExpiresAt &&
+            Date.parse(access.accessExpiresAt) > clock.now().getTime()
+          )
+            markReconnect(database, {
+              user_id: owner,
+              generation: current.generation,
+            });
+        });
       throw new Error(fetched);
     }
     const mapped = mapOura(fetched);
