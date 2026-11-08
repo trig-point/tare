@@ -1,0 +1,15 @@
+{
+  "name": "@tare/health-sources",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --test test/*.test.ts"
+  },
+  "dependencies": {
+    "zod": "4.6.7"
+  }
+}
