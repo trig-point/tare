@@ -26,6 +26,7 @@ import { OutboxReplay, type QueueSnapshot } from "./outbox-replay.ts";
 import { OutboxSession } from "./outbox-session.ts";
 import { openOutboxStore } from "./outbox-store.ts";
 import { outboxView } from "./outbox-view.ts";
+import { AccountSettings } from "./settings.tsx";
 import { Today } from "./today.tsx";
 import { UpdateNotice } from "./update-notice.tsx";
 import "./style.css";
@@ -173,6 +174,11 @@ function SessionHome({ runtime }: { runtime: Runtime }) {
             person={view.session.user}
             replay={runtime.queue}
             records={view.records}
+            online={online}
+          />
+          <AccountSettings
+            key={`settings-${view.session.user.id}`}
+            session={view.session}
             online={online}
           />
           <button
