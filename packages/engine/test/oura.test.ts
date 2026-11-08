@@ -175,6 +175,24 @@ test("a scopeless token that gets 401 on the daily check stores reconnect, not c
   });
 });
 
+test("a scopeless token whose daily check is rate limited is still stored as connected", async (context) => {
+  const setup = await setupOura(context);
+  const logged = context.mock.method(console, "error", () => {});
+  let checks = 0;
+  setup.respond(async () => Response.json({ ...tokens, scope: null }));
+  setup.dataReply(() => {
+    checks++;
+    return new Response(null, { status: 429 });
+  });
+  redirect(await setup.admin.finish(), true);
+  assert.equal(checks, 1);
+  assert.equal(setup.connection()?.status, "connected");
+  assert.deepEqual(logged.mock.calls.at(-1)?.arguments, [
+    "oura_scope_check_inconclusive",
+    "oura_rate_limited",
+  ]);
+});
+
 for (const mode of ["access", "fallback"] as const)
   test(`Oura state belongs to its browser owner, expires strictly and exchanges once (${mode})`, async (context) => {
     const setup = await setupOura(context, mode);

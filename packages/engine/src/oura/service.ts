@@ -1,4 +1,3 @@
-import { setTimeout } from "node:timers/promises";
 import { fetchOuraCollection } from "@tare/health-sources";
 import type { Database } from "better-sqlite3";
 import * as oauth from "oauth4webapi";
@@ -42,24 +41,41 @@ export function createOura({
   function cleanup() {
     deleteExpiredStates(database, { now: clock.now().toISOString() });
   }
-  // Oura can issue a token without the requested scopes and still answer
-  // without a scope field, so one cheap read decides whether it shares data.
-  async function sharesNoData(accessToken: string, signal: AbortSignal) {
+  // Oura can issue a token without the requested scopes and still omit the
+  // scope field. Only a 401 proves no data; anything else keeps the token,
+  // since the code is already spent and the daily sync backstops it.
+  async function sharesNoData(accessToken: string) {
     const day = clock.now().toISOString().slice(0, 10);
     const next = new Date(Date.parse(day) + 86_400_000).toISOString();
-    const checked = await fetchOuraCollection(
-      {
-        accessToken,
-        startDate: day,
-        endDate: next.slice(0, 10),
-        signal,
-        wait: (milliseconds, waitSignal) =>
-          setTimeout(milliseconds, undefined, { signal: waitSignal }),
-        ...(fetch ? { fetch } : {}),
-      },
-      "daily_activity",
-    );
-    return checked === "oura_unauthorized";
+    let rateLimited = false;
+    let failure: string;
+    try {
+      const checked = await fetchOuraCollection(
+        {
+          accessToken,
+          startDate: day,
+          endDate: next.slice(0, 10),
+          signal: AbortSignal.any([
+            controller.signal,
+            AbortSignal.timeout(5_000),
+          ]),
+          wait: async () => {
+            rateLimited = true;
+            throw new Error("oura_rate_limited");
+          },
+          ...(fetch ? { fetch } : {}),
+        },
+        "daily_activity",
+      );
+      if (checked === "oura_unauthorized") return true;
+      if (typeof checked !== "string") return false;
+      failure = rateLimited ? "oura_rate_limited" : checked;
+    } catch (error) {
+      controller.signal.throwIfAborted();
+      failure = error instanceof Error ? error.name : "unknown";
+    }
+    console.error("oura_scope_check_inconclusive", failure);
+    return false;
   }
   async function complete(
     owner: number,
@@ -93,9 +109,8 @@ export function createOura({
       );
       signal.throwIfAborted();
       const noData =
-        tokens.scope === undefined &&
-        (await sharesNoData(tokens.access_token, signal));
-      signal.throwIfAborted();
+        tokens.scope === undefined && (await sharesNoData(tokens.access_token));
+      controller.signal.throwIfAborted();
       const now = clock.now();
       const stored = storeOuraConnection(
         database,
