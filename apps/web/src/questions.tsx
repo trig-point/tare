@@ -7,6 +7,7 @@ import {
   blankLabel,
   type LabelValues,
   labelAnswer,
+  lateTargetIsNew,
   type Question,
   questionsKey,
   readQuestions,
@@ -115,7 +116,9 @@ function QuestionForm({
         <Choices
           disabled={disabled}
           choices={[
-            ["Accept", { action: "accept" }],
+            ...(lateTargetIsNew(question)
+              ? [["Accept", { action: "accept" }] as [string, unknown]]
+              : []),
             ["Ignore", { action: "ignore" }],
           ]}
           answer={answer}
@@ -299,6 +302,10 @@ function JsonForm({
           onChange={(event) => setText(event.target.value)}
         />
         {invalid && <p role="alert">Not valid JSON</p>}
+        <details>
+          <summary>Answer format</summary>
+          <pre>{JSON.stringify(question.answer_schema, null, 2)}</pre>
+        </details>
         <button type="submit">Save</button>
       </fieldset>
     </form>

@@ -64,6 +64,16 @@ export function advisory(question: Question) {
   return question.answer_schema.mode === "advisory";
 }
 
+const lateTarget = z.object({
+  target: z.object({ type: z.enum(["new", "existing"]) }),
+});
+
+// The engine accepts a late list only into a new order; an existing one can only be ignored.
+export function lateTargetIsNew(question: Question) {
+  const parsed = lateTarget.safeParse(question.answer_schema);
+  return parsed.success && parsed.data.target.type === "new";
+}
+
 export async function refreshAnswered(client: QueryClient, person: number) {
   await Promise.all([
     client.invalidateQueries({ queryKey: questionsKey(person) }),

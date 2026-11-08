@@ -95,3 +95,21 @@ test("the nutrition form submits, closes the question and adds the food", async 
     [["Example bowl", 600, 35]],
   );
 });
+
+test("a late list offers Accept only for a new order", () => {
+  const late = (target: unknown) => ({
+    id: 1,
+    kind: "order_late_list",
+    subject_ref: "1",
+    prompt: "Example late list",
+    answer_schema: { target },
+    created_at: "2026-01-01T00:00:00.000Z",
+  });
+  const buttons = (target: unknown) =>
+    render(1, [late(target)]).match(/>(Accept|Ignore)<\/button>/g);
+  assert.deepEqual(buttons({ type: "existing", id: 1 }), [">Ignore</button>"]);
+  assert.deepEqual(
+    buttons({ type: "new", service: "example", delivery_date: "2026-02-10" }),
+    [">Accept</button>", ">Ignore</button>"],
+  );
+});
