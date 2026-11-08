@@ -59,7 +59,7 @@ export function SlotList({
       )}
       {status && status !== "ready" && <p>{statusText[status]}</p>}
       {plan && plan.slots.length > 0 && (
-        <ul className="slots">
+        <ul className="entries">
           {plan.slots.map((slot) => {
             const budget = plan.budgets.slots.find(
               (row) => row.position === slot.position,

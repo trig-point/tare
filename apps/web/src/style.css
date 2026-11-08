@@ -154,8 +154,15 @@ dd {
 .entries strong {
   flex-basis: 100%;
 }
-.entries form {
+.entries form,
+.planned-item {
   flex-basis: 100%;
+}
+.planned-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
 }
 fieldset {
   border: 1px solid #808f84;
