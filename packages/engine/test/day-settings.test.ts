@@ -1,5 +1,13 @@
 import assert from "node:assert/strict";
-import { assertionHeader, rejection, signAccessToken } from "./auth-support.ts";
+import type { CalendarRefresher } from "../src/calendar/refresh.ts";
+import {
+  assertionHeader,
+  cookie,
+  fixture,
+  rejection,
+  requestedWith,
+  signAccessToken,
+} from "./auth-support.ts";
 import { test } from "./support/hang-ceiling.ts";
 import { twoUsers } from "./support/two-users.ts";
 
@@ -111,4 +119,18 @@ test("agent service tokens cannot change day settings", async (context) => {
     headers,
   });
   await rejection(denied, 403, "forbidden");
+});
+
+test("saving day settings queues a calendar refresh for the caller", async (context) => {
+  const queued: number[] = [];
+  const calendar = { enqueue: (id: number) => queued.push(id) };
+  const setup = fixture(context, {
+    calendar: calendar as unknown as CalendarRefresher,
+  });
+  const response = await setup.app.request("/api/me", {
+    ...save({ timezone: "UTC", day_start_hour: 0 }),
+    headers: { ...requestedWith, Cookie: cookie(await setup.signIn()) },
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(queued, [setup.admin.id]);
 });

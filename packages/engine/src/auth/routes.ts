@@ -112,6 +112,7 @@ export const authOperations = [
         id: operationPerson(context).id,
       });
       if (!person) throw new Error("Day settings save returned no row");
+      context.calendar?.enqueue(person.id);
       return { status: 200, body: { user: toPublicUser(person) } };
     },
   }),
