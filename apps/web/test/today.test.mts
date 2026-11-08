@@ -106,6 +106,11 @@ test("today renders engine totals and provenance", async (context) => {
     render(setupData.person, rounded),
     /Target changed: 2,100 to 1,820 kcal, 112 to 140 g protein/,
   );
+  rounded.target_notice.new_kcal = 2100;
+  assert.match(
+    render(setupData.person, rounded),
+    /Target changed: 112 to 140 g protein</,
+  );
 });
 test("unknown totals are incomplete; missing and malformed responses fail", async (context) => {
   const setupData = await setup(context);

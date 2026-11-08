@@ -192,10 +192,19 @@ function TargetNotice({
   return (
     <section className="target-notice" aria-label="Target changed">
       <p>
-        Target changed: {displayNumber(notice.old_kcal)} to{" "}
-        {displayNumber(notice.new_kcal)} kcal,{" "}
-        {displayNumber(notice.old_protein_g)} to{" "}
-        {displayNumber(notice.new_protein_g)} g protein
+        Target changed:{" "}
+        {(
+          [
+            [notice.old_kcal, notice.new_kcal, "kcal"],
+            [notice.old_protein_g, notice.new_protein_g, "g protein"],
+          ] as const
+        )
+          .filter(([before, after]) => before !== after)
+          .map(
+            ([before, after, unit]) =>
+              `${displayNumber(before)} to ${displayNumber(after)} ${unit}`,
+          )
+          .join(", ")}
       </p>
       <button
         type="button"
