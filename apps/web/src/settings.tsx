@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 import { ApiError, type Session } from "./api.ts";
 import { refreshDays } from "./days-api.ts";
+import { ConnectedSources } from "./health.tsx";
 import {
   type Account,
   accountKey,
@@ -38,7 +39,7 @@ export function AccountSettings({
     enabled: online,
   });
   return (
-    <section aria-label="Settings">
+    <section id="settings" aria-label="Settings">
       <h2>Settings</h2>
       {account.isError && <p role="alert">Couldn’t load settings</p>}
       {!account.data && !account.isError && (
@@ -47,6 +48,14 @@ export function AccountSettings({
       {account.data && (
         <>
           <DayBoundaryForm account={account.data} online={online} />
+          <ConnectedSources
+            person={account.data.id}
+            timezone={account.data.timezone}
+            online={online}
+            callbackResult={new URLSearchParams(
+              globalThis.location?.search,
+            ).get("oura")}
+          />
           {session.mode === "access" && (
             <AgentMappings account={account.data} online={online} />
           )}
