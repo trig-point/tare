@@ -83,7 +83,15 @@ export function createOura({
         config.ouraTokenKey,
         now,
       );
-    } catch {
+    } catch (error) {
+      // Message and class only: the error's cause can carry code, state or tokens.
+      if (error instanceof Error)
+        console.error(
+          "oura_callback_failed",
+          error.constructor.name,
+          error.message,
+        );
+      else console.error("oura_callback_failed", typeof error);
       return false;
     }
   }
