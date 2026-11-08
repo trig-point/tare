@@ -74,6 +74,15 @@ export const todaySchema = z.object({
     fiber_g: total,
   }),
   target: targetSchema,
+  target_notice: z
+    .object({
+      id: z.number().int().positive(),
+      old_kcal: z.number(),
+      old_protein_g: z.number(),
+      new_kcal: z.number(),
+      new_protein_g: z.number(),
+    })
+    .nullable(),
   remaining: z.object({
     kcal: z.number().nullable(),
     protein_g: z.number().nullable(),
@@ -89,6 +98,14 @@ export function totalText(value: z.infer<typeof total>) {
   return value.complete && value.total !== null
     ? displayNumber(value.total)
     : `${displayNumber(value.known_subtotal)} + Incomplete`;
+}
+export async function dismissTargetNotice(id: number) {
+  z.object({ id: z.literal(id) }).parse(
+    await api("/api/target-notice/dismiss", {
+      method: "POST",
+      body: JSON.stringify({ id }),
+    }),
+  );
 }
 export async function changeIntake(
   id: number,
