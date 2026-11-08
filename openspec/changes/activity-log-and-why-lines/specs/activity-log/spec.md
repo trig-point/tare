@@ -1,11 +1,11 @@
 ## ADDED Requirements
 
 ### Requirement: Sessions with notes and sets
-A person or their agent SHALL be able to log an activity session with optional notes and optional sets. Each set SHALL carry a set index, an exercise, and any of reps, load, duration and a reps-in-reserve range, plus optional notes. Loads SHALL always be stored in kilograms; a load given in pounds SHALL be converted, and the unit given SHALL be kept for display only. `replace_activity_sets` SHALL replace all sets of one of the person's sessions in one write transaction. `log_activity` and `replace_activity_sets` SHALL accept bodies up to 64 KB and SHALL reject more sets than fit in that limit with a stable code. A replayed `log_activity` with the same client id SHALL return the first result. A tracker's calories SHALL never be written to a logged session.
+A person or their agent SHALL be able to log an activity session with optional notes and optional sets, written in one transaction. Each set SHALL carry a set index from 1, a nonblank exercise, a set type of warmup, working, drop or failure (default working), and any of reps, load, duration in seconds, a reps-in-reserve range from 0 to 10 with low at most high, and notes. Loads SHALL always be stored in kilograms, 0 or more; a load given in pounds SHALL be converted before it is stored, and the unit given SHALL be kept for display only. `replace_activity_sets` SHALL replace all sets of one session the person owns in one transaction. `read_activities` SHALL return the person's sessions with their sets for a date range. `log_activity` and `replace_activity_sets` SHALL accept bodies up to 64 KB and SHALL reject more sets than fit in that limit with a stable code. A replayed `log_activity` with the same client id SHALL return the stored session and write nothing. A session's calories SHALL stay the tracker's estimate for that workout and SHALL never be added to daily burn, intake or the target.
 
 #### Scenario: Strength session with sets
-- **WHEN** a person logs a strength session with three sets of 8 reps at 50 lb
-- **THEN** the session and three sets are stored, each set's load is 22.68 kg, and the sets read back showing 50 lb
+- **WHEN** a person logs a strength session with three working sets of 8 reps at 50 lb with 3 to 4 reps in reserve
+- **THEN** the session and three sets are stored, each set's load is 22.68 kg, and the sets read back showing 50 lb and the range 3 to 4
 
 #### Scenario: Sets replaced
 - **WHEN** the person replaces that session's sets with two sets
@@ -15,53 +15,57 @@ A person or their agent SHALL be able to log an activity session with optional n
 - **WHEN** a request carries more sets than the cap
 - **THEN** it is rejected with a stable code and nothing is stored
 
+#### Scenario: Invalid reps-in-reserve range
+- **WHEN** a set has reps in reserve from 4 to 3
+- **THEN** the request is rejected and nothing is stored
+
 #### Scenario: Another person's session
 - **WHEN** a person calls `replace_activity_sets` with a session id that belongs to someone else
 - **THEN** it is rejected as not found and the other person's sets are unchanged
 
 ### Requirement: Session kinds and categories
-Session kind SHALL stay free text. A fixed table SHALL map known kinds, including `sauna` and `cold_plunge` and the tracker's activity names, to one category of `strength`, `cardio`, `heat`, `cold` or `other`; an unknown kind SHALL be `other`.
+Session kind SHALL stay free text, with `sauna` and `cold_plunge` as the kinds for those sessions. A fixed list SHALL map each kind, and each of the tracker's activity names through a fixed table, to one category of `strength`, `cardio`, `sauna`, `cold_plunge` or `other`. An unknown kind or activity name SHALL map to `other`, SHALL be counted in telemetry, and SHALL never be rejected.
 
 #### Scenario: Sauna session
 - **WHEN** a person logs a 20-minute session of kind `sauna`
-- **THEN** it reads back with category `heat`
+- **THEN** it reads back with category `sauna`
 
-#### Scenario: Unknown kind
-- **WHEN** a session of kind `paddleboard` is logged
-- **THEN** it reads back with category `other`
+#### Scenario: Unknown tracker activity
+- **WHEN** a tracker workout arrives with an activity name not in the table
+- **THEN** it is stored, reads back with category `other`, and is counted in telemetry
 
 ### Requirement: Merged workouts
-The system SHALL provide one merged-workout read. A logged session and a tracker session of the same category whose times overlap SHALL read as one workout, taking sets, notes and times from the logged session and calories from the tracker session; calories SHALL never be summed. The Body card, the body fat filter, why-lines and tier-two counts SHALL all use this read.
+The system SHALL provide one merged-workouts read. A tracker session and a manual session SHALL read as one workout when their categories match and their times overlap, taking sets, start and duration from the logged session and calories from the tracker session; calories SHALL never be summed. The rows SHALL stay separate in storage. The Body card, the body fat trend and the why-lines SHALL all use this read.
 
 #### Scenario: Logged and tracked workout overlap
 - **WHEN** a logged strength session from 6:00 to 7:00 PM overlaps a tracker strength workout from 6:05 to 6:55 PM with 310 kcal
-- **THEN** the day has one workout with the logged sets, times 6:00 to 7:00 PM and 310 kcal
+- **THEN** the day has one workout with the logged sets, a 6:00 PM start, 60 minutes and 310 kcal
 
 #### Scenario: Different categories
 - **WHEN** a logged sauna session overlaps a tracker walk
 - **THEN** they read as two entries
 
 ### Requirement: Habit notes
-A person or their agent SHALL be able to log a context note for a day under a key from a fixed list, with an optional amount and an optional note, and delete it. The note SHALL have no yes or no value: no row means nothing was logged. Logging the same key for the same day SHALL replace the earlier note. An unknown key SHALL be rejected with a stable code.
+A person or their agent SHALL be able to log a habit note for a day under a key from a fixed list (`evening_alcohol` and `late_caffeine` to start), with an optional amount and an optional note, and SHALL be able to undo it by deleting the row. A note SHALL record its source. A row SHALL mean the habit happened; there SHALL be no done value and no "no" row, and a day without a row SHALL read as not logged. Logging the same key for the same day SHALL replace the earlier note. An unknown key SHALL be rejected with a stable code. A late hard workout SHALL be read from session times, never logged as a habit.
 
 #### Scenario: Alcohol logged
-- **WHEN** a person logs `alcohol` with amount 2 for a day
+- **WHEN** a person logs `evening_alcohol` with amount 2 for a day
 - **THEN** that day shows the note with amount 2
 
 #### Scenario: Logged again
-- **WHEN** they log `alcohol` with amount 3 for the same day
+- **WHEN** they log `evening_alcohol` with amount 3 for the same day
 - **THEN** one note remains, with amount 3
 
-#### Scenario: Nothing logged
-- **WHEN** a day has no `alcohol` note
-- **THEN** it reads as nothing logged, never as no alcohol
+#### Scenario: Not logged
+- **WHEN** a day has no `evening_alcohol` note
+- **THEN** it reads as not logged, never as no alcohol
 
 ### Requirement: Body card activity
-The Body card SHALL list the day's merged workouts with their sets, the day's other sessions and its habit notes, and SHALL let the person log a session with sets, a sauna or cold plunge session and a habit note, and edit or delete them.
+The Body card SHALL show the day's merged workouts with their sets, its other sessions and its habit notes, and SHALL let the person quickly log a sauna, a cold plunge or a habit, enter a workout with sets by hand, and edit or delete them.
 
-#### Scenario: Logging from the card
-- **WHEN** a person logs a sauna session from the Body card
-- **THEN** it appears in that day's list with category heat
+#### Scenario: Quick log from the card
+- **WHEN** a person logs a sauna from the Body card
+- **THEN** it appears in that day's list
 
 #### Scenario: Day with nothing logged
 - **WHEN** a day has no sessions and no notes
