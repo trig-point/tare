@@ -148,6 +148,11 @@ export function ProfileForm({
         <input type="date" {...field("birth_date")} />
         <label htmlFor="profile-sex">Sex</label>
         <select {...field("sex")}>
+          {profile === null && (
+            <option value="" disabled>
+              Choose
+            </option>
+          )}
           <option value="female">Female</option>
           <option value="male">Male</option>
         </select>
@@ -164,7 +169,7 @@ export function ProfileForm({
           type="number"
           min="-1.5"
           max="1"
-          step="0.05"
+          step="any"
           {...field("goal_rate_kg_week")}
         />
         <label htmlFor="profile-protein_factor">Protein (g/kg)</label>
@@ -172,7 +177,7 @@ export function ProfileForm({
           type="number"
           min="0.8"
           max="3"
-          step="0.1"
+          step="any"
           {...field("protein_factor")}
         />
         <button type="submit">
@@ -219,41 +224,52 @@ export function WeightChart({
 
 function TrendPlot({ history }: { history: WeightHistory }) {
   const container = useRef<HTMLDivElement>(null);
+  const [failed, setFailed] = useState(false);
   useEffect(() => {
     const element = container.current;
     if (!element) return;
-    let plot: { destroy(): void } | undefined;
+    let plot: import("uplot") | undefined;
     let active = true;
+    const resize = new ResizeObserver(() =>
+      plot?.setSize({ width: element.clientWidth, height: 240 }),
+    );
+    resize.observe(element);
     // Loaded on demand so uPlot stays out of the first screen's bundle.
-    void Promise.all([
-      import("uplot"),
-      import("uplot/dist/uPlot.min.css"),
-    ]).then(([{ default: UPlot }]) => {
-      if (!active) return;
-      plot = new UPlot(
-        {
-          width: element.clientWidth,
-          height: 240,
-          legend: { show: false },
-          series: [
-            {},
-            {
-              label: "Reading",
-              stroke: "#8a8f86",
-              paths: () => null,
-              points: { show: true, size: 6, fill: "#8a8f86" },
-            },
-            { label: "Trend", stroke: "#234b40", width: 2, spanGaps: true },
-          ],
-        },
-        chartData(history),
-        element,
-      );
-    });
+    void Promise.all([import("uplot"), import("uplot/dist/uPlot.min.css")])
+      .then(([{ default: UPlot }]) => {
+        if (!active) return;
+        plot = new UPlot(
+          {
+            width: element.clientWidth,
+            height: 240,
+            legend: { show: false },
+            series: [
+              {},
+              {
+                label: "Reading",
+                stroke: "#8a8f86",
+                paths: () => null,
+                points: { show: true, size: 6, fill: "#8a8f86" },
+              },
+              { label: "Trend", stroke: "#234b40", width: 2, spanGaps: true },
+            ],
+          },
+          chartData(history),
+          element,
+        );
+      })
+      .catch(() => {
+        if (active) setFailed(true);
+      });
     return () => {
       active = false;
+      resize.disconnect();
       plot?.destroy();
     };
   }, [history]);
-  return <div className="weight-chart" ref={container} />;
+  return failed ? (
+    <p role="alert">Couldn’t load chart</p>
+  ) : (
+    <div className="weight-chart" ref={container} />
+  );
 }

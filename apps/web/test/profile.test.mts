@@ -63,6 +63,17 @@ test("profile form saves and edits", async (context) => {
   );
   assert.match(form, /id="profile-height_cm"[^>]*value="172"/);
   assert.match(form, /<option value="light" selected="">/);
+  for (const key of ["goal_rate_kg_week", "protein_factor"])
+    assert.match(
+      form,
+      new RegExp(
+        `id="profile-${key}"[^>]*step="any"|step="any"[^>]*id="profile-${key}"`,
+      ),
+    );
+  const fresh = render(
+    createElement(ProfileForm, { person: 1, profile: null, online: true }),
+  );
+  assert.match(fresh, /<option value="" disabled="" selected="">Choose</);
 });
 
 test("target card renders target, eaten and remaining from a test engine", async (context) => {

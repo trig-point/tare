@@ -32,7 +32,7 @@ export function profileValues(profile: Profile | null): ProfileValues {
   return {
     height_cm: profile ? String(profile.height_cm) : "",
     birth_date: profile?.birth_date ?? "",
-    sex: profile?.sex ?? "female",
+    sex: profile?.sex ?? "",
     activity_level: profile?.activity_level ?? "moderate",
     goal_rate_kg_week: profile ? String(profile.goal_rate_kg_week) : "0",
     protein_factor: profile ? String(profile.protein_factor) : "1.6",
