@@ -9,7 +9,9 @@ import { writeTransaction } from "../db.ts";
 import { localDay } from "../logging/day.ts";
 import { listSyncPeople } from "../queries/oura/list-sync-people.ts";
 import { markMembership } from "../queries/oura/mark-membership.ts";
+import { markReconnect } from "../queries/oura/mark-reconnect.ts";
 import { recordSync } from "../queries/oura/record-sync.ts";
+import { selectConnection } from "../queries/oura/select-connection.ts";
 import { upsertSignal } from "../queries/upsert-signal.ts";
 import { upsertSleepPeriod } from "../queries/upsert-sleep-period.ts";
 import { upsertSourceActivity } from "../queries/upsert-source-activity.ts";
@@ -70,6 +72,21 @@ export function createOuraSyncJob({
             { user_id: owner },
           ),
         );
+      // An unexpired token that is still the stored one proves the grant is
+      // gone; an expired or replaced token only needs the next refresh.
+      if (fetched === "oura_unauthorized")
+        writeTransaction(database, () => {
+          const current = selectConnection(database, { user_id: owner });
+          if (
+            current &&
+            current.access_expires_at === access.accessExpiresAt &&
+            Date.parse(access.accessExpiresAt) > clock.now().getTime()
+          )
+            markReconnect(database, {
+              user_id: owner,
+              generation: current.generation,
+            });
+        });
       throw new Error(fetched);
     }
     const mapped = mapOura(fetched);

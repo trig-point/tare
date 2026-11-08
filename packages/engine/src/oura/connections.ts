@@ -1,5 +1,6 @@
 import type { Database } from "better-sqlite3";
 import { writeTransaction } from "../db.ts";
+import { markReconnect } from "../queries/oura/mark-reconnect.ts";
 import { saveConnection } from "../queries/oura/save-connection.ts";
 import { selectConnection } from "../queries/oura/select-connection.ts";
 import { updateConnection } from "../queries/oura/update-connection.ts";
@@ -12,6 +13,7 @@ export function storeOuraConnection(
   grant: { pair: TokenPair; expiresAt: string; scope?: string },
   key: Buffer,
   now: Date,
+  reconnect = false,
 ): boolean {
   const scopes =
     grant.scope === undefined
@@ -31,13 +33,18 @@ export function storeOuraConnection(
     scope_source: grant.scope === undefined ? "requested" : "response",
     now: now.toISOString(),
   };
-  return writeTransaction(database, () =>
-    generation === 0
-      ? saveConnection(database, { ...data, user_id: owner, generation }) !==
-        null
-      : updateConnection(database, data, { user_id: owner, generation }) !==
-        null,
-  );
+  return writeTransaction(database, () => {
+    const stored =
+      generation === 0
+        ? saveConnection(database, { ...data, user_id: owner, generation })
+        : updateConnection(database, data, { user_id: owner, generation });
+    if (stored && reconnect)
+      markReconnect(database, {
+        user_id: owner,
+        generation: stored.generation,
+      });
+    return stored !== null;
+  });
 }
 
 export function readOuraConnection(

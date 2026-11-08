@@ -25,14 +25,11 @@ export function mountOuraCallback(
       if (!person || (credential !== "session" && credential !== "access"))
         return context.json({ error: { code: "forbidden" } }, 403);
       try {
-        const connected = await deps.oura.callback(
+        const result = await deps.oura.callback(
           person.id,
           new URL(context.req.url),
         );
-        return context.redirect(
-          connected ? "/?oura=connected" : "/?oura=failed",
-          303,
-        );
+        return context.redirect(`/?oura=${result}`, 303);
       } catch {
         return context.redirect("/?oura=failed", 303);
       }

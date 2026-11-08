@@ -20,7 +20,10 @@ function withData(data: [readonly unknown[], unknown][], node: ReactElement) {
     createElement(QueryClientProvider, { client }, node),
   );
 }
-const renderOura = (connection: Partial<health.OuraConnection>) =>
+const renderOura = (
+  connection: Partial<health.OuraConnection>,
+  callbackResult: string | null = null,
+) =>
   withData(
     [
       [
@@ -31,7 +34,12 @@ const renderOura = (connection: Partial<health.OuraConnection>) =>
         }),
       ],
     ],
-    createElement(OuraStatus, { person: 1, timezone: "UTC", online: true }),
+    createElement(OuraStatus, {
+      person: 1,
+      timezone: "UTC",
+      online: true,
+      callbackResult,
+    }),
   );
 
 test("signals render beside the day's intake from a test engine", async (context) => {
@@ -124,6 +132,12 @@ test("membership and authorization errors render differently", () => {
   const authorization = renderOura({ status: "reconnect_required" });
   assert.match(authorization, /Oura sign-in expired.*Reconnect Oura/s);
   assert.doesNotMatch(authorization, /membership/);
+});
+
+test("a connect that shared no data asks to allow Daily on reconnect", () => {
+  const html = renderOura({ status: "reconnect_required" }, "no_data");
+  assert.match(html, /Allow Daily when you reconnect Oura.*Reconnect Oura/s);
+  assert.doesNotMatch(html, /sign-in expired/);
 });
 
 test("a connection needing reconnect after a restore says so", () => {

@@ -1,3 +1,4 @@
+import { fetchOuraCollection } from "@tare/health-sources";
 import type { Database } from "better-sqlite3";
 import * as oauth from "oauth4webapi";
 import { hashToken } from "../auth/sessions.ts";
@@ -23,26 +24,68 @@ export interface OuraOptions {
   config: Config;
   clock: { now(): Date };
   transport?: TokenTransport;
+  fetch?: typeof fetch;
 }
+export type OuraCallbackResult = "connected" | "no_data" | "failed";
 
 export function createOura({
   database,
   config,
   clock,
   transport,
+  fetch,
 }: OuraOptions) {
   const controller = new AbortController();
-  const pending = new Set<Promise<boolean>>();
+  const pending = new Set<Promise<OuraCallbackResult>>();
   const refreshCallers = createRefreshCallers();
   function cleanup() {
     deleteExpiredStates(database, { now: clock.now().toISOString() });
   }
-  async function complete(owner: number, callback: URL): Promise<boolean> {
+  // Oura can issue a token without the requested scopes and still omit the
+  // scope field. Only a 401 proves no data; anything else keeps the token,
+  // since the code is already spent and the daily sync backstops it.
+  async function sharesNoData(accessToken: string) {
+    const day = clock.now().toISOString().slice(0, 10);
+    const next = new Date(Date.parse(day) + 86_400_000).toISOString();
+    let rateLimited = false;
+    let failure: string;
+    try {
+      const checked = await fetchOuraCollection(
+        {
+          accessToken,
+          startDate: day,
+          endDate: next.slice(0, 10),
+          signal: AbortSignal.any([
+            controller.signal,
+            AbortSignal.timeout(5_000),
+          ]),
+          wait: async () => {
+            rateLimited = true;
+            throw new Error("oura_rate_limited");
+          },
+          ...(fetch ? { fetch } : {}),
+        },
+        "daily_activity",
+      );
+      if (checked === "oura_unauthorized") return true;
+      if (typeof checked !== "string") return false;
+      failure = rateLimited ? "oura_rate_limited" : checked;
+    } catch (error) {
+      controller.signal.throwIfAborted();
+      failure = error instanceof Error ? error.name : "unknown";
+    }
+    console.error("oura_scope_check_inconclusive", failure);
+    return false;
+  }
+  async function complete(
+    owner: number,
+    callback: URL,
+  ): Promise<OuraCallbackResult> {
     try {
       const states = callback.searchParams.getAll("state");
       const state = states[0];
       if (states.length !== 1 || !state || !/^[A-Za-z0-9_-]{43}$/.test(state))
-        return false;
+        return "failed";
       const [consumed] = writeTransaction(database, () =>
         consumeState(database, {
           state_hash: hashToken(state),
@@ -50,7 +93,7 @@ export function createOura({
           now: clock.now().toISOString(),
         }),
       );
-      if (!consumed || !config.oura || !config.ouraTokenKey) return false;
+      if (!consumed || !config.oura || !config.ouraTokenKey) return "failed";
       const signal = AbortSignal.any([
         controller.signal,
         AbortSignal.timeout(15_000),
@@ -65,8 +108,11 @@ export function createOura({
         transport,
       );
       signal.throwIfAborted();
+      const noData =
+        tokens.scope === undefined && (await sharesNoData(tokens.access_token));
+      controller.signal.throwIfAborted();
       const now = clock.now();
-      return storeOuraConnection(
+      const stored = storeOuraConnection(
         database,
         owner,
         consumed.generation,
@@ -82,7 +128,10 @@ export function createOura({
         },
         config.ouraTokenKey,
         now,
+        noData,
       );
+      if (!stored) return "failed";
+      return noData ? "no_data" : "connected";
     } catch (error) {
       // Message and class only: the error's cause can carry code, state or tokens.
       if (error instanceof Error)
@@ -92,7 +141,7 @@ export function createOura({
           error.message,
         );
       else console.error("oura_callback_failed", typeof error);
-      return false;
+      return "failed";
     }
   }
   return {

@@ -45,14 +45,33 @@ class Failure extends Error {
   }
 }
 
-export async function fetchOura(
+export function fetchOura(
   options: OuraFetchOptions,
 ): Promise<OuraData | OuraFailure> {
-  try {
+  return failureCode(options, async () => {
     const data: Partial<Record<Endpoint, unknown[]>> = {};
     for (const name of Object.keys(ouraEndpoints) as Endpoint[])
       data[name] = await fetchCollection(options, name);
     return data as OuraData;
+  });
+}
+
+export function fetchOuraCollection<Name extends Endpoint>(
+  options: OuraFetchOptions,
+  name: Name,
+): Promise<OuraData[Name] | OuraFailure> {
+  return failureCode(
+    options,
+    async () => (await fetchCollection(options, name)) as OuraData[Name],
+  );
+}
+
+async function failureCode<Result>(
+  options: OuraFetchOptions,
+  read: () => Promise<Result>,
+): Promise<Result | OuraFailure> {
+  try {
+    return await read();
   } catch (error) {
     if (error instanceof Failure) return error.code;
     if (options.signal.aborted) throw error;
