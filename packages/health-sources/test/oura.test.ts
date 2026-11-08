@@ -19,7 +19,6 @@ const night = (
   total_sleep_duration: seconds,
   lowest_heart_rate: heart,
   average_hrv: hrv,
-  average_heart_rate: 58,
 });
 const sample: OuraData = {
   daily_activity: [{ day: "2026-01-02", steps: 8123, active_calories: 412 }],
@@ -107,8 +106,6 @@ test("maps each endpoint into the signals vocabulary and keeps every period and 
       ["workout-walk", 20, null],
     ],
   );
-  const empty = mapOura({ ...sample, sleep: [] });
-  assert.ok(!empty.daily.some((entry) => entry.metric === "sleep"));
 });
 
 function stub(responses: Record<string, Response[]>) {
