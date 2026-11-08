@@ -2,6 +2,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
 import {
   bodyRows,
+  canConnectOura,
   connectOura,
   metricLabels,
   onPageRestored,
@@ -38,13 +39,13 @@ export function BodyCard({
   if (!signals.data) return null;
   const rows = bodyRows(signals.data.signals);
   const { activities } = signals.data;
-  const ouraState = connection.data && ouraView(connection.data).state;
-  const canConnect = ouraState !== undefined && ouraState !== "hidden";
+  const canConnect =
+    connection.data !== undefined && canConnectOura(ouraView(connection.data));
   return (
     <section className="signals" aria-label="Body">
       <h2>Body</h2>
       {rows.length === 0 && activities.length === 0 ? (
-        canConnect && ouraState !== "connected" ? (
+        canConnect ? (
           <p>
             <a href="#settings">Connect a source in Settings</a>
           </p>
@@ -143,9 +144,7 @@ export function ConnectedSources({
       {view.state === "restored" && (
         <p>Oura needs reconnecting after a restore</p>
       )}
-      {(view.state === "disconnected" ||
-        view.state === "authorization" ||
-        view.state === "restored") && (
+      {canConnectOura(view) && (
         <button
           type="button"
           disabled={!online || connect.isPending}

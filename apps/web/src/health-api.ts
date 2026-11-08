@@ -116,6 +116,10 @@ export type OuraView =
   | { state: "authorization" }
   | { state: "membership" }
   | { state: "connected"; lastSynced: string | null };
+export const canConnectOura = (view: OuraView) =>
+  view.state === "disconnected" ||
+  view.state === "authorization" ||
+  view.state === "restored";
 // Unreadable tokens win over the stored status: whatever it says, they cannot be used.
 export function ouraView(connection: OuraConnection): OuraView {
   if (!connection.configured) return { state: "hidden" };
