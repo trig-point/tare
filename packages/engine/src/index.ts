@@ -14,6 +14,7 @@ import { createOrderQuestionKinds } from "./inbound/questions.ts";
 import { createJobRunner } from "./jobs.ts";
 import { createOrderMaintenanceJob } from "./orders/maintenance.ts";
 import { createOura } from "./oura/service.ts";
+import { createOuraSyncJob } from "./oura/sync.ts";
 import { deleteExpiredSessions } from "./queries/delete-expired-sessions.ts";
 import { createTargetRecomputeJob } from "./target/job.ts";
 
@@ -92,6 +93,9 @@ async function startEngine() {
     }),
   );
   runner.register(oura.job);
+  runner.register(
+    createOuraSyncJob({ database: connection.database, oura, clock }),
+  );
   runner.register(calendar.job);
   calendar.start();
   runner.start();
