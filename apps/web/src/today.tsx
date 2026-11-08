@@ -9,6 +9,7 @@ import type { QueueEntry } from "./outbox-store.ts";
 import { ProfileSection, TargetCard, WeightChart } from "./profile.tsx";
 import { Questions } from "./questions.tsx";
 import { DaySignOff } from "./sign-off.tsx";
+import { Slots } from "./slots.tsx";
 import {
   changeIntake,
   changeWeight,
@@ -111,6 +112,7 @@ export function Today({
               online={online}
             />
           </div>
+          <Slots person={person.id} online={online} />
           <OuraStatus
             person={person.id}
             timezone={today.data.timezone}

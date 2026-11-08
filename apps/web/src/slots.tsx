@@ -1,0 +1,177 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ApiError } from "./api.ts";
+import { refreshDays } from "./days-api.ts";
+import {
+  actOnItem,
+  type ItemAction,
+  type Plan,
+  type PlannedItem,
+  planKey,
+  readPlan,
+} from "./plan-api.ts";
+import { displayNumber, refreshToday } from "./today-api.ts";
+
+const statusText = {
+  no_day_type: "No plan for today",
+  needs_profile: "Set up your profile to see budgets",
+  needs_weigh_in: "Log a weight to see budgets",
+};
+const actions: [ItemAction, string][] = [
+  ["ate", "Ate"],
+  ["ate_three_quarters", "Ate 3/4"],
+  ["skip", "Skip"],
+];
+
+export function Slots({ person, online }: { person: number; online: boolean }) {
+  const plan = useQuery({
+    queryKey: planKey(person),
+    queryFn: ({ signal }) => readPlan(signal),
+    enabled: online,
+  });
+  return (
+    <SlotList
+      person={person}
+      plan={plan.data}
+      failed={plan.isError}
+      online={online}
+    />
+  );
+}
+
+export function SlotList({
+  person,
+  plan,
+  failed,
+  online,
+}: {
+  person: number;
+  plan: Plan | undefined;
+  failed: boolean;
+  online: boolean;
+}) {
+  const status = plan?.budgets.status;
+  return (
+    <section aria-label="Slots">
+      <h2>Slots</h2>
+      {failed && <p role="alert">Couldn’t load slots</p>}
+      {!plan && !failed && (
+        <p>{online ? "Loading..." : "Unavailable offline"}</p>
+      )}
+      {status && status !== "ready" && <p>{statusText[status]}</p>}
+      {plan && plan.slots.length > 0 && (
+        <ul className="slots">
+          {plan.slots.map((slot) => {
+            const budget = plan.budgets.slots.find(
+              (row) => row.position === slot.position,
+            );
+            const items = plan.planned_items.filter(
+              (item) => item.position === slot.position,
+            );
+            return (
+              <li key={slot.position}>
+                <strong>{slot.name}</strong>
+                {budget && (
+                  <span>
+                    {remainingText(budget.kcal, "kcal")}
+                    {", "}
+                    {remainingText(budget.protein_g, "g protein")}
+                    {budget.ended && " · Ended"}
+                  </span>
+                )}
+                {items.length === 0 && <p>Nothing planned</p>}
+                {items.map((item) => (
+                  <ItemRow
+                    key={item.id}
+                    person={person}
+                    item={item}
+                    online={online}
+                  />
+                ))}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function remainingText(
+  value: Plan["budgets"]["slots"][number]["kcal"],
+  unit: string,
+) {
+  if (value.remaining === null) return `No ${unit} budget`;
+  const text =
+    value.remaining < 0
+      ? `${displayNumber(-value.remaining)} ${unit} over`
+      : `${displayNumber(value.remaining)} ${unit} left`;
+  return value.complete ? text : `${text}, incomplete`;
+}
+
+function ItemRow({
+  person,
+  item,
+  online,
+}: {
+  person: number;
+  item: PlannedItem;
+  online: boolean;
+}) {
+  const client = useQueryClient();
+  const refresh = () =>
+    Promise.all([
+      client.invalidateQueries({ queryKey: planKey(person) }),
+      refreshToday(client, person),
+      refreshDays(client, person),
+    ]);
+  const act = useMutation({
+    networkMode: "always",
+    mutationFn: async (action: ItemAction) => {
+      if (!online || !navigator.onLine) throw new Error("Offline");
+      await actOnItem(item, action);
+    },
+    onSuccess: refresh,
+    // The item changed elsewhere; reload to show its current state.
+    onError: (error) => {
+      if (error instanceof ApiError && error.status === 409) void refresh();
+    },
+  });
+  const name =
+    item.servings === null || item.servings === 1
+      ? item.reference.name
+      : `${item.reference.name} × ${displayNumber(item.servings)}`;
+  return (
+    <div className="planned-item">
+      <span>{name}</span>
+      {item.state === "eaten" && <span>Eaten</span>}
+      {item.state === "skipped" && <span>Skipped</span>}
+      {item.state === "planned" && (
+        <>
+          {item.nutrition.status !== "known" && (
+            <span>
+              {item.nutrition.status === "pending"
+                ? "Nutrition pending"
+                : "Nutrition missing"}
+            </span>
+          )}
+          {actions.map(([action, label]) => (
+            <button
+              key={action}
+              type="button"
+              aria-label={`${label}: ${item.reference.name}`}
+              disabled={
+                !online ||
+                act.isPending ||
+                (action !== "skip" && item.nutrition.status !== "known")
+              }
+              onClick={() => act.mutate(action)}
+            >
+              {label}
+            </button>
+          ))}
+        </>
+      )}
+      {act.isError && <p role="alert">Couldn’t update meal</p>}
+    </div>
+  );
+}
