@@ -50,6 +50,17 @@ export const weightSchema = z.object({
   source: z.string().nullable(),
 });
 export type Weight = z.infer<typeof weightSchema>;
+const adaptive = z.object({ status: z.enum(["eligible", "learning"]) });
+export const targetSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("ready"),
+    kcal: z.number(),
+    protein_g: z.number(),
+    basis: z.enum(["weekly_adaptive", "weekly_formula", "live_formula"]),
+    adaptive,
+  }),
+  z.object({ status: z.enum(["needs_profile", "needs_weigh_in"]), adaptive }),
+]);
 export const todaySchema = z.object({
   day: z.string(),
   timezone: z.string(),
@@ -62,7 +73,13 @@ export const todaySchema = z.object({
     fat_g: total,
     fiber_g: total,
   }),
+  target: targetSchema,
+  remaining: z.object({
+    kcal: z.number().nullable(),
+    protein_g: z.number().nullable(),
+  }),
 });
+export type TodayData = z.infer<typeof todaySchema>;
 export type Intake = z.infer<typeof intakeSchema>;
 export const todayKey = (person: number) => ["today", person] as const;
 export async function readToday(signal: AbortSignal) {

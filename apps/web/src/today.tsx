@@ -5,6 +5,7 @@ import type { Session } from "./api.ts";
 import { DaySignals, OuraStatus } from "./health.tsx";
 import type { OutboxReplay } from "./outbox-replay.ts";
 import type { QueueEntry } from "./outbox-store.ts";
+import { ProfileSection, TargetCard, WeightChart } from "./profile.tsx";
 import {
   changeIntake,
   changeWeight,
@@ -77,6 +78,7 @@ export function Today({
       {today.data && (
         <>
           <p>{today.data.day}</p>
+          <TargetCard today={today.data} />
           <div className="day-summary">
             <dl className="totals">
               {nutrients.map((key) => (
@@ -139,6 +141,8 @@ export function Today({
       </ul>
       <AddFood person={person} replay={replay} online={online} />
       <WeightForm person={person} replay={replay} />
+      <WeightChart person={person.id} online={online} />
+      <ProfileSection person={person.id} online={online} />
     </section>
   );
 }
