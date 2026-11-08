@@ -120,3 +120,30 @@ dd {
   margin: 0;
   overflow-wrap: anywhere;
 }
+.totals {
+  padding: 1rem;
+  background: #e9eddf;
+  border-radius: 0.75rem;
+}
+.entries {
+  padding: 0;
+  list-style: none;
+}
+.entries > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  border-bottom: 1px solid #ccd3c8;
+  padding: 1rem 0;
+}
+.entries strong {
+  flex-basis: 100%;
+}
+.entries form {
+  flex-basis: 100%;
+}
+fieldset {
+  border: 1px solid #808f84;
+  border-radius: 0.5rem;
+}
