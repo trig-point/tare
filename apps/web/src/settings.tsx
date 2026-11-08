@@ -94,7 +94,10 @@ export function DayBoundaryForm({
       <select
         id="settings-timezone"
         value={timezone}
-        onChange={(event) => setTimezone(event.target.value)}
+        onChange={(event) => {
+          save.reset();
+          setTimezone(event.target.value);
+        }}
       >
         {timezones(account.timezone).map((name) => (
           <option key={name} value={name}>
@@ -106,7 +109,10 @@ export function DayBoundaryForm({
       <select
         id="settings-day-start"
         value={hour}
-        onChange={(event) => setHour(event.target.value)}
+        onChange={(event) => {
+          save.reset();
+          setHour(event.target.value);
+        }}
       >
         {hours.map((value) => (
           <option key={value} value={value}>
