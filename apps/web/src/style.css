@@ -161,3 +161,7 @@ fieldset {
   border: 1px solid #808f84;
   border-radius: 0.5rem;
 }
+
+.day-status.complete {
+  font-weight: 600;
+}

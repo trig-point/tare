@@ -2,10 +2,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { AddFood } from "./add-food.tsx";
 import type { Session } from "./api.ts";
+import { refreshDays } from "./days-api.ts";
 import { DaySignals, OuraStatus } from "./health.tsx";
 import type { OutboxReplay } from "./outbox-replay.ts";
 import type { QueueEntry } from "./outbox-store.ts";
 import { ProfileSection, TargetCard, WeightChart } from "./profile.tsx";
+import { DaySignOff } from "./sign-off.tsx";
 import {
   changeIntake,
   changeWeight,
@@ -54,7 +56,11 @@ export function Today({
     const unsubscribe = replay.subscribe((snapshot) => {
       const changes = settledSince(previousPending, snapshot, person.id);
       previousPending = changes.pending;
-      if (changes.settled) void refreshToday(client, person.id);
+      if (changes.settled)
+        void Promise.all([
+          refreshToday(client, person.id),
+          refreshDays(client, person.id),
+        ]);
     });
     return () => {
       unsubscribe();
@@ -105,9 +111,12 @@ export function Today({
                 key={entry.id}
                 entry={entry}
                 online={online}
-                refresh={() =>
-                  client.invalidateQueries({ queryKey: todayKey(person.id) })
-                }
+                refresh={async () => {
+                  await Promise.all([
+                    client.invalidateQueries({ queryKey: todayKey(person.id) }),
+                    refreshDays(client, person.id),
+                  ]);
+                }}
               />
             ))}
           </ul>
@@ -125,6 +134,11 @@ export function Today({
             ))}
           </ul>
           {today.data.entries.length === 0 && <p>No food entries</p>}
+          <DaySignOff
+            person={person.id}
+            today={today.data.day}
+            online={online}
+          />
         </>
       )}
       <ul className="entries" aria-label="Pending entries">
