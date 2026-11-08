@@ -9,6 +9,7 @@ import type { QueueEntry } from "./outbox-store.ts";
 import { ProfileSection, TargetCard, WeightChart } from "./profile.tsx";
 import { Questions } from "./questions.tsx";
 import { DaySignOff } from "./sign-off.tsx";
+import { Slots } from "./slots.tsx";
 import {
   changeIntake,
   changeWeight,
@@ -111,6 +112,7 @@ export function Today({
               online={online}
             />
           </div>
+          <Slots person={person.id} online={online} />
           <OuraStatus
             person={person.id}
             timezone={today.data.timezone}
@@ -124,7 +126,7 @@ export function Today({
                 online={online}
                 refresh={async () => {
                   await Promise.all([
-                    client.invalidateQueries({ queryKey: todayKey(person.id) }),
+                    refreshToday(client, person.id),
                     refreshDays(client, person.id),
                   ]);
                 }}
@@ -138,9 +140,7 @@ export function Today({
                 entry={entry}
                 timezone={today.data.timezone}
                 online={online}
-                refresh={() =>
-                  client.invalidateQueries({ queryKey: todayKey(person.id) })
-                }
+                refresh={() => refreshToday(client, person.id)}
               />
             ))}
           </ul>

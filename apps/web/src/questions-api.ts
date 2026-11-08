@@ -1,6 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { api } from "./api.ts";
+import { planKey } from "./plan-api.ts";
 
 export const questionSchema = z.object({
   id: z.number(),
@@ -78,5 +79,6 @@ export async function refreshAnswered(client: QueryClient, person: number) {
   await Promise.all([
     client.invalidateQueries({ queryKey: questionsKey(person) }),
     client.invalidateQueries({ queryKey: ["find_food", person] }),
+    client.invalidateQueries({ queryKey: planKey(person) }),
   ]);
 }
