@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import type { Session } from "./api.ts";
+import { DaySignals, OuraStatus } from "./health.tsx";
 import type { OutboxReplay } from "./outbox-replay.ts";
 import type { QueueEntry } from "./outbox-store.ts";
 import {
@@ -75,14 +76,26 @@ export function Today({
       {today.data && (
         <>
           <p>{today.data.day}</p>
-          <dl className="totals">
-            {nutrients.map((key) => (
-              <div key={key}>
-                <dt>{nutrientLabels[key]}</dt>
-                <dd>{totalText(today.data.totals[key])}</dd>
-              </div>
-            ))}
-          </dl>
+          <div className="day-summary">
+            <dl className="totals">
+              {nutrients.map((key) => (
+                <div key={key}>
+                  <dt>{nutrientLabels[key]}</dt>
+                  <dd>{totalText(today.data.totals[key])}</dd>
+                </div>
+              ))}
+            </dl>
+            <DaySignals
+              person={person.id}
+              day={today.data.day}
+              online={online}
+            />
+          </div>
+          <OuraStatus
+            person={person.id}
+            timezone={today.data.timezone}
+            online={online}
+          />
           <ul className="entries">
             {today.data.entries.map((entry) => (
               <IntakeEntry
