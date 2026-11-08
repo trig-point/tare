@@ -7,6 +7,7 @@ import { DaySignals, OuraStatus } from "./health.tsx";
 import type { OutboxReplay } from "./outbox-replay.ts";
 import type { QueueEntry } from "./outbox-store.ts";
 import { ProfileSection, TargetCard, WeightChart } from "./profile.tsx";
+import { Questions } from "./questions.tsx";
 import { DaySignOff } from "./sign-off.tsx";
 import {
   changeIntake,
@@ -77,6 +78,7 @@ export function Today({
   return (
     <section aria-label="Today">
       <h1>Today</h1>
+      <Questions person={person.id} online={online} />
       {today.isError && <p role="alert">Couldn’t load today</p>}
       {!today.data && !today.isError && (
         <p>{online ? "Loading..." : "Today unavailable offline"}</p>

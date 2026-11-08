@@ -165,3 +165,22 @@ fieldset {
 .day-status.complete {
   font-weight: 600;
 }
+.badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.6rem;
+  padding: 0 0.45rem;
+  border-radius: 1rem;
+  color: #fffef8;
+  background: #9d5b31;
+  font-size: 0.9rem;
+  vertical-align: middle;
+}
+.questions {
+  padding: 0;
+  list-style: none;
+}
+.questions > li {
+  border-bottom: 1px solid #ccd3c8;
+  padding: 1rem 0;
+}
