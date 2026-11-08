@@ -305,7 +305,45 @@ test("Oura refuses malformed pairs and provider failures without exposing causes
   );
   assert.equal(setup.exchanges(), calls);
   assert.deepEqual(setup.connection(), before);
-  assert.deepEqual(captured, []);
+  assert.ok(captured.length > 0);
+  const logged = JSON.stringify(captured);
+  for (const secret of [
+    ...Object.values(pair),
+    failed,
+    denied,
+    "invented-code",
+    appEnv.TARE_OURA_CLIENT_SECRET,
+  ])
+    assert.ok(!logged.includes(secret));
+});
+
+test("Oura callback accepts Oura's issuer and logs a rejected one", async (context) => {
+  const setup = await setupOura(context);
+  const captured: unknown[][] = [];
+  context.mock.method(console, "error", (...args: unknown[]) => {
+    captured.push(args);
+  });
+  const withIssuer = async (issuer: string) =>
+    setup.admin.request(
+      `${callbackPath(await setup.admin.state())}&iss=${encodeURIComponent(issuer)}`,
+    );
+  redirect(await withIssuer("https://cloud.ouraring.com"));
+  assert.equal(setup.exchanges(), 0);
+  assert.equal(setup.connection(), null);
+  assert.deepEqual(captured, [
+    [
+      "oura_callback_failed",
+      "OperationProcessingError",
+      'unexpected "iss" (issuer) response parameter value',
+    ],
+  ]);
+  redirect(
+    await withIssuer("https://moi.ouraring.com/oauth/v2/ext/oauth-anonymous"),
+    true,
+  );
+  assert.equal(setup.exchanges(), 1);
+  assert.ok(setup.connection());
+  assert.equal(captured.length, 1);
 });
 
 for (const mode of ["access", "fallback"] as const)

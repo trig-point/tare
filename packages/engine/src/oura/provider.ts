@@ -6,7 +6,7 @@ import type { RefreshFailure } from "./refresh-result.ts";
 
 export const requestedScopes = ["daily", "workout"];
 const metadata = {
-  issuer: "https://cloud.ouraring.com",
+  issuer: "https://moi.ouraring.com/oauth/v2/ext/oauth-anonymous",
   authorization_endpoint: "https://cloud.ouraring.com/oauth/authorize",
   token_endpoint: "https://api.ouraring.com/oauth/token",
 };
@@ -47,32 +47,28 @@ export async function exchangeCode(
   signal: AbortSignal,
   transport?: TokenTransport,
 ) {
-  try {
-    const client = { client_id: app.clientId };
-    const parameters = oauth.validateAuthResponse(
-      metadata,
-      client,
-      callback,
-      state,
-    );
-    const response = await oauth.authorizationCodeGrantRequest(
-      metadata,
-      client,
-      oauth.ClientSecretPost(app.clientSecret),
-      parameters,
-      app.redirectUrl,
-      verifier,
-      { signal, ...(transport ? { [oauth.customFetch]: transport } : {}) },
-    );
-    // The library parseFloat-normalizes expires_in, so check the body as sent.
-    const sent = response.clone();
-    await oauth.processAuthorizationCodeResponse(metadata, client, response);
-    const result = tokenResponse.safeParse(await sent.json());
-    if (!result.success) throw new OperationError(400, "oura_token_invalid");
-    return result.data;
-  } catch {
-    throw new OperationError(400, "oura_token_invalid");
-  }
+  const client = { client_id: app.clientId };
+  const parameters = oauth.validateAuthResponse(
+    metadata,
+    client,
+    callback,
+    state,
+  );
+  const response = await oauth.authorizationCodeGrantRequest(
+    metadata,
+    client,
+    oauth.ClientSecretPost(app.clientSecret),
+    parameters,
+    app.redirectUrl,
+    verifier,
+    { signal, ...(transport ? { [oauth.customFetch]: transport } : {}) },
+  );
+  // The library parseFloat-normalizes expires_in, so check the body as sent.
+  const sent = response.clone();
+  await oauth.processAuthorizationCodeResponse(metadata, client, response);
+  const result = tokenResponse.safeParse(await sent.json());
+  if (!result.success) throw new OperationError(400, "oura_token_invalid");
+  return result.data;
 }
 
 export type RefreshGrant = zod.infer<typeof tokenResponse> & {
