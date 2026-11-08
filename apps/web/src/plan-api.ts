@@ -2,6 +2,7 @@ import { z } from "zod";
 import { api } from "./api.ts";
 
 const nutrientBudget = z.object({
+  known_subtotal: z.number(),
   complete: z.boolean(),
   budget: z.number().nullable(),
   remaining: z.number().nullable(),

@@ -100,11 +100,13 @@ function remainingText(
   value: Plan["budgets"]["slots"][number]["kcal"],
   unit: string,
 ) {
-  if (value.remaining === null) return `No ${unit} budget`;
+  if (value.budget === null) return `No ${unit} budget`;
+  // The engine leaves remaining null while any entry lacks this nutrient.
+  const left = value.remaining ?? value.budget - value.known_subtotal;
   const text =
-    value.remaining < 0
-      ? `${displayNumber(-value.remaining)} ${unit} over`
-      : `${displayNumber(value.remaining)} ${unit} left`;
+    left < 0
+      ? `${displayNumber(-left)} ${unit} over`
+      : `${displayNumber(left)} ${unit} left`;
   return value.complete ? text : `${text}, incomplete`;
 }
 
@@ -132,8 +134,11 @@ function ItemRow({
     },
     onSuccess: refresh,
     // The item changed elsewhere; reload to show its current state.
-    onError: (error) => {
-      if (error instanceof ApiError && error.status === 409) void refresh();
+    onError: async (error) => {
+      if (error instanceof ApiError && [404, 409].includes(error.status)) {
+        await refresh();
+        act.reset();
+      }
     },
   });
   const name =

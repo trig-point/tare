@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { Session } from "./api.ts";
 import { api } from "./api.ts";
 import type { OutboxReplay, QueueSnapshot } from "./outbox-replay.ts";
+import { planKey } from "./plan-api.ts";
 
 const nutrient = z.number().nonnegative().nullable();
 const total = z.object({
@@ -205,5 +206,8 @@ export function sourceName(source: string) {
 export async function refreshToday(client: QueryClient, personId: number) {
   const queryKey = todayKey(personId);
   await client.cancelQueries({ queryKey });
-  await client.invalidateQueries({ queryKey });
+  await Promise.all([
+    client.invalidateQueries({ queryKey }),
+    client.invalidateQueries({ queryKey: planKey(personId) }),
+  ]);
 }

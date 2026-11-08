@@ -87,6 +87,18 @@ test("the slot view renders each slot's remaining budget and planned item", asyn
     budgets: { status: "no_day_type", target: null, slots: [] },
   };
   assert.match(render(person, empty), /No plan for today/);
+  const [first, ...rest] = plan.budgets.slots;
+  const kcal = {
+    complete: false,
+    known_subtotal: 100,
+    budget: 500,
+    remaining: null,
+  };
+  const partial = {
+    ...plan,
+    budgets: { ...plan.budgets, slots: [{ ...first, kcal }, ...rest] },
+  };
+  assert.match(render(person, partial), /400 kcal left, incomplete/);
 });
 
 test("ate, 3/4 and skip update today's totals and the slot view", async (context) => {

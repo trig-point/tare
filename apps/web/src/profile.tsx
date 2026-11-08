@@ -15,8 +15,8 @@ import {
 } from "./profile-api.ts";
 import {
   displayNumber,
+  refreshToday,
   type TodayData,
-  todayKey,
   totalText,
 } from "./today-api.ts";
 
@@ -116,7 +116,7 @@ export function ProfileForm({
     mutationFn: () => saveProfile(values),
     onSuccess: async (saved) => {
       client.setQueryData(profileKey(person), saved);
-      await client.invalidateQueries({ queryKey: todayKey(person) });
+      await refreshToday(client, person);
     },
   });
   const field = (key: keyof typeof values) => ({

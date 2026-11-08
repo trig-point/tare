@@ -126,7 +126,7 @@ export function Today({
                 online={online}
                 refresh={async () => {
                   await Promise.all([
-                    client.invalidateQueries({ queryKey: todayKey(person.id) }),
+                    refreshToday(client, person.id),
                     refreshDays(client, person.id),
                   ]);
                 }}
@@ -140,9 +140,7 @@ export function Today({
                 entry={entry}
                 timezone={today.data.timezone}
                 online={online}
-                refresh={() =>
-                  client.invalidateQueries({ queryKey: todayKey(person.id) })
-                }
+                refresh={() => refreshToday(client, person.id)}
               />
             ))}
           </ul>
