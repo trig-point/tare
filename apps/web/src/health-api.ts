@@ -79,6 +79,15 @@ export async function connectOura(navigate: (url: string) => void) {
   navigate(authorization_url);
 }
 
+// Back from Oura can restore this page from the back-forward cache with the connect request still pending.
+export function onPageRestored(target: EventTarget, restored: () => void) {
+  const listener = (event: Event) => {
+    if ((event as PageTransitionEvent).persisted) restored();
+  };
+  target.addEventListener("pageshow", listener);
+  return () => target.removeEventListener("pageshow", listener);
+}
+
 export type OuraView =
   | { state: "hidden" }
   | { state: "disconnected" }

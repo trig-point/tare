@@ -175,3 +175,18 @@ test("one metric from two sources renders as two labelled rows", () => {
   assert.match(html, /<dt>Steps \(manual\)<\/dt><dd>750</);
   assert.match(html, /<dt>Sleep<\/dt>/);
 });
+
+test("a page restored from the back-forward cache resets connect", () => {
+  const page = new EventTarget();
+  let resets = 0;
+  const stop = health.onPageRestored(page, () => resets++);
+  const show = (persisted: boolean) =>
+    page.dispatchEvent(Object.assign(new Event("pageshow"), { persisted }));
+  show(false);
+  assert.equal(resets, 0);
+  show(true);
+  assert.equal(resets, 1);
+  stop();
+  show(true);
+  assert.equal(resets, 1);
+});

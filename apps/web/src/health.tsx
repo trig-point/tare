@@ -1,7 +1,9 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
 import {
   connectOura,
   metricLabels,
+  onPageRestored,
   ouraKey,
   ouraView,
   readOura,
@@ -83,6 +85,8 @@ export function OuraStatus({
     mutationFn: () =>
       connectOura(navigate).then(() => new Promise<never>(() => {})),
   });
+  const { reset } = connect;
+  useEffect(() => onPageRestored(window, reset), [reset]);
   if (connection.isError) return <p role="alert">Couldn’t load Oura</p>;
   if (!connection.data) return null;
   const view = ouraView(connection.data);
