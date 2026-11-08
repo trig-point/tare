@@ -117,7 +117,9 @@ test("unsigned days are listed and reviewed in turn", async (context) => {
   const next = nextUnsignedDay(days, "2025-12-30");
   assert.equal(next, "2025-12-29");
   assert.match(await review(person, "2025-12-30", next), /Next day/);
-  await signOffDay("2025-12-30", signOffValues(days[0]!));
+  const [first] = days;
+  assert.ok(first);
+  await signOffDay("2025-12-30", signOffValues(first));
   const remaining = await readUnsignedDays(signal);
   assert.deepEqual(
     remaining.map((entry) => entry.day),
