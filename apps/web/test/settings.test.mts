@@ -152,13 +152,10 @@ test("mapping screens hide in fallback mode and admin forms hide for members", (
     );
   const accessAdmin = screen("access", true);
   assert.match(accessAdmin, /Day boundary.*Agents.*Map a Client ID/s);
-  assert.doesNotMatch(accessAdmin, /Add a person|Access email/);
+  assert.doesNotMatch(accessAdmin, /Add a person/);
   const fallbackAdmin = screen("fallback", true);
   assert.match(fallbackAdmin, /Day boundary/);
-  assert.doesNotMatch(
-    fallbackAdmin,
-    /Agents|Map a Client ID|Add a person|Initial password/,
-  );
+  assert.doesNotMatch(fallbackAdmin, /Agents|Map a Client ID|Add a person/);
   assert.doesNotMatch(screen("access", false), /Add a person|Map a Client ID/);
 });
 

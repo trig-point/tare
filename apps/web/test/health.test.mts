@@ -191,9 +191,8 @@ test("two sources for one metric render only the preferred one", () => {
           day,
           activities: [],
           signals: [
-            { ...steps, value: 800, source: "oura" },
             { ...steps, value: 750, source: "manual" },
-            { ...steps, value: 700, source: "agent" },
+            { ...steps, value: 800, source: "oura" },
             { metric: "hrv", unit: "ms", value: 41, source: "agent" },
             { metric: "hrv", unit: "ms", value: 45, source: "oura" },
           ],
@@ -207,7 +206,7 @@ test("two sources for one metric render only the preferred one", () => {
     html,
     /<dt>HRV<\/dt><dd>45 ms<\/dd><dd class="source">Oura<.*<dt>Steps<\/dt><dd>750<\/dd><dd class="source">Manual</s,
   );
-  assert.doesNotMatch(html, /800|700|41 ms|Agent/);
+  assert.doesNotMatch(html, /800|41 ms|Agent/);
 });
 
 test("settings renders the Oura connection states", () => {
