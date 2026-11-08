@@ -6,7 +6,7 @@ registerHooks({
   resolve: (specifier, context, next) =>
     specifier === "virtual:pwa-register/react"
       ? {
-          url: "data:text/javascript,export const useRegisterSW = () => globalThis.registerStub()",
+          url: "data:text/javascript,export const useRegisterSW = (options) => globalThis.registerStub(options)",
           shortCircuit: true,
         }
       : next(specifier, context),
