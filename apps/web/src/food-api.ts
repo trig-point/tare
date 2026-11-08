@@ -53,12 +53,9 @@ export type CatalogResult = {
   foods: FoodChoice[];
 };
 
-export function mergeChoices(
-  catalogFoods: FoodChoice[],
-  onlineFoods: FoodChoice[],
-) {
+export function mergeChoices(...lists: FoodChoice[][]) {
   const seen = new Set<string>();
-  return [...catalogFoods, ...onlineFoods].filter((food) => {
+  return lists.flat().filter((food) => {
     const key = `${food.reference.kind}-${food.reference.id}`;
     if (seen.has(key)) return false;
     seen.add(key);
@@ -101,12 +98,25 @@ export async function findFood(
 
 // Ambiguous results are never offered: the person picks only exact matches.
 export async function searchOnline(name: string): Promise<FoodChoice[]> {
-  const response = onlineSchema.parse(
+  return onlineChoices(
     await api("/api/lookup/search", {
       method: "POST",
       body: JSON.stringify({ name: name.trim() }),
     }),
   );
+}
+
+export async function lookupBarcode(barcode: string): Promise<FoodChoice[]> {
+  return onlineChoices(
+    await api("/api/lookup/barcode", {
+      method: "POST",
+      body: JSON.stringify({ barcode }),
+    }),
+  );
+}
+
+function onlineChoices(body: unknown): FoodChoice[] {
+  const response = onlineSchema.parse(body);
   if (response.result !== "match") return [];
   return response.foods.map((food) => ({
     reference: { kind: "source_food", id: food.source_food_id },

@@ -199,3 +199,10 @@ fieldset {
   border-bottom: 1px solid #ccd3c8;
   padding: 1rem 0;
 }
+
+.scanner video:not([hidden]) {
+  display: block;
+  width: 100%;
+  max-height: 50vh;
+  object-fit: cover;
+}

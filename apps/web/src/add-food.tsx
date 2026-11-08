@@ -1,12 +1,14 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import type { Session } from "./api.ts";
+import { BarcodeScanner } from "./barcode-scan.tsx";
 import {
   type CatalogResult,
   catalogQuery,
   enqueueFood,
   enqueueNumbers,
   type FoodChoice,
+  lookupBarcode,
   mergeChoices,
   searchOnline,
 } from "./food-api.ts";
@@ -29,6 +31,7 @@ export function AddFood({ person, replay, online }: Props) {
     enabled: online && term !== "",
   });
   const lookup = useMutation({ mutationFn: searchOnline, retry: 0 });
+  const barcode = useMutation({ mutationFn: lookupBarcode, retry: 0 });
   const log = useMutation({
     networkMode: "always",
     mutationFn: (food: FoodChoice) =>
@@ -37,12 +40,14 @@ export function AddFood({ person, replay, online }: Props) {
       setName("");
       setServings("1");
       lookup.reset();
+      barcode.reset();
     },
   });
   const searched = lookup.variables === term ? lookup : undefined;
   const choices = mergeChoices(
     catalog.data?.result === "match" ? catalog.data.foods : [],
     searched?.data ?? [],
+    barcode.data ?? [],
   );
   const catalogMissed =
     term !== "" &&
@@ -57,7 +62,10 @@ export function AddFood({ person, replay, online }: Props) {
         type="search"
         autoComplete="off"
         value={name}
-        onChange={(event) => setName(event.target.value)}
+        onChange={(event) => {
+          setName(event.target.value);
+          barcode.reset();
+        }}
       />
       {term !== "" && !online && <p>Search unavailable offline</p>}
       {catalog.isError && <p role="alert">Couldn’t search foods</p>}
@@ -82,6 +90,12 @@ export function AddFood({ person, replay, online }: Props) {
         <OnlineMiss
           enterManually={catalogMissed ? undefined : () => setManual(term)}
         />
+      )}
+      <BarcodeScanner online={online} onCode={barcode.mutate} />
+      {barcode.isPending && <p>Looking up...</p>}
+      {barcode.isError && <p role="alert">Couldn’t look up barcode</p>}
+      {barcode.data?.length === 0 && (
+        <OnlineMiss enterManually={() => setManual("")} />
       )}
       {choices.length > 0 && (
         <>
@@ -129,6 +143,7 @@ export function AddFood({ person, replay, online }: Props) {
           done={() => {
             setManual(null);
             setName("");
+            barcode.reset();
           }}
         />
       )}
