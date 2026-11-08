@@ -28,6 +28,9 @@ export function DaySignals({
   if (signals.isError) return <p role="alert">Couldn’t load signals</p>;
   if (!signals.data) return null;
   const { signals: rows, activities } = signals.data;
+  const sources = new Map<string, number>();
+  for (const entry of rows)
+    sources.set(entry.metric, (sources.get(entry.metric) ?? 0) + 1);
   return (
     <section className="signals" aria-label="Signals">
       {rows.length === 0 && activities.length === 0 ? (
@@ -35,8 +38,11 @@ export function DaySignals({
       ) : (
         <dl className="totals">
           {rows.map((entry) => (
-            <div key={entry.metric}>
-              <dt>{metricLabels[entry.metric]}</dt>
+            <div key={`${entry.metric}:${entry.source}`}>
+              <dt>
+                {metricLabels[entry.metric]}
+                {(sources.get(entry.metric) ?? 0) > 1 && ` (${entry.source})`}
+              </dt>
               <dd>{signalText(entry)}</dd>
             </div>
           ))}

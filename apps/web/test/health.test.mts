@@ -12,7 +12,7 @@ import { test } from "./support.mts";
 import "./tsx.mts";
 
 const { Today } = await import("../src/today.tsx");
-const { OuraStatus } = await import("../src/health.tsx");
+const { DaySignals, OuraStatus } = await import("../src/health.tsx");
 function withData(data: [readonly unknown[], unknown][], node: ReactElement) {
   const client = new QueryClient();
   for (const [key, value] of data) client.setQueryData(key, value);
@@ -149,4 +149,29 @@ test("a failed Oura read shows an error, not a connection state", () => {
   );
   assert.match(html, /role="alert">Couldn’t load Oura</);
   assert.doesNotMatch(html, /Connect Oura|Oura connected/);
+});
+
+test("one metric from two sources renders as two labelled rows", () => {
+  const day = "2026-01-02";
+  const row = { metric: "steps", unit: "count" } as const;
+  const html = withData(
+    [
+      [
+        health.signalsKey(1, day),
+        health.signalsSchema.parse({
+          day,
+          activities: [],
+          signals: [
+            { ...row, value: 800, source: "oura" },
+            { ...row, value: 750, source: "manual" },
+            { metric: "sleep", unit: "minutes", value: 420, source: "oura" },
+          ],
+        }),
+      ],
+    ],
+    createElement(DaySignals, { person: 1, day, online: false }),
+  );
+  assert.match(html, /<dt>Steps \(oura\)<\/dt><dd>800</);
+  assert.match(html, /<dt>Steps \(manual\)<\/dt><dd>750</);
+  assert.match(html, /<dt>Sleep<\/dt>/);
 });
