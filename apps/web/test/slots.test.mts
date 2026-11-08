@@ -166,4 +166,5 @@ test("accepting suggested shares saves them to the template", async (context) =>
     [100, 9800, 100],
   );
   assert.doesNotMatch(render(admin.user.id, saved), /Suggested shares/);
+  assert.equal(saved.planned_items.length, 3);
 });

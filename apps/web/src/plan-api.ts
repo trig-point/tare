@@ -25,10 +25,7 @@ export const planSchema = z.object({
     z.object({
       position: z.number().int().nonnegative(),
       name: z.string(),
-      start_minute: z.number().int(),
-      end_minute: z.number().int(),
       share_bp: z.number().int().positive(),
-      fill_hint: z.string().nullable(),
     }),
   ),
   budgets: z.object({
@@ -85,19 +82,8 @@ export async function acceptShares(
   shares: NonNullable<Plan["suggested_shares"]>,
 ) {
   if (!plan.template) throw new Error("No template to update");
-  await api("/api/plan/templates", {
+  await api("/api/plan/shares", {
     method: "POST",
-    body: JSON.stringify({
-      action: "update",
-      id: plan.template.id,
-      name: plan.template.name,
-      slots: plan.slots.map((slot) => ({
-        name: slot.name,
-        start_minute: slot.start_minute,
-        end_minute: slot.end_minute,
-        fill_hint: slot.fill_hint,
-        share: shares.find((value) => value.position === slot.position)?.share,
-      })),
-    }),
+    body: JSON.stringify({ template_id: plan.template.id, shares }),
   });
 }
