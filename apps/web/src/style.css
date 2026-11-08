@@ -90,6 +90,7 @@ button:disabled {
   line-height: 1.5;
 }
 .queue-status,
+.update-notice,
 .actions {
   display: flex;
   align-items: center;

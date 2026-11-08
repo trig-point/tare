@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { registerHooks } from "node:module";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import ts from "typescript";
 import { twoUsers } from "../../../packages/engine/test/support/two-users.ts";
 import { OutboxReplay } from "../src/outbox-replay.ts";
 import { openOutboxStore } from "../src/outbox-store.ts";
@@ -20,22 +17,8 @@ import {
 } from "../src/today-api.ts";
 import "fake-indexeddb/auto";
 import { test } from "./support.mts";
+import "./tsx.mts";
 
-registerHooks({
-  load(url, context, next) {
-    if (!url.endsWith(".tsx")) return next(url, context);
-    return {
-      format: "module",
-      shortCircuit: true,
-      source: ts.transpileModule(readFileSync(new URL(url), "utf8"), {
-        compilerOptions: {
-          jsx: ts.JsxEmit.ReactJSX,
-          module: ts.ModuleKind.ESNext,
-        },
-      }).outputText,
-    };
-  },
-});
 const { Today } = await import("../src/today.tsx");
 async function setup(context: Parameters<typeof twoUsers>[0]) {
   const { admin } = await twoUsers(context, "fallback");
