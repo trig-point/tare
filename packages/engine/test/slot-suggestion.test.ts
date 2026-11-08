@@ -47,15 +47,24 @@ test("suggested shares come from the person's own signed-off days", async (conte
   );
   const day = (index: number) =>
     `2025-11-${String(index + 1).padStart(2, "0")}`;
+  const sign = (person: Person, from: number, to: number) => {
+    for (let index = from; index < to; index += 1)
+      signOff.run(person.user.id, day(index));
+  };
+  const shares = async (read: typeof readAdmin) =>
+    (await read()).suggested_shares?.map((value) => value.share) ?? null;
+  sign(admin, 0, 14);
+  assert.equal(await shares(readAdmin), null);
   for (let index = 0; index < 15; index += 1)
-    for (const [hour, kcal] of [
-      [3, index === 14 ? 9000 : 0],
-      [9, 600],
-      [13, 200],
-      [19, 1200],
-    ])
+    for (const [person, hour, kcal] of [
+      [admin, 3, index === 14 ? 9000 : 0],
+      [admin, 9, 600],
+      [admin, 13, 200],
+      [admin, 19, 1200],
+      [member, 3, 500],
+    ] as const)
       insert.run(
-        admin.user.id,
+        person.user.id,
         `example-${index}-${hour}`,
         `${day(index)}T${String(hour).padStart(2, "0")}:00:00.000Z`,
         day(index),
@@ -63,20 +72,16 @@ test("suggested shares come from the person's own signed-off days", async (conte
         `${day(index)}T00:00:00.000Z`,
         `${day(index)}T00:00:00.000Z`,
       );
-  for (let index = 0; index < 13; index += 1)
-    signOff.run(admin.user.id, day(index));
-  assert.equal((await readAdmin()).suggested_shares, null);
-  signOff.run(admin.user.id, day(13));
-  const offered = await readAdmin();
+  sign(admin, 0, 13);
+  sign(member, 0, 13);
+  assert.equal(await shares(readAdmin), null);
+  sign(admin, 13, 14);
+  assert.deepEqual(await shares(readAdmin), [1, 30, 10, 59]);
   assert.deepEqual(
-    offered.suggested_shares?.map((value) => value.share),
-    [1, 30, 10, 59],
-  );
-  assert.deepEqual(
-    offered.slots.map((slot) => slot.share_bp),
+    (await readAdmin()).slots.map((slot) => slot.share_bp),
     [2500, 2500, 2500, 2500],
   );
-  for (let index = 0; index < 14; index += 1)
-    signOff.run(member.user.id, day(index));
-  assert.equal((await readMember()).suggested_shares, null);
+  assert.equal(await shares(readMember), null);
+  sign(member, 13, 14);
+  assert.deepEqual(await shares(readMember), [97, 1, 1, 1]);
 });
