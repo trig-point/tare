@@ -66,7 +66,8 @@ export async function addUser(
     await api("/api/users", { method: "POST", body: JSON.stringify(values) }),
   ).user;
 }
+// V8 lists no UTC entry, and UTC is the install default.
 export function timezones(current: string) {
-  const known = Intl.supportedValuesOf("timeZone");
-  return known.includes(current) ? known : [current, ...known];
+  const known = new Set(["UTC", ...Intl.supportedValuesOf("timeZone")]);
+  return known.has(current) ? [...known] : [current, ...known];
 }

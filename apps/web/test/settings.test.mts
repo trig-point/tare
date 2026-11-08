@@ -15,6 +15,7 @@ import {
   readMappings,
   removeMapping,
   saveDaySettings,
+  timezones,
 } from "../src/settings-api.ts";
 import { test } from "./support.mts";
 import "./tsx.mts";
@@ -157,4 +158,10 @@ test("mapping screens hide in fallback mode and admin forms hide for members", (
   assert.match(fallbackAdmin, /Day boundary.*Initial password/s);
   assert.doesNotMatch(fallbackAdmin, /Agents|Map a Client ID/);
   assert.doesNotMatch(screen("access", false), /Add a person|Map a Client ID/);
+});
+
+test("timezone choices always include UTC once", () => {
+  const choices = timezones("America/New_York");
+  assert.ok(choices.includes("UTC"));
+  assert.equal(new Set(choices).size, choices.length);
 });
