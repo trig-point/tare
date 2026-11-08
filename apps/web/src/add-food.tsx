@@ -143,6 +143,7 @@ export function AddFood({ person, replay, online }: Props) {
           done={() => {
             setManual(null);
             setName("");
+            barcode.reset();
           }}
         />
       )}
