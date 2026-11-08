@@ -13,6 +13,7 @@ import type { OuraService } from "../oura/service.ts";
 import { deleteSession } from "../queries/delete-session.ts";
 import { insertAccount } from "../queries/insert-account.ts";
 import { selectUserByUsername } from "../queries/select-user-by-username.ts";
+import { updateDaySettings } from "../queries/update-day-settings.ts";
 import type { QuestionKind } from "../questions/kinds.ts";
 import { normalizeAccessEmail } from "./access.ts";
 import {
@@ -89,6 +90,30 @@ export const authOperations = [
       status: 200,
       body: { user: toPublicUser(operationPerson(identity)) },
     }),
+  }),
+  defineOperation({
+    ...browserOperation,
+    name: "save_day_settings",
+    method: "PATCH",
+    path: "/api/me",
+    bodyLimit: 8192,
+    input: zod.strictObject({
+      timezone: zod.string().trim().min(1).max(64),
+      day_start_hour: zod.number().int().min(0).max(23),
+    }),
+    output: userOutput,
+    handler(body, context) {
+      try {
+        validateTimezone(body.timezone);
+      } catch {
+        throw new OperationError(400, "invalid_request");
+      }
+      const [person] = updateDaySettings(context.database, body, {
+        id: operationPerson(context).id,
+      });
+      if (!person) throw new Error("Day settings save returned no row");
+      return { status: 200, body: { user: toPublicUser(person) } };
+    },
   }),
   defineOperation({
     ...browserOperation,
