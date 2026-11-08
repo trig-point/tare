@@ -3,12 +3,12 @@ import { api } from "./api.ts";
 import { displayNumber } from "./today-api.ts";
 
 const metrics = [
-  "steps",
-  "active_calories",
-  "sleep",
-  "resting_heart_rate",
   "hrv",
   "readiness",
+  "resting_heart_rate",
+  "sleep",
+  "steps",
+  "active_calories",
   "stress",
 ] as const;
 export const metricLabels: Record<(typeof metrics)[number], string> = {
@@ -55,6 +55,27 @@ export async function readSignals(day: string, signal: AbortSignal) {
     await api(`/api/signals/${encodeURIComponent(day)}`, { signal }),
   );
 }
+const sourcePreference = ["manual", "oura", "agent"];
+const sourceLabels: Record<string, string> = {
+  manual: "Manual",
+  oura: "Oura",
+  agent: "Agent",
+};
+export const sourceLabel = (source: string) => sourceLabels[source] ?? source;
+const rank = (source: string) => {
+  const index = sourcePreference.indexOf(source);
+  return index === -1 ? sourcePreference.length : index;
+};
+// One value per metric, never averaged: sources disagree on method, so a blend would match none of them.
+export function bodyRows(signals: Signals["signals"]) {
+  const picked = new Map<string, Signals["signals"][number]>();
+  for (const entry of signals) {
+    const current = picked.get(entry.metric);
+    if (!current || rank(entry.source) < rank(current.source))
+      picked.set(entry.metric, entry);
+  }
+  return metrics.flatMap((metric) => picked.get(metric) ?? []);
+}
 export function signalText(entry: { value: number; unit: string }) {
   return `${displayNumber(entry.value)}${unitSuffix[entry.unit] ?? ""}`;
 }
@@ -95,6 +116,10 @@ export type OuraView =
   | { state: "authorization" }
   | { state: "membership" }
   | { state: "connected"; lastSynced: string | null };
+export const canConnectOura = (view: OuraView) =>
+  view.state === "disconnected" ||
+  view.state === "authorization" ||
+  view.state === "restored";
 // Unreadable tokens win over the stored status: whatever it says, they cannot be used.
 export function ouraView(connection: OuraConnection): OuraView {
   if (!connection.configured) return { state: "hidden" };

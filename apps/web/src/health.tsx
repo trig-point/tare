@@ -1,6 +1,8 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
 import {
+  bodyRows,
+  canConnectOura,
   connectOura,
   metricLabels,
   onPageRestored,
@@ -10,10 +12,11 @@ import {
   readSignals,
   signalsKey,
   signalText,
+  sourceLabel,
 } from "./health-api.ts";
 import { displayNumber } from "./today-api.ts";
 
-export function DaySignals({
+export function BodyCard({
   person,
   day,
   online,
@@ -27,25 +30,35 @@ export function DaySignals({
     queryFn: ({ signal }) => readSignals(day, signal),
     enabled: online,
   });
+  const connection = useQuery({
+    queryKey: ouraKey(person),
+    queryFn: ({ signal }) => readOura(signal),
+    enabled: online,
+  });
   if (signals.isError) return <p role="alert">Couldn’t load signals</p>;
   if (!signals.data) return null;
-  const { signals: rows, activities } = signals.data;
-  const sources = new Map<string, number>();
-  for (const entry of rows)
-    sources.set(entry.metric, (sources.get(entry.metric) ?? 0) + 1);
+  const rows = bodyRows(signals.data.signals);
+  const { activities } = signals.data;
+  const canConnect =
+    connection.data !== undefined && canConnectOura(ouraView(connection.data));
   return (
-    <section className="signals" aria-label="Signals">
+    <section className="signals" aria-label="Body">
+      <h2>Body</h2>
       {rows.length === 0 && activities.length === 0 ? (
-        <p>No signals</p>
+        canConnect ? (
+          <p>
+            <a href="#settings">Connect a source in Settings</a>
+          </p>
+        ) : (
+          <p>No signals</p>
+        )
       ) : (
         <dl className="totals">
           {rows.map((entry) => (
-            <div key={`${entry.metric}:${entry.source}`}>
-              <dt>
-                {metricLabels[entry.metric]}
-                {(sources.get(entry.metric) ?? 0) > 1 && ` (${entry.source})`}
-              </dt>
+            <div key={entry.metric}>
+              <dt>{metricLabels[entry.metric]}</dt>
               <dd>{signalText(entry)}</dd>
+              <dd className="source">{sourceLabel(entry.source)}</dd>
             </div>
           ))}
           {activities.map((activity) => (
@@ -56,6 +69,7 @@ export function DaySignals({
                 {activity.calories !== null &&
                   ` · ${displayNumber(activity.calories)} kcal`}
               </dd>
+              <dd className="source">{sourceLabel(activity.source)}</dd>
             </div>
           ))}
         </dl>
@@ -64,7 +78,7 @@ export function DaySignals({
   );
 }
 
-export function OuraStatus({
+export function ConnectedSources({
   person,
   timezone,
   online,
@@ -96,7 +110,8 @@ export function OuraStatus({
   const label =
     view.state === "disconnected" ? "Connect Oura" : "Reconnect Oura";
   return (
-    <section className="oura" aria-label="Oura">
+    <section className="oura" aria-label="Connected sources">
+      <h3>Connected sources</h3>
       {view.state === "connected" && (
         <>
           <p>Oura connected</p>
@@ -129,9 +144,7 @@ export function OuraStatus({
       {view.state === "restored" && (
         <p>Oura needs reconnecting after a restore</p>
       )}
-      {(view.state === "disconnected" ||
-        view.state === "authorization" ||
-        view.state === "restored") && (
+      {canConnectOura(view) && (
         <button
           type="button"
           disabled={!online || connect.isPending}

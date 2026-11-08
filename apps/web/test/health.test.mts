@@ -7,12 +7,14 @@ import { cookie, fixture } from "../../../packages/engine/test/auth-support.ts";
 import { twoUsers } from "../../../packages/engine/test/support/two-users.ts";
 import * as health from "../src/health-api.ts";
 import type { OutboxReplay } from "../src/outbox-replay.ts";
+import { accountKey } from "../src/settings-api.ts";
 import { readToday, todayKey } from "../src/today-api.ts";
 import { test } from "./support.mts";
 import "./tsx.mts";
 
 const { Today } = await import("../src/today.tsx");
-const { DaySignals, OuraStatus } = await import("../src/health.tsx");
+const { BodyCard, ConnectedSources } = await import("../src/health.tsx");
+const { AccountSettings } = await import("../src/settings.tsx");
 function withData(data: [readonly unknown[], unknown][], node: ReactElement) {
   const client = new QueryClient();
   for (const [key, value] of data) client.setQueryData(key, value);
@@ -20,21 +22,18 @@ function withData(data: [readonly unknown[], unknown][], node: ReactElement) {
     createElement(QueryClientProvider, { client }, node),
   );
 }
+const oura = (connection: Partial<health.OuraConnection>) =>
+  health.ouraSchema.parse({
+    ...{ configured: true, status: "connected", credentials: "readable" },
+    ...{ last_synced_at: null, ...connection },
+  });
 const renderOura = (
   connection: Partial<health.OuraConnection>,
   callbackResult: string | null = null,
 ) =>
   withData(
-    [
-      [
-        health.ouraKey(1),
-        health.ouraSchema.parse({
-          ...{ configured: true, status: "connected", credentials: "readable" },
-          ...{ last_synced_at: null, ...connection },
-        }),
-      ],
-    ],
-    createElement(OuraStatus, {
+    [[health.ouraKey(1), oura(connection)]],
+    createElement(ConnectedSources, {
       person: 1,
       timezone: "UTC",
       online: true,
@@ -42,7 +41,7 @@ const renderOura = (
     }),
   );
 
-test("signals render beside the day's intake from a test engine", async (context) => {
+test("today renders the Body card beside intake and no Oura card", async (context) => {
   const { admin } = await twoUsers(context, "fallback");
   context.mock.method(globalThis, "fetch", admin.request);
   for (const [path, body] of [
@@ -57,11 +56,15 @@ test("signals render beside the day's intake from a test engine", async (context
     today.day,
     new AbortController().signal,
   );
-  const renderDay = (day: health.Signals) =>
+  const renderDay = (
+    day: health.Signals,
+    connection: Partial<health.OuraConnection> = { status: null },
+  ) =>
     withData(
       [
         [todayKey(admin.user.id), today],
         [health.signalsKey(admin.user.id, today.day), day],
+        [health.ouraKey(admin.user.id), oura(connection)],
       ],
       createElement(Today, {
         person: admin.user,
@@ -74,7 +77,15 @@ test("signals render beside the day's intake from a test engine", async (context
     renderDay(signals),
     /class="day-summary".*Calories<\/dt><dd>200<.*Active calories<\/dt><dd>420 kcal</s,
   );
-  assert.match(renderDay({ ...signals, signals: [] }), /No signals/);
+  const empty = renderDay({ ...signals, signals: [] });
+  assert.match(empty, /<a href="#settings">Connect a source in Settings</);
+  assert.doesNotMatch(empty, /Connect Oura|Connected sources/);
+  const blocked = renderDay(
+    { ...signals, signals: [] },
+    { status: "membership_required" },
+  );
+  assert.match(blocked, /No signals/);
+  assert.doesNotMatch(blocked, /#settings/);
 });
 
 test("connect starts the Oura flow at the authorization URL", async (context) => {
@@ -158,16 +169,20 @@ test("a failed Oura read shows an error, not a connection state", () => {
     createElement(
       QueryClientProvider,
       { client },
-      createElement(OuraStatus, { person: 1, timezone: "UTC", online: false }),
+      createElement(ConnectedSources, {
+        person: 1,
+        timezone: "UTC",
+        online: false,
+      }),
     ),
   );
   assert.match(html, /role="alert">Couldn’t load Oura</);
   assert.doesNotMatch(html, /Connect Oura|Oura connected/);
 });
 
-test("one metric from two sources renders as two labelled rows", () => {
+test("two sources for one metric render only the preferred one", () => {
   const day = "2026-01-02";
-  const row = { metric: "steps", unit: "count" } as const;
+  const steps = { metric: "steps", unit: "count" } as const;
   const html = withData(
     [
       [
@@ -176,18 +191,41 @@ test("one metric from two sources renders as two labelled rows", () => {
           day,
           activities: [],
           signals: [
-            { ...row, value: 800, source: "oura" },
-            { ...row, value: 750, source: "manual" },
-            { metric: "sleep", unit: "minutes", value: 420, source: "oura" },
+            { ...steps, value: 800, source: "oura" },
+            { ...steps, value: 750, source: "manual" },
+            { ...steps, value: 700, source: "agent" },
+            { metric: "hrv", unit: "ms", value: 41, source: "agent" },
+            { metric: "hrv", unit: "ms", value: 45, source: "oura" },
           ],
         }),
       ],
     ],
-    createElement(DaySignals, { person: 1, day, online: false }),
+    createElement(BodyCard, { person: 1, day, online: false }),
   );
-  assert.match(html, /<dt>Steps \(oura\)<\/dt><dd>800</);
-  assert.match(html, /<dt>Steps \(manual\)<\/dt><dd>750</);
-  assert.match(html, /<dt>Sleep<\/dt>/);
+  assert.match(html, /<h2>Body<\/h2>/);
+  assert.match(
+    html,
+    /<dt>HRV<\/dt><dd>45 ms<\/dd><dd class="source">Oura<.*<dt>Steps<\/dt><dd>750<\/dd><dd class="source">Manual</s,
+  );
+  assert.doesNotMatch(html, /800|700|41 ms|Agent/);
+});
+
+test("settings renders the Oura connection states", () => {
+  const account = {
+    ...{ id: 1, username: "example-person", timezone: "UTC" },
+    ...{ day_start_hour: 4, is_admin: false },
+  };
+  const html = withData(
+    [
+      [accountKey(1), account],
+      [health.ouraKey(1), oura({ status: "reconnect_required" })],
+    ],
+    createElement(AccountSettings, {
+      session: { mode: "fallback", user: account },
+      online: true,
+    }),
+  );
+  assert.match(html, /id="settings".*Connected sources.*Reconnect Oura/s);
 });
 
 test("a page restored from the back-forward cache resets connect", () => {

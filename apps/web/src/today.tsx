@@ -3,7 +3,7 @@ import { type FormEvent, useEffect, useRef, useState } from "react";
 import { AddFood } from "./add-food.tsx";
 import type { Session } from "./api.ts";
 import { refreshDays } from "./days-api.ts";
-import { DaySignals, OuraStatus } from "./health.tsx";
+import { BodyCard } from "./health.tsx";
 import type { OutboxReplay } from "./outbox-replay.ts";
 import type { QueueEntry } from "./outbox-store.ts";
 import { ProfileSection, TargetCard, WeightChart } from "./profile.tsx";
@@ -106,21 +106,9 @@ export function Today({
                 </div>
               ))}
             </dl>
-            <DaySignals
-              person={person.id}
-              day={today.data.day}
-              online={online}
-            />
+            <BodyCard person={person.id} day={today.data.day} online={online} />
           </div>
           <Slots person={person.id} online={online} />
-          <OuraStatus
-            person={person.id}
-            timezone={today.data.timezone}
-            online={online}
-            callbackResult={new URLSearchParams(
-              globalThis.location?.search,
-            ).get("oura")}
-          />
           <ul className="entries">
             {today.data.entries.map((entry) => (
               <IntakeEntry
