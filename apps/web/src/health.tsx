@@ -68,11 +68,13 @@ export function OuraStatus({
   person,
   timezone,
   online,
+  callbackResult = null,
   navigate = (url) => window.location.assign(url),
 }: {
   person: number;
   timezone: string;
   online: boolean;
+  callbackResult?: string | null;
   navigate?: (url: string) => void;
 }) {
   const connection = useQuery({
@@ -119,9 +121,8 @@ export function OuraStatus({
       {view.state === "membership" && <p>Oura membership required</p>}
       {view.state === "authorization" && (
         <p>
-          {new URLSearchParams(globalThis.location?.search).get("oura") ===
-          "no_data"
-            ? "Oura shared no data. Reconnect and allow Daily."
+          {callbackResult === "no_data"
+            ? "Allow Daily when you reconnect Oura"
             : "Oura sign-in expired"}
         </p>
       )}

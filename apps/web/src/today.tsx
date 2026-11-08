@@ -115,6 +115,9 @@ export function Today({
             person={person.id}
             timezone={today.data.timezone}
             online={online}
+            callbackResult={new URLSearchParams(
+              globalThis.location?.search,
+            ).get("oura")}
           />
           <ul className="entries">
             {today.data.entries.map((entry) => (
