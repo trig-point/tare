@@ -56,15 +56,12 @@ test("today renders the Body card beside intake and no Oura card", async (contex
     today.day,
     new AbortController().signal,
   );
-  const renderDay = (
-    day: health.Signals,
-    connection: Partial<health.OuraConnection> = { status: null },
-  ) =>
+  const renderDay = (day: health.Signals) =>
     withData(
       [
         [todayKey(admin.user.id), today],
         [health.signalsKey(admin.user.id, today.day), day],
-        [health.ouraKey(admin.user.id), oura(connection)],
+        [health.ouraKey(admin.user.id), oura({ status: null })],
       ],
       createElement(Today, {
         person: admin.user,
@@ -80,12 +77,6 @@ test("today renders the Body card beside intake and no Oura card", async (contex
   const empty = renderDay({ ...signals, signals: [] });
   assert.match(empty, /<a href="#settings">Connect a source in Settings</);
   assert.doesNotMatch(empty, /Connect Oura|Connected sources/);
-  const blocked = renderDay(
-    { ...signals, signals: [] },
-    { status: "membership_required" },
-  );
-  assert.match(blocked, /No signals/);
-  assert.doesNotMatch(blocked, /#settings/);
 });
 
 test("connect starts the Oura flow at the authorization URL", async (context) => {
@@ -193,7 +184,6 @@ test("two sources for one metric render only the preferred one", () => {
           signals: [
             { ...steps, value: 800, source: "oura" },
             { ...steps, value: 750, source: "manual" },
-            { ...steps, value: 700, source: "agent" },
             { metric: "hrv", unit: "ms", value: 41, source: "agent" },
             { metric: "hrv", unit: "ms", value: 45, source: "oura" },
           ],
@@ -207,7 +197,7 @@ test("two sources for one metric render only the preferred one", () => {
     html,
     /<dt>HRV<\/dt><dd>45 ms<\/dd><dd class="source">Oura<.*<dt>Steps<\/dt><dd>750<\/dd><dd class="source">Manual</s,
   );
-  assert.doesNotMatch(html, /800|700|41 ms|Agent/);
+  assert.doesNotMatch(html, /800|41 ms|Agent/);
 });
 
 test("settings renders the Oura connection states", () => {

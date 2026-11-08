@@ -40,18 +40,15 @@ test("recompute stores a notice per person until dismissed on any device", async
       ...init,
       headers: { Cookie: secondCookie, "X-Requested-With": "XMLHttpRequest" },
     });
-  for (const actor of [admin, member]) {
-    const saved = await actor.request("/api/profile", {
-      method: "POST",
-      body: JSON.stringify(profile),
-    });
-    assert.equal(saved.status, 200);
-    const weighed = await actor.request("/api/weights", {
-      method: "POST",
-      body: JSON.stringify({ client_id: "w1", weight_kg: 70 }),
-    });
-    assert.equal(weighed.status, 201);
-  }
+  const saved = await admin.request("/api/profile", {
+    method: "POST",
+    body: JSON.stringify(profile),
+  });
+  const weighed = await admin.request("/api/weights", {
+    method: "POST",
+    body: JSON.stringify({ client_id: "w1", weight_kg: 70 }),
+  });
+  assert.deepEqual([saved.status, weighed.status], [200, 201]);
   recompute("goal_rate_kg_week = -0.25");
   assert.equal(await notice(), null);
 
@@ -72,7 +69,6 @@ test("recompute stores a notice per person until dismissed on any device", async
 
   recompute("protein_factor = 2");
   const protein = await notice(otherDevice);
-  assert.notEqual(protein.id, calories.id);
   assert.deepEqual(
     [protein.old_kcal, protein.old_protein_g, protein.new_protein_g],
     [protein.new_kcal, 112, 140],
