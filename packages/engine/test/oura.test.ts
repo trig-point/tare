@@ -224,6 +224,7 @@ test("Oura scopes, encrypted pair, reconnect generation and safe metadata", asyn
   for (const [index, scope] of [
     " daily workout daily ",
     "daily",
+    ["daily", "workout"],
     undefined,
   ].entries()) {
     setup.respond(async () =>

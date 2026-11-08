@@ -221,6 +221,11 @@ test("scope omission and empty scope, membership status, reuse without app setti
   );
   assert.equal(fixture.grants(), 1);
   fixture.setTime(origin + 3_600_000);
+  fixture.respond(async (body) => Response.json({ ...body, scope: null }));
+  assert.equal(await code(service.refreshAccess(1)), "success");
+  assert.equal(fixture.row()?.scopes, '["daily"]');
+  assert.equal(fixture.row()?.scope_source, "requested");
+  fixture.setTime(origin + 7_200_000);
   fixture.respond(async (body) => Response.json({ ...body, scope: "" }));
   await service.refreshAccess(1);
   assert.equal(fixture.row()?.scopes, "[]");

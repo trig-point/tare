@@ -21,6 +21,26 @@ export type TokenTransport = NonNullable<
   oauth.TokenEndpointRequestOptions[typeof oauth.customFetch]
 >;
 
+// Oura sends scope as an array or null; oauth4webapi accepts only a string.
+async function standardScope(response: Response) {
+  const body: unknown = await response
+    .clone()
+    .json()
+    .catch(() => undefined);
+  if (typeof body !== "object" || body === null || !("scope" in body))
+    return response;
+  const { scope, ...rest } = body;
+  const isStringList =
+    Array.isArray(scope) && scope.every((item) => typeof item === "string");
+  if (scope !== null && !isStringList) return response;
+  const headers = new Headers(response.headers);
+  headers.delete("content-length");
+  return new Response(
+    JSON.stringify(isStringList ? { ...rest, scope: scope.join(" ") } : rest),
+    { status: response.status, statusText: response.statusText, headers },
+  );
+}
+
 export async function authorizationUrl(
   app: NonNullable<Config["oura"]>,
   state: string,
@@ -54,14 +74,16 @@ export async function exchangeCode(
     callback,
     state,
   );
-  const response = await oauth.authorizationCodeGrantRequest(
-    metadata,
-    client,
-    oauth.ClientSecretPost(app.clientSecret),
-    parameters,
-    app.redirectUrl,
-    verifier,
-    { signal, ...(transport ? { [oauth.customFetch]: transport } : {}) },
+  const response = await standardScope(
+    await oauth.authorizationCodeGrantRequest(
+      metadata,
+      client,
+      oauth.ClientSecretPost(app.clientSecret),
+      parameters,
+      app.redirectUrl,
+      verifier,
+      { signal, ...(transport ? { [oauth.customFetch]: transport } : {}) },
+    ),
   );
   // The library parseFloat-normalizes expires_in, so check the body as sent.
   const sent = response.clone();
@@ -97,8 +119,9 @@ export async function refreshGrant(
     if (status === 429) return "oura_rate_limited";
     if (status === 401) return "oura_client_rejected";
     if (status !== 200 && status !== 400) return "oura_unavailable";
-    const sent = response.clone();
-    await oauth.processRefreshTokenResponse(metadata, client, response);
+    const standard = await standardScope(response);
+    const sent = standard.clone();
+    await oauth.processRefreshTokenResponse(metadata, client, standard);
     const parsed = tokenResponse.safeParse(await sent.json());
     if (!parsed.success) return "oura_unavailable";
     const expires = dispatchedAt.getTime() + parsed.data.expires_in * 1000;
