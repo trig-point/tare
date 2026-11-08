@@ -27,6 +27,7 @@ import { OutboxSession } from "./outbox-session.ts";
 import { openOutboxStore } from "./outbox-store.ts";
 import { outboxView } from "./outbox-view.ts";
 import { Today } from "./today.tsx";
+import { UpdateNotice } from "./update-notice.tsx";
 import "./style.css";
 
 const client = new QueryClient();
@@ -57,6 +58,7 @@ function App() {
         </span>
         Tare
       </header>
+      <UpdateNotice />
       <RuntimeShell key={attempt} retry={() => setAttempt(attempt + 1)} />
     </main>
   );
