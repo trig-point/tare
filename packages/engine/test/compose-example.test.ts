@@ -26,8 +26,16 @@ function settingsReadBySource(): Set<string> {
 
 function composeEnvironmentKeys(): Set<string> {
   const text = readFileSync(join(repoRoot, "compose.example.yaml"), "utf8");
+  // No YAML parser in the repo, so the block is read by indent.
+  const block = text.match(
+    /^ {2}tare:\n(?: {4}.*\n)*? {4}environment:\n((?: {6}.*\n)+)/m,
+  );
+  assert.ok(
+    block?.[1],
+    "no services.tare.environment block in compose.example.yaml",
+  );
   return new Set(
-    [...text.matchAll(/^ {6}([A-Z][A-Z0-9_]*):/gm)].map(
+    [...block[1].matchAll(/^ {6}([A-Z][A-Z0-9_]*):/gm)].map(
       (match) => match[1] ?? "",
     ),
   );
