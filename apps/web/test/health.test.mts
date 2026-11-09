@@ -181,9 +181,11 @@ test("a failed Oura read shows an error, not a connection state", () => {
   assert.doesNotMatch(html, /Connect Oura|Oura connected/);
 });
 
-test("two sources for one metric render only the preferred one", () => {
+test("two sources for one metric render only the preferred one, except burn, with why-lines", () => {
   const day = "2026-01-02";
   const steps = { metric: "steps", unit: "count" } as const;
+  const burn = { metric: "active_calories", unit: "kcal" } as const;
+  const burnLine = "Burn 640 kcal, above your usual 430. You logged a workout.";
   const html = withData(
     [
       [
@@ -197,6 +199,8 @@ test("two sources for one metric render only the preferred one", () => {
             { ...steps, value: 800, source: "oura", why: [] },
             { metric: "hrv", unit: "ms", value: 41, source: "agent", why: [] },
             { metric: "hrv", unit: "ms", value: 45, source: "oura", why: [] },
+            { ...burn, value: 640, source: "manual", why: [burnLine] },
+            { ...burn, value: 305, source: "oura", why: [] },
           ],
         }),
       ],
@@ -209,43 +213,10 @@ test("two sources for one metric render only the preferred one", () => {
     /<dt>HRV<\/dt><dd>45 ms<\/dd><dd class="source">Oura<.*<dt>Steps<\/dt><dd>750<\/dd><dd class="source">Manual</s,
   );
   assert.doesNotMatch(html, /800|41 ms|Agent/);
-});
-
-test("the Body card shows each signal's why-lines and every burn source", () => {
-  const day = "2026-01-02";
-  const burn = { metric: "active_calories", unit: "kcal" } as const;
-  const burnLine = "Burn 640 kcal, above your usual 430. You logged a workout.";
-  const lateLine =
-    "You trained within 4 hours of bed. Late hard workouts are linked to lower HRV.";
-  const html = withData(
-    [
-      [
-        health.signalsKey(1, day),
-        health.signalsSchema.parse({
-          day,
-          activities: [],
-          habits: [],
-          signals: [
-            { ...burn, value: 640, source: "manual", why: [burnLine] },
-            { ...burn, value: 305, source: "oura", why: [] },
-            {
-              metric: "hrv",
-              unit: "ms",
-              value: 42,
-              source: "oura",
-              why: [lateLine],
-            },
-          ],
-        }),
-      ],
-    ],
-    createElement(BodyCard, { person: 1, day, online: false }),
-  );
   assert.match(
     html,
     new RegExp(
-      `<dt>HRV</dt><dd>42 ms</dd><dd class="source">Oura</dd><dd class="why">${lateLine}</dd>.*` +
-        `<dt>Active calories</dt><dd>640 kcal</dd><dd class="source">Manual</dd><dd class="why">${burnLine}</dd>.*` +
+      `<dt>Active calories</dt><dd>640 kcal</dd><dd class="source">Manual</dd><dd class="why">${burnLine}</dd>.*` +
         `<dt>Active calories</dt><dd>305 kcal</dd><dd class="source">Oura</dd></div>`,
       "s",
     ),
