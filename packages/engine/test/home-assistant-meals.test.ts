@@ -49,7 +49,8 @@ test("meal presses replay, and reject stale, foreign and malformed presses", asy
     clock,
     publisher: { refreshAll() {}, subscribe },
   });
-  const read = () => provider(admin.user, { state: "unused" });
+  const read = () =>
+    provider(admin.user, { state: "unused", events: "unused" });
   const payloads = () =>
     Object.fromEntries(
       read().entities.map(({ key, config }) => [key, config.payload_press]),

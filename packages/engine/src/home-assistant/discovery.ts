@@ -3,7 +3,7 @@ import type { ListPeopleResult } from "../queries/home-assistant/list-people.ts"
 export type Person = ListPeopleResult;
 
 export interface EntityDefinition {
-  component: "sensor" | "button";
+  component: "sensor" | "button" | "event";
   key: string;
   config: Record<string, unknown>;
 }
@@ -11,11 +11,12 @@ export interface EntityDefinition {
 export interface ProviderOutput {
   entities: EntityDefinition[];
   state: Record<string, string>;
+  events?: { topic: string; payload: string; sent(): void }[];
 }
 
 export type Provider = (
   person: Person,
-  topics: { state: string },
+  topics: { state: string; events: string },
 ) => ProviderOutput;
 
 export interface Topics {
@@ -28,6 +29,8 @@ export const deviceKey = (install: string, userId: number) =>
 export const availabilityTopic = (install: string) => `tare/${install}/status`;
 export const stateTopic = (install: string, userId: number) =>
   `tare/${install}/${userId}/state`;
+export const eventTopic = (install: string, userId: number) =>
+  `tare/${install}/${userId}/events`;
 
 export function entitySlugs(people: Person[]): Map<number, string> {
   const base = new Map(

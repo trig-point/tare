@@ -18,9 +18,13 @@ import {
 } from "../src/home-assistant/meal-buttons.ts";
 import { createHomeAssistantPublisher } from "../src/home-assistant/publisher.ts";
 import { sensorProvider } from "../src/home-assistant/snapshot.ts";
+import { targetEventProvider } from "../src/home-assistant/target-event.ts";
 import { localDay } from "../src/logging/day.ts";
 import { mealNutritionKinds } from "../src/meal-nutrition/index.ts";
 import { createOrder } from "../src/orders/index.ts";
+import { listPeople } from "../src/queries/home-assistant/list-people.ts";
+import { createTargetRecomputeJob } from "../src/target/job.ts";
+import { profile, seed } from "./support/adaptive-seed.ts";
 import { test } from "./support/hang-ceiling.ts";
 import { twoUsers } from "./support/two-users.ts";
 
@@ -134,7 +138,7 @@ test("devices carry their person's sensors through edits, day changes, births an
   const device = (id: number) => `custom-ha/sensor/tare_${install}_${id}/`;
   const configCount = (retained: Retained) =>
     [...retained.keys()].filter((topic) => topic.endsWith("/config")).length;
-  await settle((retained) => configCount(retained) === 14);
+  await settle((retained) => configCount(retained) === 16);
   const retained = await harness.retained();
   for (const user of [admin.user, member.user]) {
     const configs: Record<string, SensorConfig> = Object.fromEntries(
@@ -144,7 +148,7 @@ test("devices carry their person's sensors through edits, day changes, births an
     );
     assert.equal(
       Object.keys(configs).sort().join(),
-      "calorie_target,calories_eaten,calories_remaining,protein_eaten,protein_remaining,protein_target,weight_trend",
+      "calorie_target,calories_eaten,calories_remaining,protein_eaten,protein_remaining,protein_target,tdee_estimate,weight_trend",
     );
     const slug = user.username.replace("-", "_");
     for (const [key, config] of Object.entries(configs)) {
@@ -155,6 +159,10 @@ test("devices carry their person's sensors through edits, day changes, births an
       );
       assert.equal(config.default_entity_id, `sensor.tare_${slug}_${key}`);
       assert.equal(config.state_class, "measurement");
+      assert.equal(
+        config.suggested_display_precision,
+        key === "weight_trend" ? 1 : 0,
+      );
     }
     assert.match(
       `${configs.calories_eaten?.json_attributes_template}`,
@@ -224,7 +232,7 @@ test("devices carry their person's sensors through edits, day changes, births an
   while (!harness.held.length) await setImmediate();
   assert.equal(rows.get(extra), 1);
   harness.held.splice(0)[0]?.();
-  await settle((now) => !now.has(extra) && configCount(now) === 21);
+  await settle((now) => !now.has(extra) && configCount(now) === 24);
   while (rows.get(extra) !== 0) await setImmediate();
 });
 
@@ -356,6 +364,45 @@ test("meal button presses arrive through the broker, after a reconnect and a new
   await settle((now) => revision(now, later) === 1);
   await press(later);
   await settle((now) => config(now, later) === undefined);
+});
+
+test("a recompute that changes a target fires one event and sets the TDEE sensor, per person", async (context) => {
+  const harness = await setup(context);
+  const { admin, member, database, send, settle, state } = harness;
+  harness.publisher.addProvider(targetEventProvider(database));
+  await send(admin.request, "/api/profile", profile);
+  seed(database, admin.user.id);
+  await send(member.request, "/api/weights", { client_id: "w", weight_kg: 60 });
+  await send(member.request, "/api/profile", profile);
+  const job = createTargetRecomputeJob({
+    ...{ database, clock: harness.clock, weekday: 1 },
+    settings: loadConfig({ DATABASE_URL: ":memory:" }).tdee,
+    onFinished: () => harness.publisher.refreshAll(),
+  });
+  const events = () => harness.published.filter((line) => /events /.test(line));
+  const event = (id: number, kcal: number[], protein: number[]) =>
+    `tare/${harness.install}/${id}/events {"event_type":"target_changed","old_kcal":${kcal[0]},"old_protein_g":${protein[0]},"new_kcal":${kcal.at(-1)},"new_protein_g":${protein.at(-1)}}`;
+  await job.run({ signal: AbortSignal.any([]) });
+  await settle(
+    (now) =>
+      state(now, admin.user.id).tdee_estimate === 2675 && events().length > 0,
+  );
+  assert.deepEqual(events(), [event(admin.user.id, [2410, 2400], [128])]);
+  assert.equal(
+    state(await harness.retained(), member.user.id).tdee_estimate,
+    null,
+  );
+  database
+    .prepare("UPDATE profiles SET protein_factor = 2 WHERE user_id = ?")
+    .run(member.user.id);
+  await job.run({ signal: AbortSignal.any([]) });
+  while (events().length < 2) await setImmediate();
+  assert.deepEqual(events().slice(1), [
+    event(member.user.id, [2100], [96, 120]),
+  ]);
+  const restarted = targetEventProvider(database);
+  for (const person of listPeople(database))
+    assert.deepEqual(restarted(person, { state: "", events: "" }).events, []);
 });
 
 test("MQTT settings parse, and the importer refuses while the engine answers", async (context) => {
