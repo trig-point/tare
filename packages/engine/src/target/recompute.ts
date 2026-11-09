@@ -23,7 +23,7 @@ export function recomputeTarget(
   }
   const adaptive = readAdaptive(database, person, now, settings);
   const eligible = adaptive.status === "eligible";
-  // The old target is what today showed: the stored target, else the live formula.
+  // The old target is the base: the stored target, else the live formula; the activity bonus never enters it.
   const previous =
     selectTargetResult(database, { user_id: person.id }) ?? formula;
   const kcal = eligible
