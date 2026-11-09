@@ -37,6 +37,19 @@ export type HomeAssistantPublisher = ReturnType<
 const errorName = (error: unknown) =>
   error instanceof Error ? error.name : "UnknownError";
 
+export type MessageHandler = (payload: Buffer, topic: string) => void;
+
+function topicMatches(filter: string, topic: string) {
+  const filterLevels = filter.split("/");
+  const topicLevels = topic.split("/");
+  return (
+    filterLevels.length === topicLevels.length &&
+    filterLevels.every(
+      (level, index) => level === "+" || level === topicLevels[index],
+    )
+  );
+}
+
 export function createHomeAssistantPublisher({
   database,
   config,
@@ -57,7 +70,7 @@ export function createHomeAssistantPublisher({
   const topics = { prefix: config.discoveryPrefix, install };
   const availability = availabilityTopic(install);
   const providers: Provider[] = [];
-  const handlers = new Map<string, (payload: Buffer) => void>();
+  const handlers = new Map<string, MessageHandler>();
   const sent = new Map<string, string>();
   const timers = new Map<number, { key: string; cancel(): void }>();
   let dirty = false;
@@ -92,7 +105,14 @@ export function createHomeAssistantPublisher({
   client.on("message", (topic, payload) => {
     if (topic === config.statusTopic) {
       if (payload.toString() === "online") refreshAll(true);
-    } else handlers.get(topic)?.(payload);
+    } else
+      for (const [filter, handler] of handlers)
+        if (topicMatches(filter, topic))
+          try {
+            handler(payload, topic);
+          } catch (error) {
+            log("mqtt_handler_failed", errorName(error));
+          }
   });
 
   function refreshAll(replayRequested = false) {
@@ -216,7 +236,7 @@ export function createHomeAssistantPublisher({
       providers.push(provider);
       refreshAll();
     },
-    subscribe(topic: string, handler: (payload: Buffer) => void) {
+    subscribe(topic: string, handler: MessageHandler) {
       handlers.set(topic, handler);
       if (client.connected) client.subscribe(topic, { qos: 1 });
     },
