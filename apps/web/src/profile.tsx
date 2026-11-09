@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import type { AlignedData, Series } from "uplot";
+import type { AlignedData, Legend, Series } from "uplot";
 import { ApiError } from "./api.ts";
 import {
   activityLevels,
@@ -234,12 +234,16 @@ const weightSeries: Series[] = [
   { label: "Trend", stroke: "#234b40", width: 2, spanGaps: true },
 ];
 
+const noLegend: Legend = { show: false };
+
 export function Plot({
   data,
   series,
+  legend = noLegend,
 }: {
   data: AlignedData;
   series: Series[];
+  legend?: Legend;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const [failed, setFailed] = useState(false);
@@ -260,7 +264,7 @@ export function Plot({
           {
             width: element.clientWidth,
             height: 240,
-            legend: { show: false },
+            legend,
             series,
           },
           data,
@@ -275,7 +279,7 @@ export function Plot({
       resize.disconnect();
       plot?.destroy();
     };
-  }, [data, series]);
+  }, [data, series, legend]);
   return failed ? (
     <p role="alert">Couldn’t load chart</p>
   ) : (

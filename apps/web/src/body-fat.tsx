@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
-import type { Series } from "uplot";
+import type { Legend, Series } from "uplot";
 import { bodyFatChart, bodyFatKey, readBodyFat } from "./body-fat-api.ts";
 import { Plot } from "./profile.tsx";
 
@@ -14,8 +14,9 @@ const bodyFatSeries: Series[] = [
   {},
   points("Reading", "#234b40"),
   points("After a workout", "#b5651d"),
-  points("Later reading", "#b8bcb4"),
+  points("Later weigh-in", "#b8bcb4"),
 ];
+const keyOnly: Legend = { show: true, live: false };
 
 export function BodyFatCard({
   person,
@@ -54,7 +55,7 @@ export function BodyFatCard({
           {line}
         </p>
       ))}
-      <Plot data={chart} series={bodyFatSeries} />
+      <Plot data={chart} series={bodyFatSeries} legend={keyOnly} />
       <details>
         <summary>Readings</summary>
         <ul className="entries">

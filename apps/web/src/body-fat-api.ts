@@ -36,12 +36,15 @@ export async function readBodyFat(signal: AbortSignal) {
   return bodyFatSchema.parse(await api("/api/body-fat/history", { signal }));
 }
 export function bodyFatChart(bodyFat: BodyFat): AlignedData {
+  // uPlot needs ascending x; stored days can disagree with instants after a timezone change.
+  const readings = bodyFat.readings.toSorted(
+    (first, second) =>
+      Date.parse(first.measured_at) - Date.parse(second.measured_at),
+  );
   const pick = (keep: (reading: BodyFat["readings"][number]) => boolean) =>
-    bodyFat.readings.map((reading) =>
-      keep(reading) ? reading.body_fat_pct : null,
-    );
+    readings.map((reading) => (keep(reading) ? reading.body_fat_pct : null));
   return [
-    bodyFat.readings.map((reading) => Date.parse(reading.measured_at) / 1000),
+    readings.map((reading) => Date.parse(reading.measured_at) / 1000),
     pick((reading) => reading.in_trend),
     pick((reading) => reading.after_workout),
     pick((reading) => !reading.in_trend && !reading.after_workout),
