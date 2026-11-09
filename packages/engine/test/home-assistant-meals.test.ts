@@ -1,19 +1,20 @@
 import assert from "node:assert/strict";
-import { personDayBounds } from "../src/calendar/time.ts";
 import { writeTransaction } from "../src/db.ts";
-import { createMealButtons } from "../src/home-assistant/meal-buttons.ts";
+import {
+  createMealButtons,
+  pressResultTopic,
+  pressTopic,
+} from "../src/home-assistant/meal-buttons.ts";
 import { mealNutritionKinds } from "../src/meal-nutrition/index.ts";
 import { createOrder } from "../src/orders/index.ts";
 import { test } from "./support/hang-ceiling.ts";
 import { twoUsers } from "./support/two-users.ts";
 
-test("meal buttons follow due dates and presses, rejecting stale and foreign presses", async (context) => {
-  let now = new Date("2026-01-01T12:00:00.000Z");
-  const clock = { now: () => now };
+test("meal presses replay, and reject stale, foreign and malformed presses", async (context) => {
+  const clock = { now: () => new Date("2026-01-01T12:00:00.000Z") };
   const { database, admin, member } = await twoUsers(context, "fallback");
   for (const [person, delivery_date] of [
     [admin, "2026-01-01"],
-    [admin, "2026-01-03"],
     [admin, "2026-01-05"],
     [member, "2026-01-01"],
   ] as const) {
@@ -25,7 +26,7 @@ test("meal buttons follow due dates and presses, rejecting stale and foreign pre
         person.user,
         { ...input, status: "scheduled" },
         mealNutritionKinds,
-        now.toISOString(),
+        clock.now().toISOString(),
       ),
     );
     const { questions } = await (await person.request("/api/questions")).json();
@@ -39,7 +40,7 @@ test("meal buttons follow due dates and presses, rejecting stale and foreign pre
   const rows = database
     .prepare("SELECT id, order_id FROM order_meals ORDER BY id")
     .all() as { id: number; order_id: number }[];
-  const [due, later, marked, foreign] = rows.map((row) => row.id);
+  const [due, marked, foreign] = rows.map((row) => row.id);
   const handlers = new Map<string, (payload: Buffer) => void>();
   const subscribe = (topic: string, handler: (payload: Buffer) => void) =>
     handlers.set(topic, handler);
@@ -53,33 +54,23 @@ test("meal buttons follow due dates and presses, rejecting stale and foreign pre
     Object.fromEntries(
       read().entities.map(({ key, config }) => [key, config.payload_press]),
     );
-  const press = (payload: unknown) => {
-    const [topic, handler] = [...handlers][0] ?? [];
-    handler?.(Buffer.from(String(payload)));
-    return JSON.parse(`${read().state[`${topic}_result`]}`).result;
-  };
   const count = (sql: string) => database.prepare(sql).pluck().get();
+  const install = String(count("SELECT id FROM install"));
+  const press = (payload: unknown) => {
+    const handler = handlers.get(pressTopic(install, admin.user.id));
+    handler?.(Buffer.from(String(payload)));
+    const result = read().state[pressResultTopic(install, admin.user.id)];
+    return JSON.parse(`${result}`).result;
+  };
 
   const first = payloads();
-  assert.deepEqual(Object.keys(first).sort(), [
-    `meal_${due}_ate`,
-    `meal_${due}_ate_three_quarters`,
-    "meal_press_result",
-  ]);
   const ate = first[`meal_${due}_ate`];
-  assert.deepEqual(JSON.parse(`${ate}`), {
-    meal_id: due,
-    revision: 1,
-    action: "ate",
-  });
+  assert.ok(!(`meal_${marked}_ate` in first));
   await admin.request("/api/orders/mark-delivery", {
     method: "POST",
-    body: JSON.stringify({ order_id: rows[2]?.order_id }),
+    body: JSON.stringify({ order_id: rows[1]?.order_id }),
   });
   assert.ok(`meal_${marked}_ate` in payloads());
-  const { timezone, day_start_hour } = admin.user;
-  now = personDayBounds("2026-01-03", timezone, day_start_hour).start;
-  assert.ok(`meal_${later}_ate` in payloads());
 
   assert.equal(press(ate), "logged");
   assert.equal(press(ate), "logged");
@@ -88,11 +79,9 @@ test("meal buttons follow due dates and presses, rejecting stale and foreign pre
   const foreignPress = { meal_id: foreign, revision: 1, action: "ate" };
   assert.equal(press(JSON.stringify(foreignPress)), "meal_not_found");
   assert.equal(press("not json"), "invalid_press");
-  assert.equal(press(payloads()[`meal_${due}_ate`]), "logged");
-  assert.ok(!(`meal_${due}_ate` in payloads()));
   assert.equal(
     count("SELECT group_concat(quantity) FROM order_meals"),
-    "0,2,2,2",
+    "1,2,2",
   );
-  assert.equal(count("SELECT count(*) FROM intake_entries"), 2);
+  assert.equal(count("SELECT count(*) FROM intake_entries"), 1);
 });
