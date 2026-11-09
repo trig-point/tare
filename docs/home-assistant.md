@@ -37,11 +37,11 @@ The device is named `Tare <username>`. Every entity on it goes unavailable when 
 | TDEE estimate | kcal | The latest adaptive estimate of daily energy use. |
 | Target changed | event | Fires when a recompute changes the stored target. Attributes `old_kcal`, `old_protein_g`, `new_kcal` and `new_protein_g`. |
 | `<meal> ate it`, `<meal> ate 3/4` | button | One pair per meal on hand. Pressing one logs that portion. |
-| Last meal press | | Result of the last button press: `logged`, `stale_revision`, `invalid_press` or another error code, with `meal_id`, `action` and `at` attributes. Shows `none` until the first press. |
+| Last meal press | | Result of the last button press: `logged`, `stale_revision`, `invalid_press` or another error code, with `meal_id`, `action` and `at` attributes. Shows `none` until the first press since Tare started. |
 
-A number can be unknown: no target before the profile is set up, no remaining value while any entry today lacks a value, no trend without weigh-ins, no TDEE estimate until there is enough signed-off history. Home Assistant shows these as `unknown`. Do not treat unknown as zero in templates or automations.
+A number can be unknown: no target until the profile is set up and there is a first weigh-in, no remaining value while any entry today lacks a value, no trend without weigh-ins, no TDEE estimate until there is enough signed-off history. Home Assistant shows these as `unknown`. Do not treat unknown as zero in templates or automations.
 
-Meal buttons come and go. A meal gets its pair when it is delivered or due today, and loses it when its last serving is eaten. Each press carries the meal's revision, so pressing a button that an earlier press made stale does nothing and reports `stale_revision`.
+Meal buttons come and go. A meal gets its pair when it is delivered or due today, and loses it when its last serving is eaten. Each press carries the meal's revision. A press sent again with the same revision, such as a double press, logs nothing and reports `logged` again. Any other press with an old revision logs nothing and reports `stale_revision`.
 
 `target_changed` is not replayed after a restart. A change that happened while Home Assistant was offline appears in Tare but does not fire the event later.
 
