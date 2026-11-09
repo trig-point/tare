@@ -15,6 +15,7 @@ import { selectConnection } from "../queries/oura/select-connection.ts";
 import { upsertSignal } from "../queries/upsert-signal.ts";
 import { upsertSleepPeriod } from "../queries/upsert-sleep-period.ts";
 import { upsertSourceActivity } from "../queries/upsert-source-activity.ts";
+import { countUnknownKinds } from "../signals/activity-kinds.ts";
 import { metricName, signalVocabulary } from "../signals/vocabulary.ts";
 import type { OuraService } from "./service.ts";
 
@@ -130,6 +131,10 @@ export function createOuraSyncJob({
           calories: session.calories,
           created_at: now,
         });
+      countUnknownKinds(
+        mapped.sessions.map((session) => session.kind),
+        "oura",
+      );
       if (!recordSync(database, { now }, { user_id: owner }))
         throw new Error("oura_sync_not_recorded");
     });

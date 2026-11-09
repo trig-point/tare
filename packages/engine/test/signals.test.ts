@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { setCap, widestSession, widestSet } from "../src/signals/activities.ts";
 import { assertionHeader, signAccessToken } from "./auth-support.ts";
 import { test } from "./support/hang-ceiling.ts";
 import { twoUsers } from "./support/two-users.ts";
@@ -221,8 +222,26 @@ test("MCP keeps different sources and records agent activity on its local day", 
       ...activity,
       started_at: "2025-12-31T22:29:00.000Z",
       source: "agent",
+      timing: "exact",
+      day: "2025-12-31",
+      notes: null,
+      category: "cardio",
+      tracker: null,
+      sets: [],
     },
   ]);
+  const largest = { ...widestSession, sets: Array(setCap).fill(widestSet) };
+  assert.equal((await call("log_activity", largest)).sets.length, setCap);
+  const over = await rpc("tools/call", {
+    name: "log_activity",
+    arguments: {
+      ...activity,
+      sets: Array(setCap + 1).fill({ exercise: "Plank" }),
+    },
+  });
+  assert.deepEqual(JSON.parse(over.content[0].text), {
+    error: { code: "too_many_sets" },
+  });
   assert.deepEqual(
     await (await member.request(`/api/signals/${first.day}`)).json(),
     { day: first.day, signals: [], activities: [], habits: [] },
