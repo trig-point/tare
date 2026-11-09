@@ -65,7 +65,7 @@ async function startEngine() {
       })
     : undefined;
   homeAssistant?.addProvider(
-    sensorProvider(connection.database, clock, config.tdee),
+    sensorProvider(connection.database, clock, config),
   );
   const runner = createJobRunner({
     database: connection.database,
@@ -106,7 +106,13 @@ async function startEngine() {
   );
   runner.register(oura.job);
   runner.register(
-    createOuraSyncJob({ database: connection.database, oura, clock }),
+    createOuraSyncJob({
+      database: connection.database,
+      oura,
+      clock,
+      creditMode: config.activityCredit,
+      onFinished: () => homeAssistant?.refreshAll(),
+    }),
   );
   runner.register(calendar.job);
   calendar.start();

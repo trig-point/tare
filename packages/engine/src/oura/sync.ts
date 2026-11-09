@@ -5,8 +5,9 @@ import {
   type OuraFetchOptions,
 } from "@tare/health-sources";
 import type { Database } from "better-sqlite3";
+import type { Config } from "../config.ts";
 import { writeTransaction } from "../db.ts";
-import { localDay } from "../logging/day.ts";
+import { localDay, shiftDay } from "../logging/day.ts";
 import { listSyncPeople } from "../queries/oura/list-sync-people.ts";
 import { markMembership } from "../queries/oura/mark-membership.ts";
 import { markReconnect } from "../queries/oura/mark-reconnect.ts";
@@ -15,6 +16,7 @@ import { selectConnection } from "../queries/oura/select-connection.ts";
 import { upsertSignal } from "../queries/upsert-signal.ts";
 import { upsertSleepPeriod } from "../queries/upsert-sleep-period.ts";
 import { upsertSourceActivity } from "../queries/upsert-source-activity.ts";
+import { countUnknownKinds } from "../signals/activity-kinds.ts";
 import { metricName, signalVocabulary } from "../signals/vocabulary.ts";
 import type { OuraService } from "./service.ts";
 
@@ -22,24 +24,22 @@ const backfillDays = 30;
 // Sleep can reach Oura days after the night, so each run re-reads a few days.
 const overlapDays = 3;
 
-function shiftDay(day: string, days: number) {
-  const date = new Date(`${day}T00:00:00.000Z`);
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
-}
-
 export function createOuraSyncJob({
   database,
   oura,
   clock,
+  creditMode,
   fetch,
   wait = (milliseconds, signal) =>
     setTimeout(milliseconds, undefined, { signal }),
   baseUrl,
+  onFinished,
 }: {
   database: Database;
   oura: Pick<OuraService, "refreshAccess">;
   clock: { now(): Date };
+  creditMode: Config["activityCredit"];
+  onFinished?: () => void;
 } & Partial<Pick<OuraFetchOptions, "fetch" | "wait" | "baseUrl">>) {
   async function syncPerson(
     person: ReturnType<typeof listSyncPeople>[number],
@@ -130,6 +130,10 @@ export function createOuraSyncJob({
           calories: session.calories,
           created_at: now,
         });
+      countUnknownKinds(
+        mapped.sessions.map((session) => session.kind),
+        "oura",
+      );
       if (!recordSync(database, { now }, { user_id: owner }))
         throw new Error("oura_sync_not_recorded");
     });
@@ -139,19 +143,27 @@ export function createOuraSyncJob({
     signal.throwIfAborted();
     let synced = 0;
     let failed = 0;
-    for (const person of listSyncPeople(database)) {
-      await setImmediate(undefined, { signal });
+    try {
+      for (const person of listSyncPeople(database)) {
+        await setImmediate(undefined, { signal });
+        try {
+          await syncPerson(person, signal);
+          synced++;
+        } catch (error) {
+          if (signal.aborted) throw error;
+          failed++;
+          console.error(
+            "oura_sync_failed",
+            person.user_id,
+            error instanceof Error ? error.message.slice(0, 40) : "unknown",
+          );
+        }
+      }
+    } finally {
       try {
-        await syncPerson(person, signal);
-        synced++;
+        onFinished?.();
       } catch (error) {
-        if (signal.aborted) throw error;
-        failed++;
-        console.error(
-          "oura_sync_failed",
-          person.user_id,
-          error instanceof Error ? error.message.slice(0, 40) : "unknown",
-        );
+        console.error("oura_sync_hook_failed", (error as Error).name);
       }
     }
     const result = `oura_synced:${synced}`;
@@ -161,5 +173,7 @@ export function createOuraSyncJob({
     }
     return result;
   }
-  return { name: "oura-sync", schedule: "0 7 * * *", run };
+  // Same-day credit needs today's burn as it accrues; next-day only needs yesterday's.
+  const schedule = creditMode === "same-day" ? "0 * * * *" : "0 7 * * *";
+  return { name: "oura-sync", schedule, run };
 }

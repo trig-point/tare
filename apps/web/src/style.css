@@ -142,6 +142,10 @@ dd {
   font-size: 0.75rem;
   opacity: 0.7;
 }
+.signals .why {
+  grid-column: 1 / -1;
+  font-size: 0.875rem;
+}
 .totals {
   padding: 1rem;
   background: #e9eddf;
@@ -175,6 +179,25 @@ dd {
 fieldset {
   border: 1px solid #808f84;
   border-radius: 0.5rem;
+}
+.entries ol {
+  flex-basis: 100%;
+  margin: 0;
+}
+.sets > div,
+.log-controls form[aria-label="Quick log"],
+.log-controls form[aria-label="Log habit"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.5rem;
+}
+.sets label {
+  flex: 1 1 5rem;
+}
+.log-controls {
+  display: grid;
+  gap: 1rem;
 }
 
 .day-status.complete {

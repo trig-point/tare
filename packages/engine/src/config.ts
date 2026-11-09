@@ -11,16 +11,28 @@ export interface TdeeSettings {
   defaultRange: number;
 }
 
+export interface WhySettings {
+  baselineDays: number;
+  minBaselineDays: number;
+  deviations: number;
+  hrvPercent: number;
+  lateHours: number;
+  lateMinutes: number;
+}
+
 export interface Config {
   orderEmailServices: Record<
     string,
     { senders: string[]; dkim_domains: string[] }
   >;
   tdee: TdeeSettings;
+  why: WhySettings;
   databaseUrl: string;
   port: number;
   timezone: string;
   targetWeekday: number;
+  activityCredit: "same-day" | "next-day";
+  activityBonusCap: number;
   publicUrl: string | undefined;
   mcpAllowedOrigins: string[];
   sessionDays: number;
@@ -291,10 +303,8 @@ function parseMcpAllowedOrigins(value: string | undefined): string[] {
   });
 }
 
-function parseTdeeSettings(
-  env: Record<string, string | undefined>,
-): TdeeSettings {
-  const number = (
+function settingReader(env: Record<string, string | undefined>) {
+  return (
     name: string,
     fallback: number,
     minimum: number,
@@ -319,6 +329,33 @@ function parseTdeeSettings(
       );
     return value;
   };
+}
+
+function parseWhySettings(
+  env: Record<string, string | undefined>,
+): WhySettings {
+  const number = settingReader(env);
+  const baselineDays = number("TARE_WHY_BASELINE_DAYS", 28, 14, 90, true);
+  return {
+    baselineDays,
+    minBaselineDays: number(
+      "TARE_WHY_MIN_BASELINE_DAYS",
+      14,
+      2,
+      baselineDays,
+      true,
+    ),
+    deviations: number("TARE_WHY_DEVIATIONS", 1, 0.1, 5),
+    hrvPercent: number("TARE_WHY_HRV_PERCENT", 10, 0, 100),
+    lateHours: number("TARE_WHY_LATE_HOURS", 4, 1, 12, true),
+    lateMinutes: number("TARE_WHY_LATE_MINUTES", 30, 1, 240, true),
+  };
+}
+
+function parseTdeeSettings(
+  env: Record<string, string | undefined>,
+): TdeeSettings {
+  const number = settingReader(env);
   const windowDays = number("TARE_TDEE_WINDOW_DAYS", 28, 14, 90, true);
   return {
     windowDays,
@@ -354,6 +391,20 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
   ].indexOf(env.TARE_TARGET_WEEKDAY?.trim().toLowerCase() || "monday");
   if (targetWeekday === -1)
     throw new Error("TARE_TARGET_WEEKDAY must be an English weekday name");
+  const activityCredit =
+    env.TARE_ACTIVITY_CREDIT?.trim().toLowerCase() || "same-day";
+  if (activityCredit !== "same-day" && activityCredit !== "next-day")
+    throw new Error("TARE_ACTIVITY_CREDIT must be same-day or next-day");
+  const bonusCapText = env.TARE_ACTIVITY_BONUS_CAP?.trim() || "500";
+  const activityBonusCap = Number(bonusCapText);
+  if (
+    !/^\d+$/.test(bonusCapText) ||
+    activityBonusCap < 1 ||
+    activityBonusCap > 2000
+  )
+    throw new Error(
+      "TARE_ACTIVITY_BONUS_CAP must be an integer between 1 and 2000",
+    );
   const publicUrl = env.TARE_PUBLIC_URL?.trim() || undefined;
   if (publicUrl !== undefined) {
     try {
@@ -407,10 +458,13 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
   return {
     orderEmailServices: parseOrderEmailServices(env.TARE_ORDER_EMAIL_SERVICES),
     tdee: parseTdeeSettings(env),
+    why: parseWhySettings(env),
     databaseUrl,
     port,
     timezone,
     targetWeekday,
+    activityCredit,
+    activityBonusCap,
     publicUrl,
     mcpAllowedOrigins: parseMcpAllowedOrigins(env.TARE_MCP_ALLOWED_ORIGINS),
     sessionDays,

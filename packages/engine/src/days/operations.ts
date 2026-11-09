@@ -40,12 +40,7 @@ export const dayReadOperations = [
         person.day_start_hour,
       );
       const ledger = readLedger(context.database, person.id, day);
-      const target = readTarget(
-        context.database,
-        person,
-        now,
-        context.config.tdee,
-      );
+      const target = readTarget(context.database, person, now, context.config);
       return {
         status: 200,
         body: {

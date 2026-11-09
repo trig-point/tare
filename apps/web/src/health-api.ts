@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { api } from "./api.ts";
+import { api, liveRefresh } from "./api.ts";
 import { displayNumber } from "./today-api.ts";
 
 const metrics = [
@@ -44,6 +44,7 @@ export const signalsSchema = z.object({
         source: z.string(),
         unit: z.string(),
         label: z.string().min(1).optional(),
+        why: z.array(z.string()),
       })
       .refine(
         (entry) => entry.metric !== "stress_summary" || entry.label,
@@ -53,15 +54,52 @@ export const signalsSchema = z.object({
   activities: z.array(
     z.object({
       id: z.number(),
-      started_at: z.string(),
-      duration_minutes: z.number(),
+      timing: z.enum(["exact", "date_only"]),
+      started_at: z.string().nullable(),
+      day: z.string(),
+      duration_minutes: z.number().nullable(),
       kind: z.string(),
+      category: z.enum(["strength", "cardio", "sauna", "cold_plunge", "other"]),
       calories: z.number().nullable(),
+      notes: z.string().nullable(),
       source: z.string(),
+      tracker: z.object({ id: z.number(), source: z.string() }).nullable(),
+      sets: z.array(
+        z.object({
+          set_index: z.number(),
+          exercise: z.string(),
+          set_type: z.string(),
+          reps: z.number().nullable(),
+          load: z.number().nullable(),
+          load_unit: z.string().nullable(),
+          load_kg: z.number().nullable(),
+          duration_seconds: z.number().nullable(),
+          rir_low: z.number().nullable(),
+          rir_high: z.number().nullable(),
+          notes: z.string().nullable(),
+        }),
+      ),
+    }),
+  ),
+  habits: z.array(
+    z.object({
+      habit_key: z.string(),
+      amount: z.number().nullable(),
+      note: z.string().nullable(),
+      source: z.string(),
+      updated_at: z.string(),
     }),
   ),
 });
 export type Signals = z.infer<typeof signalsSchema>;
+export type Workout = Signals["activities"][number];
+export type Habit = Signals["habits"][number];
+export const habitLabels: Record<string, string> = {
+  evening_alcohol: "Evening alcohol",
+  late_caffeine: "Late caffeine",
+};
+export const loggedSource = (source: string) =>
+  source === "manual" || source === "agent";
 export const signalsKey = (person: number, day: string) =>
   ["signals", person, day] as const;
 export async function readSignals(day: string, signal: AbortSignal) {
@@ -69,6 +107,102 @@ export async function readSignals(day: string, signal: AbortSignal) {
     await api(`/api/signals/${encodeURIComponent(day)}`, { signal }),
   );
 }
+export const signalsQuery = (person: number, day: string) => ({
+  queryKey: signalsKey(person, day),
+  queryFn: ({ signal }: { signal: AbortSignal }) => readSignals(day, signal),
+  ...liveRefresh,
+});
+const send = (path: string, method: string, body?: unknown) =>
+  api(path, {
+    method,
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+const stored = z.object({ id: z.number() });
+export async function logActivity(body: Record<string, unknown>) {
+  return stored.parse(await send("/api/activities", "POST", body));
+}
+export async function replaceSets(id: number, sets: SetInput[]) {
+  return stored.parse(
+    await send(`/api/activities/${id}/sets`, "PATCH", { sets }),
+  );
+}
+export async function deleteActivity(id: number) {
+  return stored.parse(await send(`/api/activities/${id}`, "DELETE"));
+}
+export async function logHabit(body: {
+  habit_key: string;
+  day: string;
+  amount?: number;
+}) {
+  return z
+    .object({ habit_key: z.string() })
+    .parse(await send("/api/habits", "POST", body));
+}
+export async function deleteHabit(day: string, habitKey: string) {
+  return z
+    .object({ deleted: z.literal(true) })
+    .parse(
+      await send(
+        `/api/habits/${encodeURIComponent(day)}/${encodeURIComponent(habitKey)}`,
+        "DELETE",
+      ),
+    );
+}
+// The id changes only after a success, so a retried entry replays instead of storing twice.
+export function withClientId<Body, Result>(
+  post: (body: Body & { client_id: string }) => Promise<Result>,
+  newId: () => string = () => crypto.randomUUID(),
+) {
+  let clientId = newId();
+  return async (body: Body) => {
+    const result = await post({ ...body, client_id: clientId });
+    clientId = newId();
+    return result;
+  };
+}
+
+type StoredSet = Workout["sets"][number];
+export type SetRow = {
+  exercise: string;
+  reps: string;
+  load: string;
+  load_unit: "kg" | "lb";
+  kept: Partial<StoredSet>;
+};
+export type SetInput = ReturnType<typeof setInput>;
+export const blankSet = (): SetRow => ({
+  ...{ exercise: "", reps: "", load: "" },
+  ...{ load_unit: "kg", kept: {} },
+});
+export function setRow(set: StoredSet): SetRow {
+  const { set_type, duration_seconds, rir_low, rir_high, notes } = set;
+  return {
+    exercise: set.exercise,
+    reps: set.reps === null ? "" : String(set.reps),
+    load: set.load === null ? "" : String(set.load),
+    load_unit: set.load_unit === "lb" ? "lb" : "kg",
+    kept: { set_type, duration_seconds, rir_low, rir_high, notes },
+  };
+}
+const numberOrNull = (text: string) =>
+  text.trim() === "" ? null : Number(text);
+export function setInput(row: SetRow) {
+  const load = numberOrNull(row.load);
+  return {
+    ...row.kept,
+    exercise: row.exercise.trim(),
+    reps: numberOrNull(row.reps),
+    load,
+    load_unit: load === null ? null : row.load_unit,
+  };
+}
+export function setText(set: StoredSet) {
+  const reps = set.reps === null ? "" : ` ${set.reps}`;
+  const load =
+    set.load === null ? "" : ` × ${displayNumber(set.load)} ${set.load_unit}`;
+  return `${set.exercise}${reps}${load}`;
+}
+
 const sourcePreference = ["manual", "oura", "agent"];
 const sourceLabels: Record<string, string> = {
   manual: "Manual",
@@ -81,6 +215,7 @@ const rank = (source: string) => {
   return index === -1 ? sourcePreference.length : index;
 };
 // One value per metric, never averaged: sources disagree on method, so a blend would match none of them.
+// Burn keeps every source because each carries its own why-lines.
 export function bodyRows(signals: Signals["signals"]) {
   const picked = new Map<string, Signals["signals"][number]>();
   for (const entry of signals) {
@@ -88,7 +223,13 @@ export function bodyRows(signals: Signals["signals"]) {
     if (!current || rank(entry.source) < rank(current.source))
       picked.set(entry.metric, entry);
   }
-  return metrics.flatMap((metric) => picked.get(metric) ?? []);
+  return metrics.flatMap((metric) =>
+    metric === "active_calories"
+      ? signals
+          .filter((entry) => entry.metric === metric)
+          .sort((first, second) => rank(first.source) - rank(second.source))
+      : (picked.get(metric) ?? []),
+  );
 }
 export function signalText(entry: {
   value: number;

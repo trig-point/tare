@@ -97,6 +97,12 @@ Relative filesystem paths resolve from `/app/packages/engine` in the image.
 | `TARE_TDEE_MIN_WEIGH_IN_DAYS` | `8` | Days with a weigh-in needed for an adaptive estimate, integer from 1 to the window length. Trimmed; empty uses the default. |
 | `TARE_TDEE_MIN_SPAN_DAYS` | `14` | Elapsed days of weight trend needed for an adaptive estimate, integer from 1 to the window length. Trimmed; empty uses the default. |
 | `TARE_TDEE_DEFAULT_RANGE` | `0.25` | Range applied to estimated intake without stored low and high values, from 0 to 0.9. Trimmed; empty uses the default. |
+| `TARE_WHY_BASELINE_DAYS` | `28` | Days before the day that form a why-line baseline, integer from 14 to 90. Trimmed; empty uses the default. |
+| `TARE_WHY_MIN_BASELINE_DAYS` | `14` | Days of a signal needed before it gets why-lines, integer from 2 to the baseline length. Trimmed; empty uses the default. |
+| `TARE_WHY_DEVIATIONS` | `1` | Standard deviations from the baseline mean before a why-line shows, from 0.1 to 5. Trimmed; empty uses the default. |
+| `TARE_WHY_HRV_PERCENT` | `10` | HRV change from the baseline mean also needed, in percent, from 0 to 100. Trimmed; empty uses the default. |
+| `TARE_WHY_LATE_HOURS` | `4` | A workout ending this many hours before sleep counts as late, integer from 1 to 12. Trimmed; empty uses the default. |
+| `TARE_WHY_LATE_MINUTES` | `30` | Shortest workout that counts as late, in minutes, integer from 1 to 240. Trimmed; empty uses the default. |
 | `TARE_ORDER_MODEL_BASE_URL` | Unset (order parsing disabled) | HTTP or HTTPS base URL of an OpenAI-compatible model. May include a path, but not credentials, a query or a fragment. Trimmed; empty counts as unset. Set all three order model settings or none. |
 | `TARE_ORDER_MODEL` | Unset (order parsing disabled) | Model name sent to the endpoint. Trimmed; empty counts as unset. Set all three order model settings or none. |
 | `TARE_ORDER_MODEL_API_KEY` | Unset (order parsing disabled) | API key for the endpoint. This is a secret: supply it through the environment, never in a file you commit. A keyless local endpoint needs a placeholder. Trimmed; empty counts as unset. Set all three order model settings or none. |
@@ -115,6 +121,13 @@ Relative filesystem paths resolve from `/app/packages/engine` in the image.
 | `TARE_OURA_CLIENT_SECRET` | Unset (Oura disabled) | Oura application client secret. This is a secret: supply it through the environment. Trimmed; empty counts as unset. Set all three Oura application settings or none. |
 | `TARE_OURA_REDIRECT_URL` | Unset (Oura disabled) | Exact callback URL registered with Oura: absolute HTTP or HTTPS, no fragment. Trimmed; empty counts as unset. Set all three Oura application settings or none. |
 | `TARE_OURA_TOKEN_KEY` | Unset (no new Oura connections) | Canonical base64 for 32 bytes that encrypts stored Oura tokens. Malformed values prevent startup. Back it up separately from database copies; restoring without it requires reconnecting. |
+| `TARE_ACTIVITY_CREDIT` | `same-day` | When Oura activity counts toward the day's target: `same-day` syncs Oura every hour, and `next-day` syncs once a day at 7:00 AM in `TARE_TIMEZONE`. Trimmed and case-insensitive; empty uses the default. Other values prevent startup. |
+| `TARE_ACTIVITY_BONUS_CAP` | `500` | Largest daily activity bonus in kcal, an integer from 1 to 2000. Trimmed; empty uses the default. Other values prevent startup. |
+| `TARE_MQTT_URL` | Unset (Home Assistant publisher disabled) | `mqtt` or `mqtts` broker URL with no credentials or path. Trimmed; empty counts as unset. Invalid values prevent startup; a broker that is down does not. |
+| `TARE_MQTT_USERNAME` | Unset | Broker username. Trimmed; empty counts as unset. Set it with `TARE_MQTT_PASSWORD` or leave both unset. |
+| `TARE_MQTT_PASSWORD` | Unset | Broker password. This is a secret: supply it through the environment, never in a file you commit. Trimmed; empty counts as unset. Set it with `TARE_MQTT_USERNAME` or leave both unset. |
+| `TARE_HA_DISCOVERY_PREFIX` | `homeassistant` | Home Assistant discovery prefix, an MQTT topic without wildcards or empty levels. Trimmed; empty uses the default. |
+| `TARE_HA_STATUS_TOPIC` | `homeassistant/status` | Topic where Home Assistant publishes `online` on start, set apart from the discovery prefix. Same topic rules; empty uses the default. |
 | `TARE_USDA_API_KEY` | Unset (USDA disabled) | USDA FoodData Central API key. Trimmed; empty disables USDA requests. |
 | `TARE_OFF_USER_AGENT` | Unset (Open Food Facts disabled) | Must follow `AppName/Version (ContactEmail)`, for example `Tare/1.0 (support@example.com)`. Trimmed; empty disables requests. |
 

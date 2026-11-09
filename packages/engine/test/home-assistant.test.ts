@@ -65,11 +65,12 @@ async function setup(context: TestContext, env: Record<string, string> = {}) {
     clock,
     homeAssistant: hook,
   });
-  const { mqtt, tdee } = loadConfig({
+  const settings = loadConfig({
     DATABASE_URL: ":memory:",
     TARE_MQTT_URL: `mqtt://127.0.0.1:${port}`,
     ...env,
   });
+  const mqtt = settings.mqtt;
   assert.ok(mqtt);
   const logs: string[] = [];
   const publisher = createHomeAssistantPublisher({
@@ -84,7 +85,7 @@ async function setup(context: TestContext, env: Record<string, string> = {}) {
     await publisher.stop();
     await new Promise((done) => broker.close(() => server.close(done)));
   });
-  publisher.addProvider(sensorProvider(users.database, clock, tdee));
+  publisher.addProvider(sensorProvider(users.database, clock, settings));
   const install = String(
     users.database.prepare("SELECT id FROM install").pluck().get(),
   );

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
+import type { AlignedData, Legend, Series } from "uplot";
 import { ApiError } from "./api.ts";
 import {
   activityLevels,
@@ -11,9 +12,9 @@ import {
   readHistory,
   readProfile,
   saveProfile,
-  type WeightHistory,
 } from "./profile-api.ts";
 import {
+  bonusLines,
   displayNumber,
   refreshToday,
   type TodayData,
@@ -48,6 +49,11 @@ export function TargetCard({ today }: { today: TodayData }) {
         {basisLabels[target.basis]}
         {target.adaptive.status === "learning" && ", still learning"}
       </p>
+      {bonusLines(target.base_kcal, target.bonus, today.timezone).map(
+        (line) => (
+          <p key={line}>{line}</p>
+        ),
+      )}
       <table>
         <thead>
           <tr>
@@ -206,6 +212,7 @@ export function WeightChart({
   const history = useQuery({
     queryKey: historyKey(person),
     queryFn: ({ signal }) => readHistory(signal),
+    select: chartData,
     enabled: online,
   });
   return (
@@ -213,16 +220,37 @@ export function WeightChart({
       <h2>Weight</h2>
       {history.isError && <p role="alert">Couldn’t load weights</p>}
       {history.data &&
-        (history.data.days.length === 0 ? (
+        (history.data[0].length === 0 ? (
           <p>No weigh-ins yet</p>
         ) : (
-          <TrendPlot history={history.data} />
+          <Plot data={history.data} series={weightSeries} />
         ))}
     </section>
   );
 }
 
-function TrendPlot({ history }: { history: WeightHistory }) {
+const weightSeries: Series[] = [
+  {},
+  {
+    label: "Reading",
+    stroke: "#8a8f86",
+    paths: () => null,
+    points: { show: true, size: 6, fill: "#8a8f86" },
+  },
+  { label: "Trend", stroke: "#234b40", width: 2, spanGaps: true },
+];
+
+const noLegend: Legend = { show: false };
+
+export function Plot({
+  data,
+  series,
+  legend = noLegend,
+}: {
+  data: AlignedData;
+  series: Series[];
+  legend?: Legend;
+}) {
   const container = useRef<HTMLDivElement>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
@@ -242,19 +270,10 @@ function TrendPlot({ history }: { history: WeightHistory }) {
           {
             width: element.clientWidth,
             height: 240,
-            legend: { show: false },
-            series: [
-              {},
-              {
-                label: "Reading",
-                stroke: "#8a8f86",
-                paths: () => null,
-                points: { show: true, size: 6, fill: "#8a8f86" },
-              },
-              { label: "Trend", stroke: "#234b40", width: 2, spanGaps: true },
-            ],
+            legend,
+            series,
           },
-          chartData(history),
+          data,
           element,
         );
       })
@@ -266,7 +285,7 @@ function TrendPlot({ history }: { history: WeightHistory }) {
       resize.disconnect();
       plot?.destroy();
     };
-  }, [history]);
+  }, [data, series, legend]);
   return failed ? (
     <p role="alert">Couldn’t load chart</p>
   ) : (

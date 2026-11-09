@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { api } from "./api.ts";
+import { api, liveRefresh } from "./api.ts";
 
 const nutrientBudget = z.object({
   known_subtotal: z.number(),
@@ -55,6 +55,11 @@ export const planKey = (person: number) => ["plan", person] as const;
 export async function readPlan(signal: AbortSignal) {
   return planSchema.parse(await api("/api/plan", { signal }));
 }
+export const planQuery = (person: number) => ({
+  queryKey: planKey(person),
+  queryFn: ({ signal }: { signal: AbortSignal }) => readPlan(signal),
+  ...liveRefresh,
+});
 
 export async function actOnItem(item: PlannedItem, action: ItemAction) {
   return z

@@ -60,6 +60,15 @@ Adaptive TDEE settings treat empty values as unset:
 
 Each minimum must be an integer from 1 to the configured window length. Invalid settings prevent startup and name the variable.
 
+Body card why-lines compare a signal with its recent baseline; empty values count as unset and invalid values prevent startup:
+
+- `TARE_WHY_BASELINE_DAYS`: baseline length before the day, default 28, integer from 14 to 90.
+- `TARE_WHY_MIN_BASELINE_DAYS`: days of that signal needed, default 14, integer from 2 to the baseline length.
+- `TARE_WHY_DEVIATIONS`: standard deviations from the baseline mean, default 1, from 0.1 to 5.
+- `TARE_WHY_HRV_PERCENT`: HRV change also needed, default 10, from 0 to 100.
+- `TARE_WHY_LATE_HOURS`: a workout ending this close to sleep counts as late, default 4, integer from 1 to 12.
+- `TARE_WHY_LATE_MINUTES`: shortest workout that counts as late, default 30, integer from 1 to 240.
+
 `TARE_PUBLIC_URL` accepts an HTTP or HTTPS URL. An HTTPS install must set it to enable the `Secure` flag on session cookies. Empty or unset leaves `Secure` off.
 
 `TARE_SESSION_DAYS` sets the absolute session lifetime in days (default: `30`, integer from 1 to 365). Empty counts as unset.
@@ -81,6 +90,10 @@ Each minimum must be an integer from 1 to the configured window length. Invalid 
 `TARE_ORDER_MODEL_BASE_URL`, `TARE_ORDER_MODEL` and `TARE_ORDER_MODEL_API_KEY` configure order-email parsing through an OpenAI-compatible model. Set all three or leave all three unset. Values are trimmed; empty values count as unset. The base URL must use HTTP or HTTPS and may include a path, but not credentials, a query or a fragment. A keyless local endpoint requires a placeholder API key. With no model configured, the parser returns `no_model` for the engine to turn into a question.
 
 `TARE_OFF_USER_AGENT` must follow `AppName/Version (ContactEmail)`; leaving it empty or unset disables Open Food Facts requests.
+
+`TARE_ACTIVITY_CREDIT` sets when Oura activity counts toward the day's target: `same-day` (default) syncs Oura every hour, and `next-day` syncs at 7:00 AM in `TARE_TIMEZONE`. It is trimmed and case-insensitive; empty counts as unset, and other values prevent startup.
+
+`TARE_ACTIVITY_BONUS_CAP` limits the daily activity bonus in kcal (default: `500`, integer from 1 to 2000). Empty counts as unset; invalid values prevent startup.
 
 `TARE_OURA_CLIENT_ID`, `TARE_OURA_CLIENT_SECRET` and `TARE_OURA_REDIRECT_URL` configure the install's Oura application. Set all three or leave all three unset; values are trimmed and empty values count as unset. The redirect URL must be an absolute HTTP or HTTPS URL without a fragment. `TARE_OURA_TOKEN_KEY` is canonical base64 for 32 bytes and encrypts stored Oura tokens; a malformed value prevents startup, and a missing value allows startup but prevents new connections. Back up the key separately from the database. Setup: `docs/oura.md`.
 

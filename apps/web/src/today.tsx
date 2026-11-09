@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { AddFood } from "./add-food.tsx";
 import type { Session } from "./api.ts";
+import { BodyFatCard } from "./body-fat.tsx";
 import { refreshDays } from "./days-api.ts";
 import { BodyCard } from "./health.tsx";
 import type { OutboxReplay } from "./outbox-replay.ts";
@@ -20,12 +21,11 @@ import {
   intakeChanges,
   nutrientLabels,
   nutrients,
-  readToday,
   refreshToday,
   settledSince,
   sourceName,
   type TodayData,
-  todayKey,
+  todayQuery,
   totalText,
   type Weight,
 } from "./today-api.ts";
@@ -42,11 +42,7 @@ export function Today({
   online: boolean;
 }) {
   const client = useQueryClient();
-  const today = useQuery({
-    queryKey: todayKey(person.id),
-    queryFn: ({ signal }) => readToday(signal),
-    enabled: online,
-  });
+  const today = useQuery({ ...todayQuery(person.id), enabled: online });
   const currentRecords = useRef(records);
   currentRecords.current = records;
   useEffect(() => {
@@ -106,7 +102,12 @@ export function Today({
                 </div>
               ))}
             </dl>
-            <BodyCard person={person.id} day={today.data.day} online={online} />
+            <BodyCard
+              person={person.id}
+              day={today.data.day}
+              timezone={today.data.timezone}
+              online={online}
+            />
           </div>
           <Slots person={person.id} online={online} />
           <ul className="entries">
@@ -159,6 +160,7 @@ export function Today({
       <AddFood person={person} replay={replay} online={online} />
       <WeightForm person={person} replay={replay} />
       <WeightChart person={person.id} online={online} />
+      <BodyFatCard person={person.id} online={online} />
       <ProfileSection person={person.id} online={online} />
     </section>
   );

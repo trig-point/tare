@@ -238,3 +238,24 @@ for (const timezone of ["UTC", "America/New_York", "Asia/Kolkata"]) {
     );
   });
 }
+
+test("activity credit mode parses same-day and next-day and rejects other values", () => {
+  const read = (value?: string) =>
+    loadConfig({ DATABASE_URL: ":memory:", TARE_ACTIVITY_CREDIT: value })
+      .activityCredit;
+  assert.deepEqual(
+    [read(), read(" "), read(" Next-Day ")],
+    ["same-day", "same-day", "next-day"],
+  );
+  for (const value of ["hourly", "same day"])
+    assert.throws(() => read(value), /TARE_ACTIVITY_CREDIT/);
+});
+
+test("activity bonus cap defaults to 500, trims and rejects values outside 1 to 2000", () => {
+  const read = (value?: string) =>
+    loadConfig({ DATABASE_URL: ":memory:", TARE_ACTIVITY_BONUS_CAP: value })
+      .activityBonusCap;
+  assert.deepEqual([read(), read(" "), read(" 300 ")], [500, 500, 300]);
+  for (const value of ["0", "2001", "1.5", "-5", "abc"])
+    assert.throws(() => read(value), /TARE_ACTIVITY_BONUS_CAP/);
+});

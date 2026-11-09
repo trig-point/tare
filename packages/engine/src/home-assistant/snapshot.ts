@@ -1,9 +1,14 @@
 import type { Database } from "better-sqlite3";
-import type { TdeeSettings } from "../config.ts";
+import type { Config } from "../config.ts";
 import { readLedger, remainingFor } from "../days/ledger.ts";
 import { localDay } from "../logging/day.ts";
 import { readTarget } from "../target/reader.ts";
 import type { EntityDefinition, Person, Provider } from "./discovery.ts";
+
+type TargetConfig = Pick<
+  Config,
+  "tdee" | "activityCredit" | "activityBonusCap"
+>;
 
 const sensors = [
   ["calorie_target", "Calorie target", "kcal"],
@@ -19,7 +24,7 @@ export function personSnapshot(
   database: Database,
   person: Person,
   now: Date,
-  settings: TdeeSettings,
+  settings: TargetConfig,
 ) {
   const day = localDay(
     now.toISOString(),
@@ -45,7 +50,7 @@ export function personSnapshot(
 export function sensorProvider(
   database: Database,
   clock: { now(): Date },
-  settings: TdeeSettings,
+  settings: TargetConfig,
 ): Provider {
   return (person, topics) => ({
     entities: sensors.map(

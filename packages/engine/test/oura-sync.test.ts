@@ -39,7 +39,10 @@ function bodies(owner: number, sleep = true) {
     })),
   };
 }
-function harness(context: TestContext) {
+function harness(
+  context: TestContext,
+  creditMode: "same-day" | "next-day" = "same-day",
+) {
   const fixture = setup(context);
   for (const owner of [1, 2])
     fixture.seed(owner, 0, new Date(origin + 86_400_000).toISOString());
@@ -51,10 +54,13 @@ function harness(context: TestContext) {
       Response.json({ data: bodies(owner, sleep)[endpoint as "sleep"] });
   replies.set(1, reply(1));
   replies.set(2, reply(2));
+  let finished = 0;
   const job = createOuraSyncJob({
+    onFinished: () => finished++,
     database: fixture.database,
     oura: fixture.service(),
     clock: fixture.clock,
+    creditMode,
     wait: async () => {},
     fetch: (async (url: URL, init: RequestInit) => {
       const owner = Number(
@@ -77,12 +83,19 @@ function harness(context: TestContext) {
       count(table, owner),
     );
   const run = () => job.run({ signal: new AbortController().signal });
-  return { ...fixture, replies, reply, requests, counts, run };
+  const runs = () => finished;
+  return { ...fixture, job, replies, reply, requests, counts, run, runs };
 }
+
+test("same-day credit syncs hourly; next-day credit keeps 7 AM", (context) => {
+  assert.equal(harness(context).job.schedule, "0 * * * *");
+  assert.equal(harness(context, "next-day").job.schedule, "0 7 * * *");
+});
 
 test("a run stores each person's own signals and last sync; re-runs and overlapping runs add nothing", async (context) => {
   const sync = harness(context);
   assert.equal(await sync.run(), "oura_synced:2");
+  assert.equal(sync.runs(), 1);
   assert.deepEqual(
     [sync.counts(1), sync.counts(2)],
     [

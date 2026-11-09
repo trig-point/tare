@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { setCap, widestSession, widestSet } from "../src/signals/activities.ts";
 import { assertionHeader, signAccessToken } from "./auth-support.ts";
 import { test } from "./support/hang-ceiling.ts";
 import { twoUsers } from "./support/two-users.ts";
@@ -20,6 +21,7 @@ for (const mode of ["fallback", "access"] as const)
       day,
       signals: [],
       activities: [],
+      habits: [],
     });
     for (const [metric, value, unit] of [
       ["steps", 3000, "count"],
@@ -42,7 +44,7 @@ for (const mode of ["fallback", "access"] as const)
           (row: { metric: string }) => row.metric === metric,
         ),
         {
-          ...{ metric, value, unit, source: "manual" },
+          ...{ metric, value, unit, source: "manual", why: [] },
           ...(metric === "stress_summary" ? { label: "stressful" } : {}),
         },
       );
@@ -97,6 +99,7 @@ for (const mode of ["fallback", "access"] as const)
       day,
       signals: [],
       activities: [],
+      habits: [],
     });
     const own = await send(
       "/api/signals",
@@ -196,8 +199,8 @@ test("MCP keeps different sources and records agent activity on its local day", 
   await call("log_signal", { metric: "steps", value: 45 });
   const signals = await call("read_signals", { day: "2026-01-01" });
   assert.deepEqual(signals.signals, [
-    { metric: "steps", unit: "count", value: 45, source: "agent" },
-    { metric: "steps", unit: "count", value: 12, source: "manual" },
+    { metric: "steps", unit: "count", value: 45, source: "agent", why: [] },
+    { metric: "steps", unit: "count", value: 12, source: "manual", why: [] },
   ]);
   const activity = {
     started_at: "2026-01-01T03:59:00+05:30",
@@ -219,10 +222,28 @@ test("MCP keeps different sources and records agent activity on its local day", 
       ...activity,
       started_at: "2025-12-31T22:29:00.000Z",
       source: "agent",
+      timing: "exact",
+      day: "2025-12-31",
+      notes: null,
+      category: "cardio",
+      tracker: null,
+      sets: [],
     },
   ]);
+  const largest = { ...widestSession, sets: Array(setCap).fill(widestSet) };
+  assert.equal((await call("log_activity", largest)).sets.length, setCap);
+  const over = await rpc("tools/call", {
+    name: "log_activity",
+    arguments: {
+      ...activity,
+      sets: Array(setCap + 1).fill({ exercise: "Plank" }),
+    },
+  });
+  assert.deepEqual(JSON.parse(over.content[0].text), {
+    error: { code: "too_many_sets" },
+  });
   assert.deepEqual(
     await (await member.request(`/api/signals/${first.day}`)).json(),
-    { day: first.day, signals: [], activities: [] },
+    { day: first.day, signals: [], activities: [], habits: [] },
   );
 });

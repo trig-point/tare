@@ -9,11 +9,13 @@ export type SelectActivityByClientResult = {
   id: number;
   user_id: number;
   client_id: string;
-  started_at: string;
+  timing: string;
+  started_at: string | null;
   day: string;
-  duration_minutes: number;
+  duration_minutes: number | null;
   kind: string;
   calories: number | null;
+  notes: string | null;
   source: string;
   source_record_id: string | null;
   created_at: string;
@@ -37,14 +39,16 @@ function mapArrayToSelectActivityByClientResult(data: any) {
     id: data[0],
     user_id: data[1],
     client_id: data[2],
-    started_at: data[3],
-    day: data[4],
-    duration_minutes: data[5],
-    kind: data[6],
-    calories: data[7],
-    source: data[8],
-    source_record_id: data[9],
-    created_at: data[10],
+    timing: data[3],
+    started_at: data[4],
+    day: data[5],
+    duration_minutes: data[6],
+    kind: data[7],
+    calories: data[8],
+    notes: data[9],
+    source: data[10],
+    source_record_id: data[11],
+    created_at: data[12],
   };
   return result;
 }
