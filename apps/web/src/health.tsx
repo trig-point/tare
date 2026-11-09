@@ -177,18 +177,20 @@ function WorkoutEntry({
           ))}
         </ol>
       )}
-      <button
-        type="button"
-        disabled={busy}
-        onClick={() => {
-          setRows(
-            workout.sets.length > 0 ? workout.sets.map(setRow) : [blankSet()],
-          );
-          setEditing(true);
-        }}
-      >
-        {logged ? "Edit sets" : "Add sets"}
-      </button>
+      {(logged || workout.category !== "other") && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => {
+            setRows(
+              workout.sets.length > 0 ? workout.sets.map(setRow) : [blankSet()],
+            );
+            setEditing(true);
+          }}
+        >
+          {logged ? "Edit sets" : "Add sets"}
+        </button>
+      )}
       {logged && (
         <button
           type="button"

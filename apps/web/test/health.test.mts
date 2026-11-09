@@ -309,7 +309,12 @@ const habit = {
 const dayResponse = {
   day: activityDay,
   signals: [],
-  activities: [workout, dateOnly, ouraWalk],
+  activities: [
+    workout,
+    dateOnly,
+    ouraWalk,
+    { ...ouraWalk, id: 11, kind: "yoga", category: "other" },
+  ],
   habits: [habit],
 };
 const renderBody = (response: unknown) =>
@@ -333,7 +338,8 @@ test("a paired workout shows once with its sets, and a date-only session shows t
     html,
     /<strong>strength<\/strong><span>Time not recorded · Manual/,
   );
-  assert.match(html, /<strong>walk<\/strong>.*Add sets/s);
+  assert.match(html, /<strong>walk<\/strong>.*Add sets.*<strong>yoga/s);
+  assert.equal(html.match(/Add sets/g)?.length, 1);
   assert.doesNotMatch(html, /Delete walk/);
   assert.match(html, /<strong>Evening alcohol<\/strong><span>2 · Manual/);
 });
