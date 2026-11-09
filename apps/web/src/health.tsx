@@ -65,7 +65,9 @@ export function BodyCard({
             <div key={activity.id}>
               <dt>{activity.kind}</dt>
               <dd>
-                {activity.duration_minutes} min
+                {activity.duration_minutes === null
+                  ? "Time not recorded"
+                  : `${activity.duration_minutes} min`}
                 {activity.calories !== null &&
                   ` · ${displayNumber(activity.calories)} kcal`}
               </dd>
