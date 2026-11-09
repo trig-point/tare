@@ -33,7 +33,7 @@ async function setup(context: Parameters<typeof twoUsers>[0]) {
   for (const [path, body] of [
     ["/api/profile", profile],
     ["/api/weights", `{"client_id":"weight","weight_kg":80}`],
-  ])
+  ] as const)
     assert.ok((await fetch(path, { method: "POST", body })).ok);
   database
     .prepare(
