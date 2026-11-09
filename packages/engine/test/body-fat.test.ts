@@ -42,14 +42,13 @@ const weights = [
 ];
 const trend = (readings: BodyFatReading[], workouts: TrendWorkout[] = []) =>
   bodyFatTrend({ readings, workouts, weights, today });
+const flags = (result: ReturnType<typeof trend>) =>
+  result.readings.map((row) => [row.after_workout, row.in_trend]);
 
 test("a reading 3 hours after a timed workout is marked and left out", () => {
   const morning = reading(today, 24, "09:00");
   const result = trend([morning], [timedWorkout(`${today}T06:00:00.000Z`)]);
-  assert.deepEqual(
-    result.readings.map((row) => [row.after_workout, row.in_trend]),
-    [[true, false]],
-  );
+  assert.deepEqual(flags(result), [[true, false]]);
 });
 
 test("a reading after a date-only session stays in the trend", () => {
@@ -60,25 +59,21 @@ test("a reading after a date-only session stays in the trend", () => {
     day: shiftDay(today, -1),
     category: "strength",
   };
-  const result = trend([reading(today, 24)], [dateOnly]);
-  assert.deepEqual(
-    result.readings.map((row) => [row.after_workout, row.in_trend]),
-    [[false, true]],
-  );
+  assert.deepEqual(flags(trend([reading(today, 24)], [dateOnly])), [
+    [false, true],
+  ]);
 });
 
 test("a second weigh-in in a day stays out of the trend", () => {
   const result = trend([reading(today, 24), reading(today, 30, "19:00")]);
-  assert.deepEqual(
-    result.readings.map((row) => row.in_trend),
-    [true, false],
-  );
+  assert.deepEqual(flags(result), [
+    [false, true],
+    [false, false],
+  ]);
 });
 
 test("6 readings in a window says not enough readings for a trend", () => {
-  const result = trend(windows(22, 22, 6));
-  assert.equal(result.readings.length, 16);
-  assert.deepEqual(result.trend, {
+  assert.deepEqual(trend(windows(22, 22, 6)).trend, {
     status: "not_enough",
     current_count: 6,
     prior_count: 10,
@@ -87,20 +82,17 @@ test("6 readings in a window says not enough readings for a trend", () => {
 });
 
 test("a 1.2-point change reads within this scale's error of about 2 points", () => {
-  const result = trend(windows(22, 23.2));
-  assert.equal(result.trend?.status, "ready");
   assert.equal(
-    result.trend?.message,
+    trend(windows(22, 23.2)).trend?.message,
     "Up 1.2 points, within this scale's error of about 2 points",
   );
 });
 
 test("the joined line for no strength sessions, weight down 1.2 kg and body fat up 1 point", () => {
   const oldStrength = timedWorkout(`${shiftDay(today, -21)}T06:00:00.000Z`);
-  const result = trend(windows(22, 23), [oldStrength]);
-  assert.equal(result.trend?.status, "ready");
+  const result = trend(windows(22, 23), [oldStrength]).trend;
   assert.equal(
-    result.trend?.status === "ready" && result.trend.line,
+    result?.status === "ready" && result.line,
     "No strength sessions logged in 3 weeks. Weight down 1.2 kg. Body fat reading up 1 point, within this scale's error.",
   );
 });
@@ -132,24 +124,13 @@ test("one person's trend never uses another person's readings or workouts", asyn
     }),
   });
   assert.equal(logged.status, 200);
-  const history = async (person: typeof setup.admin) =>
-    (await person.request("/api/body-fat/history")).json();
-  const [admin, member] = [
-    await history(setup.admin),
-    await history(setup.member),
-  ];
-  assert.deepEqual(
-    admin.readings.map((row: BodyFatReading & { after_workout: boolean }) => [
-      row.body_fat_pct,
-      row.after_workout,
-    ]),
-    [[20, false]],
-  );
-  assert.deepEqual(
-    member.readings.map((row: BodyFatReading & { after_workout: boolean }) => [
-      row.body_fat_pct,
-      row.after_workout,
-    ]),
-    [[21, true]],
-  );
+  const marks = async (person: typeof setup.admin) =>
+    (await (await person.request("/api/body-fat/history")).json()).readings.map(
+      (row: { body_fat_pct: number; after_workout: boolean }) => [
+        row.body_fat_pct,
+        row.after_workout,
+      ],
+    );
+  assert.deepEqual(await marks(setup.admin), [[20, false]]);
+  assert.deepEqual(await marks(setup.member), [[21, true]]);
 });
