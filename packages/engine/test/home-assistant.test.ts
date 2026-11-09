@@ -464,6 +464,8 @@ test("planned-item buttons and the next-slot sensor follow presses, entries, pla
   const resultTopic = pressResultTopic(install, admin.user.id);
   const pressed = async (payload: string, expected: string) => {
     const before = (await harness.retained()).get(resultTopic);
+    // A new press time makes every result payload differ, so a wrong result is asserted, not waited on.
+    clock.now().setTime(clock.now().getTime() + 1000);
     await client.publishAsync(planPressTopic(install, admin.user.id), payload, {
       qos: 1,
     });
