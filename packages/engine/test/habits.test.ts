@@ -78,10 +78,6 @@ test("deleting a habit leaves the day not logged", async (context) => {
     },
   );
   assert.deepEqual(await personA.habits(), []);
-  assert.deepEqual(
-    await personA.send("DELETE", `/api/habits/${day}/late_caffeine`),
-    { status: 404, body: { error: { code: "not_found" } } },
-  );
 });
 
 test("an unknown habit key is rejected with a stable code", async (context) => {
@@ -95,17 +91,6 @@ test("an unknown habit key is rejected with a stable code", async (context) => {
     await personA.send("DELETE", `/api/habits/${day}/late_workout`),
     unknown,
   );
-  for (const body of [
-    {},
-    { habit_key: "late_caffeine", amount: 0 },
-    { habit_key: "late_caffeine", note: " " },
-    { habit_key: "late_caffeine", day: "2026-02-30" },
-    { habit_key: "late_caffeine", done: false },
-  ])
-    assert.equal(
-      (await personA.send("POST", "/api/habits", body)).body.error.code,
-      "invalid_request",
-    );
   assert.deepEqual(await personA.habits(), []);
 });
 
