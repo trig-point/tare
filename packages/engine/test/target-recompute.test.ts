@@ -337,41 +337,32 @@ test("weekday config accepts names, resets empty values and selects each cron da
 
 test("a week of activity bonuses leaves the estimate, stored target and notice unchanged", async (context) => {
   const { database, admin, member } = await twoUsers(context, "fallback");
-  const people = [admin, member];
-  for (const person of people) {
+  for (const person of [admin, member]) {
     assert.equal(await save(person), 200);
     seed(database, person.user.id);
   }
-  for (let offset = 0; offset <= 35; offset++)
-    database
-      .prepare(
-        "INSERT INTO daily_signals VALUES (?, date('2026-01-01', ?), 'active_calories', ?, 'oura', ?)",
-      )
-      .run(
-        member.user.id,
-        `-${offset} days`,
-        offset < 7 ? 1200 : 430,
-        now.toISOString(),
-      );
+  database
+    .prepare(
+      "WITH RECURSIVE back(days) AS (SELECT 0 UNION ALL SELECT days + 1 FROM back WHERE days < 35) INSERT INTO daily_signals SELECT ?, date('2026-01-01', -days || ' days'), 'active_calories', IIF(days < 7, 1200, 430), 'oura', ? FROM back",
+    )
+    .run(member.user.id, now.toISOString());
   const bonused = readTarget(database, member.user, now, config);
   assert.equal(bonused.status === "ready" && bonused.bonus.kcal, 500);
-  const weekly = people.map((person) => {
+  const [first, second] = [admin, member].map((person) => {
     writeTransaction(database, (scope) =>
       recomputeTarget(scope, person.user, now, settings, "weekly"),
     );
-    const stored = selectTargetResult(database, {
-      user_id: person.user.id,
-    });
-    return {
-      stored: { ...stored, id: undefined },
-      estimate: readAdaptive(database, person.user, now, settings),
-      notices: database
+    const stored = selectTargetResult(database, { user_id: person.user.id });
+    return [
+      { ...stored, id: undefined },
+      readAdaptive(database, person.user, now, settings),
+      database
         .prepare(
           "SELECT old_kcal, old_protein_g, new_kcal, new_protein_g FROM target_notices WHERE user_id = ?",
         )
         .all(person.user.id),
-    };
+    ] as const;
   });
-  assert.equal(weekly[0]?.notices.length, 1);
-  assert.deepEqual(weekly[1], weekly[0]);
+  assert.equal(first?.[2].length, 1);
+  assert.deepEqual(second, first);
 });

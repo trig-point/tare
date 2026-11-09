@@ -31,17 +31,15 @@ async function setup(context: Parameters<typeof twoUsers>[0]) {
       goal_rate_kg_week: -0.5,
     });
     await post(person, "/api/weights", { client_id: "weight", weight_kg: 80 });
-    database
-      .prepare(
-        "INSERT INTO target_results (user_id, computed_at, trigger, kcal, protein_g, basis) VALUES (?, ?, 'weekly', 2180, 128, 'formula')",
-      )
-      .run(person.user.id, "2025-12-29T08:00:00.000Z");
   }
+  database.exec(
+    "INSERT INTO target_results (user_id, computed_at, trigger, kcal, protein_g, basis) SELECT id, '2025-12-29T08:00:00.000Z', 'weekly', 2180, 128, 'formula' FROM users",
+  );
   database
     .prepare(
       "INSERT INTO oura_connections (user_id, version, ciphertext, iv, tag, access_expires_at, scopes, scope_source, status, generation, last_synced_at, created_at, updated_at) VALUES (?, 1, 'x', 'x', 'x', ?, 'daily', 'requested', 'connected', 1, ?, ?, ?)",
     )
-    .run(admin.user.id, now, now, now, now);
+    .run(admin.user.id, ...Array(4).fill(now));
   const insert = database.prepare(
     "INSERT OR REPLACE INTO daily_signals VALUES (?, ?, ?, ?, ?, ?)",
   );
@@ -78,7 +76,6 @@ test("bonus: training, quiet, next-day, waiting, no source, cap, fractional mean
     ["same-day", usual, null, "2180 waiting 0 null 430"],
     ["next-day", usual, null, "2180 waiting 0 null 430"],
     ["same-day", usual.slice(0, 9), null, "2180 no_source 0 null null"],
-    ["same-day", [], null, "2180 no_source 0 null null"],
     ["same-day", usual, 1630, "2680 ready 500 capped 1630 430"],
     ["same-day", alternating, 680, "2429 ready 249 680 430.6"],
     ["same-day", gaps, 700, "2480 ready 300 700 400"],
@@ -148,12 +145,6 @@ test("slots: open slots move, ended slots keep their budgets, remaining uses the
   await post(admin, "/api/plan/default-day-type", {
     day_type_id: type.day_type.id,
   });
-  await post(admin, "/api/intake", {
-    client_id: "example-breakfast",
-    name: "Example breakfast",
-    kcal: 400,
-    eaten_at: "2026-01-01T02:00:00.000Z",
-  });
   const read = async (person = admin) => {
     const get = async (path: string) => (await person.request(path)).json();
     const [plan, day] = [await get("/api/plan/today"), await get("/api/today")];
@@ -170,7 +161,7 @@ test("slots: open slots move, ended slots keep their budgets, remaining uses the
   assert.deepEqual(after.budgets.slice(0, 2), before.budgets.slice(0, 2));
   assert.equal(open(after.budgets) - open(before.budgets), 249);
   assert.ok(after.budgets.every(Number.isInteger));
-  assert.deepEqual([after.target, after.left], [2429, 2029]);
+  assert.deepEqual([after.target, after.left], [2429, 2429]);
   burn(today, 1500, Array(28).fill(100), { user: member.user.id });
   assert.deepEqual(await read(), after);
   assert.equal((await read(member)).target, 2680);

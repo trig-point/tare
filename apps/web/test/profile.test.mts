@@ -117,7 +117,10 @@ test("learning state shown beside the formula target", async (context) => {
   const html = render(
     createElement(TargetCard, { today: await readToday(signal) }),
   );
-  assert.match(html, /Formula target, still learning/);
+  assert.match(
+    html,
+    /Formula target, still learning<\/p><p>Activity bonus after 14 days/,
+  );
 });
 
 test("chart data holds each day's first reading and the trend line", async (context) => {
