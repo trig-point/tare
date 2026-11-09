@@ -20,6 +20,7 @@ for (const mode of ["fallback", "access"] as const)
       day,
       signals: [],
       activities: [],
+      habits: [],
     });
     for (const [metric, value, unit] of [
       ["steps", 3000, "count"],
@@ -97,6 +98,7 @@ for (const mode of ["fallback", "access"] as const)
       day,
       signals: [],
       activities: [],
+      habits: [],
     });
     const own = await send(
       "/api/signals",
@@ -223,6 +225,6 @@ test("MCP keeps different sources and records agent activity on its local day", 
   ]);
   assert.deepEqual(
     await (await member.request(`/api/signals/${first.day}`)).json(),
-    { day: first.day, signals: [], activities: [] },
+    { day: first.day, signals: [], activities: [], habits: [] },
   );
 });
