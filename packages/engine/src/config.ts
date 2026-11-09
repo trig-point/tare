@@ -43,6 +43,7 @@ export interface Config {
   orderModel: { baseURL: string; model: string; apiKey: string } | null;
   oura: { clientId: string; clientSecret: string; redirectUrl: string } | null;
   ouraTokenKey: Buffer | undefined;
+  mqtt: MqttConfig | null;
   identity:
     | { mode: "access"; teamDomain: string; audience: string }
     | { mode: "fallback" };
@@ -51,6 +52,14 @@ export interface Config {
     password: string | undefined;
     accessEmail?: string;
   };
+}
+
+export interface MqttConfig {
+  url: string;
+  username: string | undefined;
+  password: string | undefined;
+  discoveryPrefix: string;
+  statusTopic: string;
 }
 
 export function domainMatches(signingDomain: string, domain: string): boolean {
@@ -213,6 +222,70 @@ function parseOuraKey(value: string | undefined): Buffer | undefined {
   return key;
 }
 
+function parseTopic(
+  env: Record<string, string | undefined>,
+  name: string,
+  fallback: string,
+) {
+  const topic = env[name]?.trim() || fallback;
+  if (/[+#\s]/.test(topic) || topic.split("/").some((level) => level === ""))
+    throw new Error(`${name} must be an MQTT topic without wildcards`);
+  return topic;
+}
+
+function parseMqtt(env: Record<string, string | undefined>): Config["mqtt"] {
+  const discoveryPrefix = parseTopic(
+    env,
+    "TARE_HA_DISCOVERY_PREFIX",
+    "homeassistant",
+  );
+  const statusTopic = parseTopic(
+    env,
+    "TARE_HA_STATUS_TOPIC",
+    "homeassistant/status",
+  );
+  const username = env.TARE_MQTT_USERNAME?.trim() || undefined;
+  const password = env.TARE_MQTT_PASSWORD?.trim() || undefined;
+  if ((username === undefined) !== (password === undefined))
+    throw new Error(
+      `${username === undefined ? "TARE_MQTT_USERNAME" : "TARE_MQTT_PASSWORD"} must be set when the other MQTT credential is set`,
+    );
+  const url = env.TARE_MQTT_URL?.trim();
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    if (
+      !["mqtt:", "mqtts:"].includes(parsed.protocol) ||
+      !parsed.hostname ||
+      parsed.username ||
+      parsed.password ||
+      !["", "/"].includes(parsed.pathname) ||
+      parsed.search ||
+      parsed.hash
+    )
+      throw new Error("Unsupported URL");
+  } catch {
+    throw new Error(
+      "TARE_MQTT_URL must be an mqtt or mqtts URL without credentials or a path",
+    );
+  }
+  return { url, username, password, discoveryPrefix, statusTopic };
+}
+
+export function parsePort(value: string | undefined): number {
+  const portText = value ?? "3000";
+  const port = Number(portText);
+  if (
+    !/^\d+$/.test(portText) ||
+    !Number.isInteger(port) ||
+    port < 1 ||
+    port > 65535
+  ) {
+    throw new Error("PORT must be an integer between 1 and 65535");
+  }
+  return port;
+}
+
 function parseMcpAllowedOrigins(value: string | undefined): string[] {
   if (!value?.trim()) return [];
   return value.split(",").map((entry) => {
@@ -305,16 +378,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
   if (!databaseUrl) {
     throw new Error("DATABASE_URL is required");
   }
-  const portText = env.PORT ?? "3000";
-  const port = Number(portText);
-  if (
-    !/^\d+$/.test(portText) ||
-    !Number.isInteger(port) ||
-    port < 1 ||
-    port > 65535
-  ) {
-    throw new Error("PORT must be an integer between 1 and 65535");
-  }
+  const port = parsePort(env.PORT);
   const timezone = validateTimezone(env.TARE_TIMEZONE ?? "UTC");
   const targetWeekday = [
     "sunday",
@@ -411,6 +475,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     orderModel: parseOrderModel(env),
     oura: parseOura(env),
     ouraTokenKey: parseOuraKey(env.TARE_OURA_TOKEN_KEY),
+    mqtt: parseMqtt(env),
     identity:
       teamDomain !== undefined && audience !== undefined
         ? { mode: "access", teamDomain, audience }

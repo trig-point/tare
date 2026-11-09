@@ -149,6 +149,16 @@ export async function executeOperation(
     ...identity,
     mode: deps.config.identity.mode,
   });
+  if (operation.method !== "GET") {
+    try {
+      deps.homeAssistant?.refreshAll();
+    } catch (error) {
+      console.error(
+        "home_assistant_refresh_failed",
+        error instanceof Error ? error.name : "UnknownError",
+      );
+    }
+  }
   if (result.status === 204 || result.status === 302)
     return { status: result.status, effects: result.effects };
   const output = operation.output.safeParse(result.body);

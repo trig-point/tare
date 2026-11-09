@@ -2,6 +2,7 @@ import type { Database } from "better-sqlite3";
 import { z as zod } from "zod";
 import { intakeRow } from "../logging/schemas.ts";
 import { selectLedgerEntries } from "../queries/select-ledger-entries.ts";
+import type { targetSchema } from "../target/reader.ts";
 
 const totalSchema = zod.strictObject({
   total: zod.number().nullable(),
@@ -46,4 +47,15 @@ export function readLedger(database: Database, personId: number, day: string) {
     }),
   ) as zod.infer<typeof ledgerSchema>["totals"];
   return { day, entries, totals };
+}
+
+export function remainingFor(
+  target: zod.infer<typeof targetSchema>,
+  totals: zod.infer<typeof ledgerSchema>["totals"],
+  key: "kcal" | "protein_g",
+): number | null {
+  const total = totals[key];
+  return target.status === "ready" && total.complete && total.total !== null
+    ? target[key] - total.total
+    : null;
 }

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
+import { parsePort } from "../src/config.ts";
 import { openDatabase } from "../src/db.ts";
 import { importFiles } from "../src/import/files.ts";
 import { OperationError } from "../src/operations/registry.ts";
@@ -21,6 +22,9 @@ try {
     ![values.intake, values.weight, values.days].some(Boolean)
   ) {
     console.error(JSON.stringify({ code: "usage" }));
+    process.exitCode = 2;
+  } else if (await engineAnswers(parsePort(process.env.PORT))) {
+    console.error(JSON.stringify({ code: "engine_running" }));
     process.exitCode = 2;
   } else {
     const connection = openDatabase(databaseUrl);
@@ -49,4 +53,16 @@ try {
     }),
   );
   process.exitCode = 2;
+}
+
+// The engine replays Home Assistant state only at startup, so imports wait for it to stop.
+async function engineAnswers(port: number) {
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/health`, {
+      signal: AbortSignal.timeout(2000),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }

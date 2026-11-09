@@ -11,11 +11,13 @@ export function createTargetRecomputeJob({
   clock,
   settings,
   weekday,
+  onFinished,
 }: {
   database: Database;
   clock: { now(): Date };
   settings: TdeeSettings;
   weekday: number;
+  onFinished?: () => void;
 }) {
   return {
     name: "target-recompute",
@@ -24,29 +26,33 @@ export function createTargetRecomputeJob({
       signal.throwIfAborted();
       let recomputed = 0;
       let failed = 0;
-      for (const { user_id } of listTargetPeople(database)) {
-        await setImmediate(undefined, { signal });
-        try {
-          const result = writeTransaction(database, (scope) => {
-            const person = selectPerson(database, { id: user_id });
-            if (!person) throw new Error("Target owner missing");
-            return recomputeTarget(
-              scope,
-              person,
-              clock.now(),
-              settings,
-              "weekly",
+      try {
+        for (const { user_id } of listTargetPeople(database)) {
+          await setImmediate(undefined, { signal });
+          try {
+            const result = writeTransaction(database, (scope) => {
+              const person = selectPerson(database, { id: user_id });
+              if (!person) throw new Error("Target owner missing");
+              return recomputeTarget(
+                scope,
+                person,
+                clock.now(),
+                settings,
+                "weekly",
+              );
+            });
+            if (result.stored) recomputed++;
+          } catch (error) {
+            failed++;
+            console.error(
+              "target_recompute_failed",
+              user_id,
+              error instanceof Error ? error.name : "UnknownError",
             );
-          });
-          if (result.stored) recomputed++;
-        } catch (error) {
-          failed++;
-          console.error(
-            "target_recompute_failed",
-            user_id,
-            error instanceof Error ? error.name : "UnknownError",
-          );
+          }
         }
+      } finally {
+        onFinished?.();
       }
       const result = `targets_recomputed:${recomputed}`;
       if (failed) {

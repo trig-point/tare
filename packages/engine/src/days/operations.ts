@@ -7,7 +7,7 @@ import { selectTodayWeights } from "../queries/select-today-weights.ts";
 import { targetNoticeSchema } from "../target/operations.ts";
 import { readTarget, targetSchema } from "../target/reader.ts";
 import { findFood, findFoodInput, findFoodOutput } from "./find-food.ts";
-import { ledgerSchema, readLedger } from "./ledger.ts";
+import { ledgerSchema, readLedger, remainingFor } from "./ledger.ts";
 
 const shared = {
   modes: ["access", "fallback"] as ("access" | "fallback")[],
@@ -41,14 +41,6 @@ export const dayReadOperations = [
       );
       const ledger = readLedger(context.database, person.id, day);
       const target = readTarget(context.database, person, now, context.config);
-      const remaining = (key: "kcal" | "protein_g") => {
-        const total = ledger.totals[key];
-        return target.status === "ready" &&
-          total.complete &&
-          total.total !== null
-          ? target[key] - total.total
-          : null;
-      };
       return {
         status: 200,
         body: {
@@ -63,8 +55,8 @@ export const dayReadOperations = [
             user_id: person.id,
           }),
           remaining: {
-            kcal: remaining("kcal"),
-            protein_g: remaining("protein_g"),
+            kcal: remainingFor(target, ledger.totals, "kcal"),
+            protein_g: remainingFor(target, ledger.totals, "protein_g"),
           },
         },
       };
