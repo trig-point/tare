@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import type { TestContext } from "node:test";
 import { hashPassword, verifyPassword } from "../../src/auth/password.ts";
+import type { AppOptions } from "../../src/auth/routes.ts";
 import { countUsers } from "../../src/queries/count-users.ts";
 import {
   accessFixture,
@@ -15,11 +16,12 @@ import {
 export async function twoUsers(
   context: TestContext,
   mode: "access" | "fallback",
+  overrides: Partial<AppOptions> = {},
 ) {
   const setup =
     mode === "access"
       ? accessFixture(context)
-      : fixture(context, { verifyPassword });
+      : fixture(context, { verifyPassword, ...overrides });
   setup.database
     .prepare("UPDATE users SET password_hash = ? WHERE id = ?")
     .run(

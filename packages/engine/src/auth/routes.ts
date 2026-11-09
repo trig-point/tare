@@ -34,6 +34,7 @@ export interface AppOptions {
   lookup?: LookupAdapters;
   oura?: OuraService;
   calendar?: CalendarRefresher;
+  homeAssistant?: { refreshAll(): void };
   verifyPassword(password: string, stored: string): Promise<boolean>;
 }
 

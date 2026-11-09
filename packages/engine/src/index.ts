@@ -9,6 +9,8 @@ import { createCalendarRefresher } from "./calendar/refresh.ts";
 import { createCalendarTransport } from "./calendar/transport.ts";
 import { loadConfig } from "./config.ts";
 import { openDatabase } from "./db.ts";
+import { createHomeAssistantPublisher } from "./home-assistant/publisher.ts";
+import { sensorProvider } from "./home-assistant/snapshot.ts";
 import { createOrderEmailParseJob } from "./inbound/job.ts";
 import { createOrderQuestionKinds } from "./inbound/questions.ts";
 import { createJobRunner } from "./jobs.ts";
@@ -56,6 +58,15 @@ async function startEngine() {
     now: clock.now().toISOString(),
   });
   const dummyHash = await hashPassword(randomBytes(32).toString("base64url"));
+  const homeAssistant = config.mqtt
+    ? createHomeAssistantPublisher({
+        database: connection.database,
+        config: config.mqtt,
+      })
+    : undefined;
+  homeAssistant?.addProvider(
+    sensorProvider(connection.database, clock, config.tdee),
+  );
   const runner = createJobRunner({
     database: connection.database,
     timezone: config.timezone,
@@ -81,6 +92,7 @@ async function startEngine() {
       clock,
       settings: config.tdee,
       weekday: config.targetWeekday,
+      onFinished: () => homeAssistant?.refreshAll(),
     }),
   );
   runner.register(
@@ -108,6 +120,7 @@ async function startEngine() {
     verifyPassword,
     oura,
     calendar,
+    homeAssistant,
     onEmailQueued: () => runner.runNow("order-email-parse"),
     webRoot: fileURLToPath(new URL("../../../apps/web/dist/", import.meta.url)),
   });
@@ -124,6 +137,7 @@ async function startEngine() {
         runner.stop(),
         oura.stop(),
         calendar.stop(),
+        homeAssistant?.stop(),
         new Promise<void>((resolve, reject) => {
           server.close((error) => (error ? reject(error) : resolve()));
         }),
