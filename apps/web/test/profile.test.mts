@@ -121,11 +121,12 @@ test("learning state shown beside the formula target", async (context) => {
   );
   assert.ok(today.target.status === "ready");
   const bonus = { ...today.target.bonus, status: "ready", kcal: 250 } as const;
-  const target = { ...today.target, kcal: 2380, base_kcal: 2130, bonus };
-  const bonused = render(
-    createElement(TargetCard, { today: { ...today, target } }),
+  const basis = "weekly_adaptive" as const;
+  const target = { ...today.target, basis, kcal: 2380, base_kcal: 2130, bonus };
+  assert.match(
+    render(createElement(TargetCard, { today: { ...today, target } })),
+    /Adaptive target.*Base 2,130\. \+250 from activity.*2,380 kcal/s,
   );
-  assert.match(bonused, /Base 2,130\. \+250 from activity/);
 });
 
 test("chart data holds each day's first reading and the trend line", async (context) => {

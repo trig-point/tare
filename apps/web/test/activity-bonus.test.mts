@@ -22,6 +22,8 @@ test("the target card's bonus, quiet, capped and waiting lines, and refetch ever
     assert.equal(bonusLines(2130, { ...ready, ...bonus }, "UTC")[0], line);
   const [, burn] = bonusLines(2130, ready, "UTC");
   assert.equal(burn, "Oura 680 kcal, synced Jan 1, 2:30 PM");
+  const unsynced = { ...ready, last_synced_at: null };
+  assert.equal(bonusLines(2130, unsynced, "UTC")[1], "Oura 680 kcal");
   const live = [todayQuery(1), planQuery(1), signalsQuery(1, "2026-01-01")];
   for (const { refetchInterval, refetchOnWindowFocus } of live)
     assert.deepEqual([refetchInterval, refetchOnWindowFocus], [900_000, true]);
