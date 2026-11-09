@@ -97,6 +97,7 @@ describe("engine", () => {
       oura: null,
       ouraTokenKey: undefined,
       mqtt: null,
+      scale: null,
       identity: { mode: "fallback" },
       firstUser: {
         username: undefined,
