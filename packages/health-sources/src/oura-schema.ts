@@ -23,6 +23,17 @@ export const dailyReadiness = zod.object({
   day,
   score: count.nullable().optional(),
 });
+export const dailySleep = zod.object({
+  day,
+  score: zod.number().min(0).max(100).nullable().optional(),
+});
+export const stressSummaries = ["restored", "normal", "stressful"] as const;
+export const dailyStress = zod.object({
+  day,
+  stress_high: count.nullable().optional(),
+  recovery_high: count.nullable().optional(),
+  day_summary: zod.enum(stressSummaries).nullable().optional(),
+});
 export const workout = zod.object({
   id: zod.string().min(1),
   day,

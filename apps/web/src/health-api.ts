@@ -7,9 +7,13 @@ const metrics = [
   "readiness",
   "resting_heart_rate",
   "sleep",
+  "sleep_score",
   "steps",
   "active_calories",
   "stress",
+  "stress_high",
+  "recovery_high",
+  "stress_summary",
 ] as const;
 export const metricLabels: Record<(typeof metrics)[number], string> = {
   steps: "Steps",
@@ -19,6 +23,10 @@ export const metricLabels: Record<(typeof metrics)[number], string> = {
   hrv: "HRV",
   readiness: "Readiness",
   stress: "Stress",
+  sleep_score: "Sleep score",
+  stress_high: "High stress",
+  recovery_high: "High recovery",
+  stress_summary: "Stress summary",
 };
 const unitSuffix: Record<string, string> = {
   kcal: " kcal",
@@ -29,12 +37,18 @@ const unitSuffix: Record<string, string> = {
 export const signalsSchema = z.object({
   day: z.string(),
   signals: z.array(
-    z.object({
-      metric: z.enum(metrics),
-      value: z.number(),
-      source: z.string(),
-      unit: z.string(),
-    }),
+    z
+      .object({
+        metric: z.enum(metrics),
+        value: z.number(),
+        source: z.string(),
+        unit: z.string(),
+        label: z.string().min(1).optional(),
+      })
+      .refine(
+        (entry) => entry.metric !== "stress_summary" || entry.label,
+        "stress_summary needs a label",
+      ),
   ),
   activities: z.array(
     z.object({
@@ -76,8 +90,16 @@ export function bodyRows(signals: Signals["signals"]) {
   }
   return metrics.flatMap((metric) => picked.get(metric) ?? []);
 }
-export function signalText(entry: { value: number; unit: string }) {
-  return `${displayNumber(entry.value)}${unitSuffix[entry.unit] ?? ""}`;
+export function signalText(entry: {
+  value: number;
+  unit: string;
+  label?: string | undefined;
+}) {
+  if (entry.label)
+    return entry.label.charAt(0).toUpperCase() + entry.label.slice(1);
+  const value =
+    entry.unit === "minutes" ? Math.round(entry.value) : entry.value;
+  return `${displayNumber(value)}${unitSuffix[entry.unit] ?? ""}`;
 }
 
 export const ouraSchema = z.object({

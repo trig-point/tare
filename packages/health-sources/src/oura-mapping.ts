@@ -1,4 +1,5 @@
 import type { OuraData } from "./oura-client.ts";
+import { stressSummaries } from "./oura-schema.ts";
 
 export interface OuraSignals {
   daily: { day: string; metric: string; value: number }[];
@@ -34,6 +35,20 @@ export function mapOura(data: OuraData): OuraSignals {
   }
   for (const record of data.daily_readiness)
     add(record.day, "readiness", record.score);
+  for (const record of data.daily_sleep)
+    add(record.day, "sleep_score", record.score);
+  const minutes = (seconds: number | null = null) =>
+    seconds === null ? null : seconds / 60;
+  for (const record of data.daily_stress) {
+    add(record.day, "stress_high", minutes(record.stress_high));
+    add(record.day, "recovery_high", minutes(record.recovery_high));
+    if (record.day_summary)
+      add(
+        record.day,
+        "stress_summary",
+        stressSummaries.indexOf(record.day_summary),
+      );
+  }
 
   const periods = data.sleep.filter((period) => period.type !== "deleted");
   const nights = Map.groupBy(periods, (period) => period.day);

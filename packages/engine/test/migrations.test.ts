@@ -303,3 +303,24 @@ test("clean rebuild restores disabled foreign-key enforcement", (context) => {
   ]);
   assert.equal(database.pragma("foreign_keys", { simple: true }), 0);
 });
+
+test("0028 keeps stored signals and the metric CHECK still rejects unknown metrics", (context) => {
+  const { database, folder } = fixture(context);
+  database.exec(`DELETE FROM schema_migrations WHERE name = '0028_oura_daily_scores.sql';
+    ALTER TABLE oura_connections DROP COLUMN scores_backfilled_at;
+    INSERT INTO users (id, username, timezone, created_at) VALUES (1, 'example-person', 'UTC', '2026-01-01T00:00:00.000Z');
+    INSERT INTO daily_signals VALUES (1, '2026-01-01', 'readiness', 80, 'oura', '2026-01-01T00:00:00.000Z');`);
+  applyMigrations(database, folder);
+  const insert = database.prepare(
+    "INSERT INTO daily_signals VALUES (1, '2026-01-01', ?, 1, 'oura', '2026-01-01T00:00:00.000Z')",
+  );
+  insert.run("stress_summary");
+  assert.throws(() => insert.run("unknown"), /CHECK constraint/);
+  assert.equal(
+    database
+      .prepare("SELECT count(*) AS total FROM daily_signals")
+      .pluck()
+      .get(),
+    2,
+  );
+});

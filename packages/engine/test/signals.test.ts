@@ -29,6 +29,10 @@ for (const mode of ["fallback", "access"] as const)
       ["hrv", 42.5, "ms"],
       ["readiness", 80, "score"],
       ["stress", 25, "score"],
+      ["sleep_score", 0, "score"],
+      ["stress_high", 90.5, "minutes"],
+      ["recovery_high", 30, "minutes"],
+      ["stress_summary", 2, "category"],
     ] as const) {
       const logged = await send("/api/signals", { metric, value });
       assert.equal(logged.status, 200);
@@ -37,7 +41,10 @@ for (const mode of ["fallback", "access"] as const)
         (await send(path)).body.signals.find(
           (row: { metric: string }) => row.metric === metric,
         ),
-        { metric, value, unit, source: "manual" },
+        {
+          ...{ metric, value, unit, source: "manual" },
+          ...(metric === "stress_summary" ? { label: "stressful" } : {}),
+        },
       );
     }
     for (const body of [
@@ -49,6 +56,8 @@ for (const mode of ["fallback", "access"] as const)
       { metric: "sleep", value: 1441 },
       { metric: "hrv", value: 0 },
       { metric: "stress", value: "high" },
+      { metric: "stress_summary", value: 3 },
+      { metric: "stress_summary", value: 0.5 },
       { metric: "sleep", value: 1, day: "2026-02-30" },
       { metric: "steps", value: 1, user_id: member.user.id },
       { metric: "steps", value: 1, source: "agent" },
@@ -74,10 +83,14 @@ for (const mode of ["fallback", "access"] as const)
         "active_calories",
         "hrv",
         "readiness",
+        "recovery_high",
         "resting_heart_rate",
         "sleep",
+        "sleep_score",
         "steps",
         "stress",
+        "stress_high",
+        "stress_summary",
       ],
     );
     assert.deepEqual((await send(path, undefined, true)).body, {

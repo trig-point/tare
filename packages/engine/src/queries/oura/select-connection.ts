@@ -18,6 +18,7 @@ export type SelectConnectionResult = {
   last_synced_at: string | null;
   created_at: string;
   updated_at: string;
+  scores_backfilled_at: string | null;
 };
 
 export function selectConnection(
@@ -48,6 +49,7 @@ function mapArrayToSelectConnectionResult(data: any) {
     last_synced_at: data[10],
     created_at: data[11],
     updated_at: data[12],
+    scores_backfilled_at: data[13],
   };
   return result;
 }

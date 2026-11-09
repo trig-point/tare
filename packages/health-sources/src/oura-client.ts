@@ -2,6 +2,8 @@ import type { z as zod } from "zod";
 import {
   dailyActivity,
   dailyReadiness,
+  dailySleep,
+  dailyStress,
   page,
   sleepPeriod,
   workout,
@@ -11,9 +13,11 @@ export const ouraEndpoints = {
   daily_activity: dailyActivity,
   sleep: sleepPeriod,
   daily_readiness: dailyReadiness,
+  daily_sleep: dailySleep,
+  daily_stress: dailyStress,
   workout,
 } as const;
-type Endpoint = keyof typeof ouraEndpoints;
+export type Endpoint = keyof typeof ouraEndpoints;
 export type OuraData = {
   [Name in Endpoint]: zod.infer<(typeof ouraEndpoints)[Name]>[];
 };
@@ -28,6 +32,8 @@ export interface OuraFetchOptions {
   /** Inclusive first day and exclusive last day, as YYYY-MM-DD. */
   startDate: string;
   endDate: string;
+  /** Earlier first days for some endpoints, for a one-off backfill. */
+  startDates?: Partial<Record<Endpoint, string>>;
   signal: AbortSignal;
   fetch?: typeof fetch;
   wait(milliseconds: number, signal: AbortSignal): Promise<void>;
@@ -87,7 +93,10 @@ async function fetchCollection(options: OuraFetchOptions, name: Endpoint) {
       `v2/usercollection/${name}`,
       options.baseUrl ?? "https://api.ouraring.com/",
     );
-    url.searchParams.set("start_date", options.startDate);
+    url.searchParams.set(
+      "start_date",
+      options.startDates?.[name] ?? options.startDate,
+    );
     url.searchParams.set("end_date", options.endDate);
     if (nextToken) url.searchParams.set("next_token", nextToken);
     const body = page(ouraEndpoints[name]).safeParse(

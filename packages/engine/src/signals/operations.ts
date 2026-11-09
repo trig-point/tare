@@ -24,6 +24,7 @@ const signalFields = {
   value: zod.number(),
   source: text,
   unit: zod.string(),
+  label: zod.string().optional(),
 };
 const activityFields = {
   id: zod.number(),

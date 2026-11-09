@@ -18,7 +18,7 @@ export function recordSync(
   params: RecordSyncParams,
 ): RecordSyncResult | null {
   const sql = `
-	UPDATE oura_connections SET last_synced_at = ?, status = 'connected', updated_at = ?
+	UPDATE oura_connections SET last_synced_at = ?, scores_backfilled_at = coalesce(scores_backfilled_at, ?), status = 'connected', updated_at = ?
 	WHERE user_id = ? AND status != 'reconnect_required'
 	RETURNING user_id;
 	
@@ -26,7 +26,7 @@ export function recordSync(
   const res = db
     .prepare(sql)
     .raw(true)
-    .get([data.now, data.now, params.user_id]);
+    .get([data.now, data.now, data.now, params.user_id]);
 
   return res ? mapArrayToRecordSyncResult(res) : null;
 }
