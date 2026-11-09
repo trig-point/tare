@@ -97,6 +97,12 @@ Relative filesystem paths resolve from `/app/packages/engine` in the image.
 | `TARE_TDEE_MIN_WEIGH_IN_DAYS` | `8` | Days with a weigh-in needed for an adaptive estimate, integer from 1 to the window length. Trimmed; empty uses the default. |
 | `TARE_TDEE_MIN_SPAN_DAYS` | `14` | Elapsed days of weight trend needed for an adaptive estimate, integer from 1 to the window length. Trimmed; empty uses the default. |
 | `TARE_TDEE_DEFAULT_RANGE` | `0.25` | Range applied to estimated intake without stored low and high values, from 0 to 0.9. Trimmed; empty uses the default. |
+| `TARE_WHY_BASELINE_DAYS` | `28` | Days before the day that form a why-line baseline, integer from 14 to 90. Trimmed; empty uses the default. |
+| `TARE_WHY_MIN_BASELINE_DAYS` | `14` | Days of a signal needed before it gets why-lines, integer from 2 to the baseline length. Trimmed; empty uses the default. |
+| `TARE_WHY_DEVIATIONS` | `1` | Standard deviations from the baseline mean before a why-line shows, from 0.1 to 5. Trimmed; empty uses the default. |
+| `TARE_WHY_HRV_PERCENT` | `10` | HRV change from the baseline mean also needed, in percent, from 0 to 100. Trimmed; empty uses the default. |
+| `TARE_WHY_LATE_HOURS` | `4` | A workout ending this many hours before sleep counts as late, integer from 1 to 12. Trimmed; empty uses the default. |
+| `TARE_WHY_LATE_MINUTES` | `30` | Shortest workout that counts as late, in minutes, integer from 1 to 240. Trimmed; empty uses the default. |
 | `TARE_ORDER_MODEL_BASE_URL` | Unset (order parsing disabled) | HTTP or HTTPS base URL of an OpenAI-compatible model. May include a path, but not credentials, a query or a fragment. Trimmed; empty counts as unset. Set all three order model settings or none. |
 | `TARE_ORDER_MODEL` | Unset (order parsing disabled) | Model name sent to the endpoint. Trimmed; empty counts as unset. Set all three order model settings or none. |
 | `TARE_ORDER_MODEL_API_KEY` | Unset (order parsing disabled) | API key for the endpoint. This is a secret: supply it through the environment, never in a file you commit. A keyless local endpoint needs a placeholder. Trimmed; empty counts as unset. Set all three order model settings or none. |
