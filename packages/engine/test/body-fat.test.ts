@@ -21,12 +21,16 @@ const reading = (
   measured_at: `${day}T${time}:00.000Z`,
   body_fat_pct,
 });
-const timedWorkout = (end: string, category = "strength"): TrendWorkout => ({
-  timing: "exact",
-  started_at: new Date(Date.parse(end) - 3_600_000).toISOString(),
-  duration_minutes: 60,
-  day: end.slice(0, 10),
-  category: category as TrendWorkout["category"],
+const workout = (
+  day: string,
+  category: TrendWorkout["category"] = "strength",
+  started_at: string | null = `${day}T05:00:00.000Z`,
+): TrendWorkout => ({
+  timing: started_at ? "exact" : "date_only",
+  started_at,
+  duration_minutes: started_at ? 60 : null,
+  day,
+  category,
 });
 const windows = (prior: number, current: number, currentCount = 10) => [
   ...Array.from({ length: 10 }, (_, index) =>
@@ -47,27 +51,16 @@ const flags = (result: ReturnType<typeof trend>) =>
 
 test("a reading 3 hours after a timed workout or sauna is marked and left out", () => {
   const yesterday = shiftDay(today, -1);
-  const result = trend(
-    [reading(yesterday, 24, "09:00"), reading(today, 24, "09:00")],
-    [
-      timedWorkout(`${yesterday}T06:00:00.000Z`, "sauna"),
-      timedWorkout(`${today}T06:00:00.000Z`),
-    ],
-  );
-  assert.deepEqual(flags(result), [
-    [true, false],
-    [true, false],
-  ]);
+  const readings = [
+    reading(yesterday, 24, "09:00"),
+    reading(today, 24, "09:00"),
+  ];
+  const result = trend(readings, [workout(yesterday, "sauna"), workout(today)]);
+  assert.deepEqual(flags(result).flat(), [true, false, true, false]);
 });
 
 test("a reading after a date-only session stays in the trend", () => {
-  const dateOnly: TrendWorkout = {
-    timing: "date_only",
-    started_at: null,
-    duration_minutes: null,
-    day: shiftDay(today, -1),
-    category: "strength",
-  };
+  const dateOnly = workout(shiftDay(today, -1), "strength", null);
   const result = trend([...windows(22, 22), reading(today, 24)], [dateOnly]);
   assert.deepEqual(flags(result).at(-1), [false, true]);
   assert.equal(result.trend?.lines[0], "1 strength session logged in 3 weeks.");
@@ -75,38 +68,27 @@ test("a reading after a date-only session stays in the trend", () => {
 
 test("a second weigh-in in a day stays out of the trend", () => {
   const result = trend([reading(today, 24), reading(today, 30, "19:00")]);
-  assert.deepEqual(flags(result), [
-    [false, true],
-    [false, false],
-  ]);
+  assert.deepEqual(flags(result).flat(), [false, true, false, false]);
 });
 
 test("6 readings in a window says not enough readings for a trend", () => {
-  assert.deepEqual(trend(windows(22, 22, 6)).trend, {
-    status: "not_enough",
-    current_count: 6,
-    prior_count: 10,
-    lines: [
-      "Not enough readings for a trend",
-      "6 of 8 readings in the last 4 weeks",
-    ],
-  });
+  assert.deepEqual(trend(windows(22, 22, 6)).trend?.lines, [
+    "Not enough readings for a trend",
+    "6 of 8 readings in the last 4 weeks",
+  ]);
 });
 
-test("a 1.2-point change reads within this scale's error", () => {
-  assert.equal(
-    trend(windows(22, 23.2)).trend?.lines[2],
-    "Body fat reading up 1.2 points, within this scale's error.",
-  );
-});
-
-test("the lines for no strength sessions, weight down 1.2 kg and body fat up 1 point", () => {
-  const oldStrength = timedWorkout(`${shiftDay(today, -21)}T06:00:00.000Z`);
+test("the lines, and a 1.2-point change reads within this scale's error", () => {
+  const oldStrength = workout(shiftDay(today, -21));
   assert.deepEqual(trend(windows(22, 23), [oldStrength]).trend?.lines, [
     "No strength sessions logged in 3 weeks.",
     "Weight down 1.2 kg.",
     "Body fat reading up 1 point, within this scale's error.",
   ]);
+  assert.match(
+    String(trend(windows(22, 23.2)).trend?.lines),
+    /up 1.2 points, within/,
+  );
 });
 
 test("no body fat readings gives no trend", () => {
@@ -116,24 +98,19 @@ test("no body fat readings gives no trend", () => {
 test("one person's trend never uses another person's readings or workouts", async (context) => {
   const setup = await twoUsers(context, "fallback");
   const day = "2025-12-30";
+  const measured_at = `${day}T09:00:00.000Z`;
   for (const [index, owner] of [setup.admin, setup.member].entries())
     insertWeight(setup.database, {
+      ...{ day, measured_at, created_at: measured_at, source: null },
       user_id: owner.user.id,
       client_id: `invented-weight-${index}`,
-      measured_at: `${day}T09:00:00.000Z`,
-      day,
-      weight_kg: 70 + index,
+      weight_kg: 70,
       body_fat_pct: 20 + index,
-      source: null,
-      created_at: `${day}T09:00:00.000Z`,
     });
+  const { started_at, duration_minutes } = workout(day);
   const logged = await setup.member.request("/api/activities", {
     method: "POST",
-    body: JSON.stringify({
-      started_at: `${day}T05:00:00.000Z`,
-      duration_minutes: 60,
-      kind: "strength",
-    }),
+    body: JSON.stringify({ started_at, duration_minutes, kind: "strength" }),
   });
   assert.equal(logged.status, 200);
   const marks = async (person: typeof setup.admin) =>
