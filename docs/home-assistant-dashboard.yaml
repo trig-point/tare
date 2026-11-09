@@ -1,0 +1,57 @@
+# Example Tare dashboard. Replace every "example" in the ids below with the
+# ids shown on the Tare device page in Home Assistant.
+title: Tare
+views:
+  - title: Today
+    path: today
+    cards:
+      - type: glance
+        title: Today
+        columns: 3
+        entities:
+          - entity: sensor.tare_example_calories_remaining
+            name: kcal left
+          - entity: sensor.tare_example_protein_remaining
+            name: Protein left
+          - entity: sensor.tare_example_weight_trend
+            name: Trend
+      - type: entities
+        title: Targets
+        entities:
+          - entity: sensor.tare_example_calorie_target
+            name: Calorie target
+          - entity: sensor.tare_example_protein_target
+            name: Protein target
+          - entity: sensor.tare_example_calories_eaten
+            name: Calories eaten
+          - entity: sensor.tare_example_protein_eaten
+            name: Protein eaten
+          - entity: sensor.tare_example_tdee_estimate
+            name: TDEE estimate
+      - type: markdown
+        title: Last target change
+        content: >-
+          {% set event = 'event.tare_example_target_changed' %}
+          {% if states(event) in ['unknown', 'unavailable'] %}
+          No target change yet.
+          {% else %}
+          {{ state_attr(event, 'old_kcal') }} to {{ state_attr(event, 'new_kcal') }} kcal,
+          {{ state_attr(event, 'old_protein_g') }} to {{ state_attr(event, 'new_protein_g') }} g protein,
+          {{ as_timestamp(states(event)) | timestamp_custom('%b %-d, %H:%M') }}.
+          {% endif %}
+      - type: entity-filter
+        card:
+          type: entities
+          title: Meals on hand
+        conditions:
+          - condition: state
+            state_not: unavailable
+        entities:
+          - entity: button.tare_example_meal_1_ate
+          - entity: button.tare_example_meal_1_ate_three_quarters
+          - entity: button.tare_example_meal_2_ate
+          - entity: button.tare_example_meal_2_ate_three_quarters
+      - type: entities
+        entities:
+          - entity: sensor.tare_example_meal_press_result
+            name: Last meal press
