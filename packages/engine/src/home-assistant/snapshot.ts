@@ -2,7 +2,9 @@ import type { Database } from "better-sqlite3";
 import type { Config } from "../config.ts";
 import { readLedger, remainingFor } from "../days/ledger.ts";
 import { localDay } from "../logging/day.ts";
+import { selectTargetWeights } from "../queries/select-target-weights.ts";
 import { readTarget } from "../target/reader.ts";
+import { weightTrend } from "../trend/weight-trend.ts";
 import type { EntityDefinition, Person, Provider } from "./discovery.ts";
 
 type TargetConfig = Pick<
@@ -41,7 +43,10 @@ export function personSnapshot(
     protein_remaining: remainingFor(target, totals, "protein_g"),
     calories_eaten: totals.kcal.known_subtotal,
     protein_eaten: totals.protein_g.known_subtotal,
-    weight_trend: ready?.trend_kg ?? null,
+    weight_trend:
+      weightTrend(
+        selectTargetWeights(database, { user_id: person.id, day }),
+      ).at(-1)?.trend_kg ?? null,
     kcal_complete: totals.kcal.complete,
     protein_complete: totals.protein_g.complete,
   };
