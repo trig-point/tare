@@ -77,6 +77,7 @@ test("registry constrains public and administrator operations and inventories ev
       "delete_habit",
       "read_signals",
       "replace_activity_sets",
+      "delete_activity",
       "read_activities",
       "eat_meal",
       "mark_delivery",

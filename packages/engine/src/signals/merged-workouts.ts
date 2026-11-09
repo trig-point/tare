@@ -18,7 +18,7 @@ export function setView(row: SelectActivitySetsResult) {
   };
 }
 
-const loggedSources = new Set(["manual", "agent"]);
+export const loggedSources = new Set(["manual", "agent"]);
 const span = (session: SelectActivitiesResult) => {
   const start = Date.parse(session.started_at ?? "");
   return { start, end: start + (session.duration_minutes ?? 0) * 60_000 };
