@@ -14,12 +14,16 @@ export const bodyFatSchema = z.object({
   readings: z.array(readingSchema),
   trend: z
     .discriminatedUnion("status", [
-      z.object({ status: z.literal("not_enough"), message: z.string() }),
+      z.object({
+        status: z.literal("not_enough"),
+        current_count: z.number(),
+        prior_count: z.number(),
+        lines: z.array(z.string()),
+      }),
       z.object({
         status: z.literal("ready"),
         level_pct: z.number(),
-        message: z.string(),
-        line: z.string(),
+        lines: z.array(z.string()),
       }),
     ])
     .nullable(),

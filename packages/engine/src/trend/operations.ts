@@ -47,14 +47,13 @@ const bodyFatTrendOutput = zod.discriminatedUnion("status", [
     status: zod.literal("not_enough"),
     current_count: zod.number(),
     prior_count: zod.number(),
-    message: zod.string(),
+    lines: zod.array(zod.string()),
   }),
   zod.strictObject({
     status: zod.literal("ready"),
     level_pct: zod.number(),
     change_points: zod.number(),
-    message: zod.string(),
-    line: zod.string(),
+    lines: zod.array(zod.string()),
   }),
 ]);
 

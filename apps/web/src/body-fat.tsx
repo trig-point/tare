@@ -38,14 +38,22 @@ export function BodyFatCard({
     <section aria-label="Body fat">
       <h2>Body fat</h2>
       {trend?.status === "ready" && (
-        <>
-          <p>
-            <strong>{trend.level_pct}%</strong> {trend.message}
-          </p>
-          <p>{trend.line}</p>
-        </>
+        <p>
+          <strong>{trend.level_pct}%</strong>
+        </p>
       )}
-      {trend?.status === "not_enough" && <p>{trend.message}</p>}
+      {trend?.lines.map((line, index) => (
+        <p
+          key={line}
+          title={
+            trend.status === "ready" && index === trend.lines.length - 1
+              ? "This scale's error is about 2 points"
+              : undefined
+          }
+        >
+          {line}
+        </p>
+      ))}
       <Plot data={chart} series={bodyFatSeries} />
       <details>
         <summary>Readings</summary>

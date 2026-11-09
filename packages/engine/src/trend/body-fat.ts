@@ -114,19 +114,18 @@ export function bodyFatTrend(input: {
         status: "not_enough" as const,
         current_count: current.length,
         prior_count: prior.length,
-        message: "Not enough readings for a trend",
+        lines: [
+          "Not enough readings for a trend",
+          current.length < minimumReadings
+            ? `${current.length} of ${minimumReadings} readings in the last 4 weeks`
+            : `${prior.length} of ${minimumReadings} readings in the 4 weeks before`,
+        ],
       },
     };
 
   const level = median(current);
   const change = oneDecimal(level - median(prior));
   const withinError = Math.abs(change) < scaleErrorPoints;
-  const direction = change > 0 ? "Up" : change < 0 ? "Down" : "No change";
-  const size = Math.abs(change);
-  const changeText =
-    size === 0
-      ? direction
-      : `${direction} ${size} point${size === 1 ? "" : "s"}`;
   const strengthFrom = shiftDay(input.today, 1 - strengthLookbackDays);
   const strengthCount = input.workouts.filter(
     (workout) =>
@@ -146,14 +145,11 @@ export function bodyFatTrend(input: {
       status: "ready" as const,
       level_pct: oneDecimal(level),
       change_points: change,
-      message: withinError
-        ? `${changeText}, within this scale's error of about 2 points`
-        : changeText,
-      line: [
+      lines: [
         trainingSentence(strengthCount),
         weightSentence(weightChange),
         bodyFatSentence(change, withinError),
-      ].join(" "),
+      ],
     },
   };
 }
