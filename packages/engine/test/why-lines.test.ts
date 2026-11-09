@@ -10,21 +10,20 @@ import { twoUsers } from "./support/two-users.ts";
 
 const day = "2025-12-30";
 const previous = "2025-12-29";
+const late = "2025-12-29T19:15:00.000Z";
 const updated_at = "2025-12-31T00:00:00.000Z";
 const lateLine =
   "You trained within 4 hours of bed. Late hard workouts are linked to lower HRV.";
-const alcoholLine =
-  "You logged alcohol last evening. Alcohol is linked to lower HRV.";
 
 async function people(context: TestContext) {
   const { database, admin, member } = await twoUsers(context, "fallback");
+  let record = 0;
+  const nextId = () => {
+    record += 1;
+    return `${record}`;
+  };
   const person = (who: typeof admin) => {
     const user_id = who.user.id;
-    let record = 0;
-    const nextId = () => {
-      record += 1;
-      return `${record}`;
-    };
     const seed = {
       signal(metric: string, value: number, onDay = day, source = "oura") {
         upsertSignal(database, {
@@ -86,51 +85,45 @@ async function people(context: TestContext) {
   return { personA: person(admin), personB: person(member) };
 }
 
-const late = "2025-12-29T19:15:00.000Z";
-async function lowHrv(context: TestContext) {
+test("low HRV shows the late-workout and alcohol lines only for the person's own long, timed session and last evening's note", async (context) => {
   const { personA, personB } = await people(context);
   personA.baseline("hrv", 50);
   personA.signal("hrv", 42);
   personA.nights();
-  return { personA, personB };
-}
-
-test("a late workout with low HRV gives the late-workout line, never a cause", async (context) => {
-  const { personA } = await lowHrv(context);
+  personA.sleep(day, "2025-12-29T16:00:00.000Z", 40);
+  personA.session("strength", late, 20);
+  personA.session("strength", null, 0, previous);
+  personA.habit("evening_alcohol", day);
+  personB.nights();
+  personB.session("strength", late);
+  personB.habit("evening_alcohol", previous);
+  assert.deepEqual(await personA.why("hrv"), []);
   personA.session("strength", late);
   const why = await personA.why("hrv");
   assert.deepEqual(why, [lateLine]);
   assert.doesNotMatch(why.join(" "), /because/i);
-});
-
-test("a 20-minute late session gives no line", async (context) => {
-  const { personA } = await lowHrv(context);
-  personA.session("strength", late, 20);
-  assert.deepEqual(await personA.why("hrv"), []);
-});
-
-test("a date-only session skips the late rule but counts as a session that day", async (context) => {
-  const { personA } = await lowHrv(context);
-  personA.session("strength", null, 0, previous);
-  assert.deepEqual(await personA.why("hrv"), []);
-  personA.baseline("active_calories", 430);
-  personA.signal("active_calories", 640);
-  personA.session("running", null);
-  assert.deepEqual(await personA.why("active_calories"), [
-    "Burn 640 kcal, above your usual 430. You logged a workout.",
+  personA.habit("evening_alcohol", previous);
+  assert.deepEqual(await personA.why("hrv"), [
+    lateLine,
+    "You logged alcohol last evening. Alcohol is linked to lower HRV.",
   ]);
 });
 
-test("burn up from a manual source gives the burn line on that source's row", async (context) => {
+test("burn up gives the burn line on its own source's row, counting a date-only session", async (context) => {
   const { personA } = await people(context);
   personA.baseline("active_calories", 430, 14, "manual");
   personA.signal("active_calories", 640, day, "manual");
   personA.baseline("active_calories", 300);
   personA.signal("active_calories", 305);
+  personA.session("running", null);
+  const lead = "Burn 640 kcal, above your usual 430.";
+  assert.deepEqual(await personA.why("active_calories", "manual"), [
+    `${lead} You logged a workout.`,
+  ]);
   personA.session("strength", `${day}T09:00:00.000Z`, 55);
   personA.session("cycling", `${day}T17:00:00.000Z`, 20);
   assert.deepEqual(await personA.why("active_calories", "manual"), [
-    "Burn 640 kcal, above your usual 430. You logged a 55-minute workout.",
+    `${lead} You logged a 55-minute workout.`,
   ]);
   assert.deepEqual(await personA.why("active_calories", "oura"), []);
 });
@@ -152,65 +145,84 @@ test("sauna the day before gives the not-settled line in either direction", asyn
   ]);
 });
 
-test("two firing candidates both show", async (context) => {
-  const { personA } = await lowHrv(context);
-  personA.session("strength", late);
-  personA.habit("evening_alcohol", previous);
-  assert.deepEqual(await personA.why("hrv"), [lateLine, alcoholLine]);
-});
-
-test("10 baseline days or a flat baseline give no line", async (context) => {
-  const { personA } = await people(context);
-  personA.nights();
-  personA.session("strength", late);
-  personA.baseline("hrv", 50, 10);
-  personA.signal("hrv", 42);
-  assert.deepEqual(await personA.why("hrv"), []);
-  for (let offset = 1; offset <= 14; offset += 1)
-    personA.signal("resting_heart_rate", 55, shiftDay(day, -offset));
-  personA.signal("resting_heart_rate", 62);
-  assert.deepEqual(await personA.why("resting_heart_rate"), []);
-});
-
-test("HRV past 1 SD but only 6 percent down gives no line", async (context) => {
-  const { personA } = await people(context);
-  personA.nights();
-  personA.session("strength", late);
-  personA.baseline("hrv", 50);
-  personA.signal("hrv", 47);
-  assert.deepEqual(await personA.why("hrv"), []);
-});
-
-test("the baseline excludes the day", async (context) => {
+test("a short or flat baseline excluding the day, or HRV only 6 percent down, gives no line", async (context) => {
   const { personA } = await people(context);
   personA.nights();
   personA.session("strength", late);
   personA.baseline("hrv", 50, 13);
   personA.signal("hrv", 42);
+  for (let offset = 1; offset <= 14; offset += 1)
+    personA.signal("resting_heart_rate", 55, shiftDay(day, -offset));
+  personA.signal("resting_heart_rate", 62);
+  personA.baseline("hrv", 50, 14, "agent");
+  personA.signal("hrv", 47, day, "agent");
   assert.deepEqual(await personA.why("hrv"), []);
+  assert.deepEqual(await personA.why("resting_heart_rate"), []);
+  assert.deepEqual(await personA.why("hrv", "agent"), []);
 });
 
-test("a nap does not replace the main sleep", async (context) => {
-  const { personA } = await lowHrv(context);
-  personA.session("strength", late);
-  personA.sleep(day, "2025-12-29T16:00:00.000Z", 40);
-  assert.deepEqual(await personA.why("hrv"), [lateLine]);
+type Person = Awaited<ReturnType<typeof people>>["personA"];
+const caveat =
+  "Small sample; days you log may differ from days you don't in other ways.";
+// Logs the item date-only on the first `logged` days back from yesterday; every night after gets HRV.
+function history(
+  seed: Person,
+  kind: string,
+  logged: number,
+  total: number,
+  level = 56,
+) {
+  for (let offset = 1; offset <= total; offset += 1) {
+    const logDay = shiftDay(day, -offset);
+    if (offset <= logged)
+      kind === "evening_alcohol"
+        ? seed.habit(kind, logDay)
+        : seed.session(kind, null, 0, logDay);
+    seed.signal("hrv", offset <= logged ? level : 50, shiftDay(logDay, 1));
+  }
+}
+
+test("8 date-only logged days and 21 without give both counts; old days and missing nights count nowhere", async (context) => {
+  const { personA } = await people(context);
+  history(personA, "sauna", 8, 29);
+  for (const offset of [40, 91])
+    personA.session("sauna", null, 0, shiftDay(day, -offset));
+  assert.deepEqual(await personA.why("hrv"), [
+    `Nights after a logged sauna: HRV averaged 12% higher than nights without one logged (8 vs 21 nights). ${caveat}`,
+  ]);
 });
 
-test("an evening note attaches to the night that starts that day", async (context) => {
-  const { personA } = await lowHrv(context);
-  personA.habit("evening_alcohol", day);
-  assert.deepEqual(await personA.why("hrv"), []);
-  personA.habit("evening_alcohol", previous);
-  assert.deepEqual(await personA.why("hrv"), [alcoholLine]);
+test("a 4 percent difference reads no clear difference yet; an item not logged yesterday shows nothing", async (context) => {
+  const { personA } = await people(context);
+  history(personA, "evening_alcohol", 8, 29, 52);
+  for (const offset of [2, 3, 4, 5, 6])
+    personA.session("sauna", null, 0, shiftDay(day, -offset));
+  assert.deepEqual(await personA.why("hrv"), [
+    `Nights after logged alcohol: no clear difference yet in HRV (8 vs 21 nights). ${caveat}`,
+  ]);
 });
 
-test("one person's lines never use another person's sessions or notes", async (context) => {
-  const { personA, personB } = await lowHrv(context);
-  personB.nights();
-  personB.session("strength", late);
-  personB.habit("evening_alcohol", previous);
+test("4 logged days keep the tier-one line; a fifth replaces it", async (context) => {
+  const { personA } = await people(context);
+  personA.baseline("hrv", 50, 28);
+  personA.signal("hrv", 60);
+  personA.nights();
+  for (const offset of [1, 3, 5, 7])
+    personA.session("sauna", `${shiftDay(day, -offset)}T12:00:00.000Z`, 20);
+  assert.deepEqual(await personA.why("hrv"), [
+    "You logged sauna yesterday. Its effect on HRV is not settled.",
+  ]);
+  personA.session("sauna", `${shiftDay(day, -9)}T12:00:00.000Z`, 20);
+  assert.match(
+    (await personA.why("hrv")).join(),
+    /^Nights after a logged sauna: .*\(5 vs 24 nights\)/,
+  );
+});
+
+test("one person's pattern never counts another person's days", async (context) => {
+  const { personA, personB } = await people(context);
+  for (const kind of ["sauna", "evening_alcohol"])
+    history(personB, kind, 8, 29);
+  history(personA, "evening_alcohol", 1, 29);
   assert.deepEqual(await personA.why("hrv"), []);
-  personA.session("strength", late);
-  assert.deepEqual(await personA.why("hrv"), [lateLine]);
 });

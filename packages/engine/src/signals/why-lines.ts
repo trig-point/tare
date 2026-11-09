@@ -5,6 +5,7 @@ import { selectHabits } from "../queries/select-habits.ts";
 import { selectSignalHistory } from "../queries/select-signal-history.ts";
 import { selectSleepPeriods } from "../queries/select-sleep-periods.ts";
 import { readWorkouts } from "./activities.ts";
+import { personalPatterns } from "./patterns.ts";
 
 type Workout = ReturnType<typeof readWorkouts>[number];
 type Direction = "up" | "down";
@@ -53,7 +54,9 @@ function candidates(
     settings: WhySettings;
   },
 ) {
-  const lines: string[] = [];
+  const lines: { item: string | null; text: string }[] = [];
+  const add = (text: string, item: string | null = null) =>
+    lines.push({ item, text });
   if (metric === "active_calories" && direction === "up") {
     const sessions = context.sameDay.filter((workout) =>
       hard.has(workout.category),
@@ -65,8 +68,8 @@ function candidates(
     );
     const lead = `Burn ${wholeKcal.format(today)} kcal, above your usual ${wholeKcal.format(mean)}.`;
     if (timed.length > 0)
-      lines.push(`${lead} You logged a ${Math.max(...timed)}-minute workout.`);
-    else if (sessions.length > 0) lines.push(`${lead} You logged a workout.`);
+      add(`${lead} You logged a ${Math.max(...timed)}-minute workout.`);
+    else if (sessions.length > 0) add(`${lead} You logged a workout.`);
   }
   const heart =
     (metric === "hrv" && direction === "down") ||
@@ -84,20 +87,22 @@ function candidates(
       );
     });
     if (late)
-      lines.push(
+      add(
         `You trained within ${settings.lateHours} hours of bed. Late hard workouts are linked to lower HRV.`,
       );
   }
   if (metric === "hrv" && direction === "down" && context.alcohol)
-    lines.push(
+    add(
       "You logged alcohol last evening. Alcohol is linked to lower HRV.",
+      "evening_alcohol",
     );
   const signalName = signalNames[metric];
   if (signalName)
     for (const [category, name] of Object.entries(plungeNames))
       if (context.window.some((workout) => workout.category === category))
-        lines.push(
+        add(
           `You logged ${name} yesterday. Its effect on ${signalName} is not settled.`,
+          category,
         );
   return lines;
 }
@@ -154,7 +159,7 @@ export function whyLines(
     ),
     settings,
   };
-  const lines = new Map<string, string[]>();
+  const lines = new Map<string, ReturnType<typeof candidates>>();
   const series = Map.groupBy(history, (row) => seriesKey(row));
   for (const [key, rows] of series) {
     const current = rows.find((row) => row.day === day);
@@ -181,6 +186,15 @@ export function whyLines(
       ),
     );
   }
-  return (signal: { metric: string; source: string }) =>
-    lines.get(seriesKey(signal)) ?? [];
+  const patterns = personalPatterns(database, owner);
+  return (signal: { metric: string; source: string }) => {
+    const key = seriesKey(signal);
+    const replaced = patterns.get(key) ?? new Map<string, string>();
+    return [
+      ...(lines.get(key) ?? [])
+        .filter((line) => line.item === null || !replaced.has(line.item))
+        .map((line) => line.text),
+      ...replaced.values(),
+    ];
+  };
 }
