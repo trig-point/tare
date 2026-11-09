@@ -126,7 +126,12 @@ export function whyLines(
         start: Date.parse(period.started_at),
         end: Date.parse(period.ended_at),
       });
-  const workouts = readWorkouts(database, { user_id, from: previous, to: day });
+  // A late day start hour stamps a session in the window up to two calendar days back.
+  const workouts = readWorkouts(database, {
+    user_id,
+    from: shiftDay(day, -2),
+    to: day,
+  });
   const tonight = mainSleep.get(day);
   const lastNight = mainSleep.get(previous);
   const window = workouts.filter((workout) => {

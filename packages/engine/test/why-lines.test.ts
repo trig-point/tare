@@ -53,12 +53,12 @@ async function people(context: TestContext) {
         seed.sleep(previous, "2025-12-28T22:00:00.000Z");
         seed.sleep(day, "2025-12-29T22:00:00.000Z");
       },
-      session(kind: string, start: string | null, minutes = 45, onDay = day) {
+      session(kind: string, start: string | null, minutes = 45, on?: string) {
         insertActivity(database, {
           ...{ user_id, client_id: nextId(), kind, calories: null },
           ...{ notes: null, source: "manual", created_at: updated_at },
           ...{ timing: start ? "exact" : "date_only", started_at: start },
-          ...{ day: start?.slice(0, 10) ?? onDay },
+          ...{ day: on ?? start?.slice(0, 10) ?? day },
           duration_minutes: start ? minutes : null,
         });
       },
@@ -142,7 +142,8 @@ test("sauna the day before gives the not-settled line in either direction", asyn
   personA.baseline("resting_heart_rate", 55);
   personA.signal("resting_heart_rate", 49);
   personA.nights();
-  personA.session("sauna", "2025-12-29T12:00:00.000Z", 20);
+  // A late day start hour stamps a morning sauna two calendar days back.
+  personA.session("sauna", "2025-12-29T12:00:00.000Z", 20, "2025-12-28");
   assert.deepEqual(await personA.why("hrv"), [
     "You logged sauna yesterday. Its effect on HRV is not settled.",
   ]);
