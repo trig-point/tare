@@ -244,12 +244,9 @@ export function createHomeAssistantPublisher({
           ]);
           expiry?.cancel();
         }
-        // A forced close sends no DISCONNECT, so the broker can still fire the will.
-        if (confirmed) await client.endAsync();
-        else {
-          log("mqtt_offline_unconfirmed");
-          await client.endAsync(true);
-        }
+        if (!confirmed) log("mqtt_offline_unconfirmed");
+        // A graceful end can wait forever on a stalled broker; a forced close is bounded and its will retains the same offline.
+        await client.endAsync(true);
       })();
       return stopping;
     },
