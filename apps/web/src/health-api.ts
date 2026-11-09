@@ -53,11 +53,31 @@ export const signalsSchema = z.object({
   activities: z.array(
     z.object({
       id: z.number(),
-      started_at: z.string(),
-      duration_minutes: z.number(),
+      timing: z.enum(["exact", "date_only"]),
+      started_at: z.string().nullable(),
+      day: z.string(),
+      duration_minutes: z.number().nullable(),
       kind: z.string(),
+      category: z.enum(["strength", "cardio", "sauna", "cold_plunge", "other"]),
       calories: z.number().nullable(),
+      notes: z.string().nullable(),
       source: z.string(),
+      tracker: z.object({ id: z.number(), source: z.string() }).nullable(),
+      sets: z.array(
+        z.object({
+          set_index: z.number(),
+          exercise: z.string(),
+          set_type: z.string(),
+          reps: z.number().nullable(),
+          load: z.number().nullable(),
+          load_unit: z.string().nullable(),
+          load_kg: z.number().nullable(),
+          duration_seconds: z.number().nullable(),
+          rir_low: z.number().nullable(),
+          rir_high: z.number().nullable(),
+          notes: z.string().nullable(),
+        }),
+      ),
     }),
   ),
 });
