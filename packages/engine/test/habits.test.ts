@@ -25,8 +25,17 @@ test("habit notes are stored, replaced and deleted per person, and unknown keys 
     send(admin, "DELETE", `/api/habits/${day}/${key}`);
   await send(member, "POST", "/api/habits", { ...habit, amount: 1 });
   const memberBefore = await read(member);
+  const [memberRow] = memberBefore.habits;
+  assert.deepEqual(
+    [memberRow.amount, memberRow.note, memberRow.source],
+    [1, null, "manual"],
+  );
   assert.deepEqual((await read(admin)).habits, []);
-  await send(admin, "POST", "/api/habits", { ...habit, amount: 2 });
+  const first = await send(admin, "POST", "/api/habits", {
+    ...habit,
+    amount: 2,
+  });
+  assert.deepEqual([first.status, first.body.amount], [200, 2]);
   const again = await send(admin, "POST", "/api/habits", {
     ...habit,
     amount: 3,
