@@ -3,7 +3,7 @@ import type { ListPeopleResult } from "../queries/home-assistant/list-people.ts"
 export type Person = ListPeopleResult;
 
 export interface EntityDefinition {
-  component: "sensor" | "event";
+  component: "sensor" | "button" | "event";
   key: string;
   config: Record<string, unknown>;
 }

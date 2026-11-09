@@ -10,9 +10,18 @@ import { Aedes } from "aedes";
 import { connectAsync } from "mqtt";
 import { personDayBounds } from "../src/calendar/time.ts";
 import { loadConfig } from "../src/config.ts";
+import { writeTransaction } from "../src/db.ts";
+import {
+  createMealButtons,
+  pressResultTopic,
+  pressTopic,
+} from "../src/home-assistant/meal-buttons.ts";
 import { createHomeAssistantPublisher } from "../src/home-assistant/publisher.ts";
 import { sensorProvider } from "../src/home-assistant/snapshot.ts";
 import { targetEventProvider } from "../src/home-assistant/target-event.ts";
+import { localDay } from "../src/logging/day.ts";
+import { mealNutritionKinds } from "../src/meal-nutrition/index.ts";
+import { createOrder } from "../src/orders/index.ts";
 import { listPeople } from "../src/queries/home-assistant/list-people.ts";
 import { createTargetRecomputeJob } from "../src/target/job.ts";
 import { profile, seed } from "./support/adaptive-seed.ts";
@@ -266,6 +275,95 @@ test("the latest value wins over held acks and outages, and stop marks offline",
   assert.ok(
     !lost.published.slice(before).some((line) => line.endsWith(" online")),
   );
+});
+
+test("meal button presses arrive through the broker, after a reconnect and a new day", async (context) => {
+  const harness = await setup(context);
+  const { admin, database, install, clock, send, settle } = harness;
+  const { timezone, day_start_hour } = admin.user;
+  const today = localDay(clock.now().toISOString(), timezone, day_start_hour);
+  const dayEnd = personDayBounds(today, timezone, day_start_hour).end;
+  const tomorrow = localDay(dayEnd.toISOString(), timezone, day_start_hour);
+  for (const [delivery_date, quantity] of [
+    [today, 3],
+    [tomorrow, 1],
+  ] as const)
+    writeTransaction(database, (scope) =>
+      createOrder(
+        scope,
+        admin.user,
+        {
+          service: "Example",
+          delivery_date,
+          status: "scheduled",
+          meals: [{ name: "Example bowl", chef: null, quantity }],
+        },
+        mealNutritionKinds,
+        clock.now().toISOString(),
+      ),
+    );
+  const { questions } = await send(
+    admin.request,
+    "/api/questions",
+    undefined,
+    "GET",
+  );
+  const answer = { kcal: 600, protein_g: 35, carbs_g: 60, fat_g: 20 };
+  await send(admin.request, "/api/questions/answer", {
+    id: questions[0].id,
+    answer: { ...answer, source: "Example label" },
+  });
+  const [due, later] = database
+    .prepare("SELECT id FROM order_meals ORDER BY id")
+    .pluck()
+    .all() as number[];
+  const { publisher } = harness;
+  publisher.addProvider(
+    createMealButtons({ database, clock, publisher }).provider,
+  );
+  const config = (now: Retained, meal?: number) =>
+    now.get(
+      `homeassistant/button/tare_${install}_${admin.user.id}/meal_${meal}_ate/config`,
+    );
+  const revision = (now: Retained, meal?: number) =>
+    JSON.parse(JSON.parse(config(now, meal) ?? "{}").payload_press ?? "{}")
+      .revision;
+  await settle((now) => revision(now, due) === 1);
+  assert.equal(config(await harness.retained(), later), undefined);
+
+  const client = await connectAsync(`mqtt://127.0.0.1:${harness.port}`);
+  context.after(() => client.endAsync());
+  const press = async (meal?: number) => {
+    const payload = JSON.parse(config(await harness.retained(), meal) ?? "{}");
+    await client.publishAsync(
+      pressTopic(install, admin.user.id),
+      payload.payload_press,
+      { qos: 1 },
+    );
+  };
+  const logged = (now: Retained) =>
+    now
+      .get(pressResultTopic(install, admin.user.id))
+      ?.includes('"result":"logged"');
+  await press(due);
+  await settle((now) => logged(now) === true && revision(now, due) === 2);
+
+  for (const peer of Object.values(harness.broker.clients))
+    if (peer.id === `tare-${install}`) peer.conn.destroy();
+  await settle((now) => now.get(harness.status) === "offline");
+  await settle((now) => now.get(harness.status) === "online");
+  await press(due);
+  await settle((now) => logged(now) === true && revision(now, due) === 3);
+
+  clock.now().setTime(dayEnd.getTime());
+  for (const timer of [...clock.timers])
+    if (timer.at <= dayEnd.getTime()) {
+      clock.timers.delete(timer);
+      timer.callback();
+    }
+  await settle((now) => revision(now, later) === 1);
+  await press(later);
+  await settle((now) => config(now, later) === undefined);
 });
 
 test("a recompute that changes a target fires one event and sets the TDEE sensor, per person", async (context) => {
