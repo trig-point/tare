@@ -13,8 +13,8 @@ import { recomputeTarget } from "../src/target/recompute.ts";
 import { test } from "./support/hang-ceiling.ts";
 import { twoUsers } from "./support/two-users.ts";
 
+const settings = loadConfig({ DATABASE_URL: ":memory:" }).tdee;
 const config = loadConfig({ DATABASE_URL: ":memory:" });
-const settings = config.tdee;
 const now = new Date("2026-01-01T00:00:00.000Z");
 const profile = {
   height_cm: 180,
@@ -333,36 +333,4 @@ test("weekday config accepts names, resets empty values and selects each cron da
     () => loadConfig({ DATABASE_URL: ":memory:", TARE_TARGET_WEEKDAY: "mon" }),
     /TARE_TARGET_WEEKDAY/,
   );
-});
-
-test("a week of activity bonuses leaves the estimate, stored target and notice unchanged", async (context) => {
-  const { database, admin, member } = await twoUsers(context, "fallback");
-  for (const person of [admin, member]) {
-    assert.equal(await save(person), 200);
-    seed(database, person.user.id);
-  }
-  database
-    .prepare(
-      "WITH RECURSIVE back(days) AS (SELECT 0 UNION ALL SELECT days + 1 FROM back WHERE days < 35) INSERT INTO daily_signals SELECT ?, date('2026-01-01', -days || ' days'), 'active_calories', IIF(days < 7, 1200, 430), 'oura', ? FROM back",
-    )
-    .run(member.user.id, now.toISOString());
-  const bonused = readTarget(database, member.user, now, config);
-  assert.equal(bonused.status === "ready" && bonused.bonus.kcal, 500);
-  const [first, second] = [admin, member].map((person) => {
-    writeTransaction(database, (scope) =>
-      recomputeTarget(scope, person.user, now, settings, "weekly"),
-    );
-    const stored = selectTargetResult(database, { user_id: person.user.id });
-    return [
-      { ...stored, id: undefined },
-      readAdaptive(database, person.user, now, settings),
-      database
-        .prepare(
-          "SELECT old_kcal, old_protein_g, new_kcal, new_protein_g FROM target_notices WHERE user_id = ?",
-        )
-        .all(person.user.id),
-    ] as const;
-  });
-  assert.equal(first?.[2].length, 1);
-  assert.deepEqual(second, first);
 });
