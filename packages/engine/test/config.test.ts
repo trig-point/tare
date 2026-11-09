@@ -238,3 +238,15 @@ for (const timezone of ["UTC", "America/New_York", "Asia/Kolkata"]) {
     );
   });
 }
+
+test("activity credit mode parses same-day and next-day and rejects other values", () => {
+  const read = (value: string | undefined) =>
+    loadConfig({ DATABASE_URL: ":memory:", TARE_ACTIVITY_CREDIT: value })
+      .activityCredit;
+  for (const empty of [undefined, "", " "])
+    assert.equal(read(empty), "same-day");
+  assert.equal(read(" Next-Day "), "next-day");
+  assert.equal(read("same-day"), "same-day");
+  for (const value of ["hourly", "same day", "nextday"])
+    assert.throws(() => read(value), /TARE_ACTIVITY_CREDIT/);
+});
