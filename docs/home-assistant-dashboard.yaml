@@ -19,10 +19,15 @@ views:
         title: Targets
         entities:
           - entity: sensor.tare_example_calorie_target
+            name: Calorie target
           - entity: sensor.tare_example_protein_target
+            name: Protein target
           - entity: sensor.tare_example_calories_eaten
+            name: Calories eaten
           - entity: sensor.tare_example_protein_eaten
+            name: Protein eaten
           - entity: sensor.tare_example_tdee_estimate
+            name: TDEE estimate
       - type: markdown
         title: Last target change
         content: >-
@@ -49,3 +54,4 @@ views:
       - type: entities
         entities:
           - entity: sensor.tare_example_meal_press_result
+            name: Last meal press
