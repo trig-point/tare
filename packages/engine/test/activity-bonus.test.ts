@@ -61,8 +61,10 @@ test("bonus: training, quiet, next-day, waiting, no source, cap and window", asy
     ["same-day", gaps, 950, "2630 ready 500 capped 950 400.0"],
   ] as const) {
     database.prepare("DELETE FROM daily_signals").run();
-    burn(mode === "same-day" ? today : shiftDay(today, -1), value, history);
-    const { kcal, bonus } = read(mode);
+    const day = mode === "same-day" ? today : shiftDay(today, -1);
+    burn(day, value, history);
+    const { kcal, base_kcal, bonus } = read(mode);
+    assert.deepEqual([base_kcal, bonus.mode, bonus.day], [2130, mode, day]);
     assert.equal(
       `${kcal} ${bonus.status} ${bonus.kcal}${bonus.capped ? " capped" : ""} ${bonus.burn_kcal} ${bonus.average_kcal?.toFixed(1)}`,
       expected,
@@ -104,4 +106,5 @@ test("slots, remaining and the weekly recompute follow the bonus; two users", as
   const stored =
     "SELECT kcal, (SELECT count(*) FROM target_notices) FROM target_results";
   assert.deepEqual(database.prepare(stored).raw().all(), [[2130, 0]]);
+  assert.equal((await read()).target, 2379);
 });

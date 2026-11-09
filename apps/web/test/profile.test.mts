@@ -114,10 +114,18 @@ test("learning state shown beside the formula target", async (context) => {
   const { post } = await engine(context);
   await saveProfile(profile);
   await post("/api/weights", { client_id: "example-weight", weight_kg: 70 });
-  const html = render(
-    createElement(TargetCard, { today: await readToday(signal) }),
+  const today = await readToday(signal);
+  assert.match(
+    render(createElement(TargetCard, { today })),
+    /Formula target, still learning<\/p><p>Activity bonus after 14 days/,
   );
-  assert.match(html, /still learning<\/p><p>Activity bonus after 14 days/);
+  assert.ok(today.target.status === "ready");
+  const bonus = { ...today.target.bonus, status: "ready", kcal: 250 } as const;
+  const target = { ...today.target, kcal: 2380, base_kcal: 2130, bonus };
+  const bonused = render(
+    createElement(TargetCard, { today: { ...today, target } }),
+  );
+  assert.match(bonused, /Base 2,130\. \+250 from activity/);
 });
 
 test("chart data holds each day's first reading and the trend line", async (context) => {
