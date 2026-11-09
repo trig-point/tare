@@ -31,6 +31,7 @@ export interface Config {
   port: number;
   timezone: string;
   targetWeekday: number;
+  activityCredit: "same-day" | "next-day";
   publicUrl: string | undefined;
   mcpAllowedOrigins: string[];
   sessionDays: number;
@@ -325,6 +326,10 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
   ].indexOf(env.TARE_TARGET_WEEKDAY?.trim().toLowerCase() || "monday");
   if (targetWeekday === -1)
     throw new Error("TARE_TARGET_WEEKDAY must be an English weekday name");
+  const activityCredit =
+    env.TARE_ACTIVITY_CREDIT?.trim().toLowerCase() || "same-day";
+  if (activityCredit !== "same-day" && activityCredit !== "next-day")
+    throw new Error("TARE_ACTIVITY_CREDIT must be same-day or next-day");
   const publicUrl = env.TARE_PUBLIC_URL?.trim() || undefined;
   if (publicUrl !== undefined) {
     try {
@@ -383,6 +388,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     port,
     timezone,
     targetWeekday,
+    activityCredit,
     publicUrl,
     mcpAllowedOrigins: parseMcpAllowedOrigins(env.TARE_MCP_ALLOWED_ORIGINS),
     sessionDays,

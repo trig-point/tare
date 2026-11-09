@@ -5,6 +5,7 @@ import {
   type OuraFetchOptions,
 } from "@tare/health-sources";
 import type { Database } from "better-sqlite3";
+import type { Config } from "../config.ts";
 import { writeTransaction } from "../db.ts";
 import { localDay, shiftDay } from "../logging/day.ts";
 import { listSyncPeople } from "../queries/oura/list-sync-people.ts";
@@ -27,6 +28,7 @@ export function createOuraSyncJob({
   database,
   oura,
   clock,
+  creditMode,
   fetch,
   wait = (milliseconds, signal) =>
     setTimeout(milliseconds, undefined, { signal }),
@@ -35,6 +37,7 @@ export function createOuraSyncJob({
   database: Database;
   oura: Pick<OuraService, "refreshAccess">;
   clock: { now(): Date };
+  creditMode: Config["activityCredit"];
 } & Partial<Pick<OuraFetchOptions, "fetch" | "wait" | "baseUrl">>) {
   async function syncPerson(
     person: ReturnType<typeof listSyncPeople>[number],
@@ -160,5 +163,7 @@ export function createOuraSyncJob({
     }
     return result;
   }
-  return { name: "oura-sync", schedule: "0 7 * * *", run };
+  // Same-day credit needs today's burn as it accrues; next-day only needs yesterday's.
+  const schedule = creditMode === "same-day" ? "0 * * * *" : "0 7 * * *";
+  return { name: "oura-sync", schedule, run };
 }
