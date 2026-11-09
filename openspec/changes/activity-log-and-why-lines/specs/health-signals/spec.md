@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Daily signals store
-The system SHALL store daily health signals per person in a fixed vocabulary (steps, active calories, sleep, resting heart rate, HRV, readiness, stress, activity sessions) with their source, and the app SHALL show them beside that day's intake. Signals SHALL NOT change the calorie target in version 1, except that active calories from one tracker source SHALL adjust the day's target through the activity adjustment in the daily-target capability. No other signal, no session, no session's calories and no habit note SHALL change the target.
+The system SHALL store daily health signals per person in a fixed vocabulary (steps, active calories, sleep, resting heart rate, HRV, readiness, stress, activity sessions) with their source, and the app SHALL show them beside that day's intake. Signals SHALL NOT change the calorie target in version 1, except that active calories from one tracker source SHALL adjust the day's target through the activity adjustment in the daily-target capability. Active calories logged by hand (manual or agent) SHALL be shown but SHALL never adjust the target. No other signal, no session, no session's calories and no habit note SHALL change the target.
 
 #### Scenario: Signal shown, target unchanged
 - **WHEN** a day's HRV or sleep arrives

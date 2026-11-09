@@ -4,7 +4,7 @@ Tare already stores tracker burn, workouts and recovery signals, but it uses non
 
 ## What Changes
 
-- The day's calorie target becomes the weekly energy-balance target plus an activity adjustment: today's tracker active burn above the person's 28-day average from the same source, never below zero, capped at 500 kcal. The card shows both, for example "Base 2,180. +250 from activity." The weekly estimate is unchanged. The adjustment only rises, which adds about 80 kcal a day on average in an illustration; the operator accepted that drift.
+- The day's calorie target becomes the weekly energy-balance target plus an activity adjustment: one tracker source's active burn above that source's own 28-day average, never below zero, capped at 500 kcal; same day if the tracker updates during the day, otherwise yesterday's extra goes onto today. Burn logged by hand is shown and used in why-lines but never drives it. The card shows both, for example "Base 2,180. +250 from activity." The weekly estimate is unchanged. The adjustment only rises, which adds about 80 kcal a day on average in an illustration; the operator accepted that drift.
 - The Oura sync runs about hourly instead of once a day, so today's burn is current.
 - Activity sessions gain notes, sets (set type, reps, load in kilograms, reps in reserve) and two new kinds, sauna and cold plunge. One merged-workouts read joins a logged session with the tracker workout it overlaps, so no consumer counts one workout twice.
 - A habit log records context notes for a day (evening alcohol and late caffeine to start). A row means it happened; a day without one is not logged, never "no".

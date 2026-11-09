@@ -24,7 +24,7 @@ Single person in V1 (every row still carries `user_id`). Raw SQL with generated 
 
 ### The day's target is the weekly target plus an activity adjustment
 
-The weekly target B still comes from energy balance over the 28-day window, recomputed weekly, unchanged. Each day's target is B plus the day's activity adjustment: today's tracker active burn minus the person's 28-day average active burn from the same source. Example: usual Oura burn 430 kcal, today 680 kcal so far; the adjustment is +250 and the card shows "+250 from activity".
+The weekly target B still comes from energy balance over the 28-day window, recomputed weekly, unchanged. Each day's target is B plus the day's activity adjustment: a tracker source's active burn minus that source's own 28-day average. Only a tracker source drives it; burn logged by hand (manual or agent) is shown and used in why-lines but never drives the adjustment. Example: usual Oura burn 430 kcal, today 680 kcal so far; the adjustment is +250 and the card shows "+250 from activity".
 
 Why a relative delta cancels a tracker's consistent bias: the large error in the research applies to absolute values; the delta compares a tracker with itself. A fixed offset cancels completely. A proportional bias shrinks to the size of the departure (a ring reading 20 percent low turns a true +300 day into +240, an error of 60 kcal, not 20 percent of the whole day). Intensity-dependent error under-credits hard days, which errs toward less food. Random day-to-day error does not cancel, which is why there is a cap and why the weekly total is never set by the tracker. This is the research's rejected option 2; the operator chose it with the error stated.
 
@@ -36,13 +36,22 @@ Alternatives considered: tracker burn as explanation only (revision 2, replaced 
 
 Oura's burn for today grows through the day while the average is a full day, so a plain "today minus average" is a large negative number every morning. The adjustment therefore starts at zero and only rises: `max(0, today so far minus the source's 28-day average daily burn)`, capped. On a morning workout day the extra calories arrive by midday; on an evening workout day, after the workout syncs. The day's base is the weekly target B itself, with no offset. The daily `active_calories` signal is enough; no intraday samples are needed.
 
+### Same day or next day, picked by the probe
+
+The adjustment has two paths, and task 1.1's probe picks one:
+
+- **Same day** (the probe shows today's daily activity updating during the day): the rule above, from today's burn so far.
+- **Next day** (the probe shows it does not): once yesterday's full burn has synced, its extra over the 28-day average goes onto today's target, rise-only and capped the same way. The card says so: "Base 2,180. +250 from yesterday's activity." Today's partial reading is never used.
+
+The path is one setting chosen from the probe's result; the reader, response shape, cap, minimum and source rules are shared, so only the input day differs.
+
 Known, accepted cost: an adjustment that can only rise adds calories on active days and never removes any on quiet days, so the week's targets average above B. As an illustration, not a measurement, a daily burn that varies by about 200 kcal adds about 80 kcal a day on average. The operator accepted this drift on Nov 8 over both a base offset (B minus the 28-day average adjustment) and a two-way same-time-of-day comparison, because the base and the activity addition each carry value. The card shows both numbers: "Base 2,180. +250 from activity."
 
 ### Cases
 
 - No tracker data today: no adjustment and no offset; the target is B; the card says "No activity data yet."
 - A source with readings on fewer than 14 days of the 28-day window: no adjustment and no offset; the card says "Activity adjustment after 14 days of data."
-- Several sources: one source per person feeds the adjustment, the first eligible one in a fixed engine-side order matching the client's (manual, Oura, agent). Sources are never summed.
+- Several sources: one tracker source per person feeds the adjustment, the first eligible one in a fixed engine-side tracker order (Oura first; a watch later joins the list). Manual and agent burn never drive it. Sources are never summed.
 - The cap is unmeasured: configuration with an assumed default of 500 kcal, against a faulty reading. A capped day shows "+500 from activity (capped)".
 - Slot budgets and the Home Assistant target sensors read the same reader, so open slots pick up the change. The weekly target notice keeps comparing B.
 - The card always shows the base and the addition, "Base 2,180. +250 from activity."
@@ -97,7 +106,7 @@ The operator's existing gym log is imported once by an agent task outside the re
 
 ## Risks / Trade-offs
 
-- [Oura's daily activity may not update during the day] → task 1.1 probes it before the schedule change ships; without intraday updates the adjustment only lands after each ring sync.
+- [Oura's daily activity may not update during the day] → task 1.1 probes it; if it does not, the next-day path credits yesterday's extra onto today.
 - [Hourly calls may exceed Oura's rate limit] → task 1.1 records the limit; the existing 429 back-off reports `oura_rate_limited`.
 - [The adjustment's random error] → the cap bounds one day; the weekly recompute corrects the average through the scale.
 - [The rise-only adjustment pushes the week above B, about 80 kcal a day in an illustration] → accepted by the operator; the card shows the base and the addition separately, and the drift can be revisited with real data.
