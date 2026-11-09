@@ -187,15 +187,16 @@ test("8 date-only logged days and 21 without give both counts; old days and miss
   history(personA, "sauna", 8, 29);
   for (const offset of [40, 91])
     personA.session("sauna", null, 0, shiftDay(day, -offset));
-  personA.signal("hrv", 56, shiftDay(day, -90));
   assert.deepEqual(await personA.why("hrv"), [
     `Nights after a logged sauna: HRV averaged 12% higher than nights without one logged (8 vs 21 nights). ${caveat}`,
   ]);
 });
 
-test("a 4 percent difference reads no clear difference yet", async (context) => {
+test("a 4 percent difference reads no clear difference yet; an item not logged yesterday shows nothing", async (context) => {
   const { personA } = await people(context);
   history(personA, "evening_alcohol", 8, 29, 52);
+  for (const offset of [2, 3, 4, 5, 6])
+    personA.session("sauna", null, 0, shiftDay(day, -offset));
   assert.deepEqual(await personA.why("hrv"), [
     `Nights after logged alcohol: no clear difference yet in HRV (8 vs 21 nights). ${caveat}`,
   ]);
@@ -221,7 +222,6 @@ test("4 logged days keep the tier-one line; a fifth replaces it", async (context
 test("one person's pattern never counts another person's days", async (context) => {
   const { personA, personB } = await people(context);
   history(personB, "sauna", 8, 29);
-  personA.signal("hrv", 56);
-  personA.session("sauna", null, 0, previous);
+  history(personA, "sauna", 1, 29);
   assert.deepEqual(await personA.why("hrv"), []);
 });
