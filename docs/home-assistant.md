@@ -19,7 +19,7 @@ TARE_MQTT_PASSWORD=replace-with-the-broker-password
 - Leave `TARE_MQTT_URL` empty to turn the publisher off.
 - Change `TARE_HA_DISCOVERY_PREFIX` or `TARE_HA_STATUS_TOPIC` only if you changed them in Home Assistant's MQTT settings.
 
-Restart Tare. A broker that is down does not stop Tare from starting; it connects when the broker comes back.
+Recreate the Tare container to load the new settings, with `down` and then `up --detach --wait` as in [Deploy Tare](deploy.md); `docker compose restart` keeps the old settings. A broker that is down does not stop Tare from starting; it connects when the broker comes back.
 
 ## What Tare publishes
 
@@ -41,7 +41,7 @@ The device is named `Tare <username>`. Every entity on it goes unavailable when 
 
 A number can be unknown: no target until the profile is set up and there is a first weigh-in, no remaining value while any entry today lacks a value, no trend without weigh-ins, no TDEE estimate until there is enough signed-off history. Home Assistant shows these as `unknown`. Do not treat unknown as zero in templates or automations.
 
-Meal buttons come and go. A meal gets its pair when it is delivered or due today, and loses it when its last serving is eaten. Each press carries the meal's revision. A press sent again with the same revision, such as a double press, logs nothing and reports `logged` again. Any other press with an old revision logs nothing and reports `stale_revision`.
+Meal buttons come and go. A meal gets its pair when it is delivered or due today, and loses it when its last serving is eaten. Each press carries the meal's revision. A press sent again with the same revision, such as a double press, logs nothing and reports `logged` again. Any other press with an old revision logs nothing and reports `stale_revision`. A meal whose nutrition is not known yet still has buttons, but a press logs nothing and reports `meal_nutrition_pending` or `meal_nutrition_missing` until you answer its nutrition question in Tare.
 
 `target_changed` is not replayed after a restart. A change that happened while Home Assistant was offline appears in Tare but does not fire the event later.
 
