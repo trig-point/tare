@@ -75,6 +75,7 @@ describe("engine", () => {
       port: 3000,
       timezone: "UTC",
       targetWeekday: 1,
+      activityCredit: "same-day",
       publicUrl: undefined,
       mcpAllowedOrigins: [],
       sessionDays: 30,
