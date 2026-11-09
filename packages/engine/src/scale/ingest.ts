@@ -5,6 +5,8 @@ import type { ScaleConfig } from "../config.ts";
 import { scopeDatabase, type WriteScope, writeTransaction } from "../db.ts";
 import { canonicalInstant, localDay } from "../logging/day.ts";
 import { insertWeight } from "../logging/weight.ts";
+import { insertScaleReading } from "../queries/scale/insert-scale-reading.ts";
+import { selectScaleReading } from "../queries/scale/select-scale-reading.ts";
 import { selectScaleWindow } from "../queries/scale/select-scale-window.ts";
 import { selectSubjectQuestion } from "../queries/scale/select-subject-question.ts";
 import { selectWeightsBefore } from "../queries/scale/select-weights-before.ts";
@@ -101,13 +103,23 @@ export function acceptScaleReading(
   clock: Clock,
 ): "logged" | "duplicate" | "repeat" {
   const database = scopeDatabase(scope);
+  // The ledger outlives the weight row, so a deleted or edited weight is not re-logged on replay.
   if (
+    selectScaleReading(database, { client_id: reading.clientId }) ||
     selectWeightByClient(database, {
       user_id: person.id,
       client_id: reading.clientId,
     })
   )
     return "duplicate";
+  const settle = <Status extends "logged" | "repeat">(status: Status) => {
+    insertScaleReading(database, {
+      client_id: reading.clientId,
+      user_id: person.id,
+      created_at: clock.now().toISOString(),
+    });
+    return status;
+  };
   const instant = Date.parse(reading.measured_at);
   if (
     selectScaleWindow(database, {
@@ -116,7 +128,7 @@ export function acceptScaleReading(
       to: new Date(instant + WINDOW_MS).toISOString(),
     })
   )
-    return "repeat";
+    return settle("repeat");
   insertWeight(
     scope,
     person,
@@ -129,7 +141,7 @@ export function acceptScaleReading(
     },
     clock,
   );
-  return "logged";
+  return settle("logged");
 }
 
 function implausibility(

@@ -8,6 +8,7 @@ import { loadConfig, type MqttConfig } from "../src/config.ts";
 import { openDatabase, writeTransaction } from "../src/db.ts";
 import { createHomeAssistantPublisher } from "../src/home-assistant/publisher.ts";
 import { createOrderQuestionKinds } from "../src/inbound/questions.ts";
+import { deleteWeight } from "../src/queries/delete-weight.ts";
 import type { SelectQuestionResult } from "../src/queries/select-question.ts";
 import {
   createScaleSubscriber,
@@ -81,10 +82,11 @@ test("accepted readings log once with body fat, and count once within 10 minutes
   const first = fixture("2026-03-01T23:58:00.000Z", 72.4, {
     ...{ bodyFatPercent: 18.5, skeletalMusclePercent: 41 },
   });
+  const repeat = fixture("2026-03-02T00:03:00Z", 72.1);
   const sends = [
     first,
     first,
-    fixture("2026-03-02T00:03:00Z", 72.1),
+    repeat,
     fixture("2026-03-02T00:09:00Z", 72.2),
   ].map((reading) => scale.send(reading));
   assert.deepEqual(sends, ["logged", "duplicate", "repeat", "logged"]);
@@ -93,6 +95,10 @@ test("accepted readings log once with body fat, and count once within 10 minutes
     [1, 72.2, null, "scale"],
   ]);
   assert.equal(scale.refreshes(), 2);
+  for (const id of [1, 2]) deleteWeight(scale.database, { user_id: 1, id });
+  const replays = [first, repeat].map((reading) => scale.send(reading));
+  assert.deepEqual(replays, ["duplicate", "duplicate"]);
+  assert.equal(scale.weights().length, 0);
 });
 
 test("an implausible reading is a question that never starts the window; keeping it logs once", () => {
