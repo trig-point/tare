@@ -34,3 +34,5 @@ export function withUnit<Row extends { metric: string; value: number }>(
   const label = entry.labels?.[row.value];
   return { ...row, metric, unit: entry.unit, ...(label ? { label } : {}) };
 }
+// Checked here rather than in a CHECK so adding a key needs no table rebuild.
+export const habitKey = zod.enum(["evening_alcohol", "late_caffeine"]);

@@ -73,6 +73,8 @@ test("registry constrains public and administrator operations and inventories ev
       "answer_question",
       "log_signal",
       "log_activity",
+      "log_habit",
+      "delete_habit",
       "read_signals",
       "replace_activity_sets",
       "read_activities",
