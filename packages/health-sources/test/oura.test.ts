@@ -54,6 +54,15 @@ const sample: OuraData = {
     { day: "2026-01-02", score: 81 },
     { day: "2026-01-03", score: null },
   ],
+  daily_sleep: [
+    { day: "2026-01-02", score: 0 },
+    { day: "2026-01-03", score: null },
+  ],
+  daily_stress: [
+    { day: "2026-01-02", stress_high: 5430, recovery_high: 0 },
+    { day: "2026-01-02", day_summary: "stressful" },
+    { day: "2026-01-03", stress_high: null, day_summary: null },
+  ],
   workout: [
     {
       id: "workout-run",
@@ -80,6 +89,10 @@ test("maps each endpoint into the signals vocabulary and keeps every period and 
     { day: "2026-01-02", metric: "steps", value: 8123 },
     { day: "2026-01-02", metric: "active_calories", value: 412 },
     { day: "2026-01-02", metric: "readiness", value: 81 },
+    { day: "2026-01-02", metric: "sleep_score", value: 0 },
+    { day: "2026-01-02", metric: "stress_high", value: 90.5 },
+    { day: "2026-01-02", metric: "recovery_high", value: 0 },
+    { day: "2026-01-02", metric: "stress_summary", value: 2 },
     { day: "2026-01-02", metric: "sleep", value: 450 },
     { day: "2026-01-02", metric: "resting_heart_rate", value: 52 },
     { day: "2026-01-02", metric: "hrv", value: 40 },
@@ -136,7 +149,10 @@ test("fetches the whole window in one call per endpoint and follows next_token",
       Response.json({ data: [sample.workout[1]] }),
     ],
   });
-  const data = await fetchOura(options);
+  const data = await fetchOura({
+    ...options,
+    startDates: { daily_sleep: "2025-12-01" },
+  });
   assert.ok(typeof data !== "string");
   assert.equal(data.workout.length, 2);
   assert.deepEqual(
@@ -147,6 +163,8 @@ test("fetches the whole window in one call per endpoint and follows next_token",
       "daily_activity start_date=2026-01-01&end_date=2026-01-08",
       "sleep start_date=2026-01-01&end_date=2026-01-08",
       "daily_readiness start_date=2026-01-01&end_date=2026-01-08",
+      "daily_sleep start_date=2025-12-01&end_date=2026-01-08",
+      "daily_stress start_date=2026-01-01&end_date=2026-01-08",
       "workout start_date=2026-01-01&end_date=2026-01-08",
       "workout start_date=2026-01-01&end_date=2026-01-08&next_token=invented-next",
     ],

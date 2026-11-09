@@ -17,6 +17,15 @@ const period = (owner: number, id: string, minutes: number) => ({
 });
 function bodies(owner: number, sleep = true) {
   return {
+    daily_sleep: [{ day: today, score: sleep ? 80 + owner : null }],
+    daily_stress: [
+      {
+        day: today,
+        stress_high: 1800,
+        recovery_high: 0,
+        day_summary: "normal",
+      },
+    ],
     daily_activity: [{ day: today, steps: 1000 * owner, active_calories: 300 }],
     sleep: sleep ? [period(owner, "night", 400), period(owner, "nap", 20)] : [],
     daily_readiness: [{ day: today, score: 70 + owner }],
@@ -35,6 +44,7 @@ function harness(context: TestContext) {
   for (const owner of [1, 2])
     fixture.seed(owner, 0, new Date(origin + 86_400_000).toISOString());
   const replies = new Map<number, (endpoint: string) => Response>();
+  const requests: string[] = [];
   const reply =
     (owner: number, sleep = true) =>
     (endpoint: string) =>
@@ -50,6 +60,7 @@ function harness(context: TestContext) {
       const owner = Number(
         String(new Headers(init.headers).get("authorization")).at(-1),
       );
+      requests.push(`${url.pathname} ${url.searchParams.get("start_date")}`);
       return (replies.get(owner) as (endpoint: string) => Response)(
         url.pathname.split("/").at(-1) as string,
       );
@@ -66,7 +77,7 @@ function harness(context: TestContext) {
       count(table, owner),
     );
   const run = () => job.run({ signal: new AbortController().signal });
-  return { ...fixture, replies, reply, counts, run };
+  return { ...fixture, replies, reply, requests, counts, run };
 }
 
 test("a run stores each person's own signals and last sync; re-runs and overlapping runs add nothing", async (context) => {
@@ -75,8 +86,8 @@ test("a run stores each person's own signals and last sync; re-runs and overlapp
   assert.deepEqual(
     [sync.counts(1), sync.counts(2)],
     [
-      [6, 2, 2],
-      [6, 2, 2],
+      [10, 2, 2],
+      [10, 2, 2],
     ],
   );
   const steps = sync.database
@@ -97,8 +108,8 @@ test("a run stores each person's own signals and last sync; re-runs and overlapp
   assert.deepEqual(
     [sync.counts(1), sync.counts(2)],
     [
-      [6, 2, 2],
-      [6, 2, 2],
+      [10, 2, 2],
+      [10, 2, 2],
     ],
   );
 });
@@ -113,7 +124,7 @@ test("a storing failure leaves last sync unchanged and stores nothing; missing s
   assert.deepEqual(
     [sync.counts(1), sync.counts(2)],
     [
-      [3, 0, 2],
+      [6, 0, 2],
       [0, 0, 0],
     ],
   );
@@ -152,4 +163,25 @@ test("a 401 after the token's stored expiry leaves the connection connected", as
   });
   await assert.rejects(sync.run());
   assert.equal(sync.row(2)?.status, "connected");
+});
+
+test("the first run after upgrade re-reads 30 days of sleep score and stress, once", async (context) => {
+  const sync = harness(context);
+  const earlier = "2025-12-31T12:00:00.000Z";
+  sync.database
+    .prepare("UPDATE oura_connections SET last_synced_at = ?")
+    .run(earlier);
+  const starts = () =>
+    sync.requests.splice(0).filter((line) => line.includes("/daily_s"));
+  await sync.run();
+  assert.equal(
+    sync.row(1)?.scores_backfilled_at,
+    new Date(origin).toISOString(),
+  );
+  assert.match(
+    starts().join(),
+    /daily_sleep 2025-12-02,.*daily_stress 2025-12-02/,
+  );
+  await sync.run();
+  assert.match(starts()[0] as string, /daily_sleep 2025-12-28/);
 });

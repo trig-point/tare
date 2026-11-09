@@ -58,6 +58,11 @@ export function createOuraSyncJob({
       accessToken: access.accessToken,
       startDate: resume > earliest ? resume : earliest,
       endDate: shiftDay(today, 1),
+      ...(person.scores_backfilled_at
+        ? {}
+        : {
+            startDates: { daily_sleep: earliest, daily_stress: earliest },
+          }),
       signal,
       wait,
       ...(fetch ? { fetch } : {}),

@@ -209,6 +209,41 @@ test("two sources for one metric render only the preferred one", () => {
   assert.doesNotMatch(html, /800|41 ms|Agent/);
 });
 
+test("Oura scores render in order, with whole minutes and the stress category as text", () => {
+  const oura = (
+    metric: string,
+    unit: string,
+    value: number,
+    label?: string,
+  ) => ({ metric, unit, value, source: "oura", label });
+  const response = (...signals: unknown[]) => ({
+    day: "2026-01-02",
+    activities: [],
+    signals,
+  });
+  const rows = health.bodyRows(
+    health.signalsSchema.parse(
+      response(
+        oura("stress_summary", "category", 2, "stressful"),
+        oura("stress_high", "minutes", 90.5),
+        oura("sleep_score", "score", 81),
+      ),
+    ).signals,
+  );
+  assert.deepEqual(
+    rows.map(
+      (entry) =>
+        `${health.metricLabels[entry.metric]} ${health.signalText(entry)}`,
+    ),
+    ["Sleep score 81", "High stress 91 min", "Stress summary Stressful"],
+  );
+  assert.ok(
+    !health.signalsSchema.safeParse(
+      response(oura("stress_summary", "category", 2)),
+    ).success,
+  );
+});
+
 test("settings renders the Oura connection states", () => {
   const account = {
     ...{ id: 1, username: "example-person", timezone: "UTC" },
