@@ -128,6 +128,8 @@ Relative filesystem paths resolve from `/app/packages/engine` in the image.
 | `TARE_MQTT_PASSWORD` | Unset | Broker password. This is a secret: supply it through the environment, never in a file you commit. Trimmed; empty counts as unset. Set it with `TARE_MQTT_USERNAME` or leave both unset. |
 | `TARE_HA_DISCOVERY_PREFIX` | `homeassistant` | Home Assistant discovery prefix, an MQTT topic without wildcards or empty levels. Trimmed; empty uses the default. |
 | `TARE_HA_STATUS_TOPIC` | `homeassistant/status` | Topic where Home Assistant publishes `online` on start, set apart from the discovery prefix. Same topic rules; empty uses the default. |
+| `TARE_SCALE_USERS` | Unset (scale weigh-ins disabled) | JSON map from scale user to Tare username, for example `{"alex":"alex"}`. Requires `TARE_MQTT_URL`. Keys are single topic levels other than `status`; usernames must exist and be distinct. Empty or `{}` counts as unset; invalid values prevent startup. |
+| `TARE_SCALE_TOPIC` | `scale/body-composition` | Base topic of the scale's readings; Tare reads `<topic>/<scale user>`. Same topic rules as the discovery prefix; used only when `TARE_SCALE_USERS` is set. |
 | `TARE_USDA_API_KEY` | Unset (USDA disabled) | USDA FoodData Central API key. Trimmed; empty disables USDA requests. |
 | `TARE_OFF_USER_AGENT` | Unset (Open Food Facts disabled) | Must follow `AppName/Version (ContactEmail)`, for example `Tare/1.0 (support@example.com)`. Trimmed; empty disables requests. |
 
