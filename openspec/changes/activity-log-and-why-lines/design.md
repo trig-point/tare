@@ -54,24 +54,24 @@ The mean of the selected source's `active_calories` over the 28 days before the 
 
 ### Same-day or next-day credit, set by the probe
 
-Task 1.1 probes whether Oura's daily activity record for today updates during the day and how often the ring syncs to Oura's cloud, keeps the result as evidence, and sets the credit mode, which is configuration.
+Task 1.1 probes whether Oura's daily activity record for today updates during the day and how often the ring syncs to Oura's cloud, keeps the result as evidence, and sets the credit mode. The mode is configuration: `next-day` by default, since it needs no schedule change, or `same-day`; an invalid value stops startup, as Tare's other configuration does.
 
 - **Same day (probe positive):** the sync moves from `0 7 * * *` to `0 * * * *`, the calendar refresh's precedent, and today's bonus is `max(0, today so far minus the average)`, capped. Burn accrues through the day, so on a morning workout day the bonus appears once the day's burn passes the full-day average, usually by midday, and lands in the slots that have not ended.
-- **Next day (probe negative):** once yesterday's full burn has synced, its extra over the 28-day average (the 28 days before yesterday) goes onto today's target, rise-only and capped. The existing 7:00 sync already delivers yesterday, so the schedule stays. The card says "+250 from yesterday's activity."
+- **Next day (probe negative):** once a stored reading exists for yesterday, its extra over the 28-day average (the 28 days before yesterday) goes onto today's target, rise-only and capped. The existing 7:00 sync already delivers yesterday, so the schedule stays. The card says "+250 from yesterday's activity.", or "+500 from yesterday's activity (capped)" at the cap.
 
 A positive probe that later stops holding is not detected automatically in V1. Oura's limit is far above 24 hourly runs a day; the task runs one real hourly sync and keeps the output as evidence.
 
 ### Day boundary and stale readings
 
-Oura's daily record starts at 4 AM; Tare's day starts at the person's own day-start hour. The bonus for Tare day D reads the Oura record whose `day` is D, as the sync already stores it, and the hours between the two boundaries belong to Oura's day. This is accepted and stated rather than corrected. `updated_at` changes on every fetch, so it does not prove a fresh ring reading; the bonus does not need that proof, because it is rise-only and a stale low value can only under-credit. The card shows the burn value and the last sync time.
+Oura's daily record starts at 4 AM; Tare's day starts at the person's own day-start hour. The credited day C reads the Oura record whose `day` is C, as the sync already stores it: today in same-day mode, yesterday in next-day mode. The hours between the two boundaries belong to Oura's day. This is accepted and stated rather than corrected. `updated_at` changes on every fetch, so it does not prove a fresh ring reading; the bonus does not need that proof, because it is rise-only and a stale low value can only under-credit. The card shows the burn value and the last sync time.
 
 ### Cases
 
-- Awaiting data (an eligible source, but no reading for the credited day yet): the target is B; the card says "Activity: waiting for today's data."
-- No usable source (no eligible tracker, or under 14 days with a reading): the target is B; the card says "Activity bonus after 14 days of tracker data."
-- The cap is unmeasured: configuration with an assumed default of 500 kcal. A capped day shows "+500 from activity (capped)".
-- Whole calories: the reader rounds the bonus after the cap to whole kcal before adding it, once, so base plus bonus is an integer and slot budgets stay integers. The build lane picks the step (1 or 10 kcal).
-- The reader's result gains the base, the bonus (status, kcal, source, mode, capped) and the total; `kcal` stays the total, so `/api/today` remaining kcal and every plan read pick the bonus up with no second calculation. Ended slots keep their budgets. The web schema and target card are updated in the same task.
+- No usable source (no eligible tracker, or under 14 days with a reading): the target is B; the card says "Activity bonus after 14 days of tracker data." This message wins when the awaiting case also applies.
+- Awaiting data (a usable source, but no reading for the credited day yet): the target is B; the card says "Activity: waiting for today's data." in same-day mode or "Activity: waiting for yesterday's data." in next-day mode.
+- The cap is unmeasured: configuration with an assumed default of 500 kcal. A capped day shows "+500 from activity (capped)", or "+500 from yesterday's activity (capped)" in next-day mode.
+- Whole calories: the reader rounds the bonus after the cap to whole kcal before adding it, once, so base plus bonus is an integer and slot budgets stay integers. A mean of 430.6 against 680 gives 249.4, so the bonus is 249 kcal.
+- The reader's result gains the base, the bonus (status, kcal, source, mode, capped, the credited day, the credited burn, the 28-day average and the source's last sync time) and the total; `kcal` stays the total, so `/api/today` remaining kcal and every plan read pick the bonus up with no second calculation. Ended slots keep their budgets. The web schema and target card are updated in the same task.
 - A guard test proves HRV, sleep, sessions, session calories, habit notes, and `manual` or `agent` active calories written through `log_signal` never change the target, and that tracker active calories change it only through the capped, rise-only bonus.
 
 ### Keeping an open page current
@@ -86,18 +86,21 @@ Date-only sessions are left out of every rule that needs a time: workout pairing
 
 Sauna and cold plunge are sessions, with kinds `sauna` and `cold_plunge`. A fixed category list maps each kind to `strength`, `cardio`, `sauna`, `cold_plunge` or `other`; Oura's activity strings map through a fixed table, and an unknown string maps to `other`, shows as an unpaired row and is counted in telemetry, never dropped. Session calories stay the tracker's estimate for that workout, shown on the row and never added to burn, intake or the target.
 
-`activity_sets` holds one row per set: `user_id`, `session_id` (composite reference to `activity_sessions (user_id, id)`), `set_index` (1 and up), `exercise` (nonblank), `set_type` (`warmup`, `working`, `drop`, `failure`; default `working`), nullable `reps`, `load_kg` (0 or more, always kilograms; pounds converted before storing), `load_unit` (`kg` or `lb`, display only), nullable `duration_seconds`, `rir_low` and `rir_high` (0 to 10, low at most high), nullable `notes`, and `UNIQUE (user_id, session_id, set_index)`.
+`activity_sets` holds one row per set: `user_id`, `session_id` (composite reference to `activity_sessions (user_id, id)`), `set_index` (1 and up), `exercise` (nonblank), `set_type` (`warmup`, `working`, `drop`, `failure`; default `working`), nullable `reps`, `load_kg` (0 or more, always kilograms; pounds converted at 0.45359237 kg per lb and stored unrounded, so 50 lb is stored as 22.6796185 kg and reads back as 50 lb, rounded to one decimal in the given unit), `load_unit` (`kg` or `lb`, display only), nullable `duration_seconds`, `rir_low` and `rir_high` (0 to 10, low at most high), nullable `notes`, and `UNIQUE (user_id, session_id, set_index)`.
 
 ### Operations and limits
 
-All operations are `browser_and_agent` in the existing registry, so each is an HTTP route and an MCP tool with the existing person guard. The MCP route caps a whole request at 65,536 bytes, so `log_activity` and `replace_activity_sets` get a 60,000-byte operation limit, leaving headroom for the tool-call envelope; the set cap is derived from it, and a test posts the largest allowed session over both HTTP and MCP.
+All operations are `browser_and_agent` in the existing registry, so each is an HTTP route and an MCP tool with the existing person guard. The MCP route caps a whole request at 65,536 bytes, so `log_activity` and `replace_activity_sets` get a 60,000-byte operation limit, leaving headroom for the tool-call envelope. Text limits make the set cap fixed and testable: an exercise is at most 80 characters, a set's notes at most 200 and a session's notes at most 1,000, and a session carries at most 40 sets. At four bytes a character, 40 full sets come to about 53,000 bytes and the session notes to 4,000, under the limit; the byte limit still rejects anything larger. A test posts the largest allowed session over both HTTP and MCP, and a 41st set is rejected.
 
 - `log_activity` takes optional `notes`, `sets` and `timing`. Exact requires `started_at` and a positive `duration_minutes` as today; date-only takes a `day` and refuses both. Session and sets are written in one transaction; a replay with the same `client_id` returns the stored session and writes nothing. New logging controls always send a `client_id` and reuse it across retries.
 - `replace_activity_sets` is a full replacement in one transaction: an identical retry leaves the same set list, and an empty list removes all sets.
 - `read_activities` returns merged workouts with their sets for a date range.
+- `delete_activity` removes one `manual` or `agent` session the person owns, with its sets, in one transaction. Tracker sessions cannot be deleted.
 - `log_habit` upserts by `(user_id, day, habit_key)`; `delete_habit` removes the row, which is how an entry is undone.
 
-Composite keys enforce ownership. Operation-level tests show that `log_activity` sets, `replace_activity_sets` (an empty replacement included) and `read_activities` on another person's session fail and change no rows.
+Editing on the Body card uses these operations: a workout's sets are edited through `replace_activity_sets` and a habit by logging it again for the same day; a workout is deleted with `delete_activity` and a habit with `delete_habit`.
+
+Composite keys enforce ownership. Operation-level tests show that `log_activity` sets, `replace_activity_sets` (an empty replacement included), `delete_activity` and `read_activities` on another person's session fail and change no rows.
 
 ### One merged-workouts read
 
@@ -118,7 +121,7 @@ A session maps to `ExerciseSessionRecord`, with sauna and cold plunge falling ba
 
 ### Scale body fat as a weighted, slow measure
 
-Every reading is stored and shown. The trend uses the first weigh-in of each day; a reading within 12 hours after a timed workout or sauna from the merged read is shown marked "after a workout" and left out of the trend. A date-only session never excludes a reading. The current level is the median of the trend readings in the last 28 days; the trend is the change between that level and the median of the 28 days before it. Each window needs at least 8 trend readings, or Tare shows the readings and says "not enough readings for a trend". A change under 2 points reads "within this scale's error of about 2 points". The reading alone cannot separate fat from muscle, so Tare states it beside the training log and weight trend: "No strength sessions logged in 3 weeks. Weight down 1.2 kg. Body fat reading up 1 point, within this scale's error." A body fat history read and its client schema are added, since today's read selects weight only.
+Every reading is stored and shown. A day's trend reading is that day's first weigh-in with a body fat value; a reading within 12 hours after a timed workout or sauna from the merged read is shown marked "after a workout" and left out, and a day whose first such reading is marked has no trend reading. A date-only session never excludes a reading. The current level is the median of the trend readings in the last 28 days; the trend is the change between that level and the median of the 28 days before it. Each window needs at least 8 trend readings, or Tare shows the readings and says "not enough readings for a trend". A change under 2 points reads "within this scale's error of about 2 points". The reading alone cannot separate fat from muscle, so Tare states it beside the training log and weight trend in one line of three sentences: the training sentence ("No strength sessions logged in 3 weeks." or "<N> strength sessions logged in 3 weeks."), the weight trend's change over the same 28 days as the body fat level ("Weight down 1.2 kg."), and the body fat change, with "within this scale's error" under 2 points ("Body fat reading up 1 point, within this scale's error.") and without it from 2 points ("Body fat reading up 2.4 points."). A body fat history read and its client schema are added, since today's read selects weight only.
 
 ### Why-lines
 
@@ -126,14 +129,14 @@ Two tiers, worded as co-occurrence; a line never says "because".
 
 Tier one fires when burn, HRV, resting heart rate or sleep is more than 1 standard deviation from its 28-day baseline. The baseline excludes the day and needs 14 days of that signal; no line when its standard deviation is zero; HRV also needs a 10 percent change. Burn lines use every burn source, hand-entered included, each labelled with its source; the web `bodyRows` filter changes so burn lines draw from every source row. Date-only sessions count only in rules keyed to the day. Candidates and templates are fixed:
 
-- Burn up, with a strength or cardio session that day: "Burn 640 kcal, above your usual 430. You logged a 55-minute workout."
+- Burn up, with a strength or cardio session that day, timed or date-only: "Burn 640 kcal, above your usual 430. You logged a 55-minute workout." The minutes come from the longest timed strength or cardio session that day. When only date-only sessions match: "Burn 640 kcal, above your usual 430. You logged a workout."
 - HRV down or resting heart rate up, with a strength or cardio session of 30 minutes or more ending within 4 hours of sleep start: "You trained within 4 hours of bed. Late hard workouts are linked to lower HRV." The 30-minute floor stands in for "hard"; an assumption.
 - HRV down, with evening alcohol logged: "You logged alcohol last evening. Alcohol is linked to lower HRV."
-- HRV or resting heart rate changed in either direction, with sauna or cold plunge the day before: "You logged sauna yesterday. Its effect on HRV is not settled." No sauna effect size passed the research gate and sources disagreed on direction, so the line states the fact and the uncertainty.
+- HRV or resting heart rate changed in either direction, with a timed sauna or cold plunge session in the day or night before: "You logged sauna yesterday. Its effect on HRV is not settled." or "You logged cold plunge yesterday. Its effect on HRV is not settled.", naming the signal that fired ("Its effect on resting heart rate is not settled." when resting heart rate fired). The window needs a time, so a date-only sauna or cold plunge never triggers it. No sauna effect size passed the research gate and sources disagreed on direction, so the line states the fact and the uncertainty.
 
-Attribution: "the day or night before" means sessions that ended after the previous main sleep ended and before this night's main sleep started; the main sleep is the day's longest sleep period. An evening habit logged for day D belongs to the night that starts on D. Every firing candidate is shown. General-finding sentences carry no numbers and are checked against the cited research before they ship. Lines are computed on the server and returned in `read_signals` as a `why` list per signal.
+Attribution: "the day or night before" means sessions that ended after the previous main sleep ended and before this night's main sleep started; the main sleep is the day's longest sleep period. An evening habit logged for day D belongs to the night that starts on D. Every firing candidate is shown; a firing signal with no matching candidate shows no line. Sleep has no tier-one candidate in this change (its baseline is still computed, and sleep is used in tier two), and `late_caffeine` is used only in tier two. General-finding sentences carry no numbers and are checked against the cited research before they ship. Lines are computed on the server and returned in `read_signals` as a `why` list per signal.
 
-Tier two: once an item has at least 5 logged days and 5 days without a log in the last 90, each with the signal present: "Nights after a logged sauna: HRV averaged 8% higher than nights without one logged (8 vs 21 nights). Small sample; days you log may differ from days you don't in other ways." Counts and the caveat are always shown; no significance tests. The comparison is between logged days and days without a log, never "did" against "did not"; which days get logged is not random, so the line describes an association with unknown logging bias. A difference under about 10 percent reads "no clear difference yet". A personal pattern replaces the tier-one wording for that item.
+Tier two covers (item, signal) pairs: the items are the logged session categories (`strength`, `cardio`, `sauna`, `cold_plunge`) and each habit key (`evening_alcohol`, `late_caffeine`); the signals are HRV, resting heart rate and sleep. The late workout is not a tier-two item, because it needs a time. A day with the item logged maps to the night that starts on it, so a date-only session counts for its day with no time rule. Once a pair has at least 5 logged days and 5 days without a log in the last 90, each with the signal present on the following night, the line appears beside the signal on a night after the item was logged, replacing that item's tier-one wording: "Nights after a logged sauna: HRV averaged 8% higher than nights without one logged (8 vs 21 nights). Small sample; days you log may differ from days you don't in other ways." A difference under 10 percent reads "Nights after a logged sauna: no clear difference yet in HRV (8 vs 21 nights). Small sample; days you log may differ from days you don't in other ways.", keeping both counts and the caveat. No significance tests. The comparison is between logged days and days without a log, never "did" against "did not"; which days get logged is not random, so the line describes an association with unknown logging bias.
 
 ### Gym log import
 
@@ -157,6 +160,4 @@ Each schema task ships its own numbered migration; the session table rebuild sta
 
 ## Open Questions
 
-1. The operator's yes on the approach, which MHA-244 needs before build tickets are filed.
-
-Decided on Nov 8: rise-only bonus on B with no offset; next-day credit if Oura does not update during the day; hand-entered burn shown and used in why-lines but never driving the bonus; the gym log as date-only sessions with their sets, left out of every timing rule.
+None.
