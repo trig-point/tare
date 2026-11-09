@@ -172,14 +172,15 @@ test("shape mismatches are counted and write nothing; the status topic is ignore
 
 test("scale settings fail startup when invalid and need a mapping to enable", () => {
   const env = { DATABASE_URL: ":memory:", TARE_MQTT_URL: "mqtt://127.0.0.1" };
-  for (const [users, url] of [
+  for (const [users, url = env.TARE_MQTT_URL, error = /distinct/] of [
     ['{"alex":"example-alex","sam":"example-alex"}'],
     ['{"status":"example-alex"}'],
     ['{"alex/two":"example-alex"}'],
-    ['{"alex":"example-alex"}', ""],
-  ])
-    assert.throws(() =>
-      loadConfig({ ...env, TARE_SCALE_USERS: users, TARE_MQTT_URL: url }),
+    ['{"alex":"example-alex"}', "", /requires TARE_MQTT_URL/],
+  ] as const)
+    assert.throws(
+      () => loadConfig({ ...env, TARE_SCALE_USERS: users, TARE_MQTT_URL: url }),
+      error,
     );
   assert.equal(loadConfig({ ...env, TARE_SCALE_TOPIC: "scales" }).scale, null);
   const scale = { topic: BASE, users: { alex: "nobody" } };
