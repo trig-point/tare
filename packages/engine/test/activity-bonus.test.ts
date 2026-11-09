@@ -109,7 +109,7 @@ test("guard: hand-entered burn, HRV, sleep, sessions, session calories and habit
   const before = read();
   assert.equal(before.kcal, 2430);
   for (const metric of ["hrv", "sleep", "resting_heart_rate", "steps"])
-    burn(today, 9000, usual, { metric });
+    burn(today, 9000, Array(28).fill(50), { metric });
   for (const [path, body] of [
     ["/api/signals", { metric: "active_calories", value: 3000 }],
     ["/api/signals", { metric: "hrv", value: 15 }],
