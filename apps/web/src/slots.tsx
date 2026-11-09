@@ -9,7 +9,7 @@ import {
   type Plan,
   type PlannedItem,
   planKey,
-  readPlan,
+  planQuery,
 } from "./plan-api.ts";
 import { displayNumber, refreshToday } from "./today-api.ts";
 
@@ -25,11 +25,7 @@ const actions: [ItemAction, string][] = [
 ];
 
 export function Slots({ person, online }: { person: number; online: boolean }) {
-  const plan = useQuery({
-    queryKey: planKey(person),
-    queryFn: ({ signal }) => readPlan(signal),
-    enabled: online,
-  });
+  const plan = useQuery({ ...planQuery(person), enabled: online });
   return (
     <SlotList
       person={person}

@@ -64,3 +64,9 @@ export function signOutTarget(session: Session) {
     ? { href: session.logout_url }
     : { method: "DELETE" as const, path: "/api/session" };
 }
+
+// Tracker syncs write on the server, so an open page polls for them.
+export const liveRefresh = {
+  refetchInterval: 15 * 60_000,
+  refetchOnWindowFocus: true,
+} as const;

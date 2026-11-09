@@ -42,6 +42,7 @@ services:
       TARE_OURA_REDIRECT_URL: ${TARE_OURA_REDIRECT_URL:-}
       TARE_OURA_TOKEN_KEY: ${TARE_OURA_TOKEN_KEY:-}
       TARE_ACTIVITY_CREDIT: ${TARE_ACTIVITY_CREDIT:-same-day}
+      TARE_ACTIVITY_BONUS_CAP: ${TARE_ACTIVITY_BONUS_CAP:-500}
     volumes:
       - tare-data:/data
       - tare-backups:/backups

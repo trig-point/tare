@@ -122,6 +122,7 @@ Relative filesystem paths resolve from `/app/packages/engine` in the image.
 | `TARE_OURA_REDIRECT_URL` | Unset (Oura disabled) | Exact callback URL registered with Oura: absolute HTTP or HTTPS, no fragment. Trimmed; empty counts as unset. Set all three Oura application settings or none. |
 | `TARE_OURA_TOKEN_KEY` | Unset (no new Oura connections) | Canonical base64 for 32 bytes that encrypts stored Oura tokens. Malformed values prevent startup. Back it up separately from database copies; restoring without it requires reconnecting. |
 | `TARE_ACTIVITY_CREDIT` | `same-day` | When Oura activity counts toward the day's target: `same-day` syncs Oura every hour, and `next-day` syncs once a day at 7:00 AM in `TARE_TIMEZONE`. Trimmed and case-insensitive; empty uses the default. Other values prevent startup. |
+| `TARE_ACTIVITY_BONUS_CAP` | `500` | Largest daily activity bonus in kcal, an integer from 1 to 2000. Trimmed; empty uses the default. Other values prevent startup. |
 | `TARE_USDA_API_KEY` | Unset (USDA disabled) | USDA FoodData Central API key. Trimmed; empty disables USDA requests. |
 | `TARE_OFF_USER_AGENT` | Unset (Open Food Facts disabled) | Must follow `AppName/Version (ContactEmail)`, for example `Tare/1.0 (support@example.com)`. Trimmed; empty disables requests. |
 

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { api } from "./api.ts";
+import { api, liveRefresh } from "./api.ts";
 import { displayNumber } from "./today-api.ts";
 
 const metrics = [
@@ -107,6 +107,11 @@ export async function readSignals(day: string, signal: AbortSignal) {
     await api(`/api/signals/${encodeURIComponent(day)}`, { signal }),
   );
 }
+export const signalsQuery = (person: number, day: string) => ({
+  queryKey: signalsKey(person, day),
+  queryFn: ({ signal }: { signal: AbortSignal }) => readSignals(day, signal),
+  ...liveRefresh,
+});
 const send = (path: string, method: string, body?: unknown) =>
   api(path, {
     method,

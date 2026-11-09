@@ -23,6 +23,17 @@ const profile = {
   activity_level: "moderate",
   goal_rate_kg_week: -0.5,
 };
+const bonus = {
+  status: "no_source",
+  kcal: 0,
+  capped: false,
+  mode: "same-day",
+  day: "2026-01-01",
+  source: null,
+  burn_kcal: null,
+  average_kcal: null,
+  last_synced_at: null,
+};
 const adaptive = {
   status: "learning",
   reason: "signed_days",
@@ -151,6 +162,8 @@ for (const mode of ["fallback", "access"] as const)
       basis: "live_formula",
       adaptive,
       kcal: 2130,
+      base_kcal: 2130,
+      bonus,
       protein_g: 128,
       trend_kg: 80,
     };
@@ -186,6 +199,8 @@ for (const mode of ["fallback", "access"] as const)
       basis: "live_formula",
       adaptive,
       kcal: 2030,
+      base_kcal: 2030,
+      bonus,
       protein_g: 160,
       trend_kg: 80,
     });

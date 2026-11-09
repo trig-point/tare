@@ -83,6 +83,21 @@ The system SHALL recompute and store each person's targets in a weekly job on a 
 - **WHEN** the weekly recompute runs for a person who has not weighed in yet
 - **THEN** nothing is stored for them, today still shows no target, and their first weigh-in shows the formula target immediately
 
+### Requirement: Activity bonus on the day's target
+The day's calorie target SHALL be the stored or formula target from the one target reader (the base, B) plus an activity bonus: the larger of zero and the credited day's active calories from the selected tracker minus that tracker's mean over the 28 days before the credited day, counting only days with a reading, limited to a configurable cap (default 500 kcal) and then rounded once to whole kcal. The bonus SHALL need readings on at least 14 of those days. There SHALL be no offset, so a quiet day gets B. Only trackers on a fixed engine-side list (`oura`) SHALL drive it, one selected per person in list order and never summed; `manual` and `agent` burn SHALL never drive it. In same-day credit mode the credited day is today, using its burn so far; in next-day mode it is yesterday, credited onto today. Tare day D SHALL read the tracker's record for day D as the sync stores it, even though Oura's day starts at 4 AM and the person's day may start at another hour. The reader SHALL return the base, its basis, the bonus (status, kcal, capped, mode, credited day, source, credited burn, mean and last sync time) and `kcal` as the total, so remaining kcal and every plan read use the total and slots that have ended keep their budgets. The weekly estimate, the stored target and the weekly notice SHALL keep using B. The week's targets SHALL run above B on average by the bonuses, with no automatic correction. The target card SHALL show "Base 2,180. +250 from activity." with the credited burn and last sync time, "Activity: waiting for today's data." (or yesterday's) before the credited day has a reading, and "Activity bonus after 14 days of tracker data." when no tracker is usable. The Today page SHALL refetch today, plan and signals on window focus and every 15 minutes.
+
+#### Scenario: Training day
+- **WHEN** B is 2,180 kcal, the tracker's mean is 430 kcal and today shows 680 kcal so far
+- **THEN** today's target is 2,430 kcal and the card shows "Base 2,180. +250 from activity."
+
+#### Scenario: Quiet day
+- **WHEN** today's burn so far is 120 kcal against a mean of 430 kcal
+- **THEN** the bonus is zero and the target is B
+
+#### Scenario: Capped
+- **WHEN** the credited burn is 1,200 kcal above the mean
+- **THEN** the bonus is 500 kcal and the card shows "+500 from activity (capped)"
+
 ### Requirement: Weekly target notice in the app
 When a recompute changes a person's calorie or protein target, the app's today screen SHALL show a notice with the old and new target, stored per person until they dismiss it.
 
