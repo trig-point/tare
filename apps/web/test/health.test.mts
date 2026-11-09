@@ -7,8 +7,9 @@ import { cookie, fixture } from "../../../packages/engine/test/auth-support.ts";
 import { twoUsers } from "../../../packages/engine/test/support/two-users.ts";
 import * as health from "../src/health-api.ts";
 import type { OutboxReplay } from "../src/outbox-replay.ts";
+import { planKey } from "../src/plan-api.ts";
 import { accountKey } from "../src/settings-api.ts";
-import { readToday, todayKey } from "../src/today-api.ts";
+import { readToday, refreshToday, todayKey } from "../src/today-api.ts";
 import { test } from "./support.mts";
 import "./tsx.mts";
 
@@ -84,7 +85,7 @@ test("today renders the Body card beside intake and no Oura card", async (contex
     { ...signals, signals: [] },
     { status: "membership_required" },
   );
-  assert.match(blocked, /No signals/);
+  assert.match(blocked, /Nothing logged/);
   assert.doesNotMatch(blocked, /#settings/);
 });
 
@@ -190,6 +191,7 @@ test("two sources for one metric render only the preferred one", () => {
         health.signalsSchema.parse({
           day,
           activities: [],
+          habits: [],
           signals: [
             { ...steps, value: 750, source: "manual", why: [] },
             { ...steps, value: 800, source: "oura", why: [] },
@@ -222,6 +224,7 @@ test("the Body card shows each signal's why-lines and every burn source", () => 
         health.signalsSchema.parse({
           day,
           activities: [],
+          habits: [],
           signals: [
             { ...burn, value: 640, source: "manual", why: [burnLine] },
             { ...burn, value: 305, source: "oura", why: [] },
@@ -259,6 +262,7 @@ test("Oura scores render in order, with whole minutes and the stress category as
   const response = (...signals: unknown[]) => ({
     day: "2026-01-02",
     activities: [],
+    habits: [],
     signals,
   });
   const rows = health.bodyRows(
@@ -315,4 +319,161 @@ test("a page restored from the back-forward cache resets connect", () => {
   stop();
   show(true);
   assert.equal(resets, 1);
+});
+
+const activityDay = "2026-01-02";
+const set = {
+  ...{ set_index: 1, exercise: "Goblet squat", set_type: "working" },
+  ...{ reps: 8, load: 50, load_unit: "lb", load_kg: 22.68 },
+  ...{ duration_seconds: null, rir_low: 3, rir_high: 4, notes: null },
+};
+const workout = {
+  ...{ id: 7, timing: "exact", started_at: "2026-01-02T18:00:00.000Z" },
+  ...{ day: activityDay, duration_minutes: 60, kind: "strength" },
+  ...{ category: "strength", calories: 310, notes: null, source: "manual" },
+  ...{ tracker: { id: 8, source: "oura" }, sets: [set] },
+};
+const dateOnly = {
+  ...workout,
+  ...{ id: 9, timing: "date_only", started_at: null, duration_minutes: null },
+  ...{ calories: null, tracker: null, sets: [] },
+};
+const ouraWalk = {
+  ...workout,
+  ...{ id: 10, kind: "walk", category: "cardio", source: "oura" },
+  ...{ tracker: null, sets: [] },
+};
+const habit = {
+  ...{ habit_key: "evening_alcohol", amount: 2, note: null },
+  ...{ source: "manual", updated_at: "2026-01-02T22:00:00.000Z" },
+};
+const dayResponse = {
+  day: activityDay,
+  signals: [],
+  activities: [
+    workout,
+    dateOnly,
+    ouraWalk,
+    { ...ouraWalk, id: 11, kind: "yoga", category: "other" },
+  ],
+  habits: [habit],
+};
+const renderBody = (response: unknown) =>
+  withData(
+    [[health.signalsKey(1, activityDay), health.signalsSchema.parse(response)]],
+    createElement(BodyCard, { person: 1, day: activityDay, online: true }),
+  );
+
+test("the client schema keeps sets, trackers and habit notes and accepts a null start and duration", () => {
+  assert.deepEqual(health.signalsSchema.parse(dayResponse), dayResponse);
+});
+
+test("a paired workout shows once with its sets, and a date-only session shows time not recorded", () => {
+  const html = renderBody(dayResponse);
+  assert.equal(html.match(/<strong>strength</g)?.length, 2);
+  assert.match(
+    html,
+    /6:00\sPM · 60 min · 310 kcal · Manual \+ Oura.*<li>Goblet squat 8 × 50 lb<\/li>.*Edit sets.*Delete strength/s,
+  );
+  assert.match(
+    html,
+    /<strong>strength<\/strong><span>Time not recorded · Manual/,
+  );
+  assert.match(html, /<strong>walk<\/strong>.*Add sets.*<strong>yoga/s);
+  assert.equal(html.match(/Add sets/g)?.length, 1);
+  assert.doesNotMatch(html, /Delete walk/);
+  assert.match(html, /<strong>Evening alcohol<\/strong><span>2 · Manual/);
+});
+
+test("an empty day says nothing is logged and shows the log controls", () => {
+  const html = renderBody({ ...dayResponse, activities: [], habits: [] });
+  assert.match(html, /Nothing logged/);
+  for (const control of ["Sauna", "Cold plunge", "Log habit", "Log workout"])
+    assert.match(html, new RegExp(`<button[^>]*>${control}<`));
+});
+
+test("a quick-logged sauna appears in the day and today, plan and signals refresh", async (context) => {
+  const { admin } = await twoUsers(context, "fallback");
+  context.mock.method(globalThis, "fetch", admin.request);
+  const today = await readToday(new AbortController().signal);
+  const client = new QueryClient();
+  const keys = [
+    todayKey(admin.user.id),
+    planKey(admin.user.id),
+    health.signalsKey(admin.user.id, today.day),
+  ];
+  for (const key of keys) client.setQueryData(key, {});
+  await health.withClientId(health.logActivity)({
+    kind: "sauna",
+    started_at: `${today.day}T12:00:00.000Z`,
+    duration_minutes: 20,
+  });
+  await refreshToday(client, admin.user.id);
+  assert.deepEqual(
+    keys.map((key) => client.getQueryState(key)?.isInvalidated),
+    [true, true, true],
+  );
+  const day = await health.readSignals(today.day, new AbortController().signal);
+  assert.deepEqual(
+    day.activities.map((entry) => [entry.kind, entry.category]),
+    [["sauna", "sauna"]],
+  );
+});
+
+test("a retried hand-entered workout sends the same client id and stores one session", async (context) => {
+  const { admin } = await twoUsers(context, "fallback");
+  const sent: string[] = [];
+  let failNext = true;
+  context.mock.method(
+    globalThis,
+    "fetch",
+    async (path: string, init: RequestInit) => {
+      if (init.method === "POST")
+        sent.push(JSON.parse(String(init.body)).client_id);
+      const response = await admin.request(path, init);
+      if (failNext && init.method === "POST") {
+        failNext = false;
+        throw new TypeError("Network error");
+      }
+      return response;
+    },
+  );
+  const today = await readToday(new AbortController().signal);
+  const send = health.withClientId(health.logActivity);
+  const entry = {
+    ...{ timing: "date_only", day: today.day, kind: "strength" },
+    sets: [{ exercise: "Row", reps: 10, load: 20, load_unit: "kg" }],
+  };
+  await assert.rejects(send(entry), TypeError);
+  await send(entry);
+  await send({ ...entry, kind: "walk" });
+  assert.equal(sent[0], sent[1]);
+  assert.notEqual(sent[1], sent[2]);
+  const day = await health.readSignals(today.day, new AbortController().signal);
+  assert.deepEqual(
+    day.activities.map((entry) => [entry.kind, entry.sets.length]),
+    [
+      ["strength", 1],
+      ["walk", 1],
+    ],
+  );
+});
+
+test("a habit note is logged and undone", async (context) => {
+  const { admin } = await twoUsers(context, "fallback");
+  context.mock.method(globalThis, "fetch", admin.request);
+  const today = await readToday(new AbortController().signal);
+  const habits = async () =>
+    (await health.readSignals(today.day, new AbortController().signal)).habits;
+  await health.logHabit({
+    habit_key: "late_caffeine",
+    day: today.day,
+    amount: 1,
+  });
+  assert.deepEqual(
+    (await habits()).map((note) => [note.habit_key, note.amount]),
+    [["late_caffeine", 1]],
+  );
+  await health.deleteHabit(today.day, "late_caffeine");
+  assert.deepEqual(await habits(), []);
 });

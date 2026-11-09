@@ -209,5 +209,6 @@ export async function refreshToday(client: QueryClient, personId: number) {
   await Promise.all([
     client.invalidateQueries({ queryKey }),
     client.invalidateQueries({ queryKey: planKey(personId) }),
+    client.invalidateQueries({ queryKey: ["signals", personId] }),
   ]);
 }

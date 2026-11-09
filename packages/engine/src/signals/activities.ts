@@ -7,6 +7,7 @@ import {
   OperationError,
   operationPerson,
 } from "../operations/registry.ts";
+import { deleteActivity as deleteSession } from "../queries/delete-activity.ts";
 import { deleteActivitySets } from "../queries/delete-activity-sets.ts";
 import { insertActivity } from "../queries/insert-activity.ts";
 import { insertActivitySet } from "../queries/insert-activity-set.ts";
@@ -15,7 +16,12 @@ import { selectActivity } from "../queries/select-activity.ts";
 import { selectActivityByClient } from "../queries/select-activity-by-client.ts";
 import { selectActivitySets } from "../queries/select-activity-sets.ts";
 import { activityCategories, countUnknownKinds } from "./activity-kinds.ts";
-import { mergeWorkouts, poundsToKg, setView } from "./merged-workouts.ts";
+import {
+  loggedSources,
+  mergeWorkouts,
+  poundsToKg,
+  setView,
+} from "./merged-workouts.ts";
 
 // SQLite length() stops at NUL, so the nonblank CHECK would fail as a 500.
 const text = (max: number) =>
@@ -137,6 +143,14 @@ function sessionSets(
     .filter((row) => row.session_id === id)
     .map(setView);
 }
+// Tracker rows are written only by sync; a pair takes its sets from the logged session, so sets here would be hidden.
+function ownedLoggedSession(database: Database, user_id: number, id: number) {
+  const session = selectActivity(database, { user_id, id });
+  if (!session) throw new OperationError(404, "not_found");
+  if (!loggedSources.has(session.source))
+    throw new OperationError(400, "tracker_session");
+  return session;
+}
 function writeSets(
   database: Database,
   owner: { user_id: number; session_id: number },
@@ -257,11 +271,7 @@ const replaceActivitySets = defineOperation({
   handler(input, context) {
     const person = operationPerson(context);
     const day = writeTransaction(context.database, () => {
-      const session = selectActivity(context.database, {
-        user_id: person.id,
-        id: input.id,
-      });
-      if (!session) throw new OperationError(404, "not_found");
+      const session = ownedLoggedSession(context.database, person.id, input.id);
       writeSets(
         context.database,
         { user_id: person.id, session_id: session.id },
@@ -276,6 +286,25 @@ const replaceActivitySets = defineOperation({
         sets: sessionSets(context.database, person.id, input.id, day),
       },
     };
+  },
+});
+
+const deleteActivity = defineOperation({
+  ...base,
+  name: "delete_activity",
+  description: "Remove a logged session and its sets. Tracker sessions stay.",
+  method: "DELETE",
+  path: "/api/activities/:id",
+  input: zod.strictObject({ id: zod.coerce.number().int().positive() }),
+  output: zod.strictObject({ deleted: zod.literal(true), id: zod.number() }),
+  handler(input, context) {
+    const user_id = operationPerson(context).id;
+    writeTransaction(context.database, () => {
+      ownedLoggedSession(context.database, user_id, input.id);
+      deleteActivitySets(context.database, { user_id, session_id: input.id });
+      deleteSession(context.database, { user_id, id: input.id });
+    });
+    return { status: 200, body: { deleted: true, id: input.id } };
   },
 });
 
@@ -318,4 +347,8 @@ const readActivities = defineOperation({
     };
   },
 });
-export const activityOperations = [replaceActivitySets, readActivities];
+export const activityOperations = [
+  replaceActivitySets,
+  deleteActivity,
+  readActivities,
+];
