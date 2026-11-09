@@ -96,6 +96,7 @@ describe("engine", () => {
       orderModel: null,
       oura: null,
       ouraTokenKey: undefined,
+      mqtt: null,
       identity: { mode: "fallback" },
       firstUser: {
         username: undefined,

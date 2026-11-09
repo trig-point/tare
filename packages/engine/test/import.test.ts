@@ -205,7 +205,10 @@ test("command rejects unknown people and usage without writes; skipped lines exi
     spawnSync(
       process.execPath,
       [new URL("../scripts/import.mts", import.meta.url).pathname, ...args],
-      { encoding: "utf8", env: { ...process.env, DATABASE_URL: path } },
+      {
+        encoding: "utf8",
+        env: { ...process.env, DATABASE_URL: path, PORT: "1" },
+      },
     );
   const unknown = command(["--user", "missing", "--intake", file]);
   assert.equal(unknown.status, 2);

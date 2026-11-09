@@ -123,6 +123,11 @@ Relative filesystem paths resolve from `/app/packages/engine` in the image.
 | `TARE_OURA_TOKEN_KEY` | Unset (no new Oura connections) | Canonical base64 for 32 bytes that encrypts stored Oura tokens. Malformed values prevent startup. Back it up separately from database copies; restoring without it requires reconnecting. |
 | `TARE_ACTIVITY_CREDIT` | `same-day` | When Oura activity counts toward the day's target: `same-day` syncs Oura every hour, and `next-day` syncs once a day at 7:00 AM in `TARE_TIMEZONE`. Trimmed and case-insensitive; empty uses the default. Other values prevent startup. |
 | `TARE_ACTIVITY_BONUS_CAP` | `500` | Largest daily activity bonus in kcal, an integer from 1 to 2000. Trimmed; empty uses the default. Other values prevent startup. |
+| `TARE_MQTT_URL` | Unset (Home Assistant publisher disabled) | `mqtt` or `mqtts` broker URL with no credentials or path. Trimmed; empty counts as unset. Invalid values prevent startup; a broker that is down does not. |
+| `TARE_MQTT_USERNAME` | Unset | Broker username. Trimmed; empty counts as unset. Set it with `TARE_MQTT_PASSWORD` or leave both unset. |
+| `TARE_MQTT_PASSWORD` | Unset | Broker password. This is a secret: supply it through the environment, never in a file you commit. Trimmed; empty counts as unset. Set it with `TARE_MQTT_USERNAME` or leave both unset. |
+| `TARE_HA_DISCOVERY_PREFIX` | `homeassistant` | Home Assistant discovery prefix, an MQTT topic without wildcards or empty levels. Trimmed; empty uses the default. |
+| `TARE_HA_STATUS_TOPIC` | `homeassistant/status` | Topic where Home Assistant publishes `online` on start, set apart from the discovery prefix. Same topic rules; empty uses the default. |
 | `TARE_USDA_API_KEY` | Unset (USDA disabled) | USDA FoodData Central API key. Trimmed; empty disables USDA requests. |
 | `TARE_OFF_USER_AGENT` | Unset (Open Food Facts disabled) | Must follow `AppName/Version (ContactEmail)`, for example `Tare/1.0 (support@example.com)`. Trimmed; empty disables requests. |
 

@@ -33,11 +33,13 @@ export function createOuraSyncJob({
   wait = (milliseconds, signal) =>
     setTimeout(milliseconds, undefined, { signal }),
   baseUrl,
+  onFinished,
 }: {
   database: Database;
   oura: Pick<OuraService, "refreshAccess">;
   clock: { now(): Date };
   creditMode: Config["activityCredit"];
+  onFinished?: () => void;
 } & Partial<Pick<OuraFetchOptions, "fetch" | "wait" | "baseUrl">>) {
   async function syncPerson(
     person: ReturnType<typeof listSyncPeople>[number],
@@ -141,19 +143,27 @@ export function createOuraSyncJob({
     signal.throwIfAborted();
     let synced = 0;
     let failed = 0;
-    for (const person of listSyncPeople(database)) {
-      await setImmediate(undefined, { signal });
+    try {
+      for (const person of listSyncPeople(database)) {
+        await setImmediate(undefined, { signal });
+        try {
+          await syncPerson(person, signal);
+          synced++;
+        } catch (error) {
+          if (signal.aborted) throw error;
+          failed++;
+          console.error(
+            "oura_sync_failed",
+            person.user_id,
+            error instanceof Error ? error.message.slice(0, 40) : "unknown",
+          );
+        }
+      }
+    } finally {
       try {
-        await syncPerson(person, signal);
-        synced++;
+        onFinished?.();
       } catch (error) {
-        if (signal.aborted) throw error;
-        failed++;
-        console.error(
-          "oura_sync_failed",
-          person.user_id,
-          error instanceof Error ? error.message.slice(0, 40) : "unknown",
-        );
+        console.error("oura_sync_hook_failed", (error as Error).name);
       }
     }
     const result = `oura_synced:${synced}`;
