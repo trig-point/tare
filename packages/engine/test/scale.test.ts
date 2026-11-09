@@ -10,6 +10,7 @@ import { createHomeAssistantPublisher } from "../src/home-assistant/publisher.ts
 import { createOrderQuestionKinds } from "../src/inbound/questions.ts";
 import { deleteWeight } from "../src/queries/delete-weight.ts";
 import type { SelectQuestionResult } from "../src/queries/select-question.ts";
+import { updateWeight } from "../src/queries/update-weight.ts";
 import {
   createScaleSubscriber,
   resolveScaleUsers,
@@ -95,6 +96,11 @@ test("accepted readings log once with body fat, and count once within 10 minutes
     [1, 72.2, null, "scale"],
   ]);
   assert.equal(scale.refreshes(), 2);
+  const edit = { measured_at: "2026-03-01T23:58:00.000Z", day: "2026-03-01" };
+  const edited = { ...edit, weight_kg: 80, body_fat_pct: null };
+  updateWeight(scale.database, edited, { user_id: 1, id: 1 });
+  assert.equal(scale.send(repeat), "duplicate");
+  assert.equal(scale.questions().length, 0);
   for (const id of [1, 2]) deleteWeight(scale.database, { user_id: 1, id });
   const replays = [first, repeat].map((reading) => scale.send(reading));
   assert.deepEqual(replays, ["duplicate", "duplicate"]);

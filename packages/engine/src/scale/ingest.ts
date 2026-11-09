@@ -272,7 +272,10 @@ export function createScaleSubscriber({
     try {
       status = writeTransaction(database, (scope): Stored => {
         const scoped = scopeDatabase(scope);
-        if (selectSubjectQuestion(scoped, { subject_ref: reading.clientId }))
+        if (
+          selectSubjectQuestion(scoped, { subject_ref: reading.clientId }) ||
+          selectScaleReading(scoped, { client_id: reading.clientId })
+        )
           return "duplicate";
         const userId = users.get(slug);
         if (userId === undefined) {
