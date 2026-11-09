@@ -24,6 +24,7 @@ import {
   signalVocabulary,
   withUnit,
 } from "./vocabulary.ts";
+import { whyLines } from "./why-lines.ts";
 
 // SQLite length() stops at NUL, so the nonblank CHECK would fail as a 500.
 const text = zod
@@ -170,17 +171,22 @@ const readSignals = defineOperation({
   input: zod.strictObject({ day: zod.iso.date() }),
   output: zod.strictObject({
     day: zod.iso.date(),
-    signals: zod.array(zod.strictObject(signalFields)),
+    signals: zod.array(
+      zod.strictObject({ ...signalFields, why: zod.array(zod.string()) }),
+    ),
     activities: zod.array(workoutOutput),
     habits: zod.array(zod.strictObject(habitFields)),
   }),
   handler(input, context) {
     const owner = { user_id: operationPerson(context).id, day: input.day };
+    const why = whyLines(context.database, owner, context.config.why);
     return {
       status: 200,
       body: {
         day: input.day,
-        signals: selectSignals(context.database, owner).map(withUnit),
+        signals: selectSignals(context.database, owner)
+          .map(withUnit)
+          .map((signal) => ({ ...signal, why: why(signal) })),
         activities: readWorkouts(context.database, {
           user_id: owner.user_id,
           from: input.day,

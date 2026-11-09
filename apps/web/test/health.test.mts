@@ -191,10 +191,10 @@ test("two sources for one metric render only the preferred one", () => {
           day,
           activities: [],
           signals: [
-            { ...steps, value: 750, source: "manual" },
-            { ...steps, value: 800, source: "oura" },
-            { metric: "hrv", unit: "ms", value: 41, source: "agent" },
-            { metric: "hrv", unit: "ms", value: 45, source: "oura" },
+            { ...steps, value: 750, source: "manual", why: [] },
+            { ...steps, value: 800, source: "oura", why: [] },
+            { metric: "hrv", unit: "ms", value: 41, source: "agent", why: [] },
+            { metric: "hrv", unit: "ms", value: 45, source: "oura", why: [] },
           ],
         }),
       ],
@@ -209,13 +209,53 @@ test("two sources for one metric render only the preferred one", () => {
   assert.doesNotMatch(html, /800|41 ms|Agent/);
 });
 
+test("the Body card shows each signal's why-lines and every burn source", () => {
+  const day = "2026-01-02";
+  const burn = { metric: "active_calories", unit: "kcal" } as const;
+  const burnLine = "Burn 640 kcal, above your usual 430. You logged a workout.";
+  const lateLine =
+    "You trained within 4 hours of bed. Late hard workouts are linked to lower HRV.";
+  const html = withData(
+    [
+      [
+        health.signalsKey(1, day),
+        health.signalsSchema.parse({
+          day,
+          activities: [],
+          signals: [
+            { ...burn, value: 640, source: "manual", why: [burnLine] },
+            { ...burn, value: 305, source: "oura", why: [] },
+            {
+              metric: "hrv",
+              unit: "ms",
+              value: 42,
+              source: "oura",
+              why: [lateLine],
+            },
+          ],
+        }),
+      ],
+    ],
+    createElement(BodyCard, { person: 1, day, online: false }),
+  );
+  assert.match(
+    html,
+    new RegExp(
+      `<dt>HRV</dt><dd>42 ms</dd><dd class="source">Oura</dd><dd class="why">${lateLine}</dd>.*` +
+        `<dt>Active calories</dt><dd>640 kcal</dd><dd class="source">Manual</dd><dd class="why">${burnLine}</dd>.*` +
+        `<dt>Active calories</dt><dd>305 kcal</dd><dd class="source">Oura</dd></div>`,
+      "s",
+    ),
+  );
+});
+
 test("Oura scores render in order, with whole minutes and the stress category as text", () => {
   const oura = (
     metric: string,
     unit: string,
     value: number,
     label?: string,
-  ) => ({ metric, unit, value, source: "oura", label });
+  ) => ({ metric, unit, value, source: "oura", label, why: [] });
   const response = (...signals: unknown[]) => ({
     day: "2026-01-02",
     activities: [],

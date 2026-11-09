@@ -6,7 +6,7 @@ import {
 } from "@tare/health-sources";
 import type { Database } from "better-sqlite3";
 import { writeTransaction } from "../db.ts";
-import { localDay } from "../logging/day.ts";
+import { localDay, shiftDay } from "../logging/day.ts";
 import { listSyncPeople } from "../queries/oura/list-sync-people.ts";
 import { markMembership } from "../queries/oura/mark-membership.ts";
 import { markReconnect } from "../queries/oura/mark-reconnect.ts";
@@ -22,12 +22,6 @@ import type { OuraService } from "./service.ts";
 const backfillDays = 30;
 // Sleep can reach Oura days after the night, so each run re-reads a few days.
 const overlapDays = 3;
-
-function shiftDay(day: string, days: number) {
-  const date = new Date(`${day}T00:00:00.000Z`);
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
-}
 
 export function createOuraSyncJob({
   database,
