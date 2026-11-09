@@ -106,7 +106,12 @@ export function Today({
                 </div>
               ))}
             </dl>
-            <BodyCard person={person.id} day={today.data.day} online={online} />
+            <BodyCard
+              person={person.id}
+              day={today.data.day}
+              timezone={today.data.timezone}
+              online={online}
+            />
           </div>
           <Slots person={person.id} online={online} />
           <ul className="entries">
