@@ -23,17 +23,9 @@ const profile = {
   activity_level: "moderate",
   goal_rate_kg_week: -0.5,
 };
-const bonus = {
-  status: "no_source",
-  kcal: 0,
-  capped: false,
-  mode: "same-day",
-  day: "2026-01-01",
-  source: null,
-  burn_kcal: null,
-  average_kcal: null,
-  last_synced_at: null,
-};
+const bonus = JSON.parse(
+  '{"status":"no_source","kcal":0,"capped":false,"mode":"same-day","day":"2026-01-01","source":null,"burn_kcal":null,"average_kcal":null,"last_synced_at":null}',
+);
 const adaptive = {
   status: "learning",
   reason: "signed_days",
