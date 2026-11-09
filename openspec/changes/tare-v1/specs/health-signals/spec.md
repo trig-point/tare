@@ -1,11 +1,15 @@
 ## ADDED Requirements
 
 ### Requirement: Daily signals store
-The system SHALL store daily health signals per person in a fixed vocabulary (steps, active calories, sleep, resting heart rate, HRV, readiness, stress, activity sessions) with their source, and the app SHALL show them beside that day's intake. Signals SHALL NOT change the calorie target in version 1.
+The system SHALL store daily health signals per person in a fixed vocabulary (steps, active calories, sleep, resting heart rate, HRV, readiness, stress, activity sessions) with their source, and the app SHALL show them beside that day's intake. Signals SHALL NOT change the calorie target in version 1, except that active calories from one eligible tracker source SHALL raise the day's target through the activity bonus in the daily-target capability. No other signal, no `manual` or `agent` active calories written through `log_signal`, no session and no session's calories SHALL change the target.
 
 #### Scenario: Signal shown, target unchanged
-- **WHEN** a day's active calories arrive
+- **WHEN** a day's HRV, sleep or hand-entered active calories arrive
 - **THEN** they appear beside that day's intake and the target is unchanged
+
+#### Scenario: Tracker burn raises the day only
+- **WHEN** active calories arrive from the selected tracker source
+- **THEN** they appear beside the day's intake, the day's target changes only through the activity bonus, and the stored weekly target is unchanged
 
 ### Requirement: Manual and agent entry
 A person or their agent SHALL be able to record a signal or an activity session.

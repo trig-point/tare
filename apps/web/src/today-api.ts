@@ -1,7 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import type { Session } from "./api.ts";
-import { api } from "./api.ts";
+import { api, liveRefresh } from "./api.ts";
 import type { OutboxReplay, QueueSnapshot } from "./outbox-replay.ts";
 import { planKey } from "./plan-api.ts";
 
@@ -53,10 +53,24 @@ export const weightSchema = z.object({
 });
 export type Weight = z.infer<typeof weightSchema>;
 const adaptive = z.object({ status: z.enum(["eligible", "learning"]) });
+const bonusSchema = z.object({
+  status: z.enum(["ready", "waiting", "no_source"]),
+  kcal: z.number().int(),
+  capped: z.boolean(),
+  mode: z.enum(["same-day", "next-day"]),
+  day: z.string(),
+  source: z.string().nullable(),
+  burn_kcal: z.number().nullable(),
+  average_kcal: z.number().nullable(),
+  last_synced_at: z.string().nullable(),
+});
+export type Bonus = z.infer<typeof bonusSchema>;
 export const targetSchema = z.discriminatedUnion("status", [
   z.object({
     status: z.literal("ready"),
     kcal: z.number(),
+    base_kcal: z.number(),
+    bonus: bonusSchema,
     protein_g: z.number(),
     basis: z.enum(["weekly_adaptive", "weekly_formula", "live_formula"]),
     adaptive,
@@ -96,6 +110,11 @@ export const todayKey = (person: number) => ["today", person] as const;
 export async function readToday(signal: AbortSignal) {
   return todaySchema.parse(await api("/api/today", { signal }));
 }
+export const todayQuery = (person: number) => ({
+  queryKey: todayKey(person),
+  queryFn: ({ signal }: { signal: AbortSignal }) => readToday(signal),
+  ...liveRefresh,
+});
 export function totalText(value: z.infer<typeof total>) {
   return value.complete && value.total !== null
     ? displayNumber(value.total)
@@ -190,6 +209,31 @@ export function intakeChanges(entry: Intake, values: Record<string, string>) {
   )
     Object.assign(changes, { kcal_low: null, kcal_high: null });
   return changes;
+}
+export function bonusLines(base: number, bonus: Bonus, timezone: string) {
+  const credited = bonus.mode === "same-day" ? "today's" : "yesterday's";
+  if (bonus.status === "no_source")
+    return ["Activity bonus after 14 days of tracker data."];
+  if (bonus.status === "waiting")
+    return [`Activity: waiting for ${credited} data.`];
+  const activity =
+    bonus.mode === "same-day" ? "activity" : "yesterday's activity";
+  const extra = bonus.kcal
+    ? ` +${displayNumber(bonus.kcal)} from ${activity}${bonus.capped ? " (capped)" : ""}.`
+    : "";
+  const synced = bonus.last_synced_at
+    ? `, synced ${new Date(bonus.last_synced_at).toLocaleString([], {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        timeZone: timezone,
+      })}`
+    : "";
+  return [
+    `Base ${displayNumber(base)}.${extra}`,
+    `${bonus.source === "oura" ? "Oura" : bonus.source} ${displayNumber(bonus.burn_kcal ?? 0)} kcal${synced}`,
+  ];
 }
 export function displayNumber(value: number) {
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(

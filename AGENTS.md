@@ -93,6 +93,8 @@ Body card why-lines compare a signal with its recent baseline; empty values coun
 
 `TARE_ACTIVITY_CREDIT` sets when Oura activity counts toward the day's target: `same-day` (default) syncs Oura every hour, and `next-day` syncs at 7:00 AM in `TARE_TIMEZONE`. It is trimmed and case-insensitive; empty counts as unset, and other values prevent startup.
 
+`TARE_ACTIVITY_BONUS_CAP` limits the daily activity bonus in kcal (default: `500`, integer from 1 to 2000). Empty counts as unset; invalid values prevent startup.
+
 `TARE_OURA_CLIENT_ID`, `TARE_OURA_CLIENT_SECRET` and `TARE_OURA_REDIRECT_URL` configure the install's Oura application. Set all three or leave all three unset; values are trimmed and empty values count as unset. The redirect URL must be an absolute HTTP or HTTPS URL without a fragment. `TARE_OURA_TOKEN_KEY` is canonical base64 for 32 bytes and encrypts stored Oura tokens; a malformed value prevents startup, and a missing value allows startup but prevents new connections. Back up the key separately from the database. Setup: `docs/oura.md`.
 
 `TARE_ORDER_EMAIL_SERVICES` is a JSON map of service names to `senders` and `dkim_domains` arrays, for example `{"kit-a":{"senders":["orders@kit-a.example.com"],"dkim_domains":["kit-a.example.com"]}}`. Empty or unset holds all incoming emails as unverified. Names use lowercase letters, digits and hyphens (1 to 40 characters). Each service needs at least one sender or domain. Addresses and domains are lowercased; duplicate senders and cross-service domain overlap prevent startup. Accepted DKIM domains must be controlled by the service, never shared mail provider domains.

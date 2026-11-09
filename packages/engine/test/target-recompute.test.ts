@@ -13,7 +13,8 @@ import { recomputeTarget } from "../src/target/recompute.ts";
 import { test } from "./support/hang-ceiling.ts";
 import { twoUsers } from "./support/two-users.ts";
 
-const settings = loadConfig({ DATABASE_URL: ":memory:" }).tdee;
+const config = loadConfig({ DATABASE_URL: ":memory:" });
+const settings = config.tdee;
 const now = new Date("2026-01-01T00:00:00.000Z");
 const profile = {
   height_cm: 180,
@@ -111,7 +112,7 @@ test("stored targets: readiness, adaptive today, rollback, owner isolation, rese
   const weekly = await today();
   assert.equal(await save(member), 200);
   assert.equal(
-    readTarget(database, member.user, now, settings).status,
+    readTarget(database, member.user, now, config).status,
     "needs_weigh_in",
   );
   weigh(database, member.user.id, "first", "2026-01-01", 50);
@@ -124,7 +125,7 @@ test("stored targets: readiness, adaptive today, rollback, owner isolation, rese
     }),
     200,
   );
-  const other = readTarget(database, member.user, now, settings);
+  const other = readTarget(database, member.user, now, config);
   for (const [target, kcal, basis] of [
     [first, 2410, "live_formula"],
     [weekly, 2400, "weekly_adaptive"],
@@ -332,4 +333,45 @@ test("weekday config accepts names, resets empty values and selects each cron da
     () => loadConfig({ DATABASE_URL: ":memory:", TARE_TARGET_WEEKDAY: "mon" }),
     /TARE_TARGET_WEEKDAY/,
   );
+});
+
+test("a week of activity bonuses leaves the estimate, stored target and notice unchanged", async (context) => {
+  const { database, admin, member } = await twoUsers(context, "fallback");
+  const people = [admin, member];
+  for (const person of people) {
+    assert.equal(await save(person), 200);
+    seed(database, person.user.id);
+  }
+  for (let offset = 0; offset <= 35; offset++)
+    database
+      .prepare(
+        "INSERT INTO daily_signals VALUES (?, date('2026-01-01', ?), 'active_calories', ?, 'oura', ?)",
+      )
+      .run(
+        member.user.id,
+        `-${offset} days`,
+        offset < 7 ? 1200 : 430,
+        now.toISOString(),
+      );
+  const bonused = readTarget(database, member.user, now, config);
+  assert.equal(bonused.status === "ready" && bonused.bonus.kcal, 500);
+  const weekly = people.map((person) => {
+    writeTransaction(database, (scope) =>
+      recomputeTarget(scope, person.user, now, settings, "weekly"),
+    );
+    const stored = selectTargetResult(database, {
+      user_id: person.user.id,
+    });
+    return {
+      stored: { ...stored, id: undefined },
+      estimate: readAdaptive(database, person.user, now, settings),
+      notices: database
+        .prepare(
+          "SELECT old_kcal, old_protein_g, new_kcal, new_protein_g FROM target_notices WHERE user_id = ?",
+        )
+        .all(person.user.id),
+    };
+  });
+  assert.equal(weekly[0]?.notices.length, 1);
+  assert.deepEqual(weekly[1], weekly[0]);
 });

@@ -17,14 +17,13 @@ import {
   ouraKey,
   ouraView,
   readOura,
-  readSignals,
   replaceSets,
   type SetInput,
   type SetRow,
   setInput,
   setRow,
   setText,
-  signalsKey,
+  signalsQuery,
   signalText,
   sourceLabel,
   type Workout,
@@ -44,11 +43,7 @@ export function BodyCard({
   online: boolean;
 }) {
   const client = useQueryClient();
-  const signals = useQuery({
-    queryKey: signalsKey(person, day),
-    queryFn: ({ signal }) => readSignals(day, signal),
-    enabled: online,
-  });
+  const signals = useQuery({ ...signalsQuery(person, day), enabled: online });
   const connection = useQuery({
     queryKey: ouraKey(person),
     queryFn: ({ signal }) => readOura(signal),

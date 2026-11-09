@@ -40,12 +40,7 @@ export const dayReadOperations = [
         person.day_start_hour,
       );
       const ledger = readLedger(context.database, person.id, day);
-      const target = readTarget(
-        context.database,
-        person,
-        now,
-        context.config.tdee,
-      );
+      const target = readTarget(context.database, person, now, context.config);
       const remaining = (key: "kcal" | "protein_g") => {
         const total = ledger.totals[key];
         return target.status === "ready" &&

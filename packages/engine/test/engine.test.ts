@@ -84,6 +84,7 @@ describe("engine", () => {
       timezone: "UTC",
       targetWeekday: 1,
       activityCredit: "same-day",
+      activityBonusCap: 500,
       publicUrl: undefined,
       mcpAllowedOrigins: [],
       sessionDays: 30,

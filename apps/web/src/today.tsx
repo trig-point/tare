@@ -21,12 +21,11 @@ import {
   intakeChanges,
   nutrientLabels,
   nutrients,
-  readToday,
   refreshToday,
   settledSince,
   sourceName,
   type TodayData,
-  todayKey,
+  todayQuery,
   totalText,
   type Weight,
 } from "./today-api.ts";
@@ -43,11 +42,7 @@ export function Today({
   online: boolean;
 }) {
   const client = useQueryClient();
-  const today = useQuery({
-    queryKey: todayKey(person.id),
-    queryFn: ({ signal }) => readToday(signal),
-    enabled: online,
-  });
+  const today = useQuery({ ...todayQuery(person.id), enabled: online });
   const currentRecords = useRef(records);
   currentRecords.current = records;
   useEffect(() => {

@@ -14,6 +14,7 @@ import {
   saveProfile,
 } from "./profile-api.ts";
 import {
+  bonusLines,
   displayNumber,
   refreshToday,
   type TodayData,
@@ -48,6 +49,11 @@ export function TargetCard({ today }: { today: TodayData }) {
         {basisLabels[target.basis]}
         {target.adaptive.status === "learning" && ", still learning"}
       </p>
+      {bonusLines(target.base_kcal, target.bonus, today.timezone).map(
+        (line) => (
+          <p key={line}>{line}</p>
+        ),
+      )}
       <table>
         <thead>
           <tr>
