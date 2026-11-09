@@ -10,20 +10,13 @@ import { createTargetRecomputeJob } from "../src/target/job.ts";
 import { liveFormula } from "../src/target/live-formula.ts";
 import { readTarget } from "../src/target/reader.ts";
 import { recomputeTarget } from "../src/target/recompute.ts";
-import { seed, weigh } from "./support/adaptive-seed.ts";
+import { profile, seed, weigh } from "./support/adaptive-seed.ts";
 import { test } from "./support/hang-ceiling.ts";
 import { twoUsers } from "./support/two-users.ts";
 
 const settings = loadConfig({ DATABASE_URL: ":memory:" }).tdee;
 const config = loadConfig({ DATABASE_URL: ":memory:" });
 const now = new Date("2026-01-01T00:00:00.000Z");
-const profile = {
-  height_cm: 180,
-  birth_date: "1986-01-01",
-  sex: "male",
-  activity_level: "moderate",
-  goal_rate_kg_week: -0.25,
-};
 type Actor = Awaited<ReturnType<typeof twoUsers>>["admin"];
 const save = async (actor: Actor, changes = {}) =>
   (

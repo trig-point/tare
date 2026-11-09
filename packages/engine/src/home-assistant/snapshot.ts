@@ -72,6 +72,7 @@ export function sensorProvider(
           value_template: `{{ value_json.${key} }}`,
           unit_of_measurement: unit,
           state_class: "measurement",
+          suggested_display_precision: key === "weight_trend" ? 1 : 0,
           ...(key === "weight_trend" ? { device_class: "weight" } : {}),
           ...(completeKey
             ? {

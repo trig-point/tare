@@ -14,7 +14,7 @@ import { createHomeAssistantPublisher } from "../src/home-assistant/publisher.ts
 import { sensorProvider } from "../src/home-assistant/snapshot.ts";
 import { targetEventProvider } from "../src/home-assistant/target-event.ts";
 import { createTargetRecomputeJob } from "../src/target/job.ts";
-import { seed } from "./support/adaptive-seed.ts";
+import { profile, seed } from "./support/adaptive-seed.ts";
 import { test } from "./support/hang-ceiling.ts";
 import { twoUsers } from "./support/two-users.ts";
 
@@ -149,6 +149,10 @@ test("devices carry their person's sensors through edits, day changes, births an
       );
       assert.equal(config.default_entity_id, `sensor.tare_${slug}_${key}`);
       assert.equal(config.state_class, "measurement");
+      assert.equal(
+        config.suggested_display_precision,
+        key === "weight_trend" ? 1 : 0,
+      );
     }
     assert.match(
       `${configs.calories_eaten?.json_attributes_template}`,
@@ -265,62 +269,37 @@ test("the latest value wins over held acks and outages, and stop marks offline",
 
 test("a recompute that changes a target fires one event and sets the TDEE sensor, per person", async (context) => {
   const harness = await setup(context);
-  const { admin, member, database, install, send, settle, state } = harness;
+  const { admin, member, database, send, settle, state } = harness;
   harness.publisher.addProvider(targetEventProvider(database));
-  const profile = {
-    height_cm: 180,
-    birth_date: "1986-01-01",
-    sex: "male",
-    activity_level: "moderate",
-    goal_rate_kg_week: -0.25,
-  };
   await send(admin.request, "/api/profile", profile);
   seed(database, admin.user.id);
   await send(member.request, "/api/weights", { client_id: "w", weight_kg: 60 });
   await send(member.request, "/api/profile", profile);
   const job = createTargetRecomputeJob({
-    database,
-    clock: harness.clock,
+    ...{ database, clock: harness.clock, weekday: 1 },
     settings: loadConfig({ DATABASE_URL: ":memory:" }).tdee,
-    weekday: 1,
     onFinished: () => harness.publisher.refreshAll(),
   });
-  const events = () =>
-    harness.published
-      .filter((line) => line.includes("/events "))
-      .map((line) => line.split(" "))
-      .map(([topic, payload]) => [topic, JSON.parse(`${payload}`)]);
-  const until = async (count: number) => {
-    while (events().length < count) await setImmediate();
-  };
-  const topic = (userId: number) => `tare/${install}/${userId}/events`;
-
-  await job.run({ signal: new AbortController().signal });
-  await until(1);
-  await settle((now) => state(now, admin.user.id).tdee_estimate === 2675);
-  const notice = (old_kcal: number, old_protein_g: number, change = {}) => ({
-    event_type: "target_changed",
-    old_kcal,
-    old_protein_g,
-    new_kcal: old_kcal,
-    new_protein_g: old_protein_g,
-    ...change,
-  });
-  const first = [topic(admin.user.id), notice(2410, 128, { new_kcal: 2400 })];
-  assert.deepEqual(events(), [first]);
+  const events = () => harness.published.filter((line) => /events /.test(line));
+  const event = (id: number, kcal: number[], protein: number[]) =>
+    `tare/${harness.install}/${id}/events {"event_type":"target_changed","old_kcal":${kcal[0]},"old_protein_g":${protein[0]},"new_kcal":${kcal.at(-1)},"new_protein_g":${protein.at(-1)}}`;
+  await job.run({ signal: AbortSignal.any([]) });
+  await settle(
+    (now) =>
+      state(now, admin.user.id).tdee_estimate === 2675 && events().length > 0,
+  );
+  assert.deepEqual(events(), [event(admin.user.id, [2410, 2400], [128])]);
   assert.equal(
     state(await harness.retained(), member.user.id).tdee_estimate,
     null,
   );
-
   database
     .prepare("UPDATE profiles SET protein_factor = 2 WHERE user_id = ?")
     .run(member.user.id);
-  await job.run({ signal: new AbortController().signal });
-  await until(2);
-  assert.deepEqual(events(), [
-    first,
-    [topic(member.user.id), notice(2100, 96, { new_protein_g: 120 })],
+  await job.run({ signal: AbortSignal.any([]) });
+  while (events().length < 2) await setImmediate();
+  assert.deepEqual(events().slice(1), [
+    event(member.user.id, [2100], [96, 120]),
   ]);
 });
 

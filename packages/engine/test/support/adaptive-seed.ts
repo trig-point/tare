@@ -1,6 +1,13 @@
 import type { Database } from "better-sqlite3";
 
 const now = new Date("2026-01-01T00:00:00.000Z");
+export const profile = {
+  height_cm: 180,
+  birth_date: "1986-01-01",
+  sex: "male",
+  activity_level: "moderate",
+  goal_rate_kg_week: -0.25,
+};
 
 export function weigh(
   database: Database,
