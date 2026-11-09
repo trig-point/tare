@@ -37,15 +37,42 @@ test("the client schemas keep body fat and the card marks a post-workout reading
     ]),
     [[21.5, true]],
   );
-  const client = new QueryClient();
-  client.setQueryData(bodyFatKey(admin.user.id), bodyFat);
-  const html = renderToStaticMarkup(
-    createElement(
-      QueryClientProvider,
-      { client },
-      createElement(BodyFatCard, { person: admin.user.id, online: true }),
+  const card = (data: typeof bodyFat) => {
+    const client = new QueryClient();
+    client.setQueryData(bodyFatKey(admin.user.id), data);
+    return renderToStaticMarkup(
+      createElement(
+        QueryClientProvider,
+        { client },
+        createElement(BodyFatCard, { person: admin.user.id, online: true }),
+      ),
+    );
+  };
+  const html = card(bodyFat);
+  assert.match(html, /21.5%.*After a workout/s);
+  assert.match(
+    html,
+    /<p>Not enough readings for a trend<\/p><p>0 of 8 readings/,
+  );
+  const lines = [
+    "No strength sessions logged in 3 weeks.",
+    "Weight down 1.2 kg.",
+  ];
+  const change =
+    "Body fat reading up 1.2 points, within this scale&#x27;s error.";
+  const ready = card({
+    ...bodyFat,
+    trend: {
+      status: "ready",
+      level_pct: 23.3,
+      lines: [...lines, change.replace("&#x27;", "'")],
+    },
+  });
+  assert.match(
+    ready,
+    new RegExp(
+      `<p><strong>23.3%</strong></p><p>${lines.join("</p><p>")}</p><p title="This scale&#x27;s error is about 2 points">${change}</p>`,
     ),
   );
-  assert.match(html, /21.5%.*After a workout/s);
-  assert.match(html, /Not enough readings for a trend/);
+  assert.equal(ready.split("Body fat reading").length, 2);
 });

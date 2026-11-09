@@ -45,10 +45,19 @@ const trend = (readings: BodyFatReading[], workouts: TrendWorkout[] = []) =>
 const flags = (result: ReturnType<typeof trend>) =>
   result.readings.map((row) => [row.after_workout, row.in_trend]);
 
-test("a reading 3 hours after a timed workout is marked and left out", () => {
-  const morning = reading(today, 24, "09:00");
-  const result = trend([morning], [timedWorkout(`${today}T06:00:00.000Z`)]);
-  assert.deepEqual(flags(result), [[true, false]]);
+test("a reading 3 hours after a timed workout or sauna is marked and left out", () => {
+  const yesterday = shiftDay(today, -1);
+  const result = trend(
+    [reading(yesterday, 24, "09:00"), reading(today, 24, "09:00")],
+    [
+      timedWorkout(`${yesterday}T06:00:00.000Z`, "sauna"),
+      timedWorkout(`${today}T06:00:00.000Z`),
+    ],
+  );
+  assert.deepEqual(flags(result), [
+    [true, false],
+    [true, false],
+  ]);
 });
 
 test("a reading after a date-only session stays in the trend", () => {
@@ -59,9 +68,9 @@ test("a reading after a date-only session stays in the trend", () => {
     day: shiftDay(today, -1),
     category: "strength",
   };
-  assert.deepEqual(flags(trend([reading(today, 24)], [dateOnly])), [
-    [false, true],
-  ]);
+  const result = trend([...windows(22, 22), reading(today, 24)], [dateOnly]);
+  assert.deepEqual(flags(result).at(-1), [false, true]);
+  assert.equal(result.trend?.lines[0], "1 strength session logged in 3 weeks.");
 });
 
 test("a second weigh-in in a day stays out of the trend", () => {
@@ -77,24 +86,27 @@ test("6 readings in a window says not enough readings for a trend", () => {
     status: "not_enough",
     current_count: 6,
     prior_count: 10,
-    message: "Not enough readings for a trend",
+    lines: [
+      "Not enough readings for a trend",
+      "6 of 8 readings in the last 4 weeks",
+    ],
   });
 });
 
-test("a 1.2-point change reads within this scale's error of about 2 points", () => {
+test("a 1.2-point change reads within this scale's error", () => {
   assert.equal(
-    trend(windows(22, 23.2)).trend?.message,
-    "Up 1.2 points, within this scale's error of about 2 points",
+    trend(windows(22, 23.2)).trend?.lines[2],
+    "Body fat reading up 1.2 points, within this scale's error.",
   );
 });
 
-test("the joined line for no strength sessions, weight down 1.2 kg and body fat up 1 point", () => {
+test("the lines for no strength sessions, weight down 1.2 kg and body fat up 1 point", () => {
   const oldStrength = timedWorkout(`${shiftDay(today, -21)}T06:00:00.000Z`);
-  const result = trend(windows(22, 23), [oldStrength]).trend;
-  assert.equal(
-    result?.status === "ready" && result.line,
-    "No strength sessions logged in 3 weeks. Weight down 1.2 kg. Body fat reading up 1 point, within this scale's error.",
-  );
+  assert.deepEqual(trend(windows(22, 23), [oldStrength]).trend?.lines, [
+    "No strength sessions logged in 3 weeks.",
+    "Weight down 1.2 kg.",
+    "Body fat reading up 1 point, within this scale's error.",
+  ]);
 });
 
 test("no body fat readings gives no trend", () => {
