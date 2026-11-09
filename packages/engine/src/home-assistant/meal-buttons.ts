@@ -1,15 +1,13 @@
 import type { Database } from "better-sqlite3";
 import type { z as zod } from "zod";
-import { personDayBounds } from "../calendar/time.ts";
 import { writeTransaction } from "../db.ts";
 import { OperationError } from "../operations/registry.ts";
 import { eatMealInput, eatOrderMeal } from "../orders/eat.ts";
-import { isDue } from "../orders/index.ts";
+import { listMealsOnHand } from "../orders/index.ts";
 import { selectInstallId } from "../queries/home-assistant/select-install-id.ts";
-import { listMealCandidates } from "../queries/orders/list-meal-candidates.ts";
 import { selectPerson } from "../queries/select-person.ts";
-import type { EntityDefinition, Person, Provider } from "./discovery.ts";
-import { type PublisherClock, systemClock } from "./publisher.ts";
+import type { EntityDefinition, Provider } from "./discovery.ts";
+import { systemClock } from "./publisher.ts";
 
 const actions = [
   ["ate", "ate it"],
@@ -34,14 +32,13 @@ export function createMealButtons({
     refreshAll(): void;
     subscribe(topic: string, handler: (payload: Buffer) => void): void;
   };
-  clock?: PublisherClock;
+  clock?: { now(): Date };
   log?: (code: string, detail?: string) => void;
 }) {
   const install = selectInstallId(database)?.id ?? "";
   if (!install) throw new Error("Install id missing");
   const results = new Map<number, string>();
   const subscribed = new Set<number>();
-  const timers = new Map<number, { at: number; cancel(): void }>();
 
   function press(userId: number, payload: Buffer) {
     const now = clock.now().toISOString();
@@ -79,26 +76,6 @@ export function createMealButtons({
     publisher.refreshAll();
   }
 
-  function armDeliveryTimer(person: Person, pending: string[]) {
-    const next = pending.sort()[0];
-    const at = next
-      ? personDayBounds(next, person.timezone, person.day_start_hour).start
-      : undefined;
-    const current = timers.get(person.id);
-    if (current?.at === at?.getTime()) return;
-    current?.cancel();
-    timers.delete(person.id);
-    if (!at) return;
-    const timer = clock.schedule(
-      () => {
-        timers.delete(person.id);
-        publisher.refreshAll();
-      },
-      Math.max(0, at.getTime() - clock.now().getTime()),
-    );
-    timers.set(person.id, { at: at.getTime(), cancel: timer.cancel });
-  }
-
   const provider: Provider = (person) => {
     if (!subscribed.has(person.id)) {
       subscribed.add(person.id);
@@ -107,14 +84,7 @@ export function createMealButtons({
       );
     }
     const now = clock.now().toISOString();
-    const meals = listMealCandidates(database, { user_id: person.id });
-    const onHand = meals.filter((meal) => isDue(meal, person, now));
-    armDeliveryTimer(
-      person,
-      meals
-        .filter((meal) => !isDue(meal, person, now))
-        .map((meal) => meal.delivery_date),
-    );
+    const onHand = listMealsOnHand(database, person, now);
     const resultTopic = pressResultTopic(install, person.id);
     const buttons = onHand.flatMap((meal) =>
       actions.map(
@@ -157,13 +127,7 @@ export function createMealButtons({
     };
   };
 
-  return {
-    provider,
-    stop() {
-      for (const timer of timers.values()) timer.cancel();
-      timers.clear();
-    },
-  };
+  return { provider };
 }
 
 const errorName = (error: unknown) =>

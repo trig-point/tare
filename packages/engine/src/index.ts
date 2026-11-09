@@ -68,13 +68,13 @@ async function startEngine() {
   homeAssistant?.addProvider(
     sensorProvider(connection.database, clock, config),
   );
-  const mealButtons = homeAssistant
-    ? createMealButtons({
+  if (homeAssistant)
+    homeAssistant.addProvider(
+      createMealButtons({
         database: connection.database,
         publisher: homeAssistant,
-      })
-    : undefined;
-  if (mealButtons) homeAssistant?.addProvider(mealButtons.provider);
+      }).provider,
+    );
   const runner = createJobRunner({
     database: connection.database,
     timezone: config.timezone,
@@ -152,7 +152,6 @@ async function startEngine() {
         oura.stop(),
         calendar.stop(),
         homeAssistant?.stop(),
-        mealButtons?.stop(),
         new Promise<void>((resolve, reject) => {
           server.close((error) => (error ? reject(error) : resolve()));
         }),

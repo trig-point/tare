@@ -9,14 +9,7 @@ import { twoUsers } from "./support/two-users.ts";
 
 test("meal buttons follow due dates and presses, rejecting stale and foreign presses", async (context) => {
   let now = new Date("2026-01-01T12:00:00.000Z");
-  const timers: number[] = [];
-  const clock = {
-    now: () => now,
-    schedule: (_callback: () => void, delayMs: number) => {
-      timers.push(now.getTime() + delayMs);
-      return { cancel: () => timers.splice(0) };
-    },
-  };
+  const clock = { now: () => now };
   const { database, admin, member } = await twoUsers(context, "fallback");
   for (const [person, delivery_date] of [
     [admin, "2026-01-01"],
@@ -86,7 +79,6 @@ test("meal buttons follow due dates and presses, rejecting stale and foreign pre
   assert.ok(`meal_${marked}_ate` in payloads());
   const { timezone, day_start_hour } = admin.user;
   now = personDayBounds("2026-01-03", timezone, day_start_hour).start;
-  assert.deepEqual(timers, [now.getTime()]);
   assert.ok(`meal_${later}_ate` in payloads());
 
   assert.equal(press(ate), "logged");
