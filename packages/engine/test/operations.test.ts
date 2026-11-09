@@ -67,6 +67,7 @@ test("registry constrains public and administrator operations and inventories ev
       "list_unsigned_days",
       "read_day",
       "weight_history",
+      "body_fat_history",
       "lookup_barcode",
       "search_online",
       "list_questions",

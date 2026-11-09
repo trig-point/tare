@@ -184,6 +184,7 @@ test("pending markers are shown without duplicate synced entries", async (contex
     id: 1,
     client_id: pending.client_id,
     weight_kg: 70.04,
+    body_fat_pct: null,
     measured_at: "2026-01-02T12:00:00.000Z",
     source: null,
   });

@@ -14,7 +14,7 @@ import { questionOperations } from "../questions/operations.ts";
 import { regularMealOperations } from "../regular-meals/operations.ts";
 import { signalOperations } from "../signals/operations.ts";
 import { targetNoticeOperations } from "../target/operations.ts";
-import { weightHistory } from "../trend/operations.ts";
+import { trendOperations } from "../trend/operations.ts";
 import type { Operation } from "./registry.ts";
 
 export const operations: Operation[] = [
@@ -26,7 +26,7 @@ export const operations: Operation[] = [
   ...loggingOperations,
   ...dayReadOperations,
   ...daySignOffOperations,
-  weightHistory,
+  ...trendOperations,
   ...lookupOperations,
   ...questionOperations,
   ...signalOperations,

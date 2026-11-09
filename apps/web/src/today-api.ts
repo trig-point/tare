@@ -47,6 +47,7 @@ export const weightSchema = z.object({
   id: z.number().int().positive(),
   client_id: z.string(),
   weight_kg: z.number().positive(),
+  body_fat_pct: z.number().nullable(),
   measured_at: z.string(),
   source: z.string().nullable(),
 });
