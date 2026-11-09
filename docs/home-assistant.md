@@ -4,7 +4,7 @@ Tare publishes its numbers to Home Assistant through an MQTT broker using MQTT d
 
 ## Set up the broker and Tare
 
-Compose runs Tare only, not a broker. Use the broker Home Assistant already talks to, for example the Mosquitto add-on, and create a separate broker user for Tare with that broker's own instructions. Connect Home Assistant's MQTT integration to the same broker.
+Compose runs only Tare, not an MQTT broker. Use the broker Home Assistant already talks to, for example the Mosquitto add-on, and create a separate broker user for Tare with that broker's own instructions. Connect Home Assistant's MQTT integration to the same broker.
 
 Set these in the private `.env` file described in [Deploy Tare](deploy.md). `.env.example` and `compose.example.yaml` already list them, and the [environment reference](deploy.md#environment-reference) gives every rule.
 
@@ -47,7 +47,7 @@ Meal buttons come and go. A meal gets its pair when it is delivered or due today
 
 ## Find the entity ids
 
-Tare suggests ids built from the username, such as `sensor.tare_alex_calorie_target`. Home Assistant keeps its own entity registry and may choose a different id, for example after a rename or a clash. Open Settings, then Devices and services, then MQTT, then the `Tare <username>` device, and copy the ids shown there.
+Tare suggests ids built from the username, such as `sensor.tare_alex_calorie_target`. Home Assistant keeps its own entity registry and may choose a different id, for example after a rename or a clash. Copy the ids from Settings > Devices & services > MQTT > `Tare <username>`.
 
 ## Example dashboard
 
@@ -67,7 +67,7 @@ lovelace:
 
 Restart Home Assistant to load it. Alternatively, create a dashboard in the interface, open its raw configuration editor and paste the file in.
 
-The meal buttons sit in an entity filter card that hides ids Home Assistant does not know. List the ids of the meals you expect; any meal without buttons stays hidden. To show new meals without editing the dashboard, the community card auto-entities can match `button.tare_example_meal_*` instead.
+The meal buttons sit in an entity filter card that hides ids Home Assistant does not know. List the ids of the meals you expect; any meal without buttons stays hidden. To show new meals without editing the dashboard, the community `auto-entities` card can match `button.tare_example_meal_*` instead.
 
 ## Replay and copies
 
