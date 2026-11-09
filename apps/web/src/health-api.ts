@@ -44,6 +44,7 @@ export const signalsSchema = z.object({
         source: z.string(),
         unit: z.string(),
         label: z.string().min(1).optional(),
+        why: z.array(z.string()),
       })
       .refine(
         (entry) => entry.metric !== "stress_summary" || entry.label,
@@ -209,6 +210,7 @@ const rank = (source: string) => {
   return index === -1 ? sourcePreference.length : index;
 };
 // One value per metric, never averaged: sources disagree on method, so a blend would match none of them.
+// Burn keeps every source because each carries its own why-lines.
 export function bodyRows(signals: Signals["signals"]) {
   const picked = new Map<string, Signals["signals"][number]>();
   for (const entry of signals) {
@@ -216,7 +218,13 @@ export function bodyRows(signals: Signals["signals"]) {
     if (!current || rank(entry.source) < rank(current.source))
       picked.set(entry.metric, entry);
   }
-  return metrics.flatMap((metric) => picked.get(metric) ?? []);
+  return metrics.flatMap((metric) =>
+    metric === "active_calories"
+      ? signals
+          .filter((entry) => entry.metric === metric)
+          .sort((first, second) => rank(first.source) - rank(second.source))
+      : (picked.get(metric) ?? []),
+  );
 }
 export function signalText(entry: {
   value: number;

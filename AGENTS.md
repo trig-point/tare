@@ -60,6 +60,15 @@ Adaptive TDEE settings treat empty values as unset:
 
 Each minimum must be an integer from 1 to the configured window length. Invalid settings prevent startup and name the variable.
 
+Body card why-lines compare a signal with its recent baseline; empty values count as unset and invalid values prevent startup:
+
+- `TARE_WHY_BASELINE_DAYS`: baseline length before the day, default 28, integer from 14 to 90.
+- `TARE_WHY_MIN_BASELINE_DAYS`: days of that signal needed, default 14, integer from 2 to the baseline length.
+- `TARE_WHY_DEVIATIONS`: standard deviations from the baseline mean, default 1, from 0.1 to 5.
+- `TARE_WHY_HRV_PERCENT`: HRV change also needed, default 10, from 0 to 100.
+- `TARE_WHY_LATE_HOURS`: a workout ending this close to sleep counts as late, default 4, integer from 1 to 12.
+- `TARE_WHY_LATE_MINUTES`: shortest workout that counts as late, default 30, integer from 1 to 240.
+
 `TARE_PUBLIC_URL` accepts an HTTP or HTTPS URL. An HTTPS install must set it to enable the `Secure` flag on session cookies. Empty or unset leaves `Secure` off.
 
 `TARE_SESSION_DAYS` sets the absolute session lifetime in days (default: `30`, integer from 1 to 365). Empty counts as unset.

@@ -9,6 +9,7 @@ export type SelectWeightHistoryResult = {
   measured_at: string;
   id: number;
   weight_kg: number;
+  body_fat_pct: number | null;
 };
 
 export function selectWeightHistory(
@@ -16,7 +17,7 @@ export function selectWeightHistory(
   params: SelectWeightHistoryParams,
 ): SelectWeightHistoryResult[] {
   const sql = `
-	SELECT day, measured_at, id, weight_kg
+	SELECT day, measured_at, id, weight_kg, body_fat_pct
 	FROM weights
 	WHERE user_id = ?
 	ORDER BY day, measured_at, id;
@@ -33,6 +34,7 @@ function mapArrayToSelectWeightHistoryResult(data: any) {
     measured_at: data[1],
     id: data[2],
     weight_kg: data[3],
+    body_fat_pct: data[4],
   };
   return result;
 }
