@@ -218,7 +218,12 @@ for (const mode of ["fallback", "access"] as const) {
         409,
         "day_type_in_use",
       );
+    const shareBody = (order: number[], shares = [20, 30, 10, 40]) => ({
+      template_id: first.template.id,
+      shares: order.map((position, at) => ({ position, share: shares[at] })),
+    });
     for (const [path, body] of [
+      ["shares", shareBody([0, 1, 2, 3])],
       [
         "templates",
         {
@@ -257,6 +262,21 @@ for (const mode of ["fallback", "access"] as const) {
       ["day-type", { day_type_id: 999999 }],
     ] as const)
       await send(member, path, body, 404, "not_found");
+    for (const [order, code, shares] of [
+      [[0, 1, 2], "slot_positions_mismatch"],
+      [[0, 1, 2, 2], "slot_positions_mismatch"],
+      [[0, 1, 2, 3], "invalid_template_shares", [20, 30, 10, 39]],
+    ] as [number[], string, number[]?][])
+      await send(admin, "shares", shareBody(order, shares), 400, code);
+    assert.deepEqual(
+      database
+        .prepare(
+          "SELECT share_bp FROM template_slots WHERE template_id = ? ORDER BY position",
+        )
+        .pluck()
+        .all(first.template.id),
+      [2000, 3000, 1000, 4000],
+    );
     assert.deepEqual(await send(member, "today"), empty);
     for (const [sql, parameters] of [
       [

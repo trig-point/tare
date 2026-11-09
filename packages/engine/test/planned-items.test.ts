@@ -128,7 +128,11 @@ for (const mode of ["fallback", "access"] as const) {
       servings: null,
       nutrition: { status: "pending" },
     });
-    assert.deepEqual(await read(), { ...before, planned_items: [first] });
+    assert.deepEqual(await read(), {
+      ...before,
+      planned_items: [first],
+      suggested_shares: null,
+    });
     assert.equal(before.budgets.status, "ready");
     assert.equal(
       database

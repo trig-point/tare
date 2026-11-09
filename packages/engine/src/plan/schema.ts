@@ -39,6 +39,12 @@ const name = zod
   .min(1)
   .refine((value) => !value.includes("\u0000"));
 const minute = zod.number().int().min(0).max(1440);
+const share = zod
+  .number()
+  .multipleOf(0.01)
+  .describe(
+    "Percent with up to two decimals; stored as integer basis points (100 percent = 10000).",
+  );
 const slotInput = zod
   .strictObject({
     name,
@@ -46,12 +52,7 @@ const slotInput = zod
       "Wall-clock minutes after the person's day start.",
     ),
     end_minute: minute,
-    share: zod
-      .number()
-      .multipleOf(0.01)
-      .describe(
-        "Percent with up to two decimals; stored as integer basis points (100 percent = 10000).",
-      ),
+    share,
     fill_hint: zod.string().max(200).nullable().optional(),
   })
   .refine((slot) => slot.start_minute < slot.end_minute);
@@ -75,6 +76,17 @@ export const saveTemplateInput = zod
   .refine((input) =>
     validSave(input, input.name !== undefined && input.slots !== undefined),
   );
+export const saveSharesInput = zod.strictObject({
+  template_id: identifier,
+  shares: zod
+    .array(
+      zod.strictObject({
+        position: zod.number().int().nonnegative(),
+        share,
+      }),
+    )
+    .min(1),
+});
 export const saveTypeInput = zod
   .strictObject({ ...saveFields, template_id: identifier.optional() })
   .refine((input) =>

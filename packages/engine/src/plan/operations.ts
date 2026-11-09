@@ -13,6 +13,7 @@ import {
   plannedItemActionOutput,
 } from "../orders/eat.ts";
 import { clearIntakeSlots } from "../queries/clear-intake-slots.ts";
+import { countSignedOffDays } from "../queries/count-signed-off-days.ts";
 import { deleteDayTemplate } from "../queries/delete-day-template.ts";
 import { deleteDayType } from "../queries/delete-day-type.ts";
 import { deleteTemplateSlots } from "../queries/delete-template-slots.ts";
@@ -23,11 +24,13 @@ import { insertTemplateSlot } from "../queries/insert-template-slot.ts";
 import { selectDayTemplate } from "../queries/select-day-template.ts";
 import { selectDayType } from "../queries/select-day-type.ts";
 import { selectLedgerEntries } from "../queries/select-ledger-entries.ts";
+import { selectSignedOffIntake } from "../queries/select-signed-off-intake.ts";
 import { selectTemplateSlots } from "../queries/select-template-slots.ts";
 import { setDayType } from "../queries/set-day-type.ts";
 import { setDefaultDayType } from "../queries/set-default-day-type.ts";
 import { updateDayTemplate } from "../queries/update-day-template.ts";
 import { updateDayType } from "../queries/update-day-type.ts";
+import { updateSlotShare } from "../queries/update-slot-share.ts";
 import { readTarget } from "../target/reader.ts";
 import { planSlot, readPlannedItems } from "./items.ts";
 import { selectedTemplate } from "./reader.ts";
@@ -38,6 +41,7 @@ import {
   plannedItemSchema,
   planSchema,
   planSlotInput,
+  saveSharesInput,
   saveTemplateInput,
   saveTypeInput,
   slotBudgetSchema,
@@ -45,7 +49,12 @@ import {
   templateSchema,
   validateSlots,
 } from "./schema.ts";
-import { assignSlot, minuteOfDay, slotBudgets } from "./slots.ts";
+import {
+  assignSlot,
+  minuteOfDay,
+  slotBudgets,
+  suggestShares,
+} from "./slots.ts";
 
 function readPlan(context: OperationContext) {
   const person = operationPerson(context);
@@ -172,6 +181,55 @@ export const planOperations = [
         }),
       );
       return { status: input.action === "create" ? 201 : 200, body };
+    },
+  }),
+  defineOperation({
+    ...write,
+    name: "save_slot_shares",
+    path: "/api/plan/shares",
+    input: saveSharesInput,
+    output: zod.strictObject({ slots: zod.array(slotSchema).min(1) }),
+    handler(input, context) {
+      const slots = writeTransaction(context.database, () => {
+        const key = {
+          user_id: operationPerson(context).id,
+          template_id: input.template_id,
+        };
+        owned(
+          selectDayTemplate(context.database, {
+            user_id: key.user_id,
+            id: key.template_id,
+          }),
+        );
+        const current = selectTemplateSlots(context.database, key);
+        const positions = input.shares
+          .map((value) => value.position)
+          .toSorted((left, right) => left - right);
+        if (
+          positions.length !== current.length ||
+          current.some((slot, index) => slot.position !== positions[index])
+        )
+          throw new OperationError(400, "slot_positions_mismatch");
+        const share = (position: number) =>
+          input.shares.find((value) => value.position === position)
+            ?.share as number;
+        validateSlots(
+          current.map((slot) => ({
+            name: slot.name,
+            start_minute: slot.start_minute,
+            end_minute: slot.end_minute,
+            share: share(slot.position),
+          })),
+        );
+        for (const slot of current)
+          updateSlotShare(
+            context.database,
+            { share_bp: Math.round(share(slot.position) * 100) },
+            { ...key, position: slot.position },
+          );
+        return selectTemplateSlots(context.database, key);
+      });
+      return { status: 200, body: { slots } };
     },
   }),
   defineOperation({
@@ -325,17 +383,35 @@ export const planOperations = [
     input: zod.strictObject({}),
     output: planSchema.safeExtend({
       planned_items: zod.array(plannedItemSchema),
+      suggested_shares: zod
+        .array(
+          zod.strictObject({
+            position: zod.number().int().nonnegative(),
+            share: zod.number().int().min(1).max(100),
+          }),
+        )
+        .nullable(),
     }),
     handler(_input, context) {
       const plan = readPlan(context);
+      const person = operationPerson(context);
+      const user_id = { user_id: person.id };
+      const signedOff = countSignedOffDays(context.database, user_id);
+      if (!signedOff) throw new Error("Signed-off day count returned no row");
       return {
         status: 200,
         body: {
           ...plan,
+          suggested_shares: suggestShares(
+            plan.slots,
+            selectSignedOffIntake(context.database, user_id),
+            signedOff.count,
+            person,
+          ),
           planned_items: plan.template
             ? readPlannedItems(
                 context.database,
-                operationPerson(context).id,
+                person.id,
                 plan.day,
                 plan.template.id,
               )
