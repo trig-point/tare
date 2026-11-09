@@ -1,4 +1,6 @@
+import type { Database } from "better-sqlite3";
 import { z as zod } from "zod";
+import type { Person } from "../auth/middleware.ts";
 import { writeTransaction } from "../db.ts";
 import { localDay } from "../logging/day.ts";
 import {
@@ -56,16 +58,24 @@ import {
   suggestShares,
 } from "./slots.ts";
 
-function readPlan(context: OperationContext) {
-  const person = operationPerson(context);
-  const now = context.clock.now();
+type TargetConfig = Pick<
+  OperationContext["config"],
+  "tdee" | "activityCredit" | "activityBonusCap"
+>;
+
+export function readDayPlan(
+  database: Database,
+  person: Person,
+  now: Date,
+  config: TargetConfig,
+) {
   const day = localDay(
     now.toISOString(),
     person.timezone,
     person.day_start_hour,
   );
-  const plan = selectedTemplate(context.database, person, day, now);
-  const target = readTarget(context.database, person, now, context.config);
+  const plan = selectedTemplate(database, person, day, now);
+  const target = readTarget(database, person, now, config);
   const status = plan.status === "no_day_type" ? plan.status : target.status;
   const budgets =
     status === "ready" && target.status === "ready"
@@ -74,7 +84,7 @@ function readPlan(context: OperationContext) {
           target: { kcal: target.kcal, protein_g: target.protein_g },
           slots: slotBudgets(
             plan.slots,
-            selectLedgerEntries(context.database, { user_id: person.id, day }),
+            selectLedgerEntries(database, { user_id: person.id, day }),
             target,
             day,
             now.toISOString(),
@@ -83,6 +93,36 @@ function readPlan(context: OperationContext) {
         }
       : { status, target: null, slots: [] };
   return { ...plan, budgets };
+}
+
+const readPlan = (context: OperationContext) =>
+  readDayPlan(
+    context.database,
+    operationPerson(context),
+    context.clock.now(),
+    context.config,
+  );
+
+export function nextSlot(
+  database: Database,
+  person: Person,
+  now: Date,
+  config: TargetConfig,
+) {
+  const plan = readDayPlan(database, person, now, config);
+  const open = plan.slots.filter((slot) =>
+    plan.budgets.slots.some(
+      (row) => row.position === slot.position && !row.ended,
+    ),
+  );
+  const next = assignSlot(open, minuteOfDay(now.toISOString(), person));
+  return {
+    status: plan.budgets.status,
+    slot:
+      plan.budgets.slots.find((slot) => slot.position === next?.position) ??
+      null,
+    last: plan.budgets.slots.at(-1)?.position ?? null,
+  };
 }
 
 const shared = {
@@ -431,29 +471,13 @@ export const planOperations = [
       slot: slotBudgetSchema.nullable(),
     }),
     handler(_input, context) {
-      const plan = readPlan(context);
-      const open = plan.slots.filter((slot) =>
-        plan.budgets.slots.some(
-          (row) => row.position === slot.position && !row.ended,
-        ),
+      const { status, slot } = nextSlot(
+        context.database,
+        operationPerson(context),
+        context.clock.now(),
+        context.config,
       );
-      const next = assignSlot(
-        open,
-        minuteOfDay(
-          context.clock.now().toISOString(),
-          operationPerson(context),
-        ),
-      );
-      return {
-        status: 200,
-        body: {
-          status: plan.budgets.status,
-          slot:
-            plan.budgets.slots.find(
-              (slot) => slot.position === next?.position,
-            ) ?? null,
-        },
-      };
+      return { status: 200, body: { status, slot } };
     },
   }),
 ];

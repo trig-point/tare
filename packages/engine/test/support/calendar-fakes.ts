@@ -26,9 +26,11 @@ export function calendarFakes(
   let evaluate: (input: CalendarInput) => Promise<CalendarResult> =
     async () => ({ status: "match", rule_index: 0 });
   let closed = false;
+  let changes = 0;
   const calendar = createCalendarRefresher({
     database,
     clock,
+    onChanged: () => changes++,
     evaluator: {
       evaluate: (input) => evaluate(input),
       close: async () => {
@@ -48,6 +50,7 @@ export function calendarFakes(
     calendar,
     calls,
     closed: () => closed,
+    changes: () => changes,
     useEvaluator(value: typeof evaluate) {
       evaluate = value;
     },

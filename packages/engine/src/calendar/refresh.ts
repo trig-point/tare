@@ -16,11 +16,13 @@ export function createCalendarRefresher({
   clock,
   transport,
   evaluator = createCalendarEvaluator({ concurrency: 2 }),
+  onChanged,
 }: {
   database: Database;
   clock: { now(): Date };
   transport: CalendarTransport;
   evaluator?: ReturnType<typeof createCalendarEvaluator>;
+  onChanged?: () => void;
 }) {
   const queued = new Set<number>();
   const running = new Map<
@@ -54,7 +56,7 @@ export function createCalendarRefresher({
       result = { status: "unavailable" };
     }
     if (signal.aborted) return;
-    writeTransaction(database, () => {
+    const committed = writeTransaction(database, () => {
       const current = selectCalendarSettings(database, key);
       const owner = selectPerson(database, { id: user_id });
       if (
@@ -69,7 +71,7 @@ export function createCalendarRefresher({
           owner.day_start_hour,
         ) !== day
       )
-        return;
+        return false;
       const day_type_id =
         result.status === "match"
           ? rules[result.rule_index]?.day_type_id
@@ -88,7 +90,9 @@ export function createCalendarRefresher({
         day_type_id: day_type_id ?? null,
       });
       pruneCalendarCache(database, { ...key, day });
+      return true;
     });
+    if (committed) onChanged?.();
   }
   function drain() {
     while (!stopped && running.size < 2 && queued.size) {

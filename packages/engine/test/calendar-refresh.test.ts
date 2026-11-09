@@ -73,7 +73,7 @@ function setup(context: TestContext) {
         });
     });
   people.forEach((_person, owner) => save(owner));
-  const { calendar, calls, closed, useEvaluator } = calendarFakes(
+  const { calendar, calls, closed, changes, useEvaluator } = calendarFakes(
     context,
     database,
     clock,
@@ -109,6 +109,7 @@ function setup(context: TestContext) {
     rows,
     cache,
     closed,
+    changes,
     evaluate: useEvaluator,
     setTime(value: string) {
       now = new Date(value);
@@ -126,6 +127,7 @@ test("startup and hourly calendar job enqueue every configured owner without wai
   await state.called(2);
   state.calls.forEach((call) => call.resolve("feed"));
   await until(() => state.rows().length === 2);
+  assert.equal(state.changes(), 2);
   state.setTime("2026-01-01T12:30:00.000Z");
   assert.equal(state.calendar.job.run(), "calendar_queued");
   await state.called(4);
