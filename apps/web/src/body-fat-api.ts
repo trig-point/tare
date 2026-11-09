@@ -23,6 +23,7 @@ export const bodyFatSchema = z.object({
       z.object({
         status: z.literal("ready"),
         level_pct: z.number(),
+        change_points: z.number(),
         lines: z.array(z.string()),
       }),
     ])

@@ -47,7 +47,9 @@ export function BodyFatCard({
         <p
           key={line}
           title={
-            trend.status === "ready" && index === trend.lines.length - 1
+            trend.status === "ready" &&
+            index === trend.lines.length - 1 &&
+            Math.abs(trend.change_points) < 2
               ? "This scale's error is about 2 points"
               : undefined
           }
