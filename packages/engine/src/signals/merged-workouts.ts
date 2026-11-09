@@ -73,7 +73,7 @@ export function mergeWorkouts(
       return {
         ...session,
         category: activityCategory(session.kind).category,
-        calories: tracker ? tracker.calories : session.calories,
+        calories: tracker?.calories ?? session.calories,
         tracker: tracker ? { id: tracker.id, source: tracker.source } : null,
         sets: (setsBySession.get(session.id) ?? []).map(setView),
       };

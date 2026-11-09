@@ -211,6 +211,12 @@ test("merged workouts pair one-to-one by largest overlap, then earlier start, th
       ?.category,
     "other",
   );
+  const logged = { ...session(1, "agent", "run", "07:00", 30), calories: 250 };
+  const tracker = {
+    ...session(2, "oura", "running", "07:00", 30),
+    calories: null,
+  };
+  assert.equal(mergeWorkouts([logged, tracker], [])[0]?.calories, 250);
 });
 
 test("unknown activity names are counted, never named", () => {
