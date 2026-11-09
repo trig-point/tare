@@ -2,9 +2,9 @@ import type { Database } from "better-sqlite3";
 
 export type UpsertSourceActivityParams = {
   user_id: number;
-  started_at: string;
+  started_at: string | null;
   day: string;
-  duration_minutes: number;
+  duration_minutes: number | null;
   kind: string;
   calories: number | null;
   source: string;

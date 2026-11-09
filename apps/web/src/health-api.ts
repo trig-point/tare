@@ -53,8 +53,8 @@ export const signalsSchema = z.object({
   activities: z.array(
     z.object({
       id: z.number(),
-      started_at: z.string(),
-      duration_minutes: z.number(),
+      started_at: z.string().nullable(),
+      duration_minutes: z.number().nullable(),
       kind: z.string(),
       calories: z.number().nullable(),
       source: z.string(),

@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 import { type TestContext, test } from "node:test";
 import { pathToFileURL } from "node:url";
+import Database from "better-sqlite3";
 import { applyMigrations, openDatabase } from "../src/db.ts";
 
 const migrations = new URL("../migrations/", import.meta.url);
@@ -322,5 +323,42 @@ test("0028 keeps stored signals and the metric CHECK still rejects unknown metri
       .pluck()
       .get(),
     2,
+  );
+});
+
+test("0030 keeps every stored session and its keys", (context) => {
+  const folder = mkdtempSync(join(tmpdir(), "tare-0030-"));
+  const database = new Database(":memory:");
+  database.pragma("foreign_keys = ON");
+  context.after(() => {
+    database.close();
+    rmSync(folder, { recursive: true, force: true });
+  });
+  const copy = (upTo: number) => {
+    for (const name of readdirSync(migrations).filter(
+      (name) => name.endsWith(".sql") && Number(name.split("_")[0]) <= upTo,
+    ))
+      cpSync(new URL(name, migrations), join(folder, name));
+  };
+  copy(29);
+  applyMigrations(database, pathToFileURL(folder + sep));
+  database.exec(`INSERT INTO users (id, username, timezone, created_at) VALUES (1, 'example-person', 'UTC', '2026-01-01T00:00:00.000Z');
+    INSERT INTO activity_sessions VALUES (7, 1, 'example-client', '2026-01-01T06:00:00.000Z', '2026-01-01', 30, 'run', 210, 'oura', 'example-record', '2026-01-01T07:00:00.000Z');`);
+  const sessions = () =>
+    database
+      .prepare(
+        "SELECT id, user_id, client_id, started_at, day, duration_minutes, kind, calories, source, source_record_id, created_at FROM activity_sessions",
+      )
+      .all();
+  const before = sessions();
+  copy(30);
+  applyMigrations(database, pathToFileURL(folder + sep));
+  assert.deepEqual(sessions(), before);
+  assert.throws(
+    () =>
+      database.exec(
+        "INSERT INTO activity_sessions (user_id, client_id, started_at, day, duration_minutes, kind, source, created_at) VALUES (1, 'example-client', '2026-01-02T06:00:00.000Z', '2026-01-02', 20, 'walk', 'manual', '2026-01-02T07:00:00.000Z')",
+      ),
+    /UNIQUE/,
   );
 });
