@@ -71,6 +71,7 @@ export function createHomeAssistantPublisher({
     clientId: `tare-${install}`,
     clean: true,
     resubscribe: false,
+    reconnectOnConnackError: true,
     username: config.username,
     password: config.password,
     will: { topic: availability, payload: "offline", qos: 1, retain: true },
