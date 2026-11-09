@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { AddFood } from "./add-food.tsx";
 import type { Session } from "./api.ts";
+import { BodyFatCard } from "./body-fat.tsx";
 import { refreshDays } from "./days-api.ts";
 import { BodyCard } from "./health.tsx";
 import type { OutboxReplay } from "./outbox-replay.ts";
@@ -164,6 +165,7 @@ export function Today({
       <AddFood person={person} replay={replay} online={online} />
       <WeightForm person={person} replay={replay} />
       <WeightChart person={person.id} online={online} />
+      <BodyFatCard person={person.id} online={online} />
       <ProfileSection person={person.id} online={online} />
     </section>
   );

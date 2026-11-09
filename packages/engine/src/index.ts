@@ -94,7 +94,12 @@ async function startEngine() {
   );
   runner.register(oura.job);
   runner.register(
-    createOuraSyncJob({ database: connection.database, oura, clock }),
+    createOuraSyncJob({
+      database: connection.database,
+      oura,
+      clock,
+      creditMode: config.activityCredit,
+    }),
   );
   runner.register(calendar.job);
   calendar.start();
