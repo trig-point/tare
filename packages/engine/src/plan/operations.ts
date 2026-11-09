@@ -118,6 +118,7 @@ export function nextSlot(
   const next = assignSlot(open, minuteOfDay(now.toISOString(), person));
   return {
     status: plan.budgets.status,
+    day: plan.day,
     slot:
       plan.budgets.slots.find((slot) => slot.position === next?.position) ??
       null,

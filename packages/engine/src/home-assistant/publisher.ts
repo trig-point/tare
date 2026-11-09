@@ -198,35 +198,38 @@ export function createHomeAssistantPublisher({
     const states: typeof configs = [];
     const events: NonNullable<ProviderOutput["events"]> = [];
     const wakes = new Map<number, number>();
-    for (const person of people) {
-      const state = stateTopic(install, person.id);
-      const personEvents = eventTopic(install, person.id);
-      for (const provider of providers) {
-        const output = provider(person, { state, events: personEvents });
-        events.push(...(output.events ?? []));
-        if (output.refreshAt)
-          wakes.set(
-            person.id,
-            Math.min(
-              wakes.get(person.id) ?? Infinity,
-              output.refreshAt.getTime(),
-            ),
-          );
-        for (const entity of output.entities)
-          configs.push({
-            userId: person.id,
-            ...discoveryMessage(
-              topics,
-              person,
-              slugs.get(person.id) ?? String(person.id),
-              entity,
-            ),
-          });
-        for (const [topic, payload] of Object.entries(output.state))
-          states.push({ userId: person.id, topic, payload });
+    try {
+      for (const person of people) {
+        const state = stateTopic(install, person.id);
+        const personEvents = eventTopic(install, person.id);
+        for (const provider of providers) {
+          const output = provider(person, { state, events: personEvents });
+          events.push(...(output.events ?? []));
+          if (output.refreshAt)
+            wakes.set(
+              person.id,
+              Math.min(
+                wakes.get(person.id) ?? Infinity,
+                output.refreshAt.getTime(),
+              ),
+            );
+          for (const entity of output.entities)
+            configs.push({
+              userId: person.id,
+              ...discoveryMessage(
+                topics,
+                person,
+                slugs.get(person.id) ?? String(person.id),
+                entity,
+              ),
+            });
+          for (const [topic, payload] of Object.entries(output.state))
+            states.push({ userId: person.id, topic, payload });
+        }
       }
+    } finally {
+      armTimers(people, now, wakes);
     }
-    armTimers(people, now, wakes);
     const desired = [...configs, ...states];
     const wanted = new Set(desired.map((message) => message.topic));
     const owned = listHaEntities(database);

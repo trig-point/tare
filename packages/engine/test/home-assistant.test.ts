@@ -54,6 +54,34 @@ function manualClock() {
   };
 }
 
+type Request = Awaited<ReturnType<typeof twoUsers>>["admin"]["request"];
+type SlotInput = {
+  name: string;
+  start_minute: number;
+  end_minute: number;
+  share: number;
+};
+const slots = [
+  { name: "Breakfast", start_minute: 0, end_minute: 600, share: 72 },
+  { name: "Dinner", start_minute: 600, end_minute: 1440, share: 28 },
+];
+
+async function planDay(request: Request, slots: SlotInput[]) {
+  const post = async (path: string, body: unknown) =>
+    (
+      await request(path, { method: "POST", body: JSON.stringify(body) })
+    ).json();
+  const body = { action: "create", name: "Example day", slots };
+  const { template } = await post("/api/plan/templates", body);
+  const { day_type } = await post("/api/plan/day-types", {
+    action: "create",
+    name: "Example type",
+    template_id: template.id,
+  });
+  await post("/api/plan/default-day-type", { day_type_id: day_type.id });
+  return template.id as number;
+}
+
 async function setup(context: TestContext, env: Record<string, string> = {}) {
   const broker = (await Aedes.createBroker()) as Broker;
   const server = createServer(broker.handle).listen(0);
@@ -120,6 +148,7 @@ async function setup(context: TestContext, env: Record<string, string> = {}) {
     retained,
     state,
     status: `tare/${install}/status`,
+    statusTopic: mqtt.statusTopic,
     rules,
     settle: async (check: (retained: Retained) => boolean) => {
       while (!check(await retained())) await setImmediate();
@@ -359,23 +388,8 @@ test("planned-item buttons and the next-slot sensor follow presses, entries, pla
         .run(userId).lastInsertRowid,
     );
   const soup = food(admin.user.id);
-  const planDay = async (request: typeof admin.request) => {
-    const slots = [
-      { name: "Breakfast", start_minute: 0, end_minute: 600, share: 72 },
-      { name: "Dinner", start_minute: 600, end_minute: 1440, share: 28 },
-    ];
-    const body = { action: "create", name: "Example day", slots };
-    const { template } = await send(request, "/api/plan/templates", body);
-    const { day_type } = await send(request, "/api/plan/day-types", {
-      action: "create",
-      name: "Example type",
-      template_id: template.id,
-    });
-    await send(request, "/api/plan/day-type", { day_type_id: day_type.id });
-    return template.id as number;
-  };
-  const template = await planDay(admin.request);
-  await planDay(member.request);
+  const template = await planDay(admin.request, slots);
+  await planDay(member.request, slots);
   await send(admin.request, "/api/profile", profile);
   await send(admin.request, "/api/weights", { client_id: "w", weight_kg: 80 });
   database
@@ -399,6 +413,11 @@ test("planned-item buttons and the next-slot sensor follow presses, entries, pla
     createMealButtons({ database, clock, publisher }).provider,
   );
   publisher.addProvider(nextSlotProvider(database, clock, harness.settings));
+  let failing = false;
+  publisher.addProvider(() => {
+    if (failing) throw new Error("provider_failed");
+    return { entities: [], state: {} };
+  });
 
   const button = (now: Retained, item: number, action = "ate") =>
     JSON.parse(
@@ -406,12 +425,35 @@ test("planned-item buttons and the next-slot sensor follow presses, entries, pla
         `homeassistant/button/tare_${install}_${admin.user.id}/plan_${item}_${action}/config`,
       ) ?? "null",
     );
-  const next = (now: Retained) =>
-    now.get(nextSlotTopic(install, admin.user.id));
-  const sensor = (remaining: number, slot: string, budget: number) =>
-    JSON.stringify({ remaining, slot, budget });
-  await settle((now) => next(now) === sensor(1440, "Breakfast", 1440));
+  const revision = (now: Retained, item: number) =>
+    JSON.parse(button(now, item)?.payload_press ?? "null")?.revision;
+  const next = async () =>
+    JSON.parse(
+      (await harness.retained()).get(nextSlotTopic(install, admin.user.id)) ??
+        "null",
+    );
+  const client = await connectAsync(`mqtt://127.0.0.1:${harness.port}`);
+  context.after(() => client.endAsync());
+  // A status "online" starts a replay, which opens with the availability topic once the running
+  // reconcile is done. The first replay picks up the action; the second starts only after it finishes.
+  const replayed = async () => {
+    const mark = harness.published.length;
+    await client.publishAsync(harness.statusTopic, "online", { qos: 1 });
+    while (!harness.published.slice(mark).includes(`${harness.status} online`))
+      await setImmediate();
+  };
+  const flushed = async () => {
+    await replayed();
+    await replayed();
+  };
+  await settle((now) => now.get(harness.status) === "online");
+  await flushed();
   const first = await harness.retained();
+  assert.deepEqual(await next(), {
+    remaining: 1440,
+    slot: "Breakfast",
+    budget: 1440,
+  });
   for (const action of ["ate", "ate_three_quarters", "skip"])
     assert.equal(
       button(first, dinner.item.id, action).name,
@@ -419,16 +461,16 @@ test("planned-item buttons and the next-slot sensor follow presses, entries, pla
     );
   assert.equal(button(first, foreign.item.id), null);
 
-  const client = await connectAsync(`mqtt://127.0.0.1:${harness.port}`);
-  context.after(() => client.endAsync());
+  const resultTopic = pressResultTopic(install, admin.user.id);
   const pressed = async (payload: string, expected: string) => {
-    const topic = pressResultTopic(install, admin.user.id);
+    const before = (await harness.retained()).get(resultTopic);
     await client.publishAsync(planPressTopic(install, admin.user.id), payload, {
       qos: 1,
     });
-    await settle((now) =>
-      `${now.get(topic)}`.includes(`"result":"${expected}"`),
-    );
+    await settle((now) => now.get(resultTopic) !== before);
+    const after = (await harness.retained()).get(resultTopic) ?? "{}";
+    assert.equal(JSON.parse(after).result, expected);
+    await flushed();
   };
   const stale = button(first, dinner.item.id).payload_press;
   await send(admin.request, "/api/plan/slot", {
@@ -438,17 +480,17 @@ test("planned-item buttons and the next-slot sensor follow presses, entries, pla
     item_id: dinner.item.id,
     revision: dinner.item.revision,
   });
-  await settle(
-    (now) =>
-      JSON.parse(button(now, dinner.item.id)?.payload_press ?? "{}")
-        .revision === 2,
-  );
+  await flushed();
+  assert.equal(revision(await harness.retained(), dinner.item.id), 2);
 
   await pressed(
     button(first, breakfast.item.id, "skip").payload_press,
     "logged",
   );
-  await settle((now) => button(now, breakfast.item.id, "skip") === null);
+  assert.equal(
+    button(await harness.retained(), breakfast.item.id, "skip"),
+    null,
+  );
   await send(admin.request, "/api/plan/shares", {
     template_id: template,
     shares: [
@@ -461,36 +503,105 @@ test("planned-item buttons and the next-slot sensor follow presses, entries, pla
     name: "Example oats",
     kcal: 1440,
   });
-  await settle((now) => next(now) === sensor(-440, "Breakfast", 1000));
+  await flushed();
+  assert.deepEqual(await next(), {
+    remaining: -440,
+    slot: "Breakfast",
+    budget: 1000,
+  });
   const slotEnd = new Date("2026-01-01T10:00:00.000Z").getTime();
   assert.ok([...clock.timers].some((timer) => timer.at === slotEnd));
   clock.now().setTime(slotEnd);
+  failing = true;
+  const failures = harness.logs.length;
   for (const timer of [...clock.timers])
     if (timer.at <= slotEnd) {
       clock.timers.delete(timer);
       timer.callback();
     }
-  await settle((now) => next(now) === sensor(560, "Dinner", 560));
+  while (
+    !harness.logs.slice(failures).includes("home_assistant_publish_failed")
+  )
+    await setImmediate();
+  const dayEnd = new Date("2026-01-02T00:00:00.000Z").getTime();
+  const dayEnds = [...clock.timers].filter((timer) => timer.at === dayEnd);
+  assert.equal(dayEnds.length, 2);
+  failing = false;
+  await flushed();
+  assert.deepEqual(await next(), {
+    remaining: 560,
+    slot: "Dinner",
+    budget: 560,
+  });
   await send(admin.request, "/api/intake", {
     client_id: "b",
     name: "Example bread",
     kcal: 200,
   });
-  await settle((now) => next(now) === sensor(360, "Dinner", 560));
+  await flushed();
+  assert.deepEqual(await next(), {
+    remaining: 360,
+    slot: "Dinner",
+    budget: 560,
+  });
 
   const current = button(await harness.retained(), dinner.item.id);
   await pressed(current.payload_press, "logged");
-  await settle(
-    (now) =>
-      button(now, dinner.item.id) === null &&
-      next(now) === sensor(160, "Dinner", 560),
-  );
+  assert.equal(button(await harness.retained(), dinner.item.id), null);
+  assert.deepEqual(await next(), {
+    remaining: 160,
+    slot: "Dinner",
+    budget: 560,
+  });
   await pressed(stale, "stale_revision");
   const foreignPress = { item_id: foreign.item.id, revision: 1, action: "ate" };
   await pressed(JSON.stringify(foreignPress), "planned_item_not_found");
   const count = "SELECT count(*) FROM intake_entries WHERE user_id = ?";
   assert.equal(database.prepare(count).pluck().get(admin.user.id), 3);
   assert.equal(database.prepare(count).pluck().get(member.user.id), 0);
+});
+
+test("the next-slot refresh lands on the true slot end across clock changes", async (context) => {
+  const clock = manualClock();
+  const { admin, database } = await twoUsers(context, "fallback", { clock });
+  database.exec(
+    "UPDATE users SET timezone = 'America/New_York', day_start_hour = 0",
+  );
+  await planDay(admin.request, [
+    { name: "Early", start_minute: 0, end_minute: 90, share: 20 },
+    { name: "Breakfast", start_minute: 90, end_minute: 210, share: 30 },
+    { name: "Dinner", start_minute: 210, end_minute: 1440, share: 50 },
+  ]);
+  const post = (path: string, body: unknown) =>
+    admin.request(path, { method: "POST", body: JSON.stringify(body) });
+  await post("/api/profile", profile);
+  await post("/api/weights", { client_id: "w", weight_kg: 80 });
+  database
+    .prepare(
+      "INSERT INTO target_results (user_id, computed_at, trigger, kcal, protein_g, basis) VALUES (?, '2026-01-01T00:00:00.000Z', 'weekly', 2000, 120, 'formula')",
+    )
+    .run(admin.user.id);
+  const provider = nextSlotProvider(
+    database,
+    clock,
+    loadConfig({ DATABASE_URL: ":memory:" }),
+  );
+  const person = listPeople(database).find((row) => row.id === admin.user.id);
+  assert.ok(person);
+  const refreshAt = (instant: string) => {
+    clock.now().setTime(Date.parse(instant));
+    return provider(person, { state: "", events: "" }).refreshAt?.toISOString();
+  };
+  // 1:40 AM EST on the spring-forward day: Breakfast ends at 3:30 AM EDT.
+  assert.equal(
+    refreshAt("2026-03-08T06:40:00.000Z"),
+    "2026-03-08T07:30:00.000Z",
+  );
+  // 1:10 AM EST, the second pass of the fall-back hour: Early ends at 1:30 AM EST.
+  assert.equal(
+    refreshAt("2026-11-01T06:10:00.000Z"),
+    "2026-11-01T06:30:00.000Z",
+  );
 });
 
 test("a recompute that changes a target fires one event and sets the TDEE sensor, per person", async (context) => {
