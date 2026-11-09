@@ -27,6 +27,7 @@ Not in this change: posting from an agent workout skill (waits for an embedded a
 ### Modified Capabilities
 - `health-signals`: active calories from one eligible tracker may raise the day's target through the bonus; the Oura sync runs hourly in same-day mode.
 - `daily-target`: the one target reader returns the base, the bonus and the total.
+- `deployment-and-backup`: the scheduled jobs requirement allows the Oura sync to run hourly in same-day credit mode.
 
 ## Impact
 

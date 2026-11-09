@@ -5,13 +5,13 @@ The day's calorie target SHALL be the target from the one target reader (the bas
 
 The 28-day average SHALL be the mean of the selected source's active calories over the 28 days before the credited day, not including it, counting only days with a reading, and the bonus SHALL require readings on at least 14 of those days. Values SHALL be read when the target is read.
 
-The credit mode SHALL be configuration, set from the intraday probe: `next-day` by default, since it needs no schedule change, or `same-day`. An invalid value SHALL stop startup, as Tare's other configuration does. In same-day mode the credited day SHALL be today, using its burn so far. In next-day mode the credited day SHALL be yesterday, and the bonus SHALL apply to today once a stored reading exists for yesterday. The credited day C SHALL read the tracker's record whose day is C, as the sync stores it, even when the tracker's day boundary differs from the person's day-start hour.
+The credit mode SHALL be the setting `TARE_ACTIVITY_CREDIT`, `same-day` or `next-day`, trimmed and case-insensitive, with empty counting as unset. Its default SHALL be `same-day`, because the intraday probe found that Oura's record for today updates during the day; `next-day` SHALL remain available for a tracker without intraday updates. Any other value SHALL stop startup. In same-day mode the credited day SHALL be today, using its burn so far. In next-day mode the credited day SHALL be yesterday, and the bonus SHALL apply to today once a stored reading exists for yesterday. The credited day C SHALL read the tracker's record whose day is C, as the sync stores it, even when the tracker's day boundary differs from the person's day-start hour.
 
 When the source is not usable (no eligible tracker, or fewer than 14 days with a reading), the card SHALL say "Activity bonus after 14 days of tracker data.", and this message SHALL win over the awaiting message. When a usable source has no reading for the credited day yet, the card SHALL say "Activity: waiting for today's data." in same-day mode and "Activity: waiting for yesterday's data." in next-day mode. A capped bonus SHALL read "+500 from activity (capped)" in same-day mode and "+500 from yesterday's activity (capped)" in next-day mode.
 
-The weekly estimate, the stored weekly target and the weekly target notice SHALL NOT change. The bonus SHALL apply the same way when B is a formula target. The reader's result SHALL carry the base, its basis, the bonus and the total. The bonus SHALL carry its status, kcal, source, mode, whether it was capped, the credited day, the credited burn, the 28-day average and the source's last sync time. `kcal` SHALL be the total, so remaining kcal and slot budgets read it with no second calculation, and slots that have ended keep their budgets. The week's targets SHALL run above B on average by the bonuses, with no automatic correction.
+The weekly estimate, the stored weekly target and the weekly target notice SHALL NOT change. The bonus SHALL apply the same way when B is a formula target. The reader's result SHALL carry the base, its basis, the bonus and the total. The bonus SHALL carry its status, kcal, source, mode, whether it was capped, the credited day, the credited burn, the 28-day average and the source's last sync time. The reader result's top-level `kcal` SHALL be the total, so remaining kcal and slot budgets read it with no second calculation, and slots that have ended keep their budgets. The week's targets SHALL run above B on average by the bonuses, with no automatic correction.
 
-The target card SHALL show the base and the bonus with the credited burn and the last sync time. The Today page SHALL refetch the today, plan and signals queries together on window focus and every 15 minutes, and logging writes SHALL refresh the same set.
+The target card SHALL show the base and the bonus with the source, the credited burn and the last sync time. When the reader returns `needs_profile` or `needs_weigh_in`, there SHALL be no base, no bonus and no total, and the card SHALL show the existing no-target state. The Today page SHALL refetch the today, plan and signals queries together on window focus and every 15 minutes, and logging writes SHALL refresh the same set.
 
 #### Scenario: Training day
 - **WHEN** in same-day mode B is 2,180 kcal, the source's 28-day average is 430 kcal and today shows 680 kcal so far
@@ -51,11 +51,15 @@ The target card SHALL show the base and the bonus with the credited burn and the
 
 #### Scenario: Invalid credit mode
 - **WHEN** the credit mode is set to a value other than `same-day` or `next-day`
-- **THEN** startup stops and names the setting
+- **THEN** startup stops with "TARE_ACTIVITY_CREDIT must be same-day or next-day"
 
 #### Scenario: Open page refreshes
 - **WHEN** the stored Oura data changes with no browser write or focus event
 - **THEN** the target card and the Body card both show the new values at the next 15-minute refetch
+
+#### Scenario: No target yet
+- **WHEN** the reader returns `needs_profile` or `needs_weigh_in`
+- **THEN** the result has no base, bonus or total and the card shows the existing no-target state
 
 #### Scenario: Weekly estimate unaffected
 - **WHEN** the weekly recompute runs after a week of bonuses

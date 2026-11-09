@@ -3,7 +3,7 @@
 ### Requirement: Sessions with timing, notes and sets
 A person or their agent SHALL be able to log an activity session with optional notes and optional sets, written in one transaction. A session SHALL have a timing of `exact` (the default) or `date_only`. An exact session SHALL require a start time and a positive duration. A date-only session SHALL take a day and SHALL refuse a start time and a duration, which SHALL be stored as NULL; no placeholder time SHALL ever be stored. Every reader SHALL handle a NULL start and duration, listing date-only sessions after timed ones. Tracker sessions SHALL always be exact.
 
-Each set SHALL carry a set index from 1, a nonblank exercise, a set type of warmup, working, drop or failure (default working), and any of reps, load, duration in seconds, a reps-in-reserve range from 0 to 10 with low at most high, and notes. Loads SHALL be stored in kilograms, 0 or more. A load given in pounds SHALL be converted at 0.45359237 kg per lb and stored without rounding; the unit given SHALL be kept for display only, and a load SHALL read back in its given unit rounded to one decimal place.
+Each set SHALL carry a set index from 1, a nonblank exercise, a set type of warmup, working, drop or failure (default working), and any of reps, load, duration in seconds, a reps-in-reserve range from 0 to 10 with low at most high, and notes. Loads SHALL be stored in kilograms, 0 or more. A load given in pounds SHALL be converted at 0.45359237 kg per lb and stored without rounding; the unit given SHALL be kept for display only, and a load SHALL read back in its given unit rounded to two decimal places, beside `load_kg` rounded to two decimal places.
 
 An exercise SHALL be at most 80 characters, a set's notes at most 200 characters and a session's notes at most 1,000 characters. A session SHALL carry at most 40 sets, so a request at every limit, in plain UTF-8 text, stays under the operation limit; the byte limit still rejects anything larger. `log_activity` and `replace_activity_sets` SHALL accept requests up to 60,000 bytes over HTTP and MCP; a text field over its length, a 41st set or a larger request SHALL be rejected with a stable code and nothing stored.
 
@@ -46,7 +46,7 @@ A replayed `log_activity` with the same client id SHALL return the stored sessio
 - **THEN** the call fails and no row changes
 
 ### Requirement: Session kinds and categories
-Session kind SHALL stay free text, with `sauna` and `cold_plunge` as the kinds for those sessions. A fixed list SHALL map each kind, and each tracker activity name through a fixed table, to one category of `strength`, `cardio`, `sauna`, `cold_plunge` or `other`. An unknown kind or activity name SHALL map to `other`, SHALL be shown as an unpaired row, SHALL be counted in telemetry, and SHALL never be dropped.
+Session kind SHALL stay free text, with `sauna` and `cold_plunge` as the kinds for those sessions. A fixed list SHALL map each kind, and each tracker activity name through a fixed table, to one category of `strength`, `cardio`, `sauna`, `cold_plunge` or `other`. An unknown kind or activity name SHALL map to `other`, SHALL be shown as an unpaired row, SHALL be counted in telemetry, and SHALL never be dropped. A session in category `other` SHALL never be paired.
 
 #### Scenario: Sauna session
 - **WHEN** a person logs a 20-minute session of kind `sauna`
@@ -57,7 +57,7 @@ Session kind SHALL stay free text, with `sauna` and `cold_plunge` as the kinds f
 - **THEN** it is stored, shown unpaired with category `other`, and counted in telemetry
 
 ### Requirement: Merged workouts
-The system SHALL provide one merged-workouts read, returned by `read_activities` for a date range and by `read_signals` in place of its raw session list. A pair SHALL be one tracker session (any source other than `manual` and `agent`) and one exact logged session (`manual` or `agent`) of the same category whose times overlap. Matching SHALL be one-to-one: for each logged session in start order, the unpaired overlapping tracker session with the largest overlap SHALL be taken, ties going to the earlier tracker start and then the lower id. In a pair the logged session SHALL supply sets, notes, start and duration and the tracker session SHALL supply calories; calories SHALL never be summed. Date-only sessions SHALL never be paired. Unpaired sessions SHALL be shown as they are. The Body card, the body fat trend and the why-lines SHALL all use this read. A raw-session read MAY exist only as a separately named operation.
+The system SHALL provide one merged-workouts read, returned by `read_activities` for a date range and by `read_signals` in place of its raw session list. A pair SHALL be one tracker session (any source other than `manual` and `agent`) and one exact logged session (`manual` or `agent`) of the same category whose times overlap. Matching SHALL be one-to-one: for each logged session in start order, the unpaired overlapping tracker session with the largest overlap SHALL be taken, ties going to the earlier tracker start and then the lower id. In a pair the logged session SHALL supply sets, notes, start and duration and the tracker session SHALL supply calories; calories SHALL never be summed. Date-only sessions and sessions in category `other` SHALL never be paired. Unpaired sessions SHALL be shown as they are. The Body card, the body fat trend and the why-lines SHALL all use this read. A raw-session read MAY exist only as a separately named operation.
 
 #### Scenario: Logged and tracked workout overlap
 - **WHEN** a logged strength session from 6:00 to 7:00 PM overlaps a tracker strength workout from 6:05 to 6:55 PM with 310 kcal
@@ -70,6 +70,10 @@ The system SHALL provide one merged-workouts read, returned by `read_activities`
 #### Scenario: Different categories
 - **WHEN** a logged sauna session overlaps a tracker walk
 - **THEN** they read as two entries
+
+#### Scenario: Other sessions are never paired
+- **WHEN** a logged session of an unknown kind overlaps a tracker workout whose activity name is not in the table, so both are in category `other`
+- **THEN** they read as two entries and the logged session takes none of the tracker's calories
 
 #### Scenario: Date-only session is never paired
 - **WHEN** a date-only strength session and a tracker strength workout fall on the same day
