@@ -142,7 +142,11 @@ export function createHomeAssistantPublisher({
     });
   }
 
-  function armTimers(people: Person[], now: Date) {
+  function armTimers(
+    people: Person[],
+    now: Date,
+    wakes = new Map<number, number>(),
+  ) {
     const present = new Set(people.map((person) => person.id));
     for (const [id, timer] of timers)
       if (!present.has(id)) {
@@ -155,20 +159,21 @@ export function createHomeAssistantPublisher({
         person.timezone,
         person.day_start_hour,
       );
-      const key = `${day}|${person.timezone}|${person.day_start_hour}`;
-      if (timers.get(person.id)?.key === key) continue;
-      timers.get(person.id)?.cancel();
       const { end } = personDayBounds(
         day,
         person.timezone,
         person.day_start_hour,
       );
+      const at = Math.min(end.getTime(), wakes.get(person.id) ?? Infinity);
+      const key = `${day}|${person.timezone}|${person.day_start_hour}|${at}`;
+      if (timers.get(person.id)?.key === key) continue;
+      timers.get(person.id)?.cancel();
       const timer = clock.schedule(
         () => {
           timers.delete(person.id);
           refreshAll();
         },
-        Math.max(0, end.getTime() - now.getTime()),
+        Math.max(0, at - now.getTime()),
       );
       timers.set(person.id, { key, cancel: timer.cancel });
     }
@@ -182,8 +187,8 @@ export function createHomeAssistantPublisher({
 
   async function reconcile() {
     const people = listPeople(database);
-    armTimers(people, clock.now());
-    if (!client.connected) return;
+    const now = clock.now();
+    if (!client.connected) return armTimers(people, now);
     if (replay) {
       replay = false;
       sent.clear();
@@ -192,25 +197,38 @@ export function createHomeAssistantPublisher({
     const configs: { userId: number; topic: string; payload: string }[] = [];
     const states: typeof configs = [];
     const events: NonNullable<ProviderOutput["events"]> = [];
-    for (const person of people) {
-      const state = stateTopic(install, person.id);
-      const personEvents = eventTopic(install, person.id);
-      for (const provider of providers) {
-        const output = provider(person, { state, events: personEvents });
-        events.push(...(output.events ?? []));
-        for (const entity of output.entities)
-          configs.push({
-            userId: person.id,
-            ...discoveryMessage(
-              topics,
-              person,
-              slugs.get(person.id) ?? String(person.id),
-              entity,
-            ),
-          });
-        for (const [topic, payload] of Object.entries(output.state))
-          states.push({ userId: person.id, topic, payload });
+    const wakes = new Map<number, number>();
+    try {
+      for (const person of people) {
+        const state = stateTopic(install, person.id);
+        const personEvents = eventTopic(install, person.id);
+        for (const provider of providers) {
+          const output = provider(person, { state, events: personEvents });
+          events.push(...(output.events ?? []));
+          if (output.refreshAt)
+            wakes.set(
+              person.id,
+              Math.min(
+                wakes.get(person.id) ?? Infinity,
+                output.refreshAt.getTime(),
+              ),
+            );
+          for (const entity of output.entities)
+            configs.push({
+              userId: person.id,
+              ...discoveryMessage(
+                topics,
+                person,
+                slugs.get(person.id) ?? String(person.id),
+                entity,
+              ),
+            });
+          for (const [topic, payload] of Object.entries(output.state))
+            states.push({ userId: person.id, topic, payload });
+        }
       }
+    } finally {
+      armTimers(people, now, wakes);
     }
     const desired = [...configs, ...states];
     const wanted = new Set(desired.map((message) => message.topic));

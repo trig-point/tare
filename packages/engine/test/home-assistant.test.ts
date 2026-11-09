@@ -12,9 +12,14 @@ import { personDayBounds } from "../src/calendar/time.ts";
 import { loadConfig } from "../src/config.ts";
 import {
   createMealButtons,
+  planPressTopic,
   pressResultTopic,
   pressTopic,
 } from "../src/home-assistant/meal-buttons.ts";
+import {
+  nextSlotProvider,
+  nextSlotTopic,
+} from "../src/home-assistant/next-slot.ts";
 import { createHomeAssistantPublisher } from "../src/home-assistant/publisher.ts";
 import { sensorProvider } from "../src/home-assistant/snapshot.ts";
 import { targetEventProvider } from "../src/home-assistant/target-event.ts";
@@ -47,6 +52,34 @@ function manualClock() {
       return { cancel: () => timers.delete(timer) };
     },
   };
+}
+
+type Request = Awaited<ReturnType<typeof twoUsers>>["admin"]["request"];
+type SlotInput = {
+  name: string;
+  start_minute: number;
+  end_minute: number;
+  share: number;
+};
+const slots = [
+  { name: "Breakfast", start_minute: 0, end_minute: 600, share: 72 },
+  { name: "Dinner", start_minute: 600, end_minute: 1440, share: 28 },
+];
+
+async function planDay(request: Request, slots: SlotInput[]) {
+  const post = async (path: string, body: unknown) =>
+    (
+      await request(path, { method: "POST", body: JSON.stringify(body) })
+    ).json();
+  const body = { action: "create", name: "Example day", slots };
+  const { template } = await post("/api/plan/templates", body);
+  const { day_type } = await post("/api/plan/day-types", {
+    action: "create",
+    name: "Example type",
+    template_id: template.id,
+  });
+  await post("/api/plan/default-day-type", { day_type_id: day_type.id });
+  return template.id as number;
 }
 
 async function setup(context: TestContext, env: Record<string, string> = {}) {
@@ -103,6 +136,7 @@ async function setup(context: TestContext, env: Record<string, string> = {}) {
     JSON.parse(retained.get(`tare/${install}/${userId}/state`) ?? "{}");
   return {
     ...users,
+    settings,
     broker,
     port,
     clock,
@@ -114,6 +148,7 @@ async function setup(context: TestContext, env: Record<string, string> = {}) {
     retained,
     state,
     status: `tare/${install}/status`,
+    statusTopic: mqtt.statusTopic,
     rules,
     settle: async (check: (retained: Retained) => boolean) => {
       while (!check(await retained())) await setImmediate();
@@ -337,6 +372,238 @@ test("meal button presses arrive through the broker, after a reconnect and a new
   await settle((now) => revision(now, later) === 1);
   await press(payload(await harness.retained(), later), "logged");
   await settle((now) => config(now, later) === undefined);
+});
+
+test("planned-item buttons and the next-slot sensor follow presses, entries, plan edits and slot ends", async (context) => {
+  const harness = await setup(context);
+  const { admin, member, database, install, clock, publisher, send, settle } =
+    harness;
+  database.exec("UPDATE users SET timezone = 'UTC', day_start_hour = 0");
+  const food = (userId: number) =>
+    Number(
+      database
+        .prepare(
+          "INSERT INTO foods (user_id, name, kcal, provenance) VALUES (?, 'Example soup', 100, 'estimated')",
+        )
+        .run(userId).lastInsertRowid,
+    );
+  const soup = food(admin.user.id);
+  const template = await planDay(admin.request, slots);
+  await planDay(member.request, slots);
+  await send(admin.request, "/api/profile", profile);
+  await send(admin.request, "/api/weights", { client_id: "w", weight_kg: 80 });
+  database
+    .prepare(
+      "INSERT INTO target_results (user_id, computed_at, trigger, kcal, protein_g, basis) VALUES (?, '2026-01-01T00:00:00.000Z', 'weekly', 2000, 120, 'formula')",
+    )
+    .run(admin.user.id);
+  const breakfast = await send(admin.request, "/api/plan/slot", {
+    position: 0,
+    food_id: soup,
+  });
+  const dinner = await send(admin.request, "/api/plan/slot", {
+    position: 1,
+    food_id: soup,
+  });
+  const foreign = await send(member.request, "/api/plan/slot", {
+    position: 1,
+    food_id: food(member.user.id),
+  });
+  publisher.addProvider(
+    createMealButtons({ database, clock, publisher }).provider,
+  );
+  publisher.addProvider(nextSlotProvider(database, clock, harness.settings));
+  let failing = false;
+  publisher.addProvider(() => {
+    if (failing) throw new Error("provider_failed");
+    return { entities: [], state: {} };
+  });
+
+  const button = (now: Retained, item: number, action = "ate") =>
+    JSON.parse(
+      now.get(
+        `homeassistant/button/tare_${install}_${admin.user.id}/plan_${item}_${action}/config`,
+      ) ?? "null",
+    );
+  const revision = (now: Retained, item: number) =>
+    JSON.parse(button(now, item)?.payload_press ?? "null")?.revision;
+  const next = async () =>
+    JSON.parse(
+      (await harness.retained()).get(nextSlotTopic(install, admin.user.id)) ??
+        "null",
+    );
+  const client = await connectAsync(`mqtt://127.0.0.1:${harness.port}`);
+  context.after(() => client.endAsync());
+  // A status "online" starts a replay, which opens with the availability topic once the running
+  // reconcile is done. The first replay picks up the action; the second starts only after it finishes.
+  const replayed = async () => {
+    const mark = harness.published.length;
+    await client.publishAsync(harness.statusTopic, "online", { qos: 1 });
+    while (!harness.published.slice(mark).includes(`${harness.status} online`))
+      await setImmediate();
+  };
+  const flushed = async () => {
+    await replayed();
+    await replayed();
+  };
+  await settle((now) => now.get(harness.status) === "online");
+  await flushed();
+  const first = await harness.retained();
+  assert.deepEqual(await next(), {
+    remaining: 1440,
+    slot: "Breakfast",
+    budget: 1440,
+  });
+  for (const action of ["ate", "ate_three_quarters", "skip"])
+    assert.equal(
+      button(first, dinner.item.id, action).name,
+      `Dinner: Example soup ${action === "ate" ? "ate it" : action === "skip" ? "skip" : "ate 3/4"}`,
+    );
+  assert.equal(button(first, foreign.item.id), null);
+
+  const resultTopic = pressResultTopic(install, admin.user.id);
+  const pressed = async (payload: string, expected: string) => {
+    const before = (await harness.retained()).get(resultTopic);
+    // A new press time makes every result payload differ, so a wrong result is asserted, not waited on.
+    clock.now().setTime(clock.now().getTime() + 1000);
+    await client.publishAsync(planPressTopic(install, admin.user.id), payload, {
+      qos: 1,
+    });
+    await settle((now) => now.get(resultTopic) !== before);
+    const after = (await harness.retained()).get(resultTopic) ?? "{}";
+    assert.equal(JSON.parse(after).result, expected);
+    await flushed();
+  };
+  const stale = button(first, dinner.item.id).payload_press;
+  await send(admin.request, "/api/plan/slot", {
+    position: 1,
+    food_id: soup,
+    servings: 2,
+    item_id: dinner.item.id,
+    revision: dinner.item.revision,
+  });
+  await flushed();
+  assert.equal(revision(await harness.retained(), dinner.item.id), 2);
+
+  await pressed(
+    button(first, breakfast.item.id, "skip").payload_press,
+    "logged",
+  );
+  assert.equal(
+    button(await harness.retained(), breakfast.item.id, "skip"),
+    null,
+  );
+  await send(admin.request, "/api/plan/shares", {
+    template_id: template,
+    shares: [
+      { position: 0, share: 50 },
+      { position: 1, share: 50 },
+    ],
+  });
+  await send(admin.request, "/api/intake", {
+    client_id: "a",
+    name: "Example oats",
+    kcal: 1440,
+  });
+  await flushed();
+  assert.deepEqual(await next(), {
+    remaining: -440,
+    slot: "Breakfast",
+    budget: 1000,
+  });
+  const slotEnd = new Date("2026-01-01T10:00:00.000Z").getTime();
+  assert.ok([...clock.timers].some((timer) => timer.at === slotEnd));
+  clock.now().setTime(slotEnd);
+  failing = true;
+  const failures = harness.logs.length;
+  for (const timer of [...clock.timers])
+    if (timer.at <= slotEnd) {
+      clock.timers.delete(timer);
+      timer.callback();
+    }
+  while (
+    !harness.logs.slice(failures).includes("home_assistant_publish_failed")
+  )
+    await setImmediate();
+  const dayEnd = new Date("2026-01-02T00:00:00.000Z").getTime();
+  const dayEnds = [...clock.timers].filter((timer) => timer.at === dayEnd);
+  assert.equal(dayEnds.length, 2);
+  failing = false;
+  await flushed();
+  assert.deepEqual(await next(), {
+    remaining: 560,
+    slot: "Dinner",
+    budget: 560,
+  });
+  await send(admin.request, "/api/intake", {
+    client_id: "b",
+    name: "Example bread",
+    kcal: 200,
+  });
+  await flushed();
+  assert.deepEqual(await next(), {
+    remaining: 360,
+    slot: "Dinner",
+    budget: 560,
+  });
+
+  const current = button(await harness.retained(), dinner.item.id);
+  await pressed(current.payload_press, "logged");
+  assert.equal(button(await harness.retained(), dinner.item.id), null);
+  assert.deepEqual(await next(), {
+    remaining: 160,
+    slot: "Dinner",
+    budget: 560,
+  });
+  await pressed(stale, "stale_revision");
+  const foreignPress = { item_id: foreign.item.id, revision: 1, action: "ate" };
+  await pressed(JSON.stringify(foreignPress), "planned_item_not_found");
+  const count = "SELECT count(*) FROM intake_entries WHERE user_id = ?";
+  assert.equal(database.prepare(count).pluck().get(admin.user.id), 3);
+  assert.equal(database.prepare(count).pluck().get(member.user.id), 0);
+});
+
+test("the next-slot refresh lands on the true slot end across clock changes", async (context) => {
+  const clock = manualClock();
+  const { admin, database } = await twoUsers(context, "fallback", { clock });
+  database.exec(
+    "UPDATE users SET timezone = 'America/New_York', day_start_hour = 0",
+  );
+  await planDay(admin.request, [
+    { name: "Early", start_minute: 0, end_minute: 90, share: 20 },
+    { name: "Breakfast", start_minute: 90, end_minute: 210, share: 30 },
+    { name: "Dinner", start_minute: 210, end_minute: 1440, share: 50 },
+  ]);
+  const post = (path: string, body: unknown) =>
+    admin.request(path, { method: "POST", body: JSON.stringify(body) });
+  await post("/api/profile", profile);
+  await post("/api/weights", { client_id: "w", weight_kg: 80 });
+  database
+    .prepare(
+      "INSERT INTO target_results (user_id, computed_at, trigger, kcal, protein_g, basis) VALUES (?, '2026-01-01T00:00:00.000Z', 'weekly', 2000, 120, 'formula')",
+    )
+    .run(admin.user.id);
+  const provider = nextSlotProvider(
+    database,
+    clock,
+    loadConfig({ DATABASE_URL: ":memory:" }),
+  );
+  const person = listPeople(database).find((row) => row.id === admin.user.id);
+  assert.ok(person);
+  const refreshAt = (instant: string) => {
+    clock.now().setTime(Date.parse(instant));
+    return provider(person, { state: "", events: "" }).refreshAt?.toISOString();
+  };
+  // 1:40 AM EST on the spring-forward day: Breakfast ends at 3:30 AM EDT.
+  assert.equal(
+    refreshAt("2026-03-08T06:40:00.000Z"),
+    "2026-03-08T07:30:00.000Z",
+  );
+  // 1:10 AM EST, the second pass of the fall-back hour: Early ends at 1:30 AM EST.
+  assert.equal(
+    refreshAt("2026-11-01T06:10:00.000Z"),
+    "2026-11-01T06:30:00.000Z",
+  );
 });
 
 test("a recompute that changes a target fires one event and sets the TDEE sensor, per person", async (context) => {

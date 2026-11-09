@@ -12,6 +12,7 @@ export interface ProviderOutput {
   entities: EntityDefinition[];
   state: Record<string, string>;
   events?: { topic: string; payload: string; sent(): void }[];
+  refreshAt?: Date;
 }
 
 export type Provider = (

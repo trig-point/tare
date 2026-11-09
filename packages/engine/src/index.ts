@@ -10,6 +10,7 @@ import { createCalendarTransport } from "./calendar/transport.ts";
 import { loadConfig } from "./config.ts";
 import { openDatabase } from "./db.ts";
 import { createMealButtons } from "./home-assistant/meal-buttons.ts";
+import { nextSlotProvider } from "./home-assistant/next-slot.ts";
 import { createHomeAssistantPublisher } from "./home-assistant/publisher.ts";
 import { sensorProvider } from "./home-assistant/snapshot.ts";
 import { targetEventProvider } from "./home-assistant/target-event.ts";
@@ -49,11 +50,6 @@ await ensureFirstUser(
 
 async function startEngine(scaleUsers: Map<string, number> | null) {
   const clock = { now: () => new Date() };
-  const calendar = createCalendarRefresher({
-    database: connection.database,
-    clock,
-    transport: createCalendarTransport(),
-  });
   const oura = createOura({ database: connection.database, config, clock });
   oura.cleanup();
   const questionKinds = createOrderQuestionKinds({
@@ -81,6 +77,15 @@ async function startEngine(scaleUsers: Map<string, number> | null) {
         publisher: homeAssistant,
       }).provider,
     );
+  homeAssistant?.addProvider(
+    nextSlotProvider(connection.database, clock, config),
+  );
+  const calendar = createCalendarRefresher({
+    database: connection.database,
+    clock,
+    transport: createCalendarTransport(),
+    onChanged: () => homeAssistant?.refreshAll(),
+  });
   if (homeAssistant && config.scale && scaleUsers) {
     const handleReading = createScaleSubscriber({
       database: connection.database,
