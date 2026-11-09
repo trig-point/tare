@@ -2,6 +2,7 @@ import type { Database } from "better-sqlite3";
 import type { Config } from "../config.ts";
 import { readLedger, remainingFor } from "../days/ledger.ts";
 import { localDay } from "../logging/day.ts";
+import { selectTargetResult } from "../queries/select-target-result.ts";
 import { selectTargetWeights } from "../queries/select-target-weights.ts";
 import { readTarget } from "../target/reader.ts";
 import { weightTrend } from "../trend/weight-trend.ts";
@@ -20,6 +21,7 @@ const sensors = [
   ["calories_eaten", "Calories eaten today", "kcal", "kcal_complete"],
   ["protein_eaten", "Protein eaten today", "g", "protein_complete"],
   ["weight_trend", "Weight trend", "kg"],
+  ["tdee_estimate", "TDEE estimate", "kcal"],
 ] as const;
 
 export function personSnapshot(
@@ -47,6 +49,8 @@ export function personSnapshot(
       weightTrend(
         selectTargetWeights(database, { user_id: person.id, day }),
       ).at(-1)?.trend_kg ?? null,
+    tdee_estimate:
+      selectTargetResult(database, { user_id: person.id })?.tdee_kcal ?? null,
     kcal_complete: totals.kcal.complete,
     protein_complete: totals.protein_g.complete,
   };

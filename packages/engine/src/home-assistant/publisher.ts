@@ -12,8 +12,10 @@ import {
   availabilityTopic,
   discoveryMessage,
   entitySlugs,
+  eventTopic,
   type Person,
   type Provider,
+  type ProviderOutput,
   stateTopic,
 } from "./discovery.ts";
 
@@ -169,10 +171,13 @@ export function createHomeAssistantPublisher({
     const slugs = entitySlugs(people);
     const configs: { userId: number; topic: string; payload: string }[] = [];
     const states: typeof configs = [];
+    const events: NonNullable<ProviderOutput["events"]> = [];
     for (const person of people) {
       const state = stateTopic(install, person.id);
+      const personEvents = eventTopic(install, person.id);
       for (const provider of providers) {
-        const output = provider(person, { state });
+        const output = provider(person, { state, events: personEvents });
+        events.push(...(output.events ?? []));
         for (const entity of output.entities)
           configs.push({
             userId: person.id,
@@ -201,6 +206,12 @@ export function createHomeAssistantPublisher({
     for (const message of desired)
       if (sent.get(message.topic) !== message.payload)
         await send(message.topic, message.payload);
+    // Events are not retained: a retained one would fire again whenever Home Assistant reconnects.
+    for (const event of events) {
+      if (stopped || !client.connected) throw new Error("mqtt_disconnected");
+      await client.publishAsync(event.topic, event.payload, { qos: 1 });
+      event.sent();
+    }
     for (const row of owned) {
       if (wanted.has(row.topic)) continue;
       await send(row.topic, "");

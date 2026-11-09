@@ -10,6 +10,7 @@ import { createTargetRecomputeJob } from "../src/target/job.ts";
 import { liveFormula } from "../src/target/live-formula.ts";
 import { readTarget } from "../src/target/reader.ts";
 import { recomputeTarget } from "../src/target/recompute.ts";
+import { seed, weigh } from "./support/adaptive-seed.ts";
 import { test } from "./support/hang-ceiling.ts";
 import { twoUsers } from "./support/two-users.ts";
 
@@ -31,58 +32,6 @@ const save = async (actor: Actor, changes = {}) =>
       body: JSON.stringify({ ...profile, ...changes }),
     })
   ).status;
-function weigh(
-  database: Database,
-  userId: number,
-  clientId: string,
-  day: string,
-  kg = 80,
-) {
-  database
-    .prepare(
-      "INSERT INTO weights(user_id,client_id,day,measured_at,weight_kg,created_at) VALUES (?,?,?,?,?,?)",
-    )
-    .run([
-      userId,
-      clientId,
-      day,
-      `${day}T12:00:00.000Z`,
-      kg,
-      now.toISOString(),
-    ]);
-}
-function seed(database: Database, userId: number) {
-  for (let offset = 0; offset <= 28; offset++) {
-    const day = new Date(Date.UTC(2025, 11, 3 + offset))
-      .toISOString()
-      .slice(0, 10);
-    weigh(database, userId, `weight-${offset}`, day);
-    if (!offset) continue;
-    database
-      .prepare(
-        "INSERT INTO intake_entries(user_id,client_id,day,eaten_at,name,kcal,kcal_low,kcal_high,provenance,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-      )
-      .run(
-        userId,
-        `food-${offset}`,
-        day,
-        `${day}T12:00:00.000Z`,
-        "Example meal",
-        2675,
-        2660,
-        2705,
-        "estimated",
-        now.toISOString(),
-        now.toISOString(),
-      );
-    database
-      .prepare(
-        "UPDATE days SET signed_off_at = ? WHERE user_id = ? AND day = ?",
-      )
-      .run(now.toISOString(), userId, day);
-  }
-}
-
 test("stored targets: readiness, adaptive today, rollback, owner isolation, reset and final-input interleavings", async (context) => {
   const { database, admin, member } = await twoUsers(context, "fallback");
   const latest = () => selectTargetResult(database, { user_id: admin.user.id });

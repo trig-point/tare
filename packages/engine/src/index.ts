@@ -11,6 +11,7 @@ import { loadConfig } from "./config.ts";
 import { openDatabase } from "./db.ts";
 import { createHomeAssistantPublisher } from "./home-assistant/publisher.ts";
 import { sensorProvider } from "./home-assistant/snapshot.ts";
+import { targetEventProvider } from "./home-assistant/target-event.ts";
 import { createOrderEmailParseJob } from "./inbound/job.ts";
 import { createOrderQuestionKinds } from "./inbound/questions.ts";
 import { createJobRunner } from "./jobs.ts";
@@ -67,6 +68,7 @@ async function startEngine() {
   homeAssistant?.addProvider(
     sensorProvider(connection.database, clock, config),
   );
+  homeAssistant?.addProvider(targetEventProvider(connection.database));
   const runner = createJobRunner({
     database: connection.database,
     timezone: config.timezone,
