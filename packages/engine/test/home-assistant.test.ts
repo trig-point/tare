@@ -156,12 +156,7 @@ test("devices carry their person's sensors through edits, day changes, births an
 
   const soup = { client_id: "a", name: "Example soup", kcal: 500 };
   const logged = await send(admin.request, "/api/intake", soup);
-  const weight = {
-    client_id: "w",
-    weight_kg: 70,
-    measured_at: "2025-12-31T20:00:00Z",
-  };
-  await send(member.request, "/api/weights", weight);
+  await send(member.request, "/api/weights", { client_id: "w", weight_kg: 70 });
   await send(member.request, "/api/intake", { ...soup, kcal: 300 });
   await settle((now) => state(now, member.user.id).calories_eaten === 300);
   const now = await harness.retained();
