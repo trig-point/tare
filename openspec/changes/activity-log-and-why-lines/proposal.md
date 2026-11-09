@@ -4,7 +4,7 @@ Tare already stores tracker burn, workouts and recovery signals, but it uses non
 
 ## What Changes
 
-- The day's calorie target becomes a base plus an activity adjustment: today's tracker active burn compared with the person's usual burn from the same source, capped at 500 kcal, for example "+250 from activity". The weekly energy-balance estimate is unchanged and the day's targets still average to it. How the morning is handled (same time of day, or a rise-only adjustment with a base offset) is an open operator choice (see design).
+- The day's calorie target becomes the weekly energy-balance target plus an activity adjustment: today's tracker active burn above the person's 28-day average from the same source, never below zero, capped at 500 kcal. The card shows both, for example "Base 2,180. +250 from activity." The weekly estimate is unchanged. The adjustment only rises, which adds about 80 kcal a day on average in an illustration; the operator accepted that drift.
 - The Oura sync runs about hourly instead of once a day, so today's burn is current.
 - Activity sessions gain notes, sets (set type, reps, load in kilograms, reps in reserve) and two new kinds, sauna and cold plunge. One merged-workouts read joins a logged session with the tracker workout it overlaps, so no consumer counts one workout twice.
 - A habit log records context notes for a day (evening alcohol and late caffeine to start). A row means it happened; a day without one is not logged, never "no".
@@ -29,6 +29,6 @@ Not in this change: posting from an agent workout skill (waits for an embedded a
 
 ## Impact
 
-- Engine: new migrations for session notes, `activity_sets`, `habit_log` and, under the recommended drift rule, intraday burn samples; new queries in `.sql` files with TypeSQL types; the target reader (`packages/engine/src/target/reader.ts`); the signals operations and their body limit (`packages/engine/src/signals/operations.ts`); the Oura sync schedule (`packages/engine/src/oura/sync.ts`).
+- Engine: new migrations for session notes, `activity_sets`, `habit_log`; new queries in `.sql` files with TypeSQL types; the target reader (`packages/engine/src/target/reader.ts`); the signals operations and their body limit (`packages/engine/src/signals/operations.ts`); the Oura sync schedule (`packages/engine/src/oura/sync.ts`).
 - Web: `apps/web/src/health-api.ts` schemas (unknown fields are dropped today, so every new field is added there) and the Body card in `apps/web/src/health.tsx`.
 - No new package. Depends on the `tare-v1` change's signals store (6.1), Oura sync (6.3), weekly recompute (5.2), weight trend (3.2), slot budgets (8.3) and Body card (6.4); this change's delta specs apply after `tare-v1` is archived.
