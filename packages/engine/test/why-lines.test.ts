@@ -221,7 +221,8 @@ test("4 logged days keep the tier-one line; a fifth replaces it", async (context
 
 test("one person's pattern never counts another person's days", async (context) => {
   const { personA, personB } = await people(context);
-  history(personB, "sauna", 8, 29);
-  history(personA, "sauna", 1, 29);
+  for (const kind of ["sauna", "evening_alcohol"])
+    history(personB, kind, 8, 29);
+  history(personA, "evening_alcohol", 1, 29);
   assert.deepEqual(await personA.why("hrv"), []);
 });
