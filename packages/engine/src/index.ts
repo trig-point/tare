@@ -9,6 +9,7 @@ import { createCalendarRefresher } from "./calendar/refresh.ts";
 import { createCalendarTransport } from "./calendar/transport.ts";
 import { loadConfig } from "./config.ts";
 import { openDatabase } from "./db.ts";
+import { createMealButtons } from "./home-assistant/meal-buttons.ts";
 import { createHomeAssistantPublisher } from "./home-assistant/publisher.ts";
 import { sensorProvider } from "./home-assistant/snapshot.ts";
 import { createOrderEmailParseJob } from "./inbound/job.ts";
@@ -67,6 +68,13 @@ async function startEngine() {
   homeAssistant?.addProvider(
     sensorProvider(connection.database, clock, config),
   );
+  const mealButtons = homeAssistant
+    ? createMealButtons({
+        database: connection.database,
+        publisher: homeAssistant,
+      })
+    : undefined;
+  if (mealButtons) homeAssistant?.addProvider(mealButtons.provider);
   const runner = createJobRunner({
     database: connection.database,
     timezone: config.timezone,
@@ -144,6 +152,7 @@ async function startEngine() {
         oura.stop(),
         calendar.stop(),
         homeAssistant?.stop(),
+        mealButtons?.stop(),
         new Promise<void>((resolve, reject) => {
           server.close((error) => (error ? reject(error) : resolve()));
         }),
