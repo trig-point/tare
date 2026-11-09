@@ -143,6 +143,63 @@ test("sets, timing, cap, replay, replacement and owner isolation over HTTP", asy
   );
 });
 
+test("delete_activity removes a logged session with its sets; tracker and foreign sessions stay", async (context) => {
+  const { admin, member, database } = await twoUsers(context, "fallback");
+  const send = async (
+    caller: typeof admin,
+    path: string,
+    method: string,
+    body?: unknown,
+  ) => {
+    const response = await caller.request(path, {
+      method,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    return { status: response.status, body: await response.json() };
+  };
+  const rows = () =>
+    ["activity_sessions", "activity_sets"].map((table) =>
+      database.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all(),
+    );
+  const log = (client_id: string) =>
+    send(admin, "/api/activities", "POST", {
+      ...{ started_at: at("18:00"), duration_minutes: 60, kind: "strength" },
+      ...{ client_id, sets: [strengthSet, strengthSet, strengthSet] },
+    });
+  const doomed = (await log("example-doomed")).body;
+  const kept = (await log("example-kept")).body;
+  const tracker = upsertSourceActivity(database, {
+    ...{ user_id: admin.user.id, source: "oura", day: doomed.day },
+    ...{ source_record_id: "example-ring", started_at: at("07:00") },
+    ...{ duration_minutes: 30, kind: "walk", calories: 120 },
+    created_at: at("08:00"),
+  });
+  const before = rows();
+  assert.equal(
+    (await send(member, `/api/activities/${doomed.id}`, "DELETE")).status,
+    404,
+  );
+  for (const [path, method, body] of [
+    [`/api/activities/${tracker?.id}`, "DELETE"],
+    [`/api/activities/${tracker?.id}/sets`, "PATCH", { sets: [strengthSet] }],
+  ] as const)
+    assert.deepEqual(await send(admin, path, method, body), {
+      status: 400,
+      body: { error: { code: "tracker_session" } },
+    });
+  assert.deepEqual(rows(), before);
+  assert.deepEqual(
+    await send(admin, `/api/activities/${doomed.id}`, "DELETE"),
+    { status: 200, body: { deleted: true, id: doomed.id } },
+  );
+  const [sessions, sets] = rows();
+  assert.deepEqual(
+    sessions?.map((row) => (row as { id: number }).id),
+    [kept.id, tracker?.id],
+  );
+  assert.deepEqual(sets, before[1]?.slice(3));
+});
+
 const session = (
   id: number,
   source: string,
