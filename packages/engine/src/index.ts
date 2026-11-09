@@ -18,6 +18,7 @@ import { createOrderMaintenanceJob } from "./orders/maintenance.ts";
 import { createOura } from "./oura/service.ts";
 import { createOuraSyncJob } from "./oura/sync.ts";
 import { deleteExpiredSessions } from "./queries/delete-expired-sessions.ts";
+import { createScaleSubscriber, resolveScaleUsers } from "./scale/ingest.ts";
 import { createTargetRecomputeJob } from "./target/job.ts";
 
 const config = loadConfig(process.env);
@@ -31,6 +32,9 @@ await ensureFirstUser(
   config.identity,
 )
   .then(() => ensureSignInCapableUsers(connection.database, config.identity))
+  .then(() =>
+    config.scale ? resolveScaleUsers(connection.database, config.scale) : null,
+  )
   .then(startEngine, (error: unknown) => {
     console.error(
       error instanceof Error
@@ -41,7 +45,7 @@ await ensureFirstUser(
     process.exitCode = 1;
   });
 
-async function startEngine() {
+async function startEngine(scaleUsers: Map<string, number> | null) {
   const clock = { now: () => new Date() };
   const calendar = createCalendarRefresher({
     database: connection.database,
@@ -67,6 +71,18 @@ async function startEngine() {
   homeAssistant?.addProvider(
     sensorProvider(connection.database, clock, config),
   );
+  if (homeAssistant && config.scale && scaleUsers) {
+    const handleReading = createScaleSubscriber({
+      database: connection.database,
+      topic: config.scale.topic,
+      users: scaleUsers,
+      questionKinds,
+      clock,
+      onLogged: () => homeAssistant.refreshAll(),
+    });
+    homeAssistant.subscribe(`${config.scale.topic}/+`, handleReading);
+    homeAssistant.subscribe(config.scale.topic, handleReading);
+  }
   const runner = createJobRunner({
     database: connection.database,
     timezone: config.timezone,

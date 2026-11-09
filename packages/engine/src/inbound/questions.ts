@@ -8,6 +8,7 @@ import { selectPerson } from "../queries/select-person.ts";
 import { selectReconcileEmail } from "../queries/select-reconcile-email.ts";
 import { updateEmailReconciliation } from "../queries/update-email-reconciliation.ts";
 import type { QuestionKind } from "../questions/kinds.ts";
+import { scaleQuestionKinds } from "../scale/ingest.ts";
 import { reconcileEmail } from "./reconcile.ts";
 import {
   type corrections,
@@ -60,6 +61,7 @@ export function createOrderQuestionKinds({
   ] as const;
   return new Map([
     ...mealNutritionKinds,
+    ...scaleQuestionKinds(clock),
     ...kinds.map(([name, answer]): [string, QuestionKind] => [
       name,
       {

@@ -44,6 +44,7 @@ export interface Config {
   oura: { clientId: string; clientSecret: string; redirectUrl: string } | null;
   ouraTokenKey: Buffer | undefined;
   mqtt: MqttConfig | null;
+  scale: ScaleConfig | null;
   identity:
     | { mode: "access"; teamDomain: string; audience: string }
     | { mode: "fallback" };
@@ -60,6 +61,11 @@ export interface MqttConfig {
   password: string | undefined;
   discoveryPrefix: string;
   statusTopic: string;
+}
+
+export interface ScaleConfig {
+  topic: string;
+  users: Record<string, string>;
 }
 
 export function domainMatches(signingDomain: string, domain: string): boolean {
@@ -272,6 +278,40 @@ function parseMqtt(env: Record<string, string | undefined>): Config["mqtt"] {
   return { url, username, password, discoveryPrefix, statusTopic };
 }
 
+function parseScale(
+  env: Record<string, string | undefined>,
+  mqtt: Config["mqtt"],
+): Config["scale"] {
+  const text = env.TARE_SCALE_USERS?.trim();
+  if (!text) return null;
+  let users: Record<string, string>;
+  try {
+    users = zod
+      .record(
+        zod
+          .string()
+          .regex(/^[^\s/+#]+$/)
+          .refine((slug) => slug !== "status"),
+        zod.string().trim().min(1),
+      )
+      .refine((map) => {
+        const names = Object.values(map);
+        return new Set(names).size === names.length;
+      })
+      .parse(JSON.parse(text));
+  } catch {
+    throw new Error(
+      "TARE_SCALE_USERS must map single-level scale users to distinct usernames",
+    );
+  }
+  if (Object.keys(users).length === 0) return null;
+  if (!mqtt) throw new Error("TARE_SCALE_USERS requires TARE_MQTT_URL");
+  return {
+    topic: parseTopic(env, "TARE_SCALE_TOPIC", "scale/body-composition"),
+    users,
+  };
+}
+
 export function parsePort(value: string | undefined): number {
   const portText = value ?? "3000";
   const port = Number(portText);
@@ -455,6 +495,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
       "TARE_ACCESS_TEAM_DOMAIN must be set when TARE_ACCESS_AUD is set",
     );
   const accessEmail = normalizeAccessEmail(env.TARE_ADMIN_ACCESS_EMAIL ?? "");
+  const mqtt = parseMqtt(env);
   return {
     orderEmailServices: parseOrderEmailServices(env.TARE_ORDER_EMAIL_SERVICES),
     tdee: parseTdeeSettings(env),
@@ -475,7 +516,8 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     orderModel: parseOrderModel(env),
     oura: parseOura(env),
     ouraTokenKey: parseOuraKey(env.TARE_OURA_TOKEN_KEY),
-    mqtt: parseMqtt(env),
+    mqtt,
+    scale: parseScale(env, mqtt),
     identity:
       teamDomain !== undefined && audience !== undefined
         ? { mode: "access", teamDomain, audience }

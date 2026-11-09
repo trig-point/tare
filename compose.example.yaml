@@ -48,6 +48,8 @@ services:
       TARE_MQTT_PASSWORD: ${TARE_MQTT_PASSWORD:-}
       TARE_HA_DISCOVERY_PREFIX: ${TARE_HA_DISCOVERY_PREFIX:-}
       TARE_HA_STATUS_TOPIC: ${TARE_HA_STATUS_TOPIC:-}
+      TARE_SCALE_USERS: ${TARE_SCALE_USERS:-}
+      TARE_SCALE_TOPIC: ${TARE_SCALE_TOPIC:-}
     volumes:
       - tare-data:/data
       - tare-backups:/backups
