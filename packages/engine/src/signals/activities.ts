@@ -271,11 +271,7 @@ const replaceActivitySets = defineOperation({
   handler(input, context) {
     const person = operationPerson(context);
     const day = writeTransaction(context.database, () => {
-      const session = ownedLoggedSession(
-        context.database,
-        person.id,
-        input.id,
-      );
+      const session = ownedLoggedSession(context.database, person.id, input.id);
       writeSets(
         context.database,
         { user_id: person.id, session_id: session.id },
