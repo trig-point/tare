@@ -13,6 +13,7 @@ import { loadConfig } from "../src/config.ts";
 import { createHomeAssistantPublisher } from "../src/home-assistant/publisher.ts";
 import { sensorProvider } from "../src/home-assistant/snapshot.ts";
 import { targetEventProvider } from "../src/home-assistant/target-event.ts";
+import { listPeople } from "../src/queries/home-assistant/list-people.ts";
 import { createTargetRecomputeJob } from "../src/target/job.ts";
 import { profile, seed } from "./support/adaptive-seed.ts";
 import { test } from "./support/hang-ceiling.ts";
@@ -301,6 +302,9 @@ test("a recompute that changes a target fires one event and sets the TDEE sensor
   assert.deepEqual(events().slice(1), [
     event(member.user.id, [2100], [96, 120]),
   ]);
+  const restarted = targetEventProvider(database);
+  for (const person of listPeople(database))
+    assert.deepEqual(restarted(person, { state: "", events: "" }).events, []);
 });
 
 test("MQTT settings parse, and the importer refuses while the engine answers", async (context) => {
