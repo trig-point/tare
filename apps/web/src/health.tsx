@@ -75,10 +75,15 @@ export function BodyCard({
       {rows.length > 0 && (
         <dl className="totals">
           {rows.map((entry) => (
-            <div key={entry.metric}>
+            <div key={`${entry.metric}-${entry.source}`}>
               <dt>{metricLabels[entry.metric]}</dt>
               <dd>{signalText(entry)}</dd>
               <dd className="source">{sourceLabel(entry.source)}</dd>
+              {entry.why.map((line) => (
+                <dd key={line} className="why">
+                  {line}
+                </dd>
+              ))}
             </div>
           ))}
         </dl>

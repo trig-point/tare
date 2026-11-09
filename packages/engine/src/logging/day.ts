@@ -45,3 +45,9 @@ export function localDay(
   if (Number(values.hour) < dayStartHour) day.setUTCDate(day.getUTCDate() - 1);
   return day.toISOString().slice(0, 10);
 }
+
+export function shiftDay(day: string, days: number) {
+  const date = new Date(`${day}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}

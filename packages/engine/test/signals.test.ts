@@ -44,7 +44,7 @@ for (const mode of ["fallback", "access"] as const)
           (row: { metric: string }) => row.metric === metric,
         ),
         {
-          ...{ metric, value, unit, source: "manual" },
+          ...{ metric, value, unit, source: "manual", why: [] },
           ...(metric === "stress_summary" ? { label: "stressful" } : {}),
         },
       );
@@ -199,8 +199,8 @@ test("MCP keeps different sources and records agent activity on its local day", 
   await call("log_signal", { metric: "steps", value: 45 });
   const signals = await call("read_signals", { day: "2026-01-01" });
   assert.deepEqual(signals.signals, [
-    { metric: "steps", unit: "count", value: 45, source: "agent" },
-    { metric: "steps", unit: "count", value: 12, source: "manual" },
+    { metric: "steps", unit: "count", value: 45, source: "agent", why: [] },
+    { metric: "steps", unit: "count", value: 12, source: "manual", why: [] },
   ]);
   const activity = {
     started_at: "2026-01-01T03:59:00+05:30",
