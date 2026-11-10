@@ -82,6 +82,7 @@ test("registry constrains public and administrator operations and inventories ev
       "read_activities",
       "eat_meal",
       "mark_delivery",
+      "record_order",
       "list_meals_on_hand",
       "save_profile",
       "read_profile",

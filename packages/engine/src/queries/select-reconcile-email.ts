@@ -23,6 +23,7 @@ export type SelectReconcileEmailResult = {
   released_at: string | null;
   manual_result: string | null;
   applied_order_id: number | null;
+  origin: string;
 };
 
 export function selectReconcileEmail(
@@ -57,6 +58,7 @@ function mapArrayToSelectReconcileEmailResult(data: any) {
     released_at: data[14],
     manual_result: data[15],
     applied_order_id: data[16],
+    origin: data[17],
   };
   return result;
 }
