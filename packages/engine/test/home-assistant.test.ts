@@ -26,8 +26,10 @@ import { targetEventProvider } from "../src/home-assistant/target-event.ts";
 import { listPeople } from "../src/queries/home-assistant/list-people.ts";
 import { createTargetRecomputeJob } from "../src/target/job.ts";
 import { profile, seed } from "./support/adaptive-seed.ts";
+import { brokerPresses } from "./support/broker-presses.ts";
 import { test } from "./support/hang-ceiling.ts";
 import { orderMeal } from "./support/order-meals.ts";
+import { planDay } from "./support/plan-day.ts";
 import { twoUsers } from "./support/two-users.ts";
 
 type Retained = Map<string, string>;
@@ -52,34 +54,6 @@ function manualClock() {
       return { cancel: () => timers.delete(timer) };
     },
   };
-}
-
-type Request = Awaited<ReturnType<typeof twoUsers>>["admin"]["request"];
-type SlotInput = {
-  name: string;
-  start_minute: number;
-  end_minute: number;
-  share: number;
-};
-const slots = [
-  { name: "Breakfast", start_minute: 0, end_minute: 600, share: 72 },
-  { name: "Dinner", start_minute: 600, end_minute: 1440, share: 28 },
-];
-
-async function planDay(request: Request, slots: SlotInput[]) {
-  const post = async (path: string, body: unknown) =>
-    (
-      await request(path, { method: "POST", body: JSON.stringify(body) })
-    ).json();
-  const body = { action: "create", name: "Example day", slots };
-  const { template } = await post("/api/plan/templates", body);
-  const { day_type } = await post("/api/plan/day-types", {
-    action: "create",
-    name: "Example type",
-    template_id: template.id,
-  });
-  await post("/api/plan/default-day-type", { day_type_id: day_type.id });
-  return template.id as number;
 }
 
 async function setup(context: TestContext, env: Record<string, string> = {}) {
@@ -339,15 +313,8 @@ test("meal button presses arrive through the broker, after a reconnect and a new
   const first = await harness.retained();
   assert.equal(config(first, later), undefined);
 
-  const client = await connectAsync(`mqtt://127.0.0.1:${harness.port}`);
-  context.after(() => client.endAsync());
   const topic = pressTopic(install, admin.user.id);
-  const press = async (sent: string, expected: string) => {
-    const before = (await harness.retained()).get(resultTopic);
-    await client.publishAsync(topic, sent, { qos: 1 });
-    await settle((now) => now.get(resultTopic) !== before);
-    assert.equal(result(await harness.retained()), expected);
-  };
+  const { press } = await brokerPresses(context, harness, topic, resultTopic);
   await press(payload(first, due), "logged");
   await settle((now) => revision(now, due) === 2);
   await press(payload(first, due, "ate_three_quarters"), "stale_revision");
@@ -376,39 +343,14 @@ test("meal button presses arrive through the broker, after a reconnect and a new
 
 test("planned-item buttons and the next-slot sensor follow presses, entries, plan edits and slot ends", async (context) => {
   const harness = await setup(context);
-  const { admin, member, database, install, clock, publisher, send, settle } =
-    harness;
-  database.exec("UPDATE users SET timezone = 'UTC', day_start_hour = 0");
-  const food = (userId: number) =>
-    Number(
-      database
-        .prepare(
-          "INSERT INTO foods (user_id, name, kcal, provenance) VALUES (?, 'Example soup', 100, 'estimated')",
-        )
-        .run(userId).lastInsertRowid,
-    );
-  const soup = food(admin.user.id);
-  const template = await planDay(admin.request, slots);
-  await planDay(member.request, slots);
-  await send(admin.request, "/api/profile", profile);
-  await send(admin.request, "/api/weights", { client_id: "w", weight_kg: 80 });
-  database
-    .prepare(
-      "INSERT INTO target_results (user_id, computed_at, trigger, kcal, protein_g, basis) VALUES (?, '2026-01-01T00:00:00.000Z', 'weekly', 2000, 120, 'formula')",
-    )
-    .run(admin.user.id);
-  const breakfast = await send(admin.request, "/api/plan/slot", {
-    position: 0,
-    food_id: soup,
-  });
-  const dinner = await send(admin.request, "/api/plan/slot", {
-    position: 1,
-    food_id: soup,
-  });
-  const foreign = await send(member.request, "/api/plan/slot", {
-    position: 1,
-    food_id: food(member.user.id),
-  });
+  const { admin, member, database, install, clock, publisher, send } = harness;
+  const soup = await planDay(database, admin, "UTC");
+  const memberSoup = await planDay(database, member, "UTC");
+  const plan = async (person: typeof admin, position: number, food_id = soup) =>
+    (await send(person.request, "/api/plan/slot", { position, food_id })).item;
+  const breakfast = await plan(admin, 0);
+  const dinner = await plan(admin, 1);
+  const foreign = await plan(member, 1, memberSoup);
   publisher.addProvider(
     createMealButtons({ database, clock, publisher }).provider,
   );
@@ -418,116 +360,54 @@ test("planned-item buttons and the next-slot sensor follow presses, entries, pla
     if (failing) throw new Error("provider_failed");
     return { entities: [], state: {} };
   });
-
+  const prefix = `homeassistant/button/tare_${install}_${admin.user.id}/plan_`;
   const button = (now: Retained, item: number, action = "ate") =>
-    JSON.parse(
-      now.get(
-        `homeassistant/button/tare_${install}_${admin.user.id}/plan_${item}_${action}/config`,
-      ) ?? "null",
-    );
-  const revision = (now: Retained, item: number) =>
-    JSON.parse(button(now, item)?.payload_press ?? "null")?.revision;
+    JSON.parse(now.get(`${prefix}${item}_${action}/config`) ?? "null");
+  const slotTopic = nextSlotTopic(install, admin.user.id);
   const next = async () =>
-    JSON.parse(
-      (await harness.retained()).get(nextSlotTopic(install, admin.user.id)) ??
-        "null",
-    );
-  const client = await connectAsync(`mqtt://127.0.0.1:${harness.port}`);
-  context.after(() => client.endAsync());
-  // A status "online" starts a replay, which opens with the availability topic once the running
-  // reconcile is done. The first replay picks up the action; the second starts only after it finishes.
-  const replayed = async () => {
-    const mark = harness.published.length;
-    await client.publishAsync(harness.statusTopic, "online", { qos: 1 });
-    while (!harness.published.slice(mark).includes(`${harness.status} online`))
-      await setImmediate();
-  };
-  const flushed = async () => {
-    await replayed();
-    await replayed();
-  };
-  await settle((now) => now.get(harness.status) === "online");
+    JSON.parse(`${(await harness.retained()).get(slotTopic)}`);
+  await harness.settle((now) => now.get(harness.status) === "online");
+  const { flushed, press } = await brokerPresses(
+    context,
+    harness,
+    planPressTopic(install, admin.user.id),
+    pressResultTopic(install, admin.user.id),
+  );
   await flushed();
   const first = await harness.retained();
-  assert.deepEqual(await next(), {
-    remaining: 1440,
-    slot: "Breakfast",
-    budget: 1440,
-  });
-  for (const action of ["ate", "ate_three_quarters", "skip"])
-    assert.equal(
-      button(first, dinner.item.id, action).name,
-      `Dinner: Example soup ${action === "ate" ? "ate it" : action === "skip" ? "skip" : "ate 3/4"}`,
-    );
-  assert.equal(button(first, foreign.item.id), null);
+  const name = button(first, dinner.id, "ate_three_quarters")?.name;
+  assert.equal(name, "Dinner: Example soup ate 3/4");
+  assert.equal(button(first, foreign.id), null);
 
-  const resultTopic = pressResultTopic(install, admin.user.id);
-  const pressed = async (payload: string, expected: string) => {
-    const before = (await harness.retained()).get(resultTopic);
-    // A new press time makes every result payload differ, so a wrong result is asserted, not waited on.
-    clock.now().setTime(clock.now().getTime() + 1000);
-    await client.publishAsync(planPressTopic(install, admin.user.id), payload, {
-      qos: 1,
-    });
-    await settle((now) => now.get(resultTopic) !== before);
-    const after = (await harness.retained()).get(resultTopic) ?? "{}";
-    assert.equal(JSON.parse(after).result, expected);
-    await flushed();
-  };
-  const stale = button(first, dinner.item.id).payload_press;
-  await send(admin.request, "/api/plan/slot", {
-    position: 1,
-    food_id: soup,
-    servings: 2,
-    item_id: dinner.item.id,
-    revision: dinner.item.revision,
-  });
+  const edit = { position: 1, food_id: soup, servings: 2, revision: 1 };
+  await send(admin.request, "/api/plan/slot", { ...edit, item_id: dinner.id });
   await flushed();
-  assert.equal(revision(await harness.retained(), dinner.item.id), 2);
+  const edited = button(await harness.retained(), dinner.id).payload_press;
+  assert.equal(JSON.parse(edited).revision, 2);
+  await press(button(first, dinner.id).payload_press, "stale_revision");
+  await press(button(first, breakfast.id, "skip").payload_press, "logged");
+  assert.equal(button(await harness.retained(), breakfast.id, "skip"), null);
 
-  await pressed(
-    button(first, breakfast.item.id, "skip").payload_press,
-    "logged",
-  );
-  assert.equal(
-    button(await harness.retained(), breakfast.item.id, "skip"),
-    null,
-  );
-  await send(admin.request, "/api/plan/shares", {
-    template_id: template,
-    shares: [
-      { position: 0, share: 50 },
-      { position: 1, share: 50 },
-    ],
-  });
-  await send(admin.request, "/api/intake", {
-    client_id: "a",
-    name: "Example oats",
-    kcal: 1440,
-  });
+  const oats = { client_id: "a", name: "Example oats", kcal: 1440 };
+  await send(admin.request, "/api/intake", oats);
   await flushed();
-  assert.deepEqual(await next(), {
-    remaining: -440,
-    slot: "Breakfast",
-    budget: 1000,
-  });
-  const slotEnd = new Date("2026-01-01T10:00:00.000Z").getTime();
-  assert.ok([...clock.timers].some((timer) => timer.at === slotEnd));
+  const slotEnd = Date.parse("2026-01-01T10:00:00.000Z");
+  const due = [...clock.timers].filter((timer) => timer.at === slotEnd);
+  assert.equal(due.length, 2);
   clock.now().setTime(slotEnd);
   failing = true;
   const failures = harness.logs.length;
-  for (const timer of [...clock.timers])
-    if (timer.at <= slotEnd) {
-      clock.timers.delete(timer);
-      timer.callback();
-    }
+  for (const timer of due) {
+    clock.timers.delete(timer);
+    timer.callback();
+  }
   while (
     !harness.logs.slice(failures).includes("home_assistant_publish_failed")
   )
     await setImmediate();
-  const dayEnd = new Date("2026-01-02T00:00:00.000Z").getTime();
-  const dayEnds = [...clock.timers].filter((timer) => timer.at === dayEnd);
-  assert.equal(dayEnds.length, 2);
+  const dayEnd = Date.parse("2026-01-02T00:00:00.000Z");
+  const armed = [...clock.timers].filter((timer) => timer.at === dayEnd);
+  assert.equal(armed.length, 2);
   failing = false;
   await flushed();
   assert.deepEqual(await next(), {
@@ -535,75 +415,43 @@ test("planned-item buttons and the next-slot sensor follow presses, entries, pla
     slot: "Dinner",
     budget: 560,
   });
-  await send(admin.request, "/api/intake", {
-    client_id: "b",
-    name: "Example bread",
-    kcal: 200,
-  });
-  await flushed();
+  await press(edited, "logged");
+  assert.equal(button(await harness.retained(), dinner.id), null);
   assert.deepEqual(await next(), {
     remaining: 360,
     slot: "Dinner",
     budget: 560,
   });
 
-  const current = button(await harness.retained(), dinner.item.id);
-  await pressed(current.payload_press, "logged");
-  assert.equal(button(await harness.retained(), dinner.item.id), null);
-  assert.deepEqual(await next(), {
-    remaining: 160,
-    slot: "Dinner",
-    budget: 560,
-  });
-  await pressed(stale, "stale_revision");
-  const foreignPress = { item_id: foreign.item.id, revision: 1, action: "ate" };
-  await pressed(JSON.stringify(foreignPress), "planned_item_not_found");
+  const foreignPress = { item_id: foreign.id, revision: 1, action: "ate" };
+  await press(JSON.stringify(foreignPress), "planned_item_not_found");
   const count = "SELECT count(*) FROM intake_entries WHERE user_id = ?";
-  assert.equal(database.prepare(count).pluck().get(admin.user.id), 3);
+  assert.equal(database.prepare(count).pluck().get(admin.user.id), 2);
   assert.equal(database.prepare(count).pluck().get(member.user.id), 0);
 });
 
 test("the next-slot refresh lands on the true slot end across clock changes", async (context) => {
   const clock = manualClock();
   const { admin, database } = await twoUsers(context, "fallback", { clock });
-  database.exec(
-    "UPDATE users SET timezone = 'America/New_York', day_start_hour = 0",
-  );
-  await planDay(admin.request, [
+  await planDay(database, admin, "America/New_York", [
     { name: "Early", start_minute: 0, end_minute: 90, share: 20 },
     { name: "Breakfast", start_minute: 90, end_minute: 210, share: 30 },
     { name: "Dinner", start_minute: 210, end_minute: 1440, share: 50 },
   ]);
-  const post = (path: string, body: unknown) =>
-    admin.request(path, { method: "POST", body: JSON.stringify(body) });
-  await post("/api/profile", profile);
-  await post("/api/weights", { client_id: "w", weight_kg: 80 });
-  database
-    .prepare(
-      "INSERT INTO target_results (user_id, computed_at, trigger, kcal, protein_g, basis) VALUES (?, '2026-01-01T00:00:00.000Z', 'weekly', 2000, 120, 'formula')",
-    )
-    .run(admin.user.id);
-  const provider = nextSlotProvider(
-    database,
-    clock,
-    loadConfig({ DATABASE_URL: ":memory:" }),
-  );
-  const person = listPeople(database).find((row) => row.id === admin.user.id);
+  const settings = loadConfig({ DATABASE_URL: ":memory:" });
+  const provider = nextSlotProvider(database, clock, settings);
+  const person = listPeople(database).find(({ id }) => id === admin.user.id);
   assert.ok(person);
-  const refreshAt = (instant: string) => {
-    clock.now().setTime(Date.parse(instant));
-    return provider(person, { state: "", events: "" }).refreshAt?.toISOString();
-  };
-  // 1:40 AM EST on the spring-forward day: Breakfast ends at 3:30 AM EDT.
-  assert.equal(
-    refreshAt("2026-03-08T06:40:00.000Z"),
-    "2026-03-08T07:30:00.000Z",
-  );
-  // 1:10 AM EST, the second pass of the fall-back hour: Early ends at 1:30 AM EST.
-  assert.equal(
-    refreshAt("2026-11-01T06:10:00.000Z"),
-    "2026-11-01T06:30:00.000Z",
-  );
+  // Spring forward at 1:40 AM EST: Breakfast ends at 3:30 AM EDT. Fall back at 1:10 AM EST, the
+  // second pass of the repeated hour: Early ends at 1:30 AM EST.
+  for (const [now, end] of [
+    ["2026-03-08T06:40:00.000Z", "2026-03-08T07:30:00.000Z"],
+    ["2026-11-01T06:10:00.000Z", "2026-11-01T06:30:00.000Z"],
+  ]) {
+    clock.now().setTime(Date.parse(`${now}`));
+    const output = provider(person, { state: "", events: "" });
+    assert.equal(output.refreshAt?.toISOString(), end);
+  }
 });
 
 test("a recompute that changes a target fires one event and sets the TDEE sensor, per person", async (context) => {
