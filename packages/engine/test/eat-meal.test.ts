@@ -1,12 +1,9 @@
 import assert from "node:assert/strict";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { writeTransaction } from "../src/db.ts";
 import { mealNutritionKinds } from "../src/meal-nutrition/index.ts";
 import { eatOrderMeal } from "../src/orders/eat.ts";
 import { createOrder } from "../src/orders/index.ts";
-import { insertAgentToken } from "../src/queries/insert-agent-token.ts";
-import { assertionHeader, signAccessToken } from "./auth-support.ts";
+import { mcpSession } from "./auth-support.ts";
 import { test } from "./support/hang-ceiling.ts";
 import { twoUsers } from "./support/two-users.ts";
 
@@ -190,26 +187,7 @@ test("meal actions scale labels, replay before revisions and roll back rejected 
 
 test("MCP advertises the meal action with object input fields", async (context) => {
   const { app, database, admin } = await twoUsers(context, "access");
-  insertAgentToken(database, {
-    client_id: "example-meal-agent",
-    user_id: admin.user.id,
-    name: "Example agent",
-    created_at: now,
-  });
-  const token = await signAccessToken({
-    sub: "",
-    common_name: "example-meal-agent",
-  });
-  const client = new Client({ name: "example", version: "1" });
-  context.after(() => client.close());
-  const transport = new StreamableHTTPClientTransport(
-    new URL("http://localhost/mcp"),
-    {
-      fetch: async (url, init) => app.request(url.toString(), init),
-      requestInit: { headers: assertionHeader(token) },
-    },
-  );
-  await client.connect(transport);
+  const client = await mcpSession(context, { app, database }, admin.user.id);
   const tool = (await client.listTools()).tools.find(
     (tool) => tool.name === "eat_meal",
   );
@@ -221,5 +199,4 @@ test("MCP advertises the meal action with object input fields", async (context) 
     "mutation_id",
     "revision",
   ]);
-  await transport.terminateSession();
 });

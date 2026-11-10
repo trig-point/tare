@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import type { TestContext } from "node:test";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import type Database from "better-sqlite3";
 import {
   createLocalJWKSet,
   exportJWK,
@@ -13,6 +16,7 @@ import type { AppOptions } from "../src/auth/routes.ts";
 import { loadConfig } from "../src/config.ts";
 import { openDatabase } from "../src/db.ts";
 import { insertAccount } from "../src/queries/insert-account.ts";
+import { insertAgentToken } from "../src/queries/insert-agent-token.ts";
 
 export const credentials = {
   username: "example-admin",
@@ -151,4 +155,35 @@ export function accessFixture(
       headers: assertionHeader(await signAccessToken(payload, expiry)),
     });
   return { ...setup, session };
+}
+
+export async function mcpSession(
+  context: TestContext,
+  setup: {
+    app: ReturnType<typeof createApp>;
+    database: Database.Database;
+  },
+  userId: number,
+) {
+  insertAgentToken(setup.database, {
+    client_id: "example-agent",
+    user_id: userId,
+    name: "Example agent",
+    created_at: issuedAt.toISOString(),
+  });
+  const token = await signAccessToken({
+    sub: "",
+    common_name: "example-agent",
+  });
+  const client = new Client({ name: "example", version: "1" });
+  const transport = new StreamableHTTPClientTransport(
+    new URL("http://localhost/mcp"),
+    {
+      fetch: async (url, init) => setup.app.request(url.toString(), init),
+      requestInit: { headers: assertionHeader(token) },
+    },
+  );
+  context.after(() => client.close());
+  await client.connect(transport);
+  return client;
 }
