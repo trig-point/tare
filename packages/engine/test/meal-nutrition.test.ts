@@ -1,6 +1,4 @@
 import assert from "node:assert/strict";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { writeTransaction } from "../src/db.ts";
 import {
   mealKey,
@@ -8,9 +6,8 @@ import {
   mealNutritionState,
 } from "../src/meal-nutrition/index.ts";
 import { createOrder } from "../src/orders/index.ts";
-import { insertAgentToken } from "../src/queries/insert-agent-token.ts";
 import { selectRegularMeal } from "../src/queries/select-regular-meal.ts";
-import { assertionHeader, issuedAt, signAccessToken } from "./auth-support.ts";
+import { issuedAt, mcpSession } from "./auth-support.ts";
 import { test } from "./support/hang-ceiling.ts";
 import { twoUsers } from "./support/two-users.ts";
 
@@ -170,26 +167,7 @@ test("an agent answers a meal label through MCP", async (context) => {
       issuedAt.toISOString(),
     ),
   );
-  insertAgentToken(database, {
-    client_id: "example-nutrition-agent",
-    user_id: admin.user.id,
-    name: "Example agent",
-    created_at: issuedAt.toISOString(),
-  });
-  const token = await signAccessToken({
-    sub: "",
-    common_name: "example-nutrition-agent",
-  });
-  const client = new Client({ name: "example", version: "1" });
-  context.after(() => client.close());
-  const transport = new StreamableHTTPClientTransport(
-    new URL("http://localhost/mcp"),
-    {
-      fetch: async (url, init) => app.request(url.toString(), init),
-      requestInit: { headers: assertionHeader(token) },
-    },
-  );
-  await client.connect(transport);
+  const client = await mcpSession(context, { app, database }, admin.user.id);
   const call = async (name: string, args = {}) => {
     const result = await client.callTool({ name, arguments: args });
     return (
@@ -207,5 +185,4 @@ test("an agent answers a meal label through MCP", async (context) => {
     mealNutritionState(database, admin.user.id, meal).status,
     "known",
   );
-  await transport.terminateSession();
 });
