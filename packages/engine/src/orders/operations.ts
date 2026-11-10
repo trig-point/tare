@@ -3,6 +3,7 @@ import { z as zod } from "zod";
 import { writeTransaction } from "../db.ts";
 import { reconcileEmail } from "../inbound/reconcile.ts";
 import { manualOrder, serviceIdentity } from "../inbound/reconcile-input.ts";
+import { mealKey } from "../meal-nutrition/index.ts";
 import {
   defineOperation,
   OperationError,
@@ -111,7 +112,21 @@ export const orderOperations = [
         })),
       });
       const manual = JSON.stringify(order);
-      const dedupeKey = `agent:${createHash("sha256").update(manual).digest("hex")}`;
+      const quantities = new Map<string, number>();
+      for (const meal of order.meals) {
+        const key = mealKey({ ...meal, service: order.service });
+        quantities.set(key, (quantities.get(key) ?? 0) + meal.quantity);
+      }
+      // Reconcile treats meals as a keyed set, so reordered or recased lists are repeats.
+      const canonical = JSON.stringify({
+        service: order.service,
+        kind: order.kind,
+        delivery_date: order.delivery_date,
+        meals: [...quantities].sort(([left], [right]) =>
+          left < right ? -1 : left > right ? 1 : 0,
+        ),
+      });
+      const dedupeKey = `agent:${createHash("sha256").update(canonical).digest("hex")}`;
       const questionKinds = context.questionKinds;
       if (!questionKinds) throw new Error("Question kinds missing");
       return writeTransaction(context.database, (scope) => {

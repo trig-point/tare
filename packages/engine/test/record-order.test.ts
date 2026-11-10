@@ -80,6 +80,12 @@ test("record_order over MCP creates, repeats as a no-op, supersedes and rejects 
     repeat: true,
   });
   assert.deepEqual(state(), written);
+  const reversed = { ...order, meals: [...order.meals].reverse() };
+  assert.deepEqual((await call(reversed)).structuredContent, {
+    ...first,
+    repeat: true,
+  });
+  assert.deepEqual(state(), written);
 
   await call({ ...order, status: "processed", meals: [order.meals[0]] });
   assert.deepEqual(rows("SELECT id, status FROM orders"), [
