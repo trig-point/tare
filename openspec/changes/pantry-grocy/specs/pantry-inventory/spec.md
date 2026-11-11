@@ -19,6 +19,14 @@ Tare SHALL support one configured pantry owner, named by username, and an option
 - **WHEN** the engine starts with a Grocy URL different from the stored connection
 - **THEN** pantry operations report reset required, refresh and dispatch stop, and new intake saves nutrition with the reset-required reason and no request
 
+#### Scenario: Pantry owner changes
+- **WHEN** the engine starts with a different `TARE_GROCY_USERNAME` and the same URL
+- **THEN** the pantry reports reset required and the new owner can reconcile and reset every existing request
+
+#### Scenario: Grocy database replaced behind the same URL
+- **WHEN** the owner resets the connection with the replaced flag while the URL is unchanged
+- **THEN** refresh and dispatch stop at once and the reset completes only when no request is sending, uncertain or rejected
+
 #### Scenario: Connection reset
 - **WHEN** the owner resets the pantry connection
 - **THEN** pending old-generation requests are cancelled, cached stock, bindings and recipe links are cleared and a new connection generation starts, unless an old-generation request is sending, uncertain or rejected, in which case the reset is refused
@@ -28,7 +36,7 @@ Tare SHALL support one configured pantry owner, named by username, and an option
 - **THEN** the decision is refused and delivered or abandoned remain available
 
 ### Requirement: Complete stock snapshot
-Tare SHALL expose current stock per product, original units, the earliest best-before date Grocy reports, refresh time and refresh errors through HTTP and MCP. Refresh SHALL atomically replace a validated complete snapshot, and SHALL discard a result fetched under an earlier connection generation. A snapshot older than ten minutes, or one that has never refreshed successfully, SHALL be marked stale; a never-refreshed pantry SHALL NOT be reported as empty. Missing grams conversions SHALL remain unknown. Pending, sending and uncertain consumption SHALL be shown beside the product, not as confirmed Grocy stock.
+Tare SHALL expose current stock per product, original units, the earliest best-before date Grocy reports, refresh time and refresh errors through HTTP and MCP. At most one refresh fetch SHALL be in flight per owner. Refresh SHALL atomically replace a validated complete snapshot, record its fetch start time, and discard a result fetched under an earlier connection generation. A snapshot older than ten minutes, or one that has never refreshed successfully, SHALL be marked stale; a never-refreshed pantry SHALL NOT be reported as empty. Missing grams conversions SHALL remain unknown. Pending, sending and uncertain consumption SHALL be shown beside the product, not as confirmed Grocy stock.
 
 #### Scenario: Empty stock after a successful refresh
 - **WHEN** Grocy returns a valid empty stock response
@@ -41,6 +49,10 @@ Tare SHALL expose current stock per product, original units, the earliest best-b
 #### Scenario: Snapshot is stale
 - **WHEN** the last successful refresh is more than ten minutes old
 - **THEN** pantry reads mark the stock stale
+
+#### Scenario: Overlapping refreshes
+- **WHEN** a refresh is requested while another fetch is in flight
+- **THEN** it waits for the running fetch, and an older fetch never replaces a newer snapshot
 
 #### Scenario: Pantry has never refreshed
 - **WHEN** no refresh has succeeded since the connection generation started
@@ -74,11 +86,19 @@ Tare SHALL consume only a confirmed binding from the exact food or source-food r
 - **THEN** the intake and its request are saved with a shortage warning, and Grocy's response decides the outcome
 
 ### Requirement: Durable consumption delivery
-A non-suppressed intake by the configured owner whose reference has a binding with a valid recorded status in the active connection generation SHALL create its consumption request in the same SQLite transaction as the intake. Every non-suppressed referenced intake SHALL record, in that transaction, either its request or the reason no request was created, and that record SHALL be deleted with its intake. An ad hoc intake SHALL report an unmatched reason derived from its missing reference. A request SHALL have its own never-reused id, belong to one connection generation and freeze its product, unit, per-serving amount and quantity. At most one request SHALL link to an existing intake per generation. Delivery SHALL occur outside that transaction and only to the request's own generation. Replays SHALL reuse the request and return its current state. Dispatch claims SHALL be durable and exclusive. A failure before any request bytes are written SHALL leave the request pending for the next sweep and SHALL NOT count as an attempt. A 2xx response with a schema-valid body SHALL be confirmed and record Grocy's returned transaction identifiers. A 4xx response with a schema-valid Grocy error SHALL be rejected with its reason. Every other result after request bytes may have been written, including a timeout, lost response, 3xx or 5xx response, schema-invalid body or restart after claim, SHALL be uncertain and SHALL NOT be resent automatically.
+A non-suppressed intake by the configured owner whose reference has a binding with a valid recorded status in the active connection generation SHALL create its consumption request in the same SQLite transaction as the intake. Every non-suppressed referenced intake SHALL record, in that transaction, either its request or the reason no request was created, and that record SHALL be deleted with its intake. An ad hoc intake SHALL report an unmatched reason derived from its missing reference. A request SHALL have its own never-reused id, belong to one connection generation, keep its intake's client id and freeze its product, unit, per-serving amount and quantity. An intake whose owner and client id match a retained request SHALL NOT create another request. An engine starting on a restored backup SHALL convert pending and sending requests to uncertain before any dispatch. At most one request SHALL link to an existing intake per generation. Delivery SHALL occur outside that transaction and only to the request's own generation. Replays SHALL reuse the request and return its current state. Dispatch claims SHALL be durable and exclusive. A failure before any request bytes are written SHALL leave the request pending for the next sweep and SHALL NOT count as an attempt. A 2xx response with a schema-valid body SHALL be confirmed and record Grocy's returned transaction identifiers. A 4xx response with a schema-valid Grocy error SHALL be rejected with its reason. Every other result after request bytes may have been written, including a timeout, lost response, 3xx or 5xx response, schema-invalid body or restart after claim, SHALL be uncertain and SHALL NOT be resent automatically.
 
 #### Scenario: Replayed log or meal action
 - **WHEN** the same client id or mutation id is submitted again
 - **THEN** the original intake and stock request are returned without an additional consume call
+
+#### Scenario: Replay after the intake was deleted
+- **WHEN** a client id is submitted again after its intake was deleted and its request retained
+- **THEN** the new intake gets no consumption request and reports a replay-of-deleted-intake reason
+
+#### Scenario: Backup restored with unresolved requests
+- **WHEN** the engine starts on a restored Tare backup that contains pending or sending requests
+- **THEN** those requests become uncertain and nothing is sent until the owner reconciles each one
 
 #### Scenario: Consume response is lost
 - **WHEN** Grocy might have accepted a consume but Tare cannot confirm the result

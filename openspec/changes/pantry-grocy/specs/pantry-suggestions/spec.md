@@ -16,11 +16,15 @@ Tare SHALL read Grocy recipe fulfillment and resolved ingredient quantities with
 - **THEN** that recipe has no nutrition link until the owner creates one
 
 ### Requirement: Read-only suggestion context
-After pantry consumption is available, Tare SHALL expose pantry_suggestion_context through HTTP and MCP. It SHALL combine stock freshness, unresolved consumption, recipe availability, known food nutrition, delivered meals on hand and the day's slot budgets from read_day_plan. Missing, stale and empty data SHALL remain explicit. Availability SHALL subtract pending and sending request amounts; a product with an uncertain request SHALL be marked uncertain without subtracting it. It SHALL NOT invent ingredients or nutrition, reserve stock, or consume food.
+After pantry consumption is available, Tare SHALL expose pantry_suggestion_context through HTTP and MCP. It SHALL combine stock freshness, unresolved consumption, recipe availability, known food nutrition, delivered meals on hand and the day's slot budgets from read_day_plan. Missing, stale and empty data SHALL remain explicit. Availability SHALL subtract pending requests, sending requests sent after the snapshot's fetch started, and delivered requests confirmed after it started. A sending request sent before the fetch started, or an uncertain request, SHALL mark the product uncertain without subtracting it. It SHALL NOT invent ingredients or nutrition, reserve stock, or consume food.
 
 #### Scenario: Pantry is empty
 - **WHEN** the stock snapshot contains no products and there are no delivered meals on hand
 - **THEN** context reports no on-hand candidates rather than fabricating a plan
+
+#### Scenario: Consume confirmed after the snapshot was fetched
+- **WHEN** a request is confirmed after the current snapshot's fetch started
+- **THEN** its amount is still subtracted until a refresh that started after the confirmation commits
 
 #### Scenario: Stock is uncertain
 - **WHEN** a product has pending, sending or uncertain consumption or the snapshot is stale
