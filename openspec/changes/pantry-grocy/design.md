@@ -42,7 +42,7 @@ Expose `list_pantry` and `refresh_pantry` through the operation registry, includ
 
 - Pending requests are subtracted.
 - A sending request is subtracted if it was sent after the fetch started. Otherwise the snapshot may already include it, so the product is marked uncertain and nothing is subtracted.
-- A delivered request confirmed after the fetch started is still subtracted, because the snapshot predates it. Once a refresh that started after the confirmation commits, it is no longer subtracted.
+- A delivered request confirmed after the fetch started marks the product uncertain without subtracting, because the snapshot may or may not include it. Once a refresh that started after the confirmation commits, it no longer affects availability.
 - Uncertain requests mark the product uncertain without subtracting.
 
 The result is advisory: it never rejects a plan or reserves stock.
