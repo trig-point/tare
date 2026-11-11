@@ -28,4 +28,4 @@ None in `openspec/specs/`, which has no published capabilities yet. This change 
 - Web: stock freshness, binding and reconciliation controls, plus a link to Grocy for stocking. No new barcode intake screen.
 - Deployment: generic Compose example and backup/restore instructions for a maintained Grocy image, with private configuration supplied at install time.
 - Dependencies: build on Node fetch, Zod, better-sqlite3, TypeSQL, the existing job runner and TanStack Query. No ORM or solver dependency.
-- Tracker: reuse the existing Grocy tickets; new tickets cover only missing bindings, reliable consumption, caller integration, the pantry view and suggestion context. All implementation tasks belong to V1 Meal plan.
+- Tracker: reuse the existing Grocy tickets; new tickets cover only missing bindings, reliable consumption, reconciliation, caller integration, the pantry view and suggestion context. All implementation tasks belong to V1 Meal plan.

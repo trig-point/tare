@@ -21,7 +21,7 @@ Tare SHALL support one configured pantry owner, named by username, and an option
 
 #### Scenario: Connection reset
 - **WHEN** the owner resets the pantry connection
-- **THEN** unclaimed old-generation requests are cancelled, cached stock, bindings and recipe links are cleared and a new connection generation starts, unless a claimed old-generation request is unresolved, in which case the reset is refused
+- **THEN** pending old-generation requests are cancelled, cached stock, bindings and recipe links are cleared and a new connection generation starts, unless an old-generation request is sending, uncertain or rejected, in which case the reset is refused
 
 #### Scenario: Retry while reset is required
 - **WHEN** the owner records a not-delivered decision on an old-generation request while reset is required
@@ -74,7 +74,7 @@ Tare SHALL consume only a confirmed binding from the exact food or source-food r
 - **THEN** the intake and its request are saved with a shortage warning, and Grocy's response decides the outcome
 
 ### Requirement: Durable consumption delivery
-A non-suppressed intake by the configured owner whose reference has a confirmed binding with a matching unit in the active connection generation SHALL create its consumption request in the same SQLite transaction as the intake. Every non-suppressed referenced intake SHALL record, in that transaction, either its request or the reason no request was created. A request SHALL have its own never-reused id, belong to one connection generation and freeze its product, unit and quantity. At most one request SHALL link to an existing intake per generation. Delivery SHALL occur outside that transaction and only to the request's own generation. Replays SHALL reuse the request and return its current state. Dispatch claims SHALL be durable and exclusive. A failure before any request bytes are written SHALL leave the request pending for the next sweep and SHALL NOT count as an attempt. A 2xx response with a schema-valid body SHALL be confirmed and record Grocy's returned transaction identifiers. A 4xx response with a schema-valid Grocy error SHALL be rejected with its reason. Every other result after request bytes may have been written, including a timeout, lost response, 3xx or 5xx response, schema-invalid body or restart after claim, SHALL be uncertain and SHALL NOT be resent automatically.
+A non-suppressed intake by the configured owner whose reference has a binding with a valid recorded status in the active connection generation SHALL create its consumption request in the same SQLite transaction as the intake. Every non-suppressed referenced intake SHALL record, in that transaction, either its request or the reason no request was created, and that record SHALL be deleted with its intake. An ad hoc intake SHALL report an unmatched reason derived from its missing reference. A request SHALL have its own never-reused id, belong to one connection generation and freeze its product, unit, per-serving amount and quantity. At most one request SHALL link to an existing intake per generation. Delivery SHALL occur outside that transaction and only to the request's own generation. Replays SHALL reuse the request and return its current state. Dispatch claims SHALL be durable and exclusive. A failure before any request bytes are written SHALL leave the request pending for the next sweep and SHALL NOT count as an attempt. A 2xx response with a schema-valid body SHALL be confirmed and record Grocy's returned transaction identifiers. A 4xx response with a schema-valid Grocy error SHALL be rejected with its reason. Every other result after request bytes may have been written, including a timeout, lost response, 3xx or 5xx response, schema-invalid body or restart after claim, SHALL be uncertain and SHALL NOT be resent automatically.
 
 #### Scenario: Replayed log or meal action
 - **WHEN** the same client id or mutation id is submitted again
@@ -92,6 +92,10 @@ A non-suppressed intake by the configured owner whose reference has a confirmed 
 - **WHEN** Grocy rejects a consume because the product has too little stock
 - **THEN** the request is marked rejected with Grocy's reason and nothing is resent until the owner decides
 
+#### Scenario: Bound product deleted before sending
+- **WHEN** the pre-send product read returns 404
+- **THEN** the request is rejected locally with a product-missing reason and no consume call is sent
+
 #### Scenario: Bound product changes before sending
 - **WHEN** a queued request's product has gained tare-weight handling or a different stock unit in Grocy
 - **THEN** the request is rejected locally with that reason and no consume call is sent
@@ -105,18 +109,18 @@ A non-suppressed intake by the configured owner whose reference has a confirmed 
 - **THEN** the new intake gets its own new request and the earlier request keeps its own history
 
 ### Requirement: Visible reconciliation and history correction
-The owner SHALL be able to inspect unresolved stock requests and recent resolved history, and, for an uncertain or rejected request, record exactly one of delivered, not delivered with one new attempt, or abandoned. A pending request MAY be abandoned. A not-delivered decision on an uncertain attempt SHALL be refused while a dispatcher holds its claim, before its send time is older than the fixed 15-minute settling wait, or while reset is required. Each decision SHALL carry a mutation id and the attempt number it answers; a repeated mutation id SHALL return the first result and a decision for an older attempt SHALL be rejected as stale. A refresh SHALL NOT decide delivery from a stock delta. Before a request is claimed, a servings edit SHALL update its frozen quantity and intake deletion SHALL cancel it. Eaten-at and note edits SHALL have no stock effect. A claimed or resolved request SHALL keep its frozen quantity, SHALL record a later servings edit as a notice while staying linked, and SHALL outlive its intake's deletion without automatic compensation; a delivered request SHALL stay resolved.
+The owner SHALL be able to inspect unresolved stock requests and resolved history from the last 30 days, and, for each uncertain or rejected attempt, record exactly one of delivered, not delivered with one new attempt, or abandoned. A pending request MAY be abandoned. A not-delivered decision on an uncertain attempt SHALL be refused while a dispatcher holds its claim, before its send time is older than the fixed 15-minute settling wait, or while reset is required. Each decision SHALL carry a mutation id and the attempt number it answers; a repeated mutation id SHALL return the first result and a decision for an older attempt SHALL be rejected as stale. A refresh SHALL NOT decide delivery from a stock delta. While a request is pending and has never had an attempt, a servings edit SHALL recompute its quantity from the frozen per-serving amount and intake deletion SHALL cancel it. Eaten-at and note edits SHALL have no stock effect. A request that has had an attempt or is resolved SHALL keep its frozen quantity, SHALL record a later servings edit as a notice while staying linked, and SHALL outlive its intake's deletion without automatic compensation; a delivered request SHALL stay resolved.
 
 #### Scenario: Delete after delivery
 - **WHEN** an intake entry whose stock effect was delivered is deleted
 - **THEN** nutrition history changes, the stock request remains inspectable as delivered and Grocy stock is not automatically restored
 
 #### Scenario: Servings edited before sending
-- **WHEN** the servings of an intake are edited before its request is claimed
+- **WHEN** the servings of an intake are edited while its request is pending and has never had an attempt
 - **THEN** the request's frozen quantity changes in the same transaction and one consume is later sent for the new amount
 
 #### Scenario: Servings edited after sending
-- **WHEN** the servings of an intake are edited after its request was claimed
+- **WHEN** the servings of an intake are edited after its request has had an attempt
 - **THEN** nutrition changes, the request keeps its frozen quantity and link, and an edit notice is recorded
 
 #### Scenario: Retry before the settling wait

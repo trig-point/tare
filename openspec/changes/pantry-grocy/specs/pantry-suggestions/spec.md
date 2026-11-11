@@ -23,7 +23,7 @@ After pantry consumption is available, Tare SHALL expose pantry_suggestion_conte
 - **THEN** context reports no on-hand candidates rather than fabricating a plan
 
 #### Scenario: Stock is uncertain
-- **WHEN** a product has unresolved consumption or the snapshot is stale
+- **WHEN** a product has pending, sending or uncertain consumption or the snapshot is stale
 - **THEN** the context carries that limitation and does not present its quantity as confirmed current availability
 
 ### Requirement: Existing operations confirm suggestions
