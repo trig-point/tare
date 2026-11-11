@@ -66,7 +66,7 @@ Slot budgets SHALL be computed from today's target, the slots' shares and the in
 - **THEN** the entry counts toward the new template's breakfast and the day's budgets still add up to today's target
 
 ### Requirement: Planned items
-Agents SHALL be able to place planned items, each an on-hand meal or a food with a revision, in a slot. The shared meal action SHALL act on one planned item by id, revision and per-person mutation id, looking up the mutation id before checking the revision so a retry returns the first result. "Ate it" logs the item's nutrition once and "ate 3/4" logs three quarters of it, into the item's slot; for an on-hand meal both take one from it in the same transaction, and a food item changes no stock. "Skip" logs nothing, changes no stock and marks the item skipped. Every accepted action SHALL mark the item eaten or skipped and advance its revision, so a second action with a new mutation id is stale. A stale revision SHALL be rejected.
+Agents SHALL be able to place planned items, each an on-hand meal or a food with a revision, in a slot. The shared meal action SHALL act on one planned item by id, revision and per-person mutation id, looking up the mutation id before checking the revision so a retry returns the first result. "Ate it" logs the item's nutrition once and "ate 3/4" logs three quarters of it, into the item's slot; for an on-hand meal both take one from it in the same transaction, and an unbound food item changes no stock. A bound grocery food follows the companion pantry-grocy consumption contract; an order meal never also consumes Grocy stock. "Skip" logs nothing, changes no stock and marks the item skipped. Every accepted action SHALL mark the item eaten or skipped and advance its revision, so a second action with a new mutation id is stale. A stale revision SHALL be rejected.
 
 #### Scenario: Agent plans dinner
 - **WHEN** an agent places an on-hand meal in the dinner slot
@@ -82,7 +82,7 @@ Agents SHALL be able to place planned items, each an on-hand meal or a food with
 
 #### Scenario: Planned food
 - **WHEN** a person marks a planned food (not an on-hand meal) as eaten
-- **THEN** its nutrition is logged in that slot and no stock changes
+- **THEN** its nutrition is logged in that slot; an unbound food changes no stock, and a bound grocery food schedules its Grocy consumption once
 
 #### Scenario: Retry of a meal action
 - **WHEN** the same meal action is retried with the same mutation id

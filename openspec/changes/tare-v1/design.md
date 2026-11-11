@@ -21,7 +21,7 @@ Constraints that shape every decision below:
 
 **Non-Goals:**
 
-- A pantry or a pantry-aware meal solver (post version 1).
+- A numerical pantry-aware meal solver (post version 1). Pantry inventory and agent suggestion context are specified by the companion `pantry-grocy` change for V1.
 - Reading health data from the phone directly; activity and sleep arrive server-side.
 - Feeding activity data into the calorie target (version 1 shows it beside intake only).
 - Offline editing and deleting; the version 1 offline queue holds new entries only.

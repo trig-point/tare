@@ -43,4 +43,4 @@ None. No specs exist yet.
 - External services, each optional and configured by the operator: an OpenAI-compatible model endpoint, USDA FoodData Central (API key), Open Food Facts (no key, rate limited), Oura (an OAuth app per install), and an MQTT broker.
 - Out of this repository: agent skills that use the MCP interface (meal-kit picking and nutrition answering) live in the operator's own agent configuration and are tracked separately.
 - Post version 1, beyond the specified add-user operation: adding a second user from the app and sign-up, since version 1 serves one person.
-- Post version 1, not specified here: a pantry (Grocy) and a pantry-aware meal solver, a CLI, a HACS package, more health sources, paid nutrition providers, and image-based logging.
+- Pantry inventory and agent suggestion context move into V1 through the companion `pantry-grocy` change. Post version 1: a numerical meal solver, a CLI, a HACS package, more health sources, paid nutrition providers, and image-based logging.
