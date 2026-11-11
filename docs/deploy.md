@@ -146,3 +146,106 @@ Compose prefixes their names with the project name, so keep that name stable whe
 `docker compose down` keeps these volumes. `docker compose down --volumes` deletes both the database
 and backups. Separate volumes survive container recreation, but do not protect against losing the host;
 copy backups to separate storage.
+
+## Optional Grocy pantry
+
+Grocy supplies the pantry UI, barcode scanner and product lookup. Enable the `pantry` profile
+without rebuilding those features in Tare. The example pins LinuxServer Grocy 4.7.1
+(`v4.7.1-ls349`) by its multi-platform image digest. Check the upstream release before changing it.
+
+Check free space on the Docker filesystem before pulling. The amd64 image is about 84 MiB
+compressed and 402 MiB expanded; budget at least 1 GiB for pull/unpack and disposable recovery
+copies, plus your growing data. Leave at least 1.5 GB free after that budget. Back up Tare's
+database and private environment file before changing an existing deployment.
+
+```sh
+docker compose -f compose.example.yaml config --services
+docker compose -f compose.example.yaml --profile pantry config --services
+docker compose -f compose.example.yaml --profile pantry up --detach --wait grocy
+```
+
+Without the profile, the service list contains only Tare. With it, Grocy starts on port 80
+inside the default Compose network, with no published host port. Tare retains outbound network
+access. A proxy container attached to that same network uses `http://grocy:80`; a proxy running
+directly on the host can use the commented loopback mapping. A proxy on another host needs an
+explicit reachable origin restricted to that proxy, including firewall rules that survive reboot.
+A separate proxy container cannot use the Docker host's loopback address as its own localhost.
+
+Configure an authenticated HTTPS hostname specifically for Grocy. An existing Tare route or Access
+application does not protect this new hostname. With Cloudflare Tunnel, preserve the existing
+ingress rules and final catch-all when adding the route. Create a separate Access application
+with one-time PIN login and an allow policy for only the pantry owner's email. Keep Grocy's
+own login enabled. Change its initial `admin` / `admin` password before publishing the route.
+
+Log in to Grocy and create an API key in its API key management screen. Store it in a separate
+private environment file on the server, mode `600`, for the engine integration. Never put it in
+Compose YAML, browser configuration, screenshots, logs or version control. Supply it to REST calls
+in the `GROCY-API-KEY` header. The private base URL is `http://grocy:80`, with API paths under `/api`.
+This deployment step does not configure the later Tare client.
+
+Grocy stores its database, configuration and plugins in `grocy-config`, independently of Tare.
+LinuxServer runs the app as UID/GID `1000:1000`; `UMASK=077` restricts newly created files, but some
+initial config files use broader modes. After the first start, restrict the data explicitly:
+
+```sh
+docker compose -f compose.example.yaml exec -T grocy chmod 700 /config /config/data
+docker compose -f compose.example.yaml exec -T grocy chmod 600 /config/data/config.php /config/data/grocy.db
+```
+
+Verify ownership and modes again after recreation or an image upgrade. Preserve numeric
+ownership and modes during backup and restore. Do not point either service at the other's volume.
+
+### Check the installation
+
+Use a unique disposable Compose project first, with only Grocy running. Set up a test product
+and add stock through Grocy's UI or API. Read `/api/stock` with its private key from a peer on the
+engine's network; verify the product and quantity. An unauthenticated API request must be rejected.
+Recreate Grocy with its existing volume and verify the same stock remains.
+
+Check the actual proxy can reach its configured origin. An anonymous HTTPS request must redirect
+to Access, while an authorized browser must reach Grocy's login and then its stock UI. On a phone,
+open the HTTPS URL, grant camera access and verify the barcode scanner opens the camera. A redirect
+alone proves Access is present; it does not prove origin reachability or camera access.
+
+### Back up and restore Grocy separately
+
+Tare's scheduled SQLite backups do not include Grocy. Stop Grocy for a consistent copy of its
+entire `/config`, including its database, and restart it after copying. Run from the deployment
+folder with `compose.example.yaml`; keep the project name stable. Use a new private backup folder
+for each copy. These commands use `pantry-live` as an example project name; substitute your existing
+project name when adding Grocy to an existing Tare stack.
+
+```sh
+mkdir -m 700 grocy-backup
+docker compose -p pantry-live -f compose.example.yaml --profile pantry stop grocy
+docker compose -p pantry-live -f compose.example.yaml --profile pantry run --rm --no-deps -T \
+  --entrypoint tar grocy -cpf - --numeric-owner -C /config . > grocy-backup/config.tar
+chmod 600 grocy-backup/config.tar
+docker compose -p pantry-live -f compose.example.yaml --profile pantry start grocy
+```
+
+Copy this backup and Tare's independent backups to separate storage. Protect private environment
+files separately; they contain credentials. A second volume on the same host is not an external copy.
+
+Restore into a new disposable project, never over the live volume. Create its stopped container,
+extract the backup into its empty `/config`, and start the pinned image. The `grocy-restore-check`
+project below must be unused; choose another unique name for each concurrent check.
+
+```sh
+docker compose -p grocy-restore-check -f compose.example.yaml --profile pantry create grocy
+docker compose -p grocy-restore-check -f compose.example.yaml --profile pantry run --rm --no-deps -T \
+  --entrypoint tar grocy -xpf - --numeric-owner -C /config < grocy-backup/config.tar
+docker compose -p grocy-restore-check -f compose.example.yaml --profile pantry up --detach --wait grocy
+```
+
+Read the original product and stock from this restored service, using its restored key on its
+private network. Compare the product identifier and quantity with the pre-backup values. Also
+check ownership and modes. Remove only the disposable containers and network after the check:
+
+```sh
+docker compose -p grocy-restore-check -f compose.example.yaml --profile pantry down
+```
+
+This retains the scratch volume. Once the restore evidence is saved, remove only that project's
+identified scratch volume. Never remove the live volume. To roll back deployment changes, stop
+Grocy and restore the prior Compose configuration while retaining both services' data and backups.

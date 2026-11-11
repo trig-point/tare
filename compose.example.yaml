@@ -60,6 +60,28 @@ services:
       retries: 3
     restart: unless-stopped
 
+  grocy:
+    profiles: [pantry]
+    image: linuxserver/grocy@sha256:e4e34a0a84f407b1bcd2c3b6cd1999bf99bcad1defa8847adea7dc82a9cd6b8c
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: ${TARE_TIMEZONE-UTC}
+      UMASK: "077"
+    volumes:
+      - grocy-config:/config
+    # Only a proxy running directly on the host can use this mapping.
+    # ports:
+    #   - "127.0.0.1:9283:80"
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, --output, /dev/null, http://127.0.0.1:80/]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+    restart: unless-stopped
+
 volumes:
   tare-data:
   tare-backups:
+  grocy-config:
