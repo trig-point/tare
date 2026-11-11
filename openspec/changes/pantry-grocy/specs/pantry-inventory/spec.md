@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Optional private Grocy connection
-Tare SHALL support one configured pantry owner, named by username, and an optional private Grocy connection. The deployment guide SHALL provide persistent container storage, HTTPS barcode intake and a tested backup/restore procedure. Credentials SHALL remain server-side. Partial or malformed configuration, or an unknown owner username, SHALL prevent startup. Without configuration, logging SHALL work and pantry operations SHALL report disabled.
+Tare SHALL support one configured pantry owner, named by username, and an optional private Grocy connection. The deployment guide SHALL provide persistent container storage, HTTPS barcode intake whose proxy admits only the pantry owner, and a tested backup/restore procedure. Credentials SHALL remain server-side. Partial or malformed configuration, or an unknown owner username, SHALL prevent startup. Without configuration, logging SHALL work and pantry operations SHALL report disabled.
 
 #### Scenario: Another user requests the pantry
 - **WHEN** a user other than the configured owner requests pantry data or a stock action
@@ -20,7 +20,7 @@ Tare SHALL support one configured pantry owner, named by username, and an option
 - **THEN** cached stock and bindings are cleared and a new connection generation starts, unless an old-generation request is unresolved, in which case the reset is refused
 
 ### Requirement: Complete stock snapshot
-Tare SHALL expose current stock per product, original units, the earliest best-before date Grocy reports, refresh time and refresh errors through HTTP and MCP. Refresh SHALL atomically replace a validated complete snapshot. A snapshot older than ten minutes SHALL be marked stale. Missing grams conversions SHALL remain unknown. Pending and uncertain consumption SHALL be shown beside the product, not as confirmed Grocy stock.
+Tare SHALL expose current stock per product, original units, the earliest best-before date Grocy reports, refresh time and refresh errors through HTTP and MCP. Refresh SHALL atomically replace a validated complete snapshot, and SHALL discard a result fetched under an earlier connection generation. A snapshot older than ten minutes SHALL be marked stale. Missing grams conversions SHALL remain unknown. Pending and uncertain consumption SHALL be shown beside the product, not as confirmed Grocy stock.
 
 #### Scenario: Empty stock after a successful refresh
 - **WHEN** Grocy returns a valid empty stock response
@@ -77,7 +77,7 @@ Every referenced intake that is not explicitly suppressed SHALL create its consu
 - **THEN** the new intake gets its own new request and the earlier request keeps its own history
 
 ### Requirement: Visible reconciliation and history correction
-The owner SHALL be able to inspect unresolved stock requests and, for an uncertain or rejected request, record exactly one of delivered, not delivered with one new attempt, or abandoned. Each decision SHALL carry a mutation id and the attempt number it answers; a repeated mutation id SHALL return the first result and a decision for an older attempt SHALL be rejected as stale. A refresh SHALL NOT decide delivery from a stock delta. Before a request is claimed, a servings edit SHALL update its frozen quantity and intake deletion SHALL cancel it. Eaten-at and note edits SHALL have no stock effect. A claimed or resolved request SHALL outlive its intake without automatic compensation; a delivered request SHALL stay resolved.
+The owner SHALL be able to inspect unresolved stock requests and, for an uncertain or rejected request, record exactly one of delivered, not delivered with one new attempt, or abandoned. A not-delivered decision on an uncertain attempt SHALL be refused until that attempt's request deadline has passed and no dispatcher holds its claim. Each decision SHALL carry a mutation id and the attempt number it answers; a repeated mutation id SHALL return the first result and a decision for an older attempt SHALL be rejected as stale. A refresh SHALL NOT decide delivery from a stock delta. Before a request is claimed, a servings edit SHALL update its frozen quantity and intake deletion SHALL cancel it. Eaten-at and note edits SHALL have no stock effect. A claimed or resolved request SHALL outlive its intake without automatic compensation; a delivered request SHALL stay resolved.
 
 #### Scenario: Delete after delivery
 - **WHEN** an intake entry whose stock effect was delivered is deleted
