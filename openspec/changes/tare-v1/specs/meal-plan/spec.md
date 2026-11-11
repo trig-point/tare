@@ -86,7 +86,7 @@ Agents SHALL be able to place planned items, each an on-hand meal or a food with
 
 #### Scenario: Retry of a meal action
 - **WHEN** the same meal action is retried with the same mutation id
-- **THEN** intake and stock change once
+- **THEN** intake and on-hand meal stock change once, and a bound grocery food has at most one Grocy consumption request
 
 #### Scenario: Second action on an eaten item
 - **WHEN** an action with a new mutation id arrives for a planned item that is already eaten
