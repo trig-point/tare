@@ -157,15 +157,12 @@ function implausibility(
     day: localDay(reading.measured_at, person.timezone, person.day_start_hour),
     measured_at: reading.measured_at,
   });
-  const latest = history.at(-1);
-  const trend = weightTrend(history).at(-1)?.trend_kg;
-  if (
-    trend === undefined ||
-    !latest ||
-    Date.parse(reading.measured_at) - Date.parse(latest.measured_at) >
-      TREND_MAX_AGE_MS
-  )
-    return null;
+  const instant = Date.parse(reading.measured_at);
+  const recent = history.filter(
+    (row) => instant - Date.parse(row.measured_at) <= TREND_MAX_AGE_MS,
+  );
+  const trend = weightTrend(recent).at(-1)?.trend_kg;
+  if (trend === undefined) return null;
   return Math.abs(reading.weight_kg - trend) > MAX_TREND_GAP_KG
     ? `is more than ${MAX_TREND_GAP_KG} kg from your trend of ${kg(trend)}`
     : null;

@@ -121,6 +121,13 @@ test("the trend check needs a trend from the last 30 days, built only from earli
   assert.equal(scale.send(fixture("2026-02-03T06:00:00Z", 74)), "logged");
 });
 
+test("weights older than 30 days do not move the trend the reading is checked against", () => {
+  const scale = setup();
+  scale.seed("2025-01-01T07:00:00.000Z", 120);
+  scale.seed("2026-02-27T07:00:00.000Z", 80);
+  assert.equal(scale.send(fixture("2026-03-01T07:00:00Z", 81)), "logged");
+});
+
 test("unmapped and out-of-range readings become questions and stay judged", () => {
   const scale = setup();
   const stray = fixture("2026-03-01T07:00:00Z", 70);
