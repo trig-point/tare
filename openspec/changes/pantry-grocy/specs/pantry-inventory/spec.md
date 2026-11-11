@@ -68,6 +68,10 @@ Every referenced intake that is not explicitly suppressed SHALL create its consu
 - **WHEN** Grocy rejects a consume because the product has too little stock
 - **THEN** the request is marked rejected with Grocy's reason and nothing is resent until the owner decides
 
+#### Scenario: Bound product changes before sending
+- **WHEN** a queued request's product has gained tare-weight handling or a different stock unit in Grocy
+- **THEN** the request is rejected locally with that reason and no consume call is sent
+
 #### Scenario: Transaction rolls back
 - **WHEN** the intake transaction fails
 - **THEN** no stock request exists and no consume call is sent
@@ -77,7 +81,7 @@ Every referenced intake that is not explicitly suppressed SHALL create its consu
 - **THEN** the new intake gets its own new request and the earlier request keeps its own history
 
 ### Requirement: Visible reconciliation and history correction
-The owner SHALL be able to inspect unresolved stock requests and, for an uncertain or rejected request, record exactly one of delivered, not delivered with one new attempt, or abandoned. A not-delivered decision on an uncertain attempt SHALL be refused until that attempt's request deadline has passed and no dispatcher holds its claim. Each decision SHALL carry a mutation id and the attempt number it answers; a repeated mutation id SHALL return the first result and a decision for an older attempt SHALL be rejected as stale. A refresh SHALL NOT decide delivery from a stock delta. Before a request is claimed, a servings edit SHALL update its frozen quantity and intake deletion SHALL cancel it. Eaten-at and note edits SHALL have no stock effect. A claimed or resolved request SHALL outlive its intake without automatic compensation; a delivered request SHALL stay resolved.
+The owner SHALL be able to inspect unresolved stock requests and, for an uncertain or rejected request, record exactly one of delivered, not delivered with one new attempt, or abandoned. A not-delivered decision on an uncertain attempt SHALL be refused while a dispatcher holds its claim or before its send time is older than the client deadline plus the deployment's pinned Grocy PHP execution limit. Each decision SHALL carry a mutation id and the attempt number it answers; a repeated mutation id SHALL return the first result and a decision for an older attempt SHALL be rejected as stale. A refresh SHALL NOT decide delivery from a stock delta. Before a request is claimed, a servings edit SHALL update its frozen quantity and intake deletion SHALL cancel it. Eaten-at and note edits SHALL have no stock effect. A claimed or resolved request SHALL outlive its intake without automatic compensation; a delivered request SHALL stay resolved.
 
 #### Scenario: Delete after delivery
 - **WHEN** an intake entry whose stock effect was delivered is deleted
