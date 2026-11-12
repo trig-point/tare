@@ -63,6 +63,8 @@ function setup(context: TestContext) {
     calls: [] as string[],
     stockHold: undefined as Promise<void> | undefined,
     onStock: () => {},
+    detailHold: undefined as Promise<void> | undefined,
+    onDetail: () => {},
     consume: (amount: number): Promise<Response> | Response =>
       Response.json([
         {
@@ -87,6 +89,8 @@ function setup(context: TestContext) {
       return Response.json([]);
     }
     if (route === "/objects/products") return Response.json(grocy.catalog);
+    grocy.onDetail();
+    await grocy.detailHold;
     return Response.json(grocy.detail, { status: grocy.detailStatus });
   };
   const client = createGrocyClient({ config, ownerId, fetch });
@@ -314,7 +318,8 @@ test("a product changed, deleted or unreadable before send is never consumed", a
 });
 
 test("stop admits no new claims and drains the send in flight", async (context) => {
-  const { grocy, service, dispatcher, log, request, consumes } = setup(context);
+  const { grocy, service, dispatcher, dispatcherOn, log, request, consumes } =
+    setup(context);
   const sent = deferred();
   const answer = deferred();
   const confirm = grocy.consume;
@@ -343,4 +348,16 @@ test("stop admits no new claims and drains the send in flight", async (context) 
     grocy.calls.filter((route) => route === "/stock/products/7").length,
     1,
   );
+  // A stop that lands during the pre-send read still admits no claim.
+  const reading = deferred();
+  const held = deferred();
+  grocy.onDetail = reading.resolve;
+  grocy.detailHold = held.promise;
+  const late = dispatcherOn();
+  const lateRun = late.job.run();
+  await reading.promise;
+  const lateStopped = late.stop();
+  held.resolve();
+  await Promise.all([lateRun, lateStopped]);
+  assert.equal(consumes(), 1);
 });
