@@ -133,7 +133,7 @@ test("abandoning a pending request moves it to history and keeps its error code"
   assert.ok(request);
   assert.match(
     render(await readPantry(), open),
-    /Food 1: 2 unit 2 pending<\/strong><p class="actions"><button type="button">Abandon</,
+    /Food 1: 2 unit 2 pending · [^<]*<\/strong><p class="actions"><button type="button">Abandon</,
   );
   const decision = {
     request_id: request.request_id,

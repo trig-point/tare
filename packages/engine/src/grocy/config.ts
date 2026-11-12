@@ -57,8 +57,10 @@ function parsePublicUrl(value: string) {
   if (
     !url ||
     /[?#]/.test(value) ||
-    /^[a-z]+:\/\/[^/]*@/i.test(value) ||
-    !["http:", "https:"].includes(url.protocol)
+    /^[a-z]+:\/*[^/]*@/i.test(value) ||
+    !["http:", "https:"].includes(url.protocol) ||
+    url.username ||
+    url.password
   )
     throw new Error(
       "TARE_GROCY_PUBLIC_URL must be an HTTP or HTTPS URL without credentials, query or fragment",

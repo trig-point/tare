@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 import { ApiError, liveRefresh } from "./api.ts";
 import { catalogQuery, type FoodChoice } from "./food-api.ts";
+import { clientId } from "./outbox-store.ts";
 import {
   type Decision,
   deleteBinding,
@@ -277,7 +278,9 @@ function BindingForm({
               type="button"
               onClick={() => setFood(choice)}
             >
-              {choice.name}
+              {[choice.name, choice.brand, choice.serving]
+                .filter(Boolean)
+                .join(", ")}
             </button>
           ))}
         <label htmlFor="pantry-product">Product</label>
@@ -349,6 +352,7 @@ function Requests({
       request.state,
       request.edit_notice &&
         `(edited to ${request.edit_notice.servings} servings)`,
+      `· ${time(request.created_at)}`,
     ]
       .filter((part) => part !== undefined && part !== null)
       .join(" ");
@@ -392,7 +396,7 @@ function Decisions({
   const decide = useMutation({
     mutationFn: (decision: Decision) => {
       const key = `${request.current_number}:${decision}`;
-      const id = ids.get(key) ?? crypto.randomUUID();
+      const id = ids.get(key) ?? clientId(crypto);
       ids.set(key, id);
       return reconcile({
         request_id: request.request_id,

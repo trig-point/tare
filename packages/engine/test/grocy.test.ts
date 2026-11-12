@@ -49,6 +49,7 @@ test("Grocy config is optional, normalized, owner-scoped and safe at startup", (
     "ftp://grocy.example.com",
     "https://user:pass@grocy.example.com",
     "https://@grocy.example.com",
+    "https:user:pass@grocy.example.com",
     "https://grocy.example.com?",
     "https://grocy.example.com/#",
   ])
