@@ -126,8 +126,7 @@ class ReadFailure extends Error {
   }
 }
 function ok<Value>(result: GrocyResult<Value> | undefined): Value {
-  if (result?.status === "ok")
-    return result.value;
+  if (result?.status === "ok") return result.value;
   throw new ReadFailure(
     pantryError.parse({
       reason:
