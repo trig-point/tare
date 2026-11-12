@@ -1,0 +1,1 @@
+SELECT reference_kind, reference_id, product_id, stock_unit_id, quantity_per_serving, status, change_token FROM pantry_bindings WHERE user_id = :user_id AND generation = :generation ORDER BY reference_kind, reference_id;

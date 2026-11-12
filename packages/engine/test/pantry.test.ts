@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import type { TestContext } from "node:test";
+import type { Database } from "better-sqlite3";
 import { createGrocyClient } from "../src/grocy/client.ts";
 import { createJobRunner } from "../src/jobs.ts";
 import { createPantryService } from "../src/pantry/service.ts";
@@ -34,17 +35,36 @@ function deferred<Value>() {
 }
 function setupService(context: TestContext) {
   const setup = fixture(context);
-  const data: { now: Date; stock: unknown; detail: unknown } = {
+  const data = {
     now: new Date("2026-01-01T00:00:00Z"),
-    stock,
-    detail: { product, quantity_unit_stock: unit },
+    stock: stock as unknown,
+    detail: { product, quantity_unit_stock: unit } as unknown,
+    details: {} as Record<string, unknown>,
+    catalog: [{ id: 1, active: 1 }] as unknown,
+    barcodes: [] as unknown,
+    hold: undefined as ReturnType<typeof deferred<void>> | undefined,
+    held: deferred<void>(),
   };
   const client = createGrocyClient({
     config,
     ownerId: setup.admin.id,
     fetch: async (url) => {
+      const path = new URL(String(url)).pathname;
+      const productId = path.match(/\/stock\/products\/(\d+)$/)?.[1];
+      const hold = productId ? data.hold : undefined;
+      if (hold) {
+        data.hold = undefined;
+        data.held.resolve();
+        await hold.promise;
+      }
       return Response.json(
-        String(url).endsWith("/stock") ? data.stock : data.detail,
+        path.endsWith("/stock")
+          ? data.stock
+          : path.endsWith("/objects/products")
+            ? data.catalog
+            : path.endsWith("/objects/product_barcodes")
+              ? data.barcodes
+              : (data.details[productId ?? ""] ?? data.detail),
       );
     },
   });
@@ -206,6 +226,14 @@ test("shutdown rejects queued refreshes and drains the active request", async (c
           { ...stockRow, product_id: 2, product: { ...product, id: 2 } },
         ],
       }),
+      catalog: async () => ({
+        status: "ok",
+        value: [
+          { id: 1, active: 1 },
+          { id: 2, active: 1 },
+        ],
+      }),
+      barcodes: async () => ({ status: "ok", value: [] }),
       product: () => {
         details++;
         detailStarted.resolve();
@@ -246,4 +274,199 @@ test("refresh failures fail jobs", async (context) => {
   context.after(() => runner.stop());
   assert.equal((await runner.runNow(setup.service.job.name)).status, "failed");
   assert.deepEqual(reports, []);
+});
+
+function addFoods(database: Database, userId: number) {
+  const insert = (sql: string, ...values: unknown[]) =>
+    Number(database.prepare(sql).run(...values).lastInsertRowid);
+  const sourceSql =
+    "INSERT INTO source_foods (source, source_key, name, barcode, provenance, fetched_at) VALUES ('off', ?, 'Synthetic cereal', ?, 'label', '2026-01-01T00:00:00.000Z')";
+  return {
+    food: insert(
+      "INSERT INTO foods (user_id, name, provenance) VALUES (?, 'Synthetic soup', 'label')",
+      userId,
+    ),
+    source: insert(sourceSql, "0000000000017", "0000000000017"),
+    unlabelled: insert(sourceSql, "synthetic-key", null),
+  };
+}
+const gram = { id: 5, name: "gram", name_plural: "grams" };
+
+test("bindings validate, replace, track refresh status and clear on reset", async (context) => {
+  const { service, admin, database, data } = setupService(context);
+  const ids = addFoods(database, admin.id);
+  const generation = Number(service.read(admin.id).generation);
+  const food = { reference_kind: "food", reference_id: ids.food } as const;
+  const source = { reference_kind: "source_food", reference_id: ids.source };
+  const save = (change: object) =>
+    service.save(admin.id, {
+      ...food,
+      product_id: 1,
+      stock_unit_id: 1,
+      quantity_per_serving: 0.5,
+      expected_generation: generation,
+      ...change,
+    });
+  data.catalog = [
+    { id: 1, active: 1 },
+    { id: 2, active: 1 },
+    { id: 3, active: 0 },
+  ];
+  data.details["2"] = {
+    product: { ...product, id: 2, enable_tare_weight_handling: 1 },
+    quantity_unit_stock: unit,
+  };
+  const saved = (await save({})).bindings;
+  assert.deepEqual(saved, [
+    {
+      ...food,
+      product_id: 1,
+      stock_unit_id: 1,
+      quantity_per_serving: 0.5,
+      status: "valid",
+    },
+  ]);
+  for (const [change, code] of [
+    [{ product_id: 2 }, "pantry_binding_conflict"],
+    [{ ...source, product_id: 2 }, "pantry_tare_weight"],
+    [{ ...source, product_id: 3 }, "pantry_product_missing"],
+    [{ ...source, stock_unit_id: 5 }, "pantry_unit_changed"],
+    [
+      { ...source, expected_generation: generation + 1 },
+      "pantry_generation_changed",
+    ],
+    [{ ...source, reference_id: ids.source + 99 }, "food_not_found"],
+  ] as const)
+    await assert.rejects(save(change), { code });
+  assert.deepEqual(service.read(admin.id).bindings, saved);
+
+  data.stock = [{ ...stockRow, product: { ...product, qu_id_stock: 5 } }];
+  data.detail = {
+    product: { ...product, qu_id_stock: 5 },
+    quantity_unit_stock: gram,
+  };
+  assert.deepEqual((await service.refresh(admin.id)).bindings, [
+    { ...saved[0], status: "unit_mismatch" },
+  ]);
+  const reconfirmed = await save({
+    stock_unit_id: 5,
+    quantity_per_serving: 200,
+  });
+  assert.deepEqual(reconfirmed.bindings, [
+    { ...saved[0], stock_unit_id: 5, quantity_per_serving: 200 },
+  ]);
+  data.stock = [];
+  assert.equal((await service.refresh(admin.id)).bindings[0]?.status, "valid");
+  data.catalog = null;
+  const failed = await service.refresh(admin.id);
+  assert.equal(failed.error?.reason, "invalid_response");
+  assert.equal(failed.bindings[0]?.status, "valid");
+  data.stock = [{ ...stockRow, product: { ...product, qu_id_stock: 5 } }];
+  data.catalog = [{ id: 1, active: 0 }];
+  const missing = await service.refresh(admin.id);
+  assert.deepEqual(missing.products, []);
+  assert.equal(missing.bindings[0]?.status, "product_missing");
+
+  data.catalog = [{ id: 1, active: 1 }];
+  data.stock = stock;
+  data.detail = { product, quantity_unit_stock: unit };
+  const held = async <Value>(work: () => Promise<Value>) => {
+    data.hold = deferred<void>();
+    data.held = deferred<void>();
+    const hold = data.hold;
+    const started = work();
+    await data.held.promise;
+    return { started, release: () => hold.resolve() };
+  };
+  const stale = await held(() => service.refresh(admin.id));
+  service.remove(admin.id, food);
+  await save({ quantity_per_serving: 2 });
+  stale.release();
+  assert.equal((await stale.started).error, null);
+  const recreated = { ...saved[0], quantity_per_serving: 2 };
+  assert.deepEqual(service.read(admin.id).bindings, [recreated]);
+
+  const overtaken = await held(() => save(source));
+  service.reset(admin.id, true);
+  overtaken.release();
+  await assert.rejects(overtaken.started, {
+    code: "pantry_generation_changed",
+  });
+  assert.deepEqual(service.read(admin.id).bindings, []);
+  assert.deepEqual(
+    database.prepare("SELECT count(*) AS count FROM pantry_bindings").get(),
+    { count: 0 },
+  );
+});
+
+test("barcode proposals need one exact active product and never save", async (context) => {
+  const { service, admin, database, data } = setupService(context);
+  const ids = addFoods(database, admin.id);
+  const propose = (
+    reference_kind: "food" | "source_food",
+    reference_id: number,
+  ) => service.propose(admin.id, { reference_kind, reference_id });
+  const row = (product_id: number, barcode = "0000000000017") => ({
+    product_id,
+    barcode,
+    qu_id: null,
+    amount: null,
+  });
+  data.catalog = [
+    { id: 1, active: 1 },
+    { id: 2, active: 1 },
+    { id: 3, active: 0 },
+  ];
+  data.barcodes = [row(1), row(1), row(3), row(2, "00000000000170")];
+  assert.deepEqual(await propose("source_food", ids.source), {
+    outcome: "proposal",
+    proposal: {
+      generation: service.read(admin.id).generation,
+      product_id: 1,
+      name: product.name,
+      stock_unit: unit,
+    },
+    error: null,
+  });
+  assert.deepEqual(await propose("food", ids.food), {
+    outcome: "unsupported",
+    proposal: null,
+    error: null,
+  });
+  assert.deepEqual(await propose("source_food", ids.unlabelled), {
+    outcome: "no_barcode",
+    proposal: null,
+    error: null,
+  });
+  await assert.rejects(propose("source_food", ids.source + 99), {
+    code: "food_not_found",
+  });
+  data.detail = {
+    product: { ...product, enable_tare_weight_handling: 1 },
+    quantity_unit_stock: unit,
+  };
+  assert.deepEqual(await propose("source_food", ids.source), {
+    outcome: "tare_enabled",
+    proposal: null,
+    error: null,
+  });
+  data.barcodes = [row(1), row(2)];
+  assert.deepEqual(await propose("source_food", ids.source), {
+    outcome: "ambiguous",
+    proposal: null,
+    error: null,
+  });
+  data.barcodes = [row(3)];
+  assert.deepEqual(await propose("source_food", ids.source), {
+    outcome: "no_match",
+    proposal: null,
+    error: null,
+  });
+  data.barcodes = null;
+  assert.deepEqual(await propose("source_food", ids.source), {
+    outcome: "failed",
+    proposal: null,
+    error: { reason: "invalid_response", http_status: 200 },
+  });
+  assert.deepEqual(service.read(admin.id).bindings, []);
 });

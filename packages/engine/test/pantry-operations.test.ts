@@ -45,7 +45,26 @@ for (const mode of ["fallback", "access"] as const)
           requests++;
           return { status: "ok", value: [] };
         },
-        product: async () => assert.fail("empty stock needs no details"),
+        catalog: async () => ({
+          status: "ok",
+          value: [
+            { id: 1, active: 1 },
+            { id: 2, active: 1 },
+          ],
+        }),
+        barcodes: async () => ({ status: "ok", value: [] }),
+        product: async (_owner, productId) => ({
+          status: "ok",
+          value: {
+            product: {
+              id: productId,
+              name: "Synthetic lentils",
+              qu_id_stock: 1,
+              enable_tare_weight_handling: 0,
+            },
+            quantity_unit_stock: { id: 1, name: "can", name_plural: null },
+          },
+        }),
       },
     });
     for (const [path, method, body] of [
@@ -70,6 +89,72 @@ for (const mode of ["fallback", "access"] as const)
             : "never_refreshed",
       );
     }
+    const addFood = (userId: number) =>
+      Number(
+        setup.database
+          .prepare(
+            "INSERT INTO foods (user_id, name, provenance) VALUES (?, 'Synthetic stew', 'label')",
+          )
+          .run(userId).lastInsertRowid,
+      );
+    const own = addFood(setup.admin.user.id);
+    const theirs = addFood(setup.member.user.id);
+    const generation = service.read(setup.admin.user.id).generation;
+    const binding = (reference_id: number, change = {}) => ({
+      reference_kind: "food",
+      reference_id,
+      product_id: 1,
+      stock_unit_id: 1,
+      quantity_per_serving: 1.5,
+      expected_generation: generation,
+      ...change,
+    });
+    const proposal = JSON.stringify({
+      reference_kind: "food",
+      reference_id: own,
+    });
+    for (const [person, path, method, body, status] of [
+      [setup.member, "/api/pantry/bindings/proposal", "POST", proposal, 403],
+      [setup.member, "/api/pantry/bindings", "POST", binding(theirs), 403],
+      [setup.member, `/api/pantry/bindings/food/${own}`, "DELETE", null, 403],
+      [setup.admin, "/api/pantry/bindings", "POST", binding(theirs), 404],
+      [
+        setup.admin,
+        "/api/pantry/bindings",
+        "POST",
+        binding(own, { quantity_per_serving: 0 }),
+        400,
+      ],
+      [setup.admin, "/api/pantry/bindings/proposal", "POST", proposal, 200],
+      [setup.admin, "/api/pantry/bindings", "POST", binding(own), 200],
+    ] as const)
+      assert.equal(
+        (
+          await person.request(path, {
+            method,
+            body:
+              typeof body === "string" || body === null
+                ? body
+                : JSON.stringify(body),
+          })
+        ).status,
+        status,
+      );
+    const listed = await (await setup.admin.request("/api/pantry")).json();
+    assert.deepEqual(
+      listed.bindings.map((row: { reference_id: number; status: string }) => [
+        row.reference_id,
+        row.status,
+      ]),
+      [[own, "valid"]],
+    );
+    const deleted = await setup.admin.request(
+      `/api/pantry/bindings/food/${own}`,
+      {
+        method: "DELETE",
+      },
+    );
+    assert.deepEqual((await deleted.json()).bindings, []);
     connectionConfig.apiKey = "state";
     const withheld = await setup.admin.request("/api/pantry");
     assert.equal(withheld.status, 503);
@@ -93,6 +178,20 @@ for (const mode of ["fallback", "access"] as const)
         Accept: "application/json, text/event-stream",
         "Content-Type": "application/json",
       };
+      for (const [name, args] of [
+        [
+          "propose_pantry_binding",
+          { reference_kind: "food", reference_id: own },
+        ],
+        ["save_pantry_binding", binding(own)],
+        [
+          "delete_pantry_binding",
+          { reference_kind: "food", reference_id: own },
+        ],
+      ] as const) {
+        const result = await agent.callTool({ name, arguments: args });
+        assert.equal(result.isError, undefined);
+      }
       let sequence = 0;
       let session: string | null = null;
       const send = (method: string, params: unknown, batch = false) => {
@@ -114,6 +213,21 @@ for (const mode of ["fallback", "access"] as const)
       session = initialized.headers.get("mcp-session-id");
       assert.ok(session);
       await initialized.text();
+      const mixed = await setup.app.request("/mcp", {
+        method: "POST",
+        headers: { ...headers, "mcp-session-id": session },
+        body: JSON.stringify(
+          [binding(own), binding(own, { product_id: 2 })].map((args) => ({
+            jsonrpc: "2.0",
+            id: ++sequence,
+            method: "tools/call",
+            params: { name: "save_pantry_binding", arguments: args },
+          })),
+        ),
+      });
+      const outcomes = await mixed.text();
+      assert.match(outcomes, /"status\\":\\"valid/);
+      assert.match(outcomes, /pantry_binding_conflict/);
       connectionConfig.apiKey = "structuredContent";
       for (const batch of [false, true]) {
         const blocked = await send(

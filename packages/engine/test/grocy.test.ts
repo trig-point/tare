@@ -120,6 +120,11 @@ test("Grocy reads validate responses and normalize native values; invalid consum
   assert.equal(stock?.status === "ok" && stock.value[0]?.amount, 2.5);
   response = [{ id: 4, name: "Synthetic measure", name_plural: null }];
   assert.deepEqual(await client.units(1), { status: "ok", value: response });
+  response = [{ id: "3", name: "Synthetic oats", active: "0" }];
+  assert.deepEqual(await client.catalog(1), {
+    status: "ok",
+    value: [{ id: 3, active: 0 }],
+  });
   response = {};
   assert.equal((await client.product(1, 1))?.status, "failed");
   response = new Response("", { status: 401 });
