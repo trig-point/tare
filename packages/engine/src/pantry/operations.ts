@@ -4,60 +4,132 @@ import {
   OperationError,
   operationPerson,
 } from "../operations/registry.ts";
-import { pantryOutput } from "./service.ts";
+import {
+  type PantryService,
+  pantryBindingInput,
+  pantryOutput,
+  pantryProposal,
+  pantryReference,
+} from "./service.ts";
 
-export const pantryOperations = [
-  { name: "list_pantry", method: "GET", path: "/api/pantry" },
-  { name: "refresh_pantry", method: "POST", path: "/api/pantry/refresh" },
+const disabled = {
+  state: "disabled",
+  generation: null,
+  fetch_started_at: null,
+  last_success_at: null,
+  stale: true,
+  error: null,
+  products: [],
+  bindings: [],
+};
+const operations: {
+  name: string;
+  method: "GET" | "POST" | "DELETE";
+  path: string;
+  input: zod.ZodType;
+  output: zod.ZodType;
+  description?: string;
+  disabled?: unknown;
+  run(service: PantryService, userId: number, input: never): unknown;
+}[] = [
+  {
+    name: "list_pantry",
+    method: "GET",
+    path: "/api/pantry",
+    description:
+      "Read pantry stock and bindings. A binding status comes from its save or the last complete refresh, whichever is later.",
+    input: zod.strictObject({}),
+    output: pantryOutput,
+    disabled,
+    run: (service, userId) => service.read(userId),
+  },
+  {
+    name: "refresh_pantry",
+    method: "POST",
+    path: "/api/pantry/refresh",
+    input: zod.strictObject({}),
+    output: pantryOutput,
+    disabled,
+    run: (service, userId) => service.refresh(userId),
+  },
   {
     name: "reset_pantry_connection",
     method: "POST",
     path: "/api/pantry/connection/reset",
+    input: zod.strictObject({ replaced: zod.boolean().optional() }),
+    output: pantryOutput,
+    disabled,
+    run: (service, userId, input: { replaced?: boolean }) =>
+      service.reset(userId, input.replaced === true),
   },
-].map(({ name, method, path }) =>
+  {
+    name: "propose_pantry_binding",
+    method: "POST",
+    path: "/api/pantry/bindings/proposal",
+    description:
+      "Suggest a Grocy product for a source food by exact barcode. Saves nothing.",
+    input: pantryReference,
+    output: pantryProposal,
+    disabled: { outcome: "disabled", proposal: null, error: null },
+    run: (service, userId, input: zod.output<typeof pantryReference>) =>
+      service.propose(userId, input),
+  },
+  {
+    name: "save_pantry_binding",
+    method: "POST",
+    path: "/api/pantry/bindings",
+    description:
+      "Bind a food to a Grocy product with a quantity per serving in the product's stock unit.",
+    input: pantryBindingInput,
+    output: pantryOutput,
+    run: (service, userId, input: zod.output<typeof pantryBindingInput>) =>
+      service.save(userId, input),
+  },
+  {
+    name: "delete_pantry_binding",
+    method: "DELETE",
+    path: "/api/pantry/bindings/:reference_kind/:reference_id",
+    description: "Remove a food's pantry binding.",
+    input: pantryReference.extend({
+      reference_id: zod.coerce
+        .number()
+        .int()
+        .positive()
+        .max(Number.MAX_SAFE_INTEGER),
+    }),
+    output: pantryOutput,
+    run: (service, userId, input: zod.output<typeof pantryReference>) =>
+      service.remove(userId, input),
+  },
+];
+
+export const pantryOperations = operations.map((operation) =>
   defineOperation({
-    name,
-    method: method as "GET" | "POST",
-    path,
+    name: operation.name,
+    ...(operation.description ? { description: operation.description } : {}),
+    method: operation.method,
+    path: operation.path,
     modes: ["access", "fallback"],
     callerClass: "browser_and_agent",
     admin: false,
-    ...(method === "POST" ? { bodyLimit: 1024 } : {}),
-    input: zod.strictObject(
-      name === "reset_pantry_connection"
-        ? { replaced: zod.boolean().optional() }
-        : {},
-    ),
-    output: pantryOutput,
+    ...(operation.method === "POST" ? { bodyLimit: 1024 } : {}),
+    input: operation.input,
+    output: operation.output,
     async handler(input, context) {
       const userId = operationPerson(context).id;
       const service = context.pantry;
       if (!service) {
-        if (context.config.grocy)
-          throw new OperationError(503, "pantry_unavailable");
-        return {
-          status: 200,
-          body: {
-            state: "disabled",
-            generation: null,
-            fetch_started_at: null,
-            last_success_at: null,
-            stale: true,
-            error: null,
-            products: [],
-          },
-        };
+        if (context.config.grocy || operation.disabled === undefined)
+          throw new OperationError(
+            503,
+            context.config.grocy ? "pantry_unavailable" : "pantry_disabled",
+          );
+        return { status: 200, body: operation.disabled };
       }
-      const body =
-        name === "list_pantry"
-          ? service.read(userId)
-          : name === "refresh_pantry"
-            ? await service.refresh(userId)
-            : service.reset(
-                userId,
-                "replaced" in input && input.replaced === true,
-              );
-      return { status: 200, body };
+      return {
+        status: 200,
+        body: await operation.run(service, userId, input as never),
+      };
     },
   }),
 );

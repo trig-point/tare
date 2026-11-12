@@ -20,6 +20,12 @@ export const grocyProductSchema = z.object({
     z.union([z.literal(0), z.literal(1)]),
   ),
 });
+export const grocyCatalogSchema = z.array(
+  z.object({
+    id: identifier,
+    active: decimal.pipe(z.union([z.literal(0), z.literal(1)])),
+  }),
+);
 export const grocyUnitSchema = z.object({
   id: identifier,
   name: z.string().min(1),
@@ -276,6 +282,8 @@ export function createGrocyClient({
           barcode !== "..",
       );
     },
+    catalog: (userId: number) =>
+      request(userId, "/objects/products", grocyCatalogSchema),
     barcodes: (userId: number) =>
       request(userId, "/objects/product_barcodes", grocyBarcodesSchema),
     units: (userId: number) =>

@@ -3,7 +3,14 @@ import type { AuthEnv } from "../auth/middleware.ts";
 import type { GrocyConfig } from "../grocy/config.ts";
 
 export const isPantryOperation = (name: string) =>
-  ["list_pantry", "refresh_pantry", "reset_pantry_connection"].includes(name);
+  [
+    "list_pantry",
+    "refresh_pantry",
+    "reset_pantry_connection",
+    "propose_pantry_binding",
+    "save_pantry_binding",
+    "delete_pantry_binding",
+  ].includes(name);
 export const isPantryPath = (path: string) =>
   path === "/api/pantry" || path.startsWith("/api/pantry/");
 

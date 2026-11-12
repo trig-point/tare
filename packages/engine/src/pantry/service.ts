@@ -1,19 +1,23 @@
+import { randomUUID } from "node:crypto";
 import type { Database } from "better-sqlite3";
 import { z } from "zod";
 import { scopeDatabase, writeTransaction } from "../db.ts";
-import {
-  createGrocyClient,
-  type GrocyResult,
-  grocyDetailsSchema,
-  grocyStockSchema,
-} from "../grocy/client.ts";
+import { createGrocyClient, type GrocyResult } from "../grocy/client.ts";
 import type { GrocyConfig } from "../grocy/config.ts";
 import { OperationError } from "../operations/registry.ts";
+import { clearBindings } from "../queries/pantry/clear-bindings.ts";
 import { clearProducts } from "../queries/pantry/clear-products.ts";
+import { deleteBinding } from "../queries/pantry/delete-binding.ts";
 import { insertProduct } from "../queries/pantry/insert-product.ts";
+import { listBindings } from "../queries/pantry/list-bindings.ts";
 import { listProducts } from "../queries/pantry/list-products.ts";
+import { readBinding } from "../queries/pantry/read-binding.ts";
 import { readConnection } from "../queries/pantry/read-connection.ts";
+import { saveBinding } from "../queries/pantry/save-binding.ts";
 import { saveConnection } from "../queries/pantry/save-connection.ts";
+import { updateBindingStatus } from "../queries/pantry/update-binding-status.ts";
+import { selectFood } from "../queries/select-food.ts";
+import { selectSourceFood } from "../queries/select-source-food.ts";
 
 const identifier = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 export const pantryProduct = z.strictObject({
@@ -44,6 +48,58 @@ const pantryError = z.strictObject({
   ]),
   http_status: z.number().int().optional(),
 });
+export const pantryReference = z.strictObject({
+  reference_kind: z.enum(["food", "source_food"]),
+  reference_id: identifier,
+});
+const bindingStatus = z.enum([
+  "valid",
+  "product_missing",
+  "unit_mismatch",
+  "tare_enabled",
+]);
+export const pantryBindingInput = pantryReference.extend({
+  product_id: identifier,
+  stock_unit_id: identifier,
+  quantity_per_serving: z.number().positive().finite(),
+  expected_generation: identifier,
+});
+const pantryBinding = pantryReference.extend({
+  product_id: identifier,
+  stock_unit_id: identifier,
+  quantity_per_serving: z.number().positive().finite(),
+  status: bindingStatus,
+});
+const proposalOutcome = z.enum([
+  "proposal",
+  "disabled",
+  "reset_required",
+  "unsupported",
+  "no_barcode",
+  "no_match",
+  "ambiguous",
+  "tare_enabled",
+  "failed",
+]);
+// MCP output schemas must be objects, so the outcome rules are refinements.
+export const pantryProposal = z
+  .strictObject({
+    outcome: proposalOutcome,
+    proposal: z
+      .strictObject({
+        generation: identifier,
+        product_id: identifier,
+        name: z.string().min(1),
+        stock_unit: pantryProduct.shape.stock_unit,
+      })
+      .nullable(),
+    error: pantryError.nullable(),
+  })
+  .refine(
+    (result) =>
+      (result.outcome === "proposal") === (result.proposal !== null) &&
+      (result.outcome === "failed") === (result.error !== null),
+  );
 export const pantryOutput = z.strictObject({
   state: z.enum(["disabled", "reset_required", "never_refreshed", "ready"]),
   generation: z.number().nullable(),
@@ -52,9 +108,35 @@ export const pantryOutput = z.strictObject({
   stale: z.boolean(),
   error: pantryError.nullable(),
   products: z.array(pantryProduct),
+  bindings: z.array(pantryBinding),
 });
 type Product = z.infer<typeof pantryProduct>;
 type PantryError = z.infer<typeof pantryError>;
+type Reference = z.infer<typeof pantryReference>;
+type Proposal = z.infer<typeof pantryProposal>;
+const outcome = (
+  value: z.infer<typeof proposalOutcome>,
+  error: PantryError | null = null,
+): Proposal => ({ outcome: value, proposal: null, error });
+class ReadFailure extends Error {
+  readonly detail: PantryError;
+  constructor(detail: PantryError) {
+    super("Pantry read failed");
+    this.detail = detail;
+  }
+}
+function ok<Value>(result: GrocyResult<Value> | undefined): Value {
+  if (result?.status === "ok") return result.value;
+  throw new ReadFailure(
+    pantryError.parse({
+      reason:
+        result && "reason" in result ? result.reason : "response_withheld",
+      ...(result && "httpStatus" in result && result.httpStatus !== undefined
+        ? { http_status: result.httpStatus }
+        : {}),
+    }),
+  );
+}
 export type PantryService = ReturnType<typeof createPantryService>;
 
 export function createPantryService({
@@ -68,9 +150,20 @@ export function createPantryService({
   config: GrocyConfig | null;
   ownerId: number | null;
   clock: { now(): Date };
-  client?: Pick<ReturnType<typeof createGrocyClient>, "stock" | "product">;
+  client?: Pick<
+    ReturnType<typeof createGrocyClient>,
+    "stock" | "product" | "catalog" | "barcodes"
+  >;
 }) {
   let stopping = false;
+  const owner = ownerId ?? 0;
+  const tracked = new Set<Promise<unknown>>();
+  function track<Value>(work: Promise<Value>) {
+    tracked.add(work);
+    const release = () => tracked.delete(work);
+    work.then(release, release);
+    return work;
+  }
   let slot: { generation: number; work: Promise<void> } | undefined;
   const matches = (row: NonNullable<ReturnType<typeof readConnection>>) =>
     row.url === config?.url &&
@@ -111,6 +204,7 @@ export function createPantryService({
       stale: true,
       error: null,
       products: [],
+      bindings: [],
     };
     if (!config) return pantryOutput.parse({ ...empty, state: "disabled" });
     const row = readConnection(database);
@@ -134,6 +228,10 @@ export function createPantryService({
         user_id: userId,
         generation: row.generation,
       }).map((row) => JSON.parse(row.product)),
+      bindings: listBindings(database, {
+        user_id: userId,
+        generation: row.generation,
+      }).map(({ change_token: _token, ...binding }) => binding),
     });
   }
   function current(generation: number) {
@@ -146,66 +244,92 @@ export function createPantryService({
       matches(row)
     );
   }
+  async function activeProducts() {
+    return new Set(
+      ok(await client.catalog(owner))
+        .filter((product) => product.active === 1)
+        .map((product) => product.id),
+    );
+  }
+  async function detail(productId: number) {
+    const value = ok(await client.product(owner, productId));
+    if (
+      value.product.id !== productId ||
+      value.product.qu_id_stock !== value.quantity_unit_stock.id
+    )
+      throw new Error("Invalid unit");
+    return value;
+  }
   async function attempt(generation: number) {
     const started = clock.now().toISOString();
     const products: Product[] = [];
+    const bindings = listBindings(database, { user_id: owner, generation });
+    const statuses: [
+      (typeof bindings)[number],
+      z.infer<typeof bindingStatus>,
+    ][] = [];
     let error: PantryError | null = null;
-    function unwrap<Value>(result: GrocyResult<Value> | undefined): Value {
-      if (!result || result.status !== "ok") {
-        error = pantryError.parse({
-          reason:
-            result && "reason" in result ? result.reason : "response_withheld",
-          ...(!result ||
-          !("httpStatus" in result) ||
-          result.httpStatus === undefined
-            ? {}
-            : { http_status: result.httpStatus }),
-        });
-        throw new Error("Pantry read failed");
-      }
-      return result.value as Value;
-    }
     try {
       if (!current(generation)) return;
-      const stock = grocyStockSchema.parse(
-        unwrap(await client.stock(ownerId as number)),
-      );
+      const stock = ok(await client.stock(owner));
+      const active = await activeProducts();
       const seen = new Set<number>();
-      const units = new Map<number, string>();
       for (const item of stock) {
-        if (!current(generation)) return;
         identifier.parse(item.product_id);
-        identifier.parse(item.product.qu_id_stock);
         if (seen.has(item.product_id) || item.product.id !== item.product_id)
           throw new Error("Invalid stock");
         seen.add(item.product_id);
-        const detail = grocyDetailsSchema.parse(
-          unwrap(await client.product(ownerId as number, item.product_id)),
-        );
-        const unit = detail.quantity_unit_stock;
-        if (
-          detail.product.id !== item.product_id ||
-          detail.product.qu_id_stock !== unit.id ||
-          item.product.qu_id_stock !== unit.id
-        )
-          throw new Error("Invalid unit");
+      }
+      const details = new Map<number, Awaited<ReturnType<typeof detail>>>();
+      const units = new Map<number, string>();
+      for (const productId of new Set([
+        ...seen,
+        ...bindings.map((binding) => binding.product_id),
+      ])) {
+        if (!active.has(productId)) continue;
+        if (!current(generation)) return;
+        const value = await detail(productId);
+        const unit = value.quantity_unit_stock;
         const metadata = JSON.stringify(unit);
         if (units.has(unit.id) && units.get(unit.id) !== metadata)
           throw new Error("Inconsistent unit");
         units.set(unit.id, metadata);
+        details.set(productId, value);
+      }
+      for (const item of stock) {
+        const value = details.get(item.product_id);
+        if (!value) continue;
+        if (item.product.qu_id_stock !== value.quantity_unit_stock.id)
+          throw new Error("Invalid unit");
         products.push(
           pantryProduct.parse({
             product_id: item.product_id,
-            name: detail.product.name,
+            name: value.product.name,
             amount: item.amount,
-            stock_unit: unit,
+            stock_unit: value.quantity_unit_stock,
             best_before_date: item.best_before_date,
             grams: null,
           }),
         );
       }
-    } catch {
-      error ??= { reason: "invalid_response" };
+      for (const binding of bindings) {
+        const value = details.get(binding.product_id);
+        statuses.push([
+          binding,
+          !value
+            ? "product_missing"
+            : value.product.enable_tare_weight_handling === 1
+              ? "tare_enabled"
+              : value.quantity_unit_stock.id !== binding.stock_unit_id
+                ? "unit_mismatch"
+                : "valid",
+        ]);
+      }
+    } catch (caught) {
+      error =
+        caught instanceof ReadFailure
+          ? caught.detail
+          : { reason: "invalid_response" };
     }
     const serializedError = error === null ? null : JSON.stringify(error);
     const fallback = JSON.stringify({ reason: "response_withheld" });
@@ -232,6 +356,17 @@ export function createPantryService({
             product_id: product.product_id,
             product: JSON.stringify(product),
           });
+        // The token match leaves bindings saved or replaced during the fetch alone.
+        for (const [binding, status] of statuses)
+          updateBindingStatus(
+            database,
+            { status },
+            {
+              ...binding,
+              user_id: owner,
+              generation,
+            },
+          );
         saveConnection(database, {
           ...row,
           fetch_started_at: started,
@@ -267,9 +402,137 @@ export function createPantryService({
     await slot?.work;
     return read(userId);
   }
+  function connection() {
+    if (!config) throw new OperationError(503, "pantry_disabled");
+    const row = readConnection(database);
+    if (!row) throw new Error("Pantry connection missing");
+    if (row.reset_required)
+      throw new OperationError(503, "pantry_reset_required");
+    return row;
+  }
+  function referenced(database: Database, userId: number, ref: Reference) {
+    return ref.reference_kind === "food"
+      ? selectFood(database, { user_id: userId, id: ref.reference_id }) !== null
+      : selectSourceFood(database, { id: ref.reference_id }) !== null;
+  }
+  async function propose(userId: number, ref: Reference): Promise<Proposal> {
+    authorize(userId);
+    if (!config) return outcome("disabled");
+    const row = readConnection(database);
+    if (!row) throw new Error("Pantry connection missing");
+    if (row.reset_required) return outcome("reset_required");
+    if (!referenced(database, userId, ref))
+      throw new OperationError(404, "food_not_found");
+    if (ref.reference_kind === "food") return outcome("unsupported");
+    const barcode = selectSourceFood(database, {
+      id: ref.reference_id,
+    })?.barcode;
+    if (!barcode) return outcome("no_barcode");
+    try {
+      const rows = ok(await client.barcodes(owner));
+      const active = await activeProducts();
+      const candidates = new Set(
+        rows
+          .filter(
+            (row) => row.barcode === barcode && active.has(row.product_id),
+          )
+          .map((row) => row.product_id),
+      );
+      if (candidates.size !== 1)
+        return outcome(candidates.size ? "ambiguous" : "no_match");
+      const [productId] = candidates;
+      const value = await detail(productId as number);
+      if (value.product.enable_tare_weight_handling === 1)
+        return outcome("tare_enabled");
+      return {
+        outcome: "proposal",
+        proposal: {
+          generation: row.generation,
+          product_id: value.product.id,
+          name: value.product.name,
+          stock_unit: value.quantity_unit_stock,
+        },
+        error: null,
+      };
+    } catch (caught) {
+      return outcome(
+        "failed",
+        caught instanceof ReadFailure
+          ? caught.detail
+          : { reason: "invalid_response" },
+      );
+    }
+  }
+  async function save(
+    userId: number,
+    input: z.infer<typeof pantryBindingInput>,
+  ) {
+    authorize(userId);
+    const { generation } = connection();
+    if (input.expected_generation !== generation)
+      throw new OperationError(409, "pantry_generation_changed");
+    const key = {
+      user_id: userId,
+      generation,
+      reference_kind: input.reference_kind,
+      reference_id: input.reference_id,
+    };
+    const check = (database: Database) => {
+      if (!referenced(database, userId, input))
+        throw new OperationError(404, "food_not_found");
+      const [existing] = readBinding(database, key);
+      if (existing && existing.product_id !== input.product_id)
+        throw new OperationError(409, "pantry_binding_conflict");
+    };
+    check(database);
+    let value: Awaited<ReturnType<typeof detail>>;
+    try {
+      if (!(await activeProducts()).has(input.product_id))
+        throw new OperationError(404, "pantry_product_missing");
+      value = await detail(input.product_id);
+    } catch (caught) {
+      if (caught instanceof OperationError) throw caught;
+      throw new OperationError(503, "pantry_read_failed");
+    }
+    if (value.product.enable_tare_weight_handling === 1)
+      throw new OperationError(400, "pantry_tare_weight");
+    if (value.quantity_unit_stock.id !== input.stock_unit_id)
+      throw new OperationError(409, "pantry_unit_changed");
+    writeTransaction(database, (scope) => {
+      const database = scopeDatabase(scope);
+      if (!current(generation))
+        throw stopping
+          ? new OperationError(503, "pantry_stopping")
+          : new OperationError(409, "pantry_generation_changed");
+      check(database);
+      saveBinding(database, {
+        ...key,
+        product_id: input.product_id,
+        stock_unit_id: input.stock_unit_id,
+        quantity_per_serving: input.quantity_per_serving,
+        change_token: randomUUID(),
+      });
+    });
+    return read(userId);
+  }
   return {
     read,
     refresh,
+    propose: (userId: number, ref: Reference) => track(propose(userId, ref)),
+    save: (userId: number, input: z.infer<typeof pantryBindingInput>) =>
+      track(save(userId, input)),
+    remove(userId: number, ref: Reference) {
+      authorize(userId);
+      const { generation } = connection();
+      writeTransaction(database, (scope) =>
+        deleteBinding(scopeDatabase(scope), {
+          ...ref,
+          user_id: userId,
+          generation,
+        }),
+      );
+      return read(userId);
+    },
     reset(userId: number, replaced = false) {
       authorize(userId);
       if (!config) return read(userId);
@@ -280,13 +543,14 @@ export function createPantryService({
         if (!replaced && !row.reset_required && matches(row)) return;
         // Future consumption guards and cancellation belong in this transaction.
         clearProducts(database);
+        clearBindings(database);
         saveConnection(database, initial(row.generation + 1));
       });
       return read(userId);
     },
     stop() {
       stopping = true;
-      return slot?.work ?? Promise.resolve();
+      return Promise.allSettled([slot?.work, ...tracked]).then(() => {});
     },
     job: {
       name: "pantry-refresh",
