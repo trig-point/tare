@@ -41,17 +41,6 @@ CREATE TABLE grocery_transactions (
   request_id INTEGER NOT NULL REFERENCES grocery_requests(id),
   step_number INTEGER NOT NULL
 ) STRICT;
-CREATE TABLE grocery_decisions (
-  user_id INTEGER NOT NULL REFERENCES users(id),
-  mutation_id TEXT NOT NULL CHECK (length(mutation_id) = 36),
-  decision_hash TEXT NOT NULL CHECK (length(decision_hash) = 64),
-  request_id INTEGER NOT NULL REFERENCES grocery_requests(id),
-  step_number INTEGER,
-  decision TEXT NOT NULL CHECK (decision IN ('adopt', 'abandon', 'bind')),
-  resulting_state TEXT NOT NULL,
-  created_at TEXT NOT NULL CHECK (strftime('%Y-%m-%dT%H:%M:%fZ', created_at, '+0 seconds') IS created_at),
-  PRIMARY KEY (user_id, mutation_id)
-) STRICT;
 -- Rotated when startup consumes a backup marker, so proposals made before a restore cannot start or adopt.
 CREATE TABLE grocery_restore_nonce (id INTEGER PRIMARY KEY CHECK (id = 1), nonce TEXT NOT NULL) STRICT;
 INSERT INTO grocery_restore_nonce (id, nonce) VALUES (1, lower(hex(randomblob(16))));
@@ -64,10 +53,4 @@ CREATE TRIGGER grocery_requests_final BEFORE UPDATE OF state ON grocery_requests
 END;
 CREATE TRIGGER grocery_requests_kept BEFORE DELETE ON grocery_requests BEGIN
   SELECT RAISE(ABORT, 'grocery requests are kept');
-END;
-CREATE TRIGGER grocery_decisions_frozen BEFORE UPDATE ON grocery_decisions BEGIN
-  SELECT RAISE(ABORT, 'grocery decision is immutable');
-END;
-CREATE TRIGGER grocery_decisions_kept BEFORE DELETE ON grocery_decisions BEGIN
-  SELECT RAISE(ABORT, 'grocery decisions are kept');
 END;

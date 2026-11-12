@@ -177,7 +177,7 @@ test("steps claim in order, once, and settle only under their own token", (conte
   assert.equal(claim(request.id, 2, true), null);
 });
 
-test("a purchase transaction credits one request and binding is compare-and-set", (context) => {
+test("a purchase transaction credits one request and leaves only the binding", (context) => {
   const { database, owner, create, purchase } = setup(context);
   const { request } = create(1);
   assert.equal(purchase(request.id, "tx1"), true);
@@ -189,35 +189,13 @@ test("a purchase transaction credits one request and binding is compare-and-set"
       ?.steps.map((step) => step.state),
     ["confirmed", "uncertain"],
   );
-  database
-    .prepare(
-      "INSERT INTO pantry_bindings VALUES (?, 1, 'food', ?, 3, 2, 1, 'valid', 'concurrent')",
-    )
-    .run(owner, request.food_id);
-  const bind = (
-    digit: number,
-    expected: { change_token: string; status: string } | null,
-  ) =>
-    store.bindGrocery(
-      database,
-      {
-        ownerId: owner,
-        userId: owner,
-        mutationId: mutation(digit),
-        requestId: request.id,
-        restoreNonce: store.currentNonce(database),
-        expected,
-        binding: { product_id: 9, stock_unit_id: 2, quantity_per_serving: 1 },
-      },
-      clock,
-    );
-  assert.throws(() => bind(5, null), { code: "grocery_binding_changed" });
-  const current = store.groceryBinding(database, request);
-  assert.ok(current);
-  assert.deepEqual(bind(6, current), { state: "completed", replayed: false });
-  assert.deepEqual(bind(6, current), { state: "completed", replayed: true });
-  assert.throws(() => bind(6, null), { code: "decision_conflict" });
-  assert.equal(store.groceryBinding(database, request)?.product_id, 9);
+  assert.deepEqual(
+    [
+      store.readGrocery(database, owner, request.mutation_id)?.request.state,
+      store.readGrocery(database, owner, other.mutation_id)?.steps[1]?.reason,
+    ],
+    ["binding_pending", "transaction_reserved"],
+  );
 });
 
 test("restart and restore make unfinished steps uncertain and rotate the nonce", async (context) => {
@@ -258,22 +236,6 @@ test("restart and restore make unfinished steps uncertain and rotate the nonce",
       ["uncertain", "restored_backup"],
     ],
   );
-  const adopt = (digit: number, restoreNonce: string) =>
-    store.adoptGroceryStep(
-      restored.database,
-      {
-        ownerId: owner,
-        userId: owner,
-        mutationId: mutation(digit),
-        requestId: request.id,
-        number: 1,
-        restoreNonce,
-        proof: { object_id: 9 },
-      },
-      clock,
-    );
-  assert.throws(() => adopt(2, before), { code: "grocery_connection_changed" });
-  assert.equal(adopt(3, nonce).state, "open");
   assert.throws(
     () =>
       writeTransaction(restored.database, (scope) =>
@@ -296,8 +258,8 @@ test("restart and restore make unfinished steps uncertain and rotate the nonce",
   );
 });
 
-test("open groceries block reset until the owner abandons them", (context) => {
-  const { database, owner, member, service, create, count } = setup(context);
+test("open groceries block reset; finished ones and their reservations stay", (context) => {
+  const { database, owner, service, create, count } = setup(context);
   const { request } = create(1);
   database.prepare("UPDATE pantry_connection SET reset_required = 1").run();
   assert.throws(() => service.reset(owner), {
@@ -307,19 +269,7 @@ test("open groceries block reset until the owner abandons them", (context) => {
     store.openGroceries(database).map((row) => row.mutation_id),
     [request.mutation_id],
   );
-  const abandon = (userId: number, digit: number) =>
-    store.abandonGrocery(
-      database,
-      {
-        ownerId: owner,
-        userId,
-        mutationId: mutation(digit),
-        requestId: request.id,
-      },
-      clock,
-    );
-  assert.throws(() => abandon(member, 2), { code: "forbidden" });
-  assert.equal(abandon(owner, 3).state, "abandoned");
+  database.prepare("UPDATE grocery_requests SET state = 'abandoned'").run();
   assert.equal(service.reset(owner).generation, 2);
   assert.equal(count("grocery_requests"), 1);
 });
