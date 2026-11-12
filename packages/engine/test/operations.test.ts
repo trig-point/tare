@@ -109,6 +109,7 @@ test("registry constrains public and administrator operations and inventories ev
       "delete_recipe_nutrition_link",
       "list_pantry_requests",
       "reconcile_pantry_request",
+      "pantry_suggestion_context",
     ],
   );
   assert.deepEqual(
