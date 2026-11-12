@@ -8,6 +8,7 @@ import {
   type OperationContext,
   OperationError,
   operationPerson,
+  operationStock,
 } from "../operations/registry.ts";
 import {
   actOnPlannedItem,
@@ -412,6 +413,7 @@ export const planOperations = [
           operationPerson(context),
           input,
           context.clock.now().toISOString(),
+          operationStock(context),
         ),
       }));
     },

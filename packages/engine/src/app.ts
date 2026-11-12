@@ -15,6 +15,7 @@ import { OperationError } from "./operations/registry.ts";
 import { mountOuraCallback } from "./oura/callback.ts";
 import { createOura } from "./oura/service.ts";
 import { pantryEgress } from "./pantry/egress.ts";
+import { createPantryStock } from "./pantry/requests.ts";
 import { createOffAdapter } from "./sources/off.ts";
 import { createUsdaAdapter } from "./sources/usda.ts";
 import { mountWeb } from "./web.ts";
@@ -24,8 +25,18 @@ export function createApp(
 ) {
   if (options.config.grocy && !options.pantry)
     throw new Error("Pantry service required");
+  if (options.config.grocy && !options.stock)
+    throw new Error("Pantry stock required");
   const dependencies = {
     ...options,
+    stock:
+      options.stock ??
+      createPantryStock({
+        config: null,
+        ownerId: null,
+        clock: options.clock,
+        report: () => {},
+      }),
     calendar:
       options.calendar ??
       createCalendarRefresher({
