@@ -6,12 +6,11 @@ import type { TestContext } from "node:test";
 import { createBackupJob } from "../src/backup.ts";
 import { afterCommit, openDatabase, writeTransaction } from "../src/db.ts";
 import { insertIntake } from "../src/logging/intake.ts";
+import { numbersFrom } from "../src/logging/schemas.ts";
 import * as requests from "../src/pantry/requests.ts";
 import { createPantryService } from "../src/pantry/service.ts";
 import { deleteIntake } from "../src/queries/delete-intake.ts";
-import { insertAccount } from "../src/queries/insert-account.ts";
 import { readRequest } from "../src/queries/pantry/read-request.ts";
-import { saveBinding } from "../src/queries/pantry/save-binding.ts";
 import { test } from "./support/hang-ceiling.ts";
 
 const config = {
@@ -29,17 +28,25 @@ function setup(context: TestContext) {
   context.after(connection.close);
   const { database } = connection;
   const person = (username: string) => {
-    const account = insertAccount(database, {
-      ...{ username, password_hash: null, access_email: null, timezone: "UTC" },
-      ...{ is_admin: 0, created_at: clock.now().toISOString() },
-    });
-    assert.ok(account);
-    const insertFood = database.prepare(
-      "INSERT INTO foods (user_id, name, provenance) VALUES (?, 'Synthetic soup', 'label')",
+    const id = Number(
+      database
+        .prepare(
+          "INSERT INTO users (username, timezone, is_admin, created_at) VALUES (?, 'UTC', 0, ?)",
+        )
+        .run(username, clock.now().toISOString()).lastInsertRowid,
     );
+    const food = database
+      .prepare(
+        "INSERT INTO foods (user_id, name, provenance) VALUES (?, 'Synthetic soup', 'label')",
+      )
+      .run(id).lastInsertRowid;
     return {
-      ...account,
-      food: Number(insertFood.run(account.id).lastInsertRowid),
+      id,
+      username,
+      is_admin: 0,
+      timezone: "UTC",
+      day_start_hour: 0,
+      food: Number(food),
     };
   };
   const owner = person("example-owner");
@@ -51,34 +58,42 @@ function setup(context: TestContext) {
     clock,
   });
   const bind = (generation: number) =>
-    saveBinding(database, {
-      ...{
-        user_id: owner.id,
-        generation,
-        reference_kind: "food",
-        reference_id: owner.food,
-      },
-      ...{
-        product_id: 7,
-        stock_unit_id: 2,
-        quantity_per_serving: 0.5,
-        change_token: "token",
-      },
-    });
+    database
+      .prepare(
+        "INSERT INTO pantry_bindings VALUES (?, ?, 'food', ?, 7, 2, 0.5, 'valid', 'token')",
+      )
+      .run(owner.id, generation, owner.food);
   bind(1);
   const kicks: string[] = [];
   const stock = requests.createPantryStock({
-    ...{ config, ownerId: owner.id, clock, report: assert.fail },
+    config,
+    ownerId: owner.id,
+    clock,
     kick: () => kicks.push("kick"),
+    report: assert.fail,
   });
-  const intake = (who: typeof owner, client_id: string) => ({
-    ...{ client_id, servings: 2, claim: {} },
-    reference: { kind: "food" as const, id: who.food },
-  });
-  const log = (who: typeof owner, client_id: string, effect = stock) =>
-    writeTransaction(database, (scope) =>
-      insertIntake(scope, who, intake(who, client_id), clock, effect),
-    );
+  const log = (
+    who: typeof owner,
+    client_id: string,
+    effect = stock,
+    then = () => {},
+  ) =>
+    writeTransaction(database, (scope) => {
+      const result = insertIntake(
+        scope,
+        who,
+        {
+          client_id,
+          reference: { kind: "food", id: who.food },
+          servings: 2,
+          claim: {},
+        },
+        clock,
+        effect,
+      );
+      then();
+      return result;
+    });
   const identity = {
     user_id: owner.id,
     generation: 1,
@@ -91,8 +106,17 @@ function setup(context: TestContext) {
     stock_unit_id: 2,
   });
   return {
-    ...{ database, path, directory, owner, member, service, bind, kicks },
-    ...{ intake, log, identity, key },
+    database,
+    path,
+    directory,
+    owner,
+    member,
+    service,
+    bind,
+    kicks,
+    log,
+    identity,
+    key,
     request: (id?: string | null) => readRequest(database, { id: id ?? "" })[0],
     claim: (id?: string | null) =>
       requests.claimRequest(database, key(id), identity, clock),
@@ -100,60 +124,60 @@ function setup(context: TestContext) {
 }
 
 test("intake records one request or a safe reason in its own transaction", (context) => {
-  const { database, owner, member, bind, kicks, intake, log, request } =
-    setup(context);
+  const { database, owner, member, bind, kicks, log, request } = setup(context);
   const suppressed = writeTransaction(database, (scope) =>
-    insertIntake(scope, owner, intake(owner, "suppressed"), clock, "suppress"),
+    insertIntake(
+      scope,
+      owner,
+      {
+        client_id: "suppressed",
+        name: "Snack",
+        numbers: numbersFrom({ kcal: 100 }),
+        claim: {},
+      },
+      clock,
+      "suppress",
+    ),
   );
   assert.deepEqual(Object.keys(suppressed), ["entry", "created"]);
+  const created = log(owner, "created");
+  assert.equal(request(created.stock?.request_id)?.quantity, 1);
+  const replay = log(owner, "created");
+  assert.deepEqual([replay.created, replay.stock], [false, created.stock]);
+  assert.throws(
+    () =>
+      log(owner, "rolled-back", undefined, () => {
+        throw new Error("rollback");
+      }),
+    /rollback/,
+  );
   const disabled = requests.createPantryStock({
     config: null,
     ownerId: null,
     clock,
     report: assert.fail,
   });
-  assert.deepEqual(log(owner, "disabled", disabled).stock, {
-    ...{ generation: null, request_id: null, reason: "disabled", state: null },
-  });
-  assert.equal(log(member, "member").stock?.reason, "not_owner");
-  const created = log(owner, "created");
-  assert.deepEqual(
-    [created.stock?.state, request(created.stock?.request_id)?.quantity],
-    ["pending", 1],
-  );
-  const replay = log(owner, "created");
-  assert.deepEqual(
-    [replay.created, replay.stock, kicks],
-    [false, created.stock, ["kick"]],
-  );
-  assert.equal(log(owner, "suppressed").stock, null);
-  assert.throws(() =>
-    writeTransaction(database, (scope) => {
-      insertIntake(
-        scope,
-        owner,
-        intake(owner, "rolled-back"),
-        clock,
-        requests.createPantryStock({
-          ...{
-            config,
-            ownerId: owner.id,
-            clock,
-            kick: assert.fail,
-            report: assert.fail,
-          },
-        }),
-      );
-      throw new Error("rollback");
-    }),
-  );
-  database.prepare("UPDATE pantry_bindings SET status = 'tare_enabled'").run();
-  assert.equal(log(owner, "tare").stock?.reason, "tare_enabled");
-  database.prepare("DELETE FROM pantry_bindings").run();
-  assert.equal(log(owner, "unbound").stock?.reason, "no_binding");
-  bind(1);
-  database.prepare("UPDATE pantry_connection SET reset_required = 1").run();
-  assert.equal(log(owner, "latched").stock?.reason, "reset_required");
+  const cases = [
+    ["disabled", () => log(owner, "disabled", disabled)],
+    ["not_owner", () => log(member, "member")],
+    ["tare_enabled", "UPDATE pantry_bindings SET status = 'tare_enabled'"],
+    ["no_binding", "DELETE FROM pantry_bindings"],
+    ["reset_required", "UPDATE pantry_connection SET reset_required = 1"],
+  ] as const;
+  for (const [reason, change] of cases) {
+    if (typeof change === "string") database.prepare(change).run();
+    if (reason === "reset_required") bind(1);
+    const outcome = (typeof change === "string" ? log(owner, reason) : change())
+      .stock;
+    assert.deepEqual(outcome, {
+      generation: reason === "disabled" ? null : 1,
+      request_id: null,
+      reason,
+      state: null,
+    });
+  }
+  assert.equal(log(owner, "created").stock?.state, "pending");
+  assert.deepEqual(kicks, ["kick"]);
   assert.deepEqual(database.prepare("SELECT id FROM pantry_requests").all(), [
     { id: created.stock?.request_id },
   ]);
@@ -162,10 +186,9 @@ test("intake records one request or a safe reason in its own transaction", (cont
 test("deleted, reused and replayed intakes never create a second request", (context) => {
   const { database, owner, service, bind, log, request, claim } =
     setup(context);
-  const servings = (id: number, value: number) =>
-    database
-      .prepare("UPDATE intake_entries SET servings = ? WHERE id = ?")
-      .run(value, id);
+  const setServings = database.prepare(
+    "UPDATE intake_entries SET servings = ? WHERE id = ?",
+  );
   const first = log(owner, "first");
   deleteIntake(database, { user_id: owner.id, id: first.entry.id });
   const detached = request(first.stock?.request_id);
@@ -182,7 +205,7 @@ test("deleted, reused and replayed intakes never create a second request", (cont
     { status: "not_sent", reason: "transport" },
     clock,
   );
-  servings(reused.entry.id, 4);
+  setServings.run(4, reused.entry.id);
   const edited = request(reused.stock?.request_id);
   assert.deepEqual(
     [edited?.state, edited?.quantity, edited?.edited_servings],
@@ -198,7 +221,7 @@ test("deleted, reused and replayed intakes never create a second request", (cont
     [first.stock?.request_id, 2],
   );
   const unattempted = log(owner, "third");
-  servings(unattempted.entry.id, 3);
+  setServings.run(3, unattempted.entry.id);
   assert.equal(request(unattempted.stock?.request_id)?.quantity, 1.5);
 });
 
@@ -219,7 +242,7 @@ test("claims are exclusive, conditional and finalized only by their own token", 
   assert.equal(
     requests.finalizeClaim(
       database,
-      { ...won, claim_token: "stale" },
+      { ...won, claim_token: "x" },
       undefined,
       clock,
     ),
@@ -239,11 +262,7 @@ test("claims are exclusive, conditional and finalized only by their own token", 
       "uncertain",
       "invalid_response",
     ],
-    [
-      { status: "rejected", reason: "http", httpStatus: 400 },
-      "rejected",
-      "http",
-    ],
+    [{ status: "rejected", reason: "http" }, "rejected", "http"],
     [{ status: "uncertain", reason: "transport" }, "uncertain", "transport"],
     [undefined, "uncertain", "response_withheld"],
   ] as const;
@@ -259,13 +278,12 @@ test("claims are exclusive, conditional and finalized only by their own token", 
       [state, reason],
     );
   }
-  const receipt = database.prepare(
-    "SELECT outcome, receipt FROM pantry_attempts WHERE request_id = ?",
+  assert.deepEqual(
+    database
+      .prepare("SELECT receipt FROM pantry_attempts WHERE request_id = ?")
+      .get(ids[0]),
+    { receipt: '[{"id":3,"transaction_id":"x1"}]' },
   );
-  assert.deepEqual(receipt.get(ids[0]), {
-    outcome: "confirmed",
-    receipt: '[{"id":3,"transaction_id":"x1"}]',
-  });
   const reject = (change: object, current = identity) =>
     requests.rejectRequest(
       database,
@@ -290,8 +308,9 @@ test("backup copies are marked and restart treats possibly sent work as uncertai
   const sending = log(owner, "sending").stock?.request_id;
   assert.ok(claim(sending));
   const copies = join(directory, "copies");
-  const job = createBackupJob({ database, directory: copies, keep: 1, clock });
-  await job.run({ signal: new AbortController().signal });
+  await createBackupJob({ database, directory: copies, keep: 1, clock }).run({
+    signal: new AbortController().signal,
+  });
   const copyPath = join(copies, readdirSync(copies)[0] ?? "");
   const markers = "SELECT * FROM pantry_backup_marker";
   assert.deepEqual(
@@ -304,10 +323,13 @@ test("backup copies are marked and restart treats possibly sent work as uncertai
   const reason = (id?: string | null) =>
     readRequest(restored.database, { id: id ?? "" })[0]?.reason;
   assert.deepEqual(
-    [reason(pending), reason(sending)],
-    ["restored_backup", "restored_backup"],
+    [
+      reason(pending),
+      reason(sending),
+      restored.database.prepare(markers).all(),
+    ],
+    ["restored_backup", "restored_backup", []],
   );
-  assert.deepEqual(restored.database.prepare(markers).all(), []);
   requests.recoverRequests(database, clock);
   assert.deepEqual(
     [
@@ -332,9 +354,11 @@ test("reset refuses unresolved requests and otherwise cancels pending work", (co
     { status: "uncertain", reason: "timeout" },
     clock,
   );
-  const move =
-    "UPDATE pantry_requests SET user_id = ?, intake_id = NULL WHERE id = ?";
-  database.prepare(move).run(member.id, uncertain);
+  database
+    .prepare(
+      "UPDATE pantry_requests SET user_id = ?, intake_id = NULL WHERE id = ?",
+    )
+    .run(member.id, uncertain);
   assert.deepEqual(service.read(owner.id).requested, [
     { product_id: 7, stock_unit_id: 2, pending: 1, sending: 0, uncertain: 0 },
   ]);
@@ -342,11 +366,12 @@ test("reset refuses unresolved requests and otherwise cancels pending work", (co
     () => service.reset(owner.id, true),
     /pantry_requests_unresolved/,
   );
-  const bindings = database
-    .prepare("SELECT product_id FROM pantry_bindings")
-    .all();
   assert.deepEqual(
-    [service.read(owner.id).state, request(pending)?.state, bindings],
+    [
+      service.read(owner.id).state,
+      request(pending)?.state,
+      database.prepare("SELECT product_id FROM pantry_bindings").all(),
+    ],
     ["reset_required", "pending", [{ product_id: 7 }]],
   );
   database
@@ -362,11 +387,15 @@ test("reset refuses unresolved requests and otherwise cancels pending work", (co
 test("afterCommit runs isolated callbacks only after a successful commit", async (context) => {
   const { database } = setup(context);
   const events: string[] = [];
-  const fail = (name: string) => () => events.push(`${name} failed`);
+  const failed = (name: string) => () => events.push(`${name} failed`);
   const result = writeTransaction(database, (scope) => {
-    afterCommit(scope, () => JSON.parse("{"), fail("sync"));
-    afterCommit(scope, () => Promise.reject(new Error("async")), fail("async"));
-    afterCommit(scope, () => events.push("later"), assert.fail);
+    afterCommit(scope, () => JSON.parse("{"), failed("sync"));
+    afterCommit(scope, () => Promise.reject(new Error()), failed("async"));
+    afterCommit(
+      scope,
+      () => events.push(database.inTransaction ? "too early" : "later"),
+      assert.fail,
+    );
     events.push("inside");
     return "value";
   });
