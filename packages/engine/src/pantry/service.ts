@@ -26,6 +26,13 @@ import { updateBindingStatus } from "../queries/pantry/update-binding-status.ts"
 import { selectFood } from "../queries/select-food.ts";
 import { selectSourceFood } from "../queries/select-source-food.ts";
 import {
+  assessAvailability,
+  bindingStatus,
+  pantryError,
+  stockRequests,
+  unavailableAvailability,
+} from "./availability.ts";
+import {
   assembleRecipes,
   pantryRecipe,
   type recipeLinkInput,
@@ -45,32 +52,10 @@ export const pantryProduct = z.strictObject({
   best_before_date: z.string().nullable(),
   grams: z.null(),
 });
-const pantryError = z.strictObject({
-  reason: z.enum([
-    "disabled",
-    "not_owner",
-    "invalid_input",
-    "unauthorized",
-    "not_found",
-    "http",
-    "invalid_response",
-    "transport",
-    "timeout",
-    "too_large",
-    "response_withheld",
-  ]),
-  http_status: z.number().int().optional(),
-});
 export const pantryReference = z.strictObject({
   reference_kind: z.enum(["food", "source_food"]),
   reference_id: identifier,
 });
-const bindingStatus = z.enum([
-  "valid",
-  "product_missing",
-  "unit_mismatch",
-  "tare_enabled",
-]);
 export const pantryBindingInput = pantryReference.extend({
   product_id: identifier,
   stock_unit_id: identifier,
@@ -234,7 +219,7 @@ export function createPantryService({
       throw new OperationError(403, "forbidden");
     if (stopping) throw new OperationError(503, "pantry_stopping");
   }
-  function read(userId: number) {
+  function read(userId: number, now = clock.now()) {
     authorize(userId);
     const empty = {
       generation: null,
@@ -262,7 +247,7 @@ export function createPantryService({
       last_success_at: row.last_success_at,
       stale:
         row.fetch_started_at === null ||
-        clock.now().getTime() - Date.parse(row.fetch_started_at) > 600_000,
+        now.getTime() - Date.parse(row.fetch_started_at) > 600_000,
       error: row.error === null ? null : JSON.parse(row.error),
       products: listProducts(database, {
         user_id: userId,
@@ -707,9 +692,43 @@ export function createPantryService({
     });
     return read(userId);
   }
+  /** Synchronous, so planning can call it inside its write transaction; null means no caveat applies. */
+  function foodAvailability(
+    userId: number,
+    foodId: number,
+    servings: number,
+    now: Date,
+  ) {
+    if (!config || userId !== ownerId) return null;
+    const row = readConnection(database);
+    if (!row) throw new Error("Pantry connection missing");
+    if (stopping || row.reset_required || !matches(row))
+      return unavailableAvailability();
+    const [binding] = readBinding(database, {
+      user_id: userId,
+      generation: row.generation,
+      reference_kind: "food",
+      reference_id: foodId,
+    });
+    if (!binding) return null;
+    const snapshot = read(userId, now);
+    const assessed = assessAvailability(
+      snapshot,
+      binding,
+      stockRequests(
+        database,
+        userId,
+        row.generation,
+        snapshot.fetch_started_at,
+      ),
+      servings,
+    );
+    return assessed.reasons.length ? assessed : null;
+  }
   return {
     read,
     refresh,
+    foodAvailability,
     refreshAfterDelivery,
     recipes: (userId: number) => track(recipes(userId)),
     saveLink: (userId: number, input: z.infer<typeof recipeLinkInput>) =>

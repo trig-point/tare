@@ -15,6 +15,7 @@ import {
   plannedItemActionInput,
   plannedItemActionOutput,
 } from "../orders/eat.ts";
+import { availabilitySchema } from "../pantry/availability.ts";
 import { clearIntakeSlots } from "../queries/clear-intake-slots.ts";
 import { countSignedOffDays } from "../queries/count-signed-off-days.ts";
 import { deleteDayTemplate } from "../queries/delete-day-template.ts";
@@ -395,7 +396,10 @@ export const planOperations = [
     name: "plan_slot",
     path: "/api/plan/slot",
     input: planSlotInput,
-    output: zod.strictObject({ item: plannedItemSchema }),
+    output: zod.strictObject({
+      item: plannedItemSchema,
+      pantry: availabilitySchema.optional(),
+    }),
     handler: planSlot,
   }),
   defineOperation({

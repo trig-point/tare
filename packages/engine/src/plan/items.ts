@@ -1,6 +1,7 @@
 import type { Database } from "better-sqlite3";
 import type { z as zod } from "zod";
 import { writeTransaction } from "../db.ts";
+import { resolveGrocyOwner } from "../grocy/config.ts";
 import { localDay } from "../logging/day.ts";
 import { mealNutritionState } from "../meal-nutrition/index.ts";
 import {
@@ -94,10 +95,22 @@ export function planSlot(
       if (meal.quantity < 1) throw new OperationError(409, "meal_out_of_stock");
       if (!isDue(order, person, now))
         throw new OperationError(409, "meal_not_due");
-    } else if (
-      !selectFood(database, { user_id: person.id, id: input.food_id as number })
-    ) {
-      throw new OperationError(404, "food_not_found");
+    } else {
+      if (
+        !selectFood(database, {
+          user_id: person.id,
+          id: input.food_id as number,
+        })
+      )
+        throw new OperationError(404, "food_not_found");
+      // The owner's food cannot be checked against the pantry without its service.
+      const { grocy } = context.config;
+      if (
+        grocy &&
+        !context.pantry &&
+        resolveGrocyOwner(database, grocy) === person.id
+      )
+        throw new OperationError(503, "pantry_unavailable");
     }
     const key = {
       user_id: person.id,
@@ -106,25 +119,38 @@ export function planSlot(
       position: input.position,
     };
     const current = selectPlannedSlot(database, key);
-    if (
-      input.item_id === undefined
-        ? current !== null
-        : current?.id !== input.item_id || current.revision !== input.revision
-    )
-      throw new OperationError(409, "stale_revision");
     const values = {
       order_meal_id: input.meal_id ?? null,
       food_id: input.food_id ?? null,
       servings: input.food_id === undefined ? null : (input.servings ?? 1),
       updated_at: now,
     };
+    const caveat = () => {
+      if (values.food_id === null || values.servings === null) return {};
+      const pantry = context.pantry?.foodAvailability(
+        person.id,
+        values.food_id,
+        values.servings,
+        instant,
+      );
+      return pantry ? { pantry } : {};
+    };
+    if (
+      input.item_id === undefined
+        ? current !== null
+        : current?.id !== input.item_id || current.revision !== input.revision
+    )
+      throw new OperationError(409, "stale_revision");
     if (
       current &&
       current.order_meal_id === values.order_meal_id &&
       current.food_id === values.food_id &&
       current.servings === values.servings
     )
-      return { status: 200, body: { item: itemView(database, current) } };
+      return {
+        status: 200,
+        body: { item: itemView(database, current), ...caveat() },
+      };
     const row = current
       ? updatePlannedItem(database, values, {
           ...key,
@@ -138,7 +164,7 @@ export function planSlot(
     }
     return {
       status: current ? 200 : 201,
-      body: { item: itemView(database, row) },
+      body: { item: itemView(database, row), ...caveat() },
     };
   });
 }
