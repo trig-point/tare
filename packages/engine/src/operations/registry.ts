@@ -1,7 +1,7 @@
 import type { z as zod } from "zod";
 import type { AuthEnv, Person } from "../auth/middleware.ts";
 import type { AppOptions } from "../auth/routes.ts";
-import { isGuardedOperation, isPantryOperation } from "../pantry/egress.ts";
+import { isPantryOperation } from "../pantry/egress.ts";
 import type { PantryStock } from "../pantry/requests.ts";
 import { selectUser } from "../queries/select-user.ts";
 
@@ -171,7 +171,7 @@ export async function executeOperation(
   const output = operation.output.safeParse(result.body);
   if (!output.success) {
     // Name only: the rejected body can hold private fields.
-    if (!isGuardedOperation(operation.name))
+    if (!isPantryOperation(operation.name))
       console.error("operation_output_rejected", operation.name);
     throw new OperationError(500, "internal");
   }
