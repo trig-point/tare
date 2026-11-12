@@ -423,10 +423,15 @@ test("afterCommit runs isolated callbacks only after a successful commit", async
   assert.throws(() =>
     writeTransaction(database, (scope) => {
       closed = scope;
-      afterCommit(scope, assert.fail, assert.fail);
+      afterCommit(
+        scope,
+        () => events.push("rolled back"),
+        failed("rolled back"),
+      );
       throw new Error("rollback");
     }),
   );
+  assert.equal(events.length, 4);
   assert.throws(
     () => afterCommit(closed as never, assert.fail, assert.fail),
     /Inactive/,
