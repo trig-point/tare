@@ -152,10 +152,38 @@ test("a restored request gets a numbered recovery record, waits 15 minutes and r
   database
     .prepare("UPDATE pantry_requests SET state = 'uncertain' WHERE id = ?")
     .run(legacy);
+  // Sent 20 minutes ahead of the clock that later recovers it, as after the clock moved back.
+  const sent = log("sent");
+  step(20 * minute);
+  assert.ok(requests.claimRequest(database, key(sent), identity, clock));
+  step(-20 * minute);
+  // Pending again after a send that never left, so its restore recovers no earlier send.
+  const unsent = log("unsent");
+  const unsentClaim = requests.claimRequest(
+    database,
+    key(unsent),
+    identity,
+    clock,
+  );
+  assert.ok(unsentClaim);
+  requests.finalizeClaim(
+    database,
+    unsentClaim,
+    { status: "not_sent", reason: "transport" } as never,
+    clock,
+  );
   database.exec("INSERT INTO pantry_backup_marker VALUES (1)");
   requests.recoverRequests(database, clock);
   step(minute);
   requests.recoverRequests(database, clock);
+  assert.deepEqual(
+    [
+      view(sent)?.attempts[1]?.recovered_from_number,
+      view(sent)?.retry.not_before,
+      view(unsent)?.attempts[1]?.recovered_from_number,
+    ],
+    [1, "2026-01-01T00:35:00.000Z", null],
+  );
   assert.deepEqual(
     [id, legacy].map((request) => [
       view(request)?.state,
@@ -242,6 +270,7 @@ test("decisions follow state, reset and predecessor rules, and only the active c
     )
     .run(member, predecessor);
   const beforeReset: [string, number, Decision, string][] = [
+    [predecessor, 1, "not_delivered_retry", "pantry_connection_changed"],
     [pending, 0, "delivered", "pantry_request_not_actionable"],
     [current, 1, "delivered", "delivered"],
     [predecessor, 1, "delivered", "delivered"],

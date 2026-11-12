@@ -362,3 +362,70 @@ test("0030 keeps every stored session and its keys", (context) => {
     /UNIQUE/,
   );
 });
+
+test("0038 numbers earlier local rejections and dates earlier deliveries", (context) => {
+  const folder = mkdtempSync(join(tmpdir(), "tare-0038-"));
+  const database = new Database(":memory:");
+  database.pragma("foreign_keys = ON");
+  context.after(() => {
+    database.close();
+    rmSync(folder, { recursive: true, force: true });
+  });
+  const copy = (upTo: number) => {
+    for (const name of readdirSync(migrations).filter(
+      (name) => name.endsWith(".sql") && Number(name.split("_")[0]) <= upTo,
+    ))
+      cpSync(new URL(name, migrations), join(folder, name));
+  };
+  copy(37);
+  applyMigrations(database, pathToFileURL(folder + sep));
+  const request = (id: string, state: string, attempts: number) =>
+    `INSERT INTO pantry_requests (id, user_id, generation, client_id, reference_kind, reference_id, product_id, stock_unit_id, quantity_per_serving, quantity, state, reason, attempt_count, created_at)
+      VALUES ('${id}', 1, 1, '${id}', 'food', 1, 7, 2, 0.5, 1, '${state}', ${state === "rejected" ? "'unit_mismatch'" : "NULL"}, ${attempts}, '2026-01-01T00:00:00.000Z');`;
+  const delivered = "00000000-0000-4000-8000-000000000001";
+  const rejected = "00000000-0000-4000-8000-000000000002";
+  database.exec(`INSERT INTO users (id, username, timezone, created_at) VALUES (1, 'example-person', 'UTC', '2026-01-01T00:00:00.000Z');
+    ${request(delivered, "delivered", 1)}
+    ${request(rejected, "rejected", 0)}
+    INSERT INTO pantry_attempts VALUES ('${delivered}', 1, 'token', 'confirmed', NULL, NULL, '[]', '2026-01-02T00:00:00.000Z', '2026-01-02T00:00:01.000Z');`);
+  copy(38);
+  applyMigrations(database, pathToFileURL(folder + sep));
+  assert.deepEqual(
+    [
+      database
+        .prepare(
+          "SELECT id, attempt_count, resolved_at FROM pantry_requests ORDER BY id",
+        )
+        .all(),
+      database
+        .prepare(
+          "SELECT request_id, number, kind, finished_at FROM pantry_attempts ORDER BY request_id",
+        )
+        .all(),
+    ],
+    [
+      [
+        {
+          id: delivered,
+          attempt_count: 1,
+          resolved_at: "2026-01-02T00:00:01.000Z",
+        },
+        { id: rejected, attempt_count: 1, resolved_at: null },
+      ],
+      [
+        {
+          request_id: delivered,
+          number: 1,
+          kind: "network",
+          finished_at: "2026-01-02T00:00:01.000Z",
+        },
+        {
+          request_id: rejected,
+          number: 1,
+          kind: "local_rejection",
+          finished_at: null,
+        },
+      ],
+    ],
+  );
+});

@@ -28,6 +28,20 @@ ALTER TABLE pantry_attempts_replacement RENAME TO pantry_attempts;
 ALTER TABLE pantry_requests ADD COLUMN uncertain_since TEXT;
 ALTER TABLE pantry_requests ADD COLUMN updated_at TEXT;
 ALTER TABLE pantry_requests ADD COLUMN resolved_at TEXT;
+-- Earlier local rejections kept no record; number them so a retry cannot resize the quantity. Their time is unknown and stays null.
+INSERT INTO pantry_attempts (request_id, number, kind, outcome, reason)
+SELECT id, attempt_count + 1, 'local_rejection', 'rejected', reason FROM pantry_requests
+WHERE state = 'rejected' AND NOT EXISTS (
+  SELECT 1 FROM pantry_attempts WHERE request_id = pantry_requests.id AND number = pantry_requests.attempt_count AND outcome = 'rejected'
+);
+UPDATE pantry_requests SET attempt_count = attempt_count + 1
+WHERE state = 'rejected' AND EXISTS (
+  SELECT 1 FROM pantry_attempts WHERE request_id = pantry_requests.id AND number = pantry_requests.attempt_count + 1 AND kind = 'local_rejection'
+);
+UPDATE pantry_requests SET
+  resolved_at = (SELECT finished_at FROM pantry_attempts WHERE request_id = pantry_requests.id AND outcome = 'confirmed'),
+  updated_at = (SELECT finished_at FROM pantry_attempts WHERE request_id = pantry_requests.id AND outcome = 'confirmed')
+WHERE state = 'delivered';
 
 CREATE TABLE pantry_decisions (
   id TEXT PRIMARY KEY NOT NULL CHECK (length(id) = 36),

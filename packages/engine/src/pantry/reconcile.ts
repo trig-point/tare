@@ -177,12 +177,16 @@ export function createReconciliation({
     if (request.state === "rejected")
       return { eligible: true, not_before: null, reason: null };
     if (request.uncertain_since === null) return blocked("too_early");
-    const current = listAttempts(database, { request_id: request.id }).find(
-      (attempt) => attempt.number === request.attempt_count,
-    );
+    const attempts = listAttempts(database, { request_id: request.id });
+    const find = (number: number | null | undefined) =>
+      attempts.find((attempt) => attempt.number === number);
+    const current = find(request.attempt_count);
+    // A recovery record has no send time of its own; the send it recovered from does.
+    const sent =
+      current?.started_at ?? find(current?.recovered_from_number)?.started_at;
     const since = Math.max(
       Date.parse(request.uncertain_since),
-      Date.parse(current?.started_at ?? request.uncertain_since),
+      Date.parse(sent ?? request.uncertain_since),
     );
     const notBefore = new Date(since + settlingMs).toISOString();
     return now.getTime() < since + settlingMs
