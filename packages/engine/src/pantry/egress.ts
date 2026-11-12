@@ -13,10 +13,11 @@ export const isPantryOperation = (name: string) =>
     "list_pantry_recipes",
     "save_recipe_nutrition_link",
     "delete_recipe_nutrition_link",
+    "pantry_suggestion_context",
   ].includes(name);
 export const isPantryPath = (path: string) =>
   path === "/api/pantry" || path.startsWith("/api/pantry/");
-// Logging responses can carry stock details, so they get the same outgoing checks as pantry reads.
+// Logging and planning responses can carry stock details, so they get the same outgoing checks as pantry reads.
 const stockOperations = [
   "log_food",
   "log_regular_meal",
@@ -24,6 +25,7 @@ const stockOperations = [
   "delete_intake",
   "eat_meal",
   "planned_item_action",
+  "plan_slot",
 ];
 export const isGuardedOperation = (name: string) =>
   isPantryOperation(name) || stockOperations.includes(name);
@@ -35,6 +37,7 @@ const isGuardedPath = (path: string) =>
     "/api/regular-meals/log",
     "/api/meals/eat",
     "/api/plan/items/action",
+    "/api/plan/slot",
   ].includes(path);
 
 export async function guardPantryResponse(response: Response, key: string) {

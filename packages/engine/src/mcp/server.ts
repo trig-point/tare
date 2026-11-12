@@ -12,7 +12,7 @@ import {
   OperationError,
   type OperationIdentity,
 } from "../operations/registry.ts";
-import { isPantryOperation } from "../pantry/egress.ts";
+import { isGuardedOperation } from "../pantry/egress.ts";
 
 interface McpSession {
   ownerPersonId: number;
@@ -98,7 +98,7 @@ export function mountMcp(app: Hono<AuthEnv>, deps: OperationDependencies) {
               error instanceof OperationError ? error.code : "internal";
             if (
               !(error instanceof OperationError) &&
-              !isPantryOperation(operation.name)
+              !isGuardedOperation(operation.name)
             )
               console.error(
                 "mcp_tool_failed",
