@@ -584,7 +584,12 @@ export function createPantryService({
     const queued = Promise.resolve().then(async () => {
       while (slot) await Promise.allSettled([slot.work]);
       if (followUp === queued) followUp = undefined;
-      return stopping ? undefined : refresh(owner);
+      if (stopping) return undefined;
+      // A stop that lands mid-refresh is shutdown, not a failed refresh.
+      return refresh(owner).catch((caught: unknown) => {
+        if (stopping) return undefined;
+        throw caught;
+      });
     });
     followUp = queued;
     return track(queued);

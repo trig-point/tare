@@ -20,6 +20,7 @@ type Client = Pick<
 export type DispatchReport =
   | "pantry_dispatch_failed"
   | "pantry_read_failed"
+  | "pantry_consume_rejected"
   | "pantry_consume_unconfirmed"
   | "pantry_finalize_failed"
   | "pantry_refresh_failed";
@@ -95,17 +96,20 @@ export function createPantryDispatcher({
     });
     if (candidates.length === 0) return;
     const catalog = await client.catalog(ownerId);
+    if (stopping) return;
     if (catalog?.status !== "ok") return report("pantry_read_failed");
     const active = new Set(
       catalog.value
         .filter((product) => product.active === 1)
         .map((product) => product.id),
     );
+    let unreadable = false;
     for (const candidate of candidates) {
+      if (stopping) return;
       const status = await eligibility(candidate, active);
       if (stopping) return;
       if (status === null) {
-        report("pantry_read_failed");
+        unreadable = true;
         continue;
       }
       if (status !== "valid") {
@@ -132,6 +136,7 @@ export function createPantryDispatcher({
       }
       // A failed write leaves the request sending; startup recovery marks it uncertain.
       if (!finalized) report("pantry_finalize_failed");
+      else if (result?.status === "rejected") report("pantry_consume_rejected");
       else if (result?.status !== "confirmed")
         report("pantry_consume_unconfirmed");
       else
@@ -140,6 +145,7 @@ export function createPantryDispatcher({
           () => report("pantry_refresh_failed"),
         );
     }
+    if (unreadable) report("pantry_read_failed");
   }
 
   function sweep(): Promise<void> {
@@ -164,7 +170,8 @@ export function createPantryDispatcher({
     });
     sweeping = work;
     tracked.add(work);
-    work.finally(() => tracked.delete(work));
+    const release = () => tracked.delete(work);
+    work.then(release, release);
     return work;
   }
 

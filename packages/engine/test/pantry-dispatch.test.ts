@@ -38,7 +38,6 @@ function setup(context: TestContext) {
   context.after(() => rmSync(directory, { recursive: true, force: true }));
   const path = join(directory, "tare.sqlite");
   const connection = openDatabase(path);
-  context.after(connection.close);
   const { database } = connection;
   const user = (username: string) =>
     Number(
@@ -149,6 +148,10 @@ function setup(context: TestContext) {
       .get(id) as { state: string; reason: string | null } | undefined;
   const consumes = () =>
     grocy.calls.filter((route) => route.endsWith("/consume")).length;
+  context.after(async () => {
+    await Promise.all([dispatcher.stop(), service.stop()]);
+    connection.close();
+  });
   return {
     database,
     path,
@@ -166,8 +169,16 @@ function setup(context: TestContext) {
 }
 
 test("a committed request is sent once and the snapshot refetches after delivery", async (context) => {
-  const { grocy, service, ownerId, dispatcher, log, request, consumes } =
-    setup(context);
+  const {
+    grocy,
+    service,
+    ownerId,
+    dispatcher,
+    log,
+    request,
+    consumes,
+    reports,
+  } = setup(context);
   let id = "";
   const seen: (string | undefined)[] = [];
   const first = deferred();
@@ -189,6 +200,7 @@ test("a committed request is sent once and the snapshot refetches after delivery
   await second.promise;
   await service.stop();
   assert.deepEqual(seen, [undefined, "delivered"]);
+  assert.deepEqual(reports, []);
   await dispatcher.job.run();
   assert.equal(consumes(), 1);
 });
@@ -283,6 +295,14 @@ test("a product changed, deleted or unreadable before send is never consumed", a
     state: "rejected",
     reason: "unit_mismatch",
   });
+  grocy.detail = { product, quantity_unit_stock: unit };
+  grocy.detailStatus = 404;
+  const gone = log("gone");
+  await dispatcher.job.run();
+  assert.deepEqual(request(gone), {
+    state: "rejected",
+    reason: "product_missing",
+  });
   grocy.catalog = [];
   const deleted = log("deleted");
   await dispatcher.job.run();
@@ -294,7 +314,7 @@ test("a product changed, deleted or unreadable before send is never consumed", a
 });
 
 test("stop admits no new claims and drains the send in flight", async (context) => {
-  const { grocy, dispatcher, log, request, consumes } = setup(context);
+  const { grocy, service, dispatcher, log, request, consumes } = setup(context);
   const sent = deferred();
   const answer = deferred();
   const confirm = grocy.consume;
@@ -306,7 +326,7 @@ test("stop admits no new claims and drains the send in flight", async (context) 
   const waiting = log("waiting");
   await sent.promise;
   let drained = false;
-  const stopped = dispatcher.stop().then(() => {
+  const stopped = Promise.all([dispatcher.stop(), service.stop()]).then(() => {
     drained = true;
   });
   await new Promise((resolve) => setImmediate(resolve));
@@ -319,4 +339,8 @@ test("stop admits no new claims and drains the send in flight", async (context) 
     "pending",
   ]);
   assert.equal(consumes(), 1);
+  assert.equal(
+    grocy.calls.filter((route) => route === "/stock/products/7").length,
+    1,
+  );
 });
