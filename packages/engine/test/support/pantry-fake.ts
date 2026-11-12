@@ -106,7 +106,7 @@ export async function pantryHarness(context: TestContext) {
       )
       .run(admin.user.id, kind, id, productId, unit, randomUUID());
   const attempt = database.prepare(
-    "INSERT INTO pantry_attempts VALUES (?, 1, ?, ?, NULL, NULL, ?, ?, ?)",
+    "INSERT INTO pantry_attempts (request_id, number, kind, token, outcome, reason, http_status, receipt, started_at, finished_at) VALUES (?, 1, 'network', ?, ?, NULL, NULL, ?, ?, ?)",
   );
   /** A product 7 request for the food; `at` is the send time, or the confirmation time when delivered. */
   const request = (

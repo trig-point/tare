@@ -15,6 +15,7 @@ import { clearBackupMarker } from "../queries/pantry/clear-backup-marker.ts";
 import { finalizeAttempt } from "../queries/pantry/finalize-attempt.ts";
 import { finalizeRequest } from "../queries/pantry/finalize-request.ts";
 import { insertAttempt } from "../queries/pantry/insert-attempt.ts";
+import { insertLocalRejection } from "../queries/pantry/insert-local-rejection.ts";
 import { insertOutcome } from "../queries/pantry/insert-outcome.ts";
 import { insertRequest } from "../queries/pantry/insert-request.ts";
 import { readBinding } from "../queries/pantry/read-binding.ts";
@@ -23,6 +24,7 @@ import { readOutcome } from "../queries/pantry/read-outcome.ts";
 import { readRequest } from "../queries/pantry/read-request.ts";
 import { readRequestByClient } from "../queries/pantry/read-request-by-client.ts";
 import { recoverAttempts } from "../queries/pantry/recover-attempts.ts";
+import { recoverRecords } from "../queries/pantry/recover-records.ts";
 import { recoverRequests as recoverQuery } from "../queries/pantry/recover-requests.ts";
 import { rejectRequest as rejectQuery } from "../queries/pantry/reject-request.ts";
 
@@ -211,7 +213,7 @@ export function claimRequest(
     const token = randomUUID();
     const [claimed] = claimQuery(
       database,
-      { claim_token: token },
+      { claim_token: token, now: clock.now().toISOString() },
       {
         ...request,
         user_id: connection.user_id,
@@ -231,27 +233,35 @@ export function claimRequest(
   });
 }
 
-/** Rejects a still-pending request after a pre-send read proved it ineligible; false when anything moved first. */
+/** Rejects a still-pending request after a pre-send read proved it ineligible, under a new local record number; returns false if the state changed first. */
 export function rejectRequest(
   database: Database,
   request: RequestKey,
   connection: PantryConnection,
   reason: "product_missing" | "unit_mismatch" | "tare_enabled",
+  clock: { now(): Date },
 ) {
   return writeTransaction(database, (scope) => {
     const database = scopeDatabase(scope);
     if (!connectionCurrent(database, connection)) return false;
-    return (
-      rejectQuery(
-        database,
-        { reason },
-        {
-          ...request,
-          user_id: connection.user_id,
-          generation: connection.generation,
-        },
-      ).length > 0
+    const now = clock.now().toISOString();
+    const [rejected] = rejectQuery(
+      database,
+      { reason, now },
+      {
+        ...request,
+        user_id: connection.user_id,
+        generation: connection.generation,
+      },
     );
+    if (!rejected) return false;
+    insertLocalRejection(database, {
+      request_id: rejected.id,
+      number: rejected.attempt_count,
+      reason,
+      finished_at: now,
+    });
+    return true;
   });
 }
 
@@ -297,9 +307,10 @@ export function finalizeClaim(
   const settled = settle(claim, result);
   return writeTransaction(database, (scope) => {
     const database = scopeDatabase(scope);
+    const now = clock.now().toISOString();
     const [updated] = finalizeRequest(
       database,
-      { state: settled.state, reason: settled.reason },
+      { state: settled.state, reason: settled.reason, now },
       { id: claim.id, claim_token: claim.claim_token },
     );
     if (!updated) return false;
@@ -310,7 +321,7 @@ export function finalizeClaim(
         reason: settled.reason,
         http_status: settled.http_status,
         receipt: settled.receipt,
-        finished_at: clock.now().toISOString(),
+        finished_at: now,
       },
       { token: claim.claim_token },
     );
@@ -318,12 +329,17 @@ export function finalizeClaim(
   });
 }
 
-/** Startup step: claims from a previous process may have been sent, and a restored backup may hold work already sent. */
+/**
+ * Startup step: claims from a previous process may have been sent, and a restored backup may hold work already sent.
+ * Each recovered request gets a new numbered recovery record and a fresh settling wait; valid uncertain rows are left alone.
+ */
 export function recoverRequests(database: Database, clock: { now(): Date }) {
   writeTransaction(database, (scope) => {
     const database = scopeDatabase(scope);
-    recoverAttempts(database, { finished_at: clock.now().toISOString() });
-    recoverQuery(database);
+    const now = clock.now().toISOString();
+    recoverAttempts(database, { finished_at: now, uncertain_since: now });
+    recoverRecords(database, { now });
+    recoverQuery(database, { uncertain_since: now, updated_at: now });
     clearBackupMarker(database);
   });
 }

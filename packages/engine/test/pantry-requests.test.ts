@@ -294,6 +294,7 @@ test("claims are exclusive, conditional and finalized only by their own token", 
       { ...key(ids[5]), ...change },
       current,
       "unit_mismatch",
+      clock,
     );
   assert.deepEqual(
     [
@@ -343,15 +344,25 @@ test("backup copies are marked and restart treats possibly sent work as uncertai
     ],
     ["pending", "uncertain", "restarted"],
   );
-  const attempts = "SELECT outcome, reason FROM pantry_attempts";
+  const attempts =
+    "SELECT number, kind, reason FROM pantry_attempts ORDER BY number, kind";
+  const record = (number: number, kind: string, reason: string) => ({
+    number,
+    kind,
+    reason,
+  });
   assert.deepEqual(
     [
       restored.database.prepare(attempts).all(),
       database.prepare(attempts).all(),
     ],
     [
-      [{ outcome: "uncertain", reason: "restored_backup" }],
-      [{ outcome: "uncertain", reason: "restarted" }],
+      [
+        record(1, "network", "restored_backup"),
+        record(1, "recovery", "restored_backup"),
+        record(2, "recovery", "restored_backup"),
+      ],
+      [record(1, "network", "restarted"), record(2, "recovery", "restarted")],
     ],
   );
 });

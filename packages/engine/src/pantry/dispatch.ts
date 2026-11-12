@@ -47,6 +47,8 @@ export function createPantryDispatcher({
   let sweeping: Promise<boolean> | undefined;
   let again = false;
   const tracked = new Set<Promise<unknown>>();
+  // Claims this process may still be sending; a stored token alone does not prove live ownership.
+  const live = new Set<string>();
   let failures = 0;
   // Failures that leave work undone; the scheduled job must not record them as ok.
   function fail(code: DispatchReport) {
@@ -119,26 +121,32 @@ export function createPantryDispatcher({
         continue;
       }
       if (status !== "valid") {
-        rejectRequest(database, candidate, identity, status);
+        rejectRequest(database, candidate, identity, status, clock);
         continue;
       }
       const claim = claimRequest(database, candidate, identity, clock);
       if (!claim) continue;
+      const held = `${claim.id}:${claim.attempt_count}`;
+      live.add(held);
       let result: Awaited<ReturnType<Client["consume"]>>;
-      try {
-        result = await client.consume(
-          ownerId,
-          claim.product_id,
-          claim.quantity,
-        );
-      } catch {
-        result = undefined;
-      }
       let finalized: boolean;
       try {
-        finalized = finalizeClaim(database, claim, result, clock);
-      } catch {
-        finalized = false;
+        try {
+          result = await client.consume(
+            ownerId,
+            claim.product_id,
+            claim.quantity,
+          );
+        } catch {
+          result = undefined;
+        }
+        try {
+          finalized = finalizeClaim(database, claim, result, clock);
+        } catch {
+          finalized = false;
+        }
+      } finally {
+        live.delete(held);
       }
       // A failed write leaves the request sending; startup recovery marks it uncertain.
       if (!finalized) fail("pantry_finalize_failed");
@@ -188,6 +196,8 @@ export function createPantryDispatcher({
     kick() {
       void sweep();
     },
+    holds: (requestId: string, number: number) =>
+      live.has(`${requestId}:${number}`),
     stop() {
       stopping = true;
       return Promise.allSettled([...tracked]).then(() => {});

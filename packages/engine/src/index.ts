@@ -54,16 +54,23 @@ async function startEngine(scaleUsers: Map<string, number> | null) {
   const clock = { now: () => new Date() };
   recoverRequests(connection.database, clock);
   const grocyOwner = resolveGrocyOwner(connection.database, config.grocy);
+  const reportPantry = (code: string) => {
+    const message = safeGrocyText(code, config.grocy?.apiKey);
+    if (message !== undefined) console.error(message);
+  };
   const pantry = createPantryService({
     database: connection.database,
     config: config.grocy,
     ownerId: grocyOwner,
     clock,
+    // The dispatcher needs the service's refresh, so the service reaches it lazily.
+    dispatch: {
+      kick: () => dispatcher?.kick(),
+      holds: (requestId, number) =>
+        dispatcher?.holds(requestId, number) ?? false,
+    },
+    report: reportPantry,
   });
-  const reportPantry = (code: string) => {
-    const message = safeGrocyText(code, config.grocy?.apiKey);
-    if (message !== undefined) console.error(message);
-  };
   const dispatcher =
     config.grocy && grocyOwner !== null
       ? createPantryDispatcher({

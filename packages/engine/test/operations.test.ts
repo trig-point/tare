@@ -107,6 +107,8 @@ test("registry constrains public and administrator operations and inventories ev
       "list_pantry_recipes",
       "save_recipe_nutrition_link",
       "delete_recipe_nutrition_link",
+      "list_pantry_requests",
+      "reconcile_pantry_request",
       "pantry_suggestion_context",
     ],
   );

@@ -10,6 +10,11 @@ import {
   recipeLinkRemoval,
 } from "./recipes.ts";
 import {
+  pantryRequestsOutput,
+  reconcileInput,
+  reconcileOutput,
+} from "./reconcile.ts";
+import {
   type PantryService,
   pantryBindingInput,
   pantryOutput,
@@ -149,6 +154,28 @@ const operations: {
     disabled: { outcome: "disabled" },
     run: (service, userId, input: { recipe_id: number }) =>
       service.removeLink(userId, input.recipe_id),
+  },
+  {
+    name: "list_pantry_requests",
+    method: "GET",
+    path: "/api/pantry/requests",
+    description:
+      "Read Grocy stock requests that need attention and those resolved in the last 30 days, with attempts, decisions and retry timing.",
+    input: zod.strictObject({}),
+    output: pantryRequestsOutput,
+    disabled: { state: "disabled", unresolved: [], history: [] },
+    run: (service, userId) => service.requests(userId),
+  },
+  {
+    name: "reconcile_pantry_request",
+    method: "POST",
+    path: "/api/pantry/requests/reconcile",
+    description:
+      "Record what happened to a stock request's current attempt: delivered, not delivered and retry, or abandoned. A pending request can only be abandoned. A rejected request can retry at once; an uncertain one waits 15 minutes after it became uncertain. Refetch the list for retry timing.",
+    input: reconcileInput,
+    output: reconcileOutput,
+    run: (service, userId, input: zod.output<typeof reconcileInput>) =>
+      service.reconcile(userId, input),
   },
 ];
 

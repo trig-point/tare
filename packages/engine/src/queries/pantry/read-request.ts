@@ -23,6 +23,9 @@ export type ReadRequestResult = {
   edited_servings: number | null;
   detached_intake: string | null;
   created_at: string;
+  uncertain_since: string | null;
+  updated_at: string | null;
+  resolved_at: string | null;
 };
 
 export function readRequest(
@@ -58,6 +61,9 @@ function mapArrayToReadRequestResult(data: any) {
     edited_servings: data[15],
     detached_intake: data[16],
     created_at: data[17],
+    uncertain_since: data[18],
+    updated_at: data[19],
+    resolved_at: data[20],
   };
   return result;
 }
