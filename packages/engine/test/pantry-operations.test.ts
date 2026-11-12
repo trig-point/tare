@@ -134,6 +134,19 @@ for (const mode of ["fallback", "access"] as const)
         arguments: {},
       });
       assert.equal(await blocked.text(), "");
+      const batched = await setup.app.request("/mcp", {
+        method: "POST",
+        headers: { ...headers, "mcp-session-id": session as string },
+        body: JSON.stringify([
+          {
+            jsonrpc: "2.0",
+            id: ++sequence,
+            method: "tools/call",
+            params: { name: "list_pantry", arguments: {} },
+          },
+        ]),
+      });
+      assert.equal(await batched.text(), "");
       const unchanged = await send("tools/call", {
         name: "whoami",
         arguments: {},

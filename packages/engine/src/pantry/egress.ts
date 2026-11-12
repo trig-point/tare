@@ -105,9 +105,12 @@ export function pantryEgress(
           }
           if (!guarded) {
             const request = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-            guarded =
-              request.method === "tools/call" &&
-              isPantryOperation(request.params?.name);
+            const requests = Array.isArray(request) ? request : [request];
+            guarded = requests.some(
+              (request) =>
+                request?.method === "tools/call" &&
+                isPantryOperation(request.params?.name),
+            );
           }
         } catch {
           guarded = true;
