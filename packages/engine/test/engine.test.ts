@@ -63,6 +63,7 @@ describe("engine", () => {
 
   test("config reads a present required variable and defaults the port", () => {
     assert.deepEqual(loadConfig({ DATABASE_URL: ":memory:" }), {
+      grocy: null,
       tdee: {
         windowDays: 28,
         energyDensity: 7700,

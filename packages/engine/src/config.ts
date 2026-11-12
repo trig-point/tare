@@ -1,6 +1,11 @@
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { z as zod } from "zod";
 import { normalizeAccessEmail } from "./auth/access.ts";
+import {
+  type GrocyConfig,
+  parseGrocyConfig,
+  safeGrocyText,
+} from "./grocy/config.ts";
 
 export interface TdeeSettings {
   windowDays: number;
@@ -21,6 +26,7 @@ export interface WhySettings {
 }
 
 export interface Config {
+  grocy: GrocyConfig | null;
   orderEmailServices: Record<
     string,
     { senders: string[]; dkim_domains: string[] }
@@ -497,6 +503,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
   const accessEmail = normalizeAccessEmail(env.TARE_ADMIN_ACCESS_EMAIL ?? "");
   const mqtt = parseMqtt(env);
   return {
+    grocy: parseGrocyConfig(env),
     orderEmailServices: parseOrderEmailServices(env.TARE_ORDER_EMAIL_SERVICES),
     tdee: parseTdeeSettings(env),
     why: parseWhySettings(env),
@@ -528,4 +535,28 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
       accessEmail: accessEmail ?? undefined,
     },
   };
+}
+
+export function loadStartupConfig(
+  env: Record<string, string | undefined>,
+  report: (message: string) => void = console.error,
+) {
+  try {
+    return loadConfig(env);
+  } catch (error) {
+    reportStartupError(error, env.TARE_GROCY_API_KEY, report);
+    return undefined;
+  }
+}
+
+export function reportStartupError(
+  error: unknown,
+  key: string | undefined,
+  report: (message: string) => void = console.error,
+) {
+  const message = safeGrocyText(
+    error instanceof Error ? error.message : "First administrator setup failed",
+    key?.trim(),
+  );
+  if (message !== undefined) report(message);
 }
