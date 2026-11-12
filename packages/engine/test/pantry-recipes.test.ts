@@ -10,33 +10,34 @@ const config = {
   apiKey: "invented-secret",
   username: credentials.username,
 };
+// Values follow a disposable Grocy 4.7.1 capture, which returns native numbers.
 const position = (
   recipe: number,
-  id: number,
-  product: number,
-  unit: number,
-  amounts: [required: number, missing: number, stock: number],
+  recipe_pos_id: number,
+  product_id: number,
+  qu_id: number,
+  [recipe_amount, missing_amount, stock_amount]: number[],
   anyStock = 0,
 ) => ({
-  recipe_id: String(recipe),
-  recipe_pos_id: String(id),
-  product_id: String(product),
-  qu_id: String(unit),
-  recipe_amount: amounts[0],
-  missing_amount: amounts[1],
-  stock_amount: amounts[2],
-  need_fulfilled: amounts[1] ? "0" : "1",
-  only_check_single_unit_in_stock: String(anyStock),
-  is_nested_recipe_pos: String(anyStock),
-  child_recipe_id: String(anyStock ? 3 : recipe),
+  recipe_id: recipe,
+  recipe_pos_id,
+  product_id,
+  qu_id,
+  recipe_amount,
+  missing_amount,
+  stock_amount,
+  need_fulfilled: missing_amount ? 0 : 1,
+  only_check_single_unit_in_stock: anyStock,
+  is_nested_recipe_pos: anyStock,
+  child_recipe_id: anyStock ? 3 : recipe,
 });
 const grocyData = () =>
   ({
     "/objects/recipes": [
-      ["1", "Synthetic toast", "normal", "2"],
-      ["2", "Synthetic cake", "normal", "4"],
-      ["3", "Synthetic empty", "normal", "1"],
-      ["4", "2026-01-01#1", "mealplan-shadow", "1"],
+      [1, "Synthetic toast", "normal", 2],
+      [2, "Synthetic cake", "normal", 4],
+      [3, "Synthetic empty", "normal", 1],
+      [4, "2026-01-01#1", "mealplan-shadow", 1],
     ].map(([id, name, type, desired_servings]) => ({
       id,
       name,
@@ -46,27 +47,27 @@ const grocyData = () =>
     "/objects/recipes_pos_resolved": [
       position(1, 1, 3, 1, [5, 0, 100]),
       position(2, 2, 1, 2, [250, 125, 125]),
-      position(2, 3, 2, 1, [100, 1e-8, 0], 1),
+      position(2, 3, 2, 1, [100, 100, 0], 1),
       position(2, 4, 3, 2, [10, 10, 0]),
       position(4, 5, 3, 1, [1, 0, 100]),
     ],
     "/objects/products": [
-      { id: "1", name: "Synthetic flour", qu_id_stock: "1", active: "1" },
-      { id: "2", name: "Synthetic eggs", qu_id_stock: "3", active: "1" },
-      { id: "3", name: "Synthetic salt", qu_id_stock: "1", active: "1" },
+      { id: 1, name: "Synthetic flour", qu_id_stock: 1, active: 1 },
+      { id: 2, name: "Synthetic eggs", qu_id_stock: 3, active: 1 },
+      { id: 3, name: "Synthetic salt", qu_id_stock: 1, active: 1 },
     ],
     "/recipes/fulfillment": [1, 2, 3, 4].map((id) => ({
-      recipe_id: String(id),
-      need_fulfilled: id === 2 ? "0" : "1",
-      need_fulfilled_with_shopping_list: id === 2 ? "0" : "1",
+      recipe_id: id,
+      need_fulfilled: id === 2 ? 0 : 1,
+      need_fulfilled_with_shopping_list: id === 2 ? 0 : 1,
     })),
     "/objects/quantity_units": ["gram", "cup", "piece"].map((name, index) => ({
-      id: String(index + 1),
+      id: index + 1,
       name,
       name_plural: null,
     })),
     "/objects/quantity_unit_conversions_resolved": [
-      { product_id: "1", from_qu_id: "1", to_qu_id: "2", factor: "0.008" },
+      { product_id: 1, from_qu_id: 1, to_qu_id: 2, factor: 0.008 },
     ],
   }) as Record<string, unknown>;
 
@@ -134,7 +135,7 @@ test("recipes report Grocy fulfillment and missing amounts in their own units", 
       [
         "Synthetic cake false none",
         "Synthetic flour 125 gram false false: 1 cup converted",
-        "Synthetic eggs 1e-8 gram false true: 1e-8 gram same_unit",
+        "Synthetic eggs 100 gram false true: 100 gram same_unit",
         "Synthetic salt 10 gram false false: null cup conversion_unknown",
       ],
       ["Synthetic empty true none"],
@@ -145,7 +146,7 @@ test("recipes report Grocy fulfillment and missing amounts in their own units", 
 test("malformed or unjoinable Grocy reads make the whole recipe read unavailable", async (context) => {
   const setup = setupRecipes(context);
   for (const [path, body, reason] of [
-    ["/objects/recipes_pos_resolved", [{ recipe_id: "1" }], "invalid_response"],
+    ["/objects/recipes_pos_resolved", [{ recipe_id: 1 }], "invalid_response"],
     ["/recipes/fulfillment", [], "invalid_response"],
     ["/objects/products", [], "invalid_response"],
     ["/objects/recipes", new Response("{}", { status: 500 }), "http"],
@@ -181,7 +182,7 @@ test("nutrition links scale the linked food, keep their basis, and clear on rese
     return [status, basis_matches, nutrients?.kcal, nutrients?.protein_g];
   };
   const [toast] = data.grocy["/objects/recipes"] as {
-    desired_servings: string;
+    desired_servings: number;
   }[];
   assert.ok(toast);
   await assert.rejects(service.saveLink(admin.id, link({ recipe_id: 4 })), {
@@ -193,11 +194,11 @@ test("nutrition links scale the linked food, keep their basis, and clear on rese
     2,
   );
   assert.deepEqual(await nutrition(), ["linked", true, 200, null]);
-  toast.desired_servings = "4";
+  toast.desired_servings = 4;
   assert.deepEqual(await nutrition(), ["linked", false, 200, null]);
   await service.saveLink(admin.id, link({ servings: 4 }));
   assert.deepEqual(await nutrition(), ["linked", true, 400, null]);
-  toast.desired_servings = "0";
+  toast.desired_servings = 0;
   await assert.rejects(service.saveLink(admin.id, link()), {
     code: "pantry_recipe_servings_invalid",
   });

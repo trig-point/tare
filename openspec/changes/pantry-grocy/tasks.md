@@ -36,7 +36,7 @@ Each checkbox is one implementation PR. Estimates below count hand-written sourc
 
 ## 2. Suggestions second
 
-- [ ] 2.1 Read Grocy recipe availability and explicit nutrition links with a two-user test; builds on Grocy fulfillment, recipes_pos_resolved (Grocy's resolved ingredient view), the client and existing food references (depends on: 1.2, 1.3) (complexity: judgment) (gate: none)
+- [x] 2.1 Read Grocy recipe availability and explicit nutrition links with a two-user test; builds on Grocy fulfillment, recipes_pos_resolved (Grocy's resolved ingredient view), the client and existing food references (depends on: 1.2, 1.3) (complexity: judgment) (gate: none)
 
   Reuse MHA-133. Estimated 350 lines. Acceptance: report missing amounts in original units, no invented percent-cookable metric; recipe nutrition only from a food/serving link the owner creates with `save_recipe_nutrition_link`, which replaces an existing link, and removes with `delete_recipe_nutrition_link`; links are returned with recipe reads, carry the connection generation and are cleared on reset; no recipe or stock writes. Tests: available/short/empty recipes, unknown nutrition, invalid response, link cleared on reset and cross-user link rejection. Run a read against disposable Grocy with a synthetic recipe.
 
