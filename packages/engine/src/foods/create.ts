@@ -38,10 +38,15 @@ export function insertOwnedFood(
   const database = scopeDatabase(scope);
   const name = values.name.trim();
   const unit = values.serving_unit.trim();
-  if (!name || !unit) throw new OperationError(400, "invalid_request");
+  const source = values.source?.trim() ?? null;
+  if (!name || !unit || source === "")
+    throw new OperationError(400, "invalid_request");
   const numbers = numbersFrom(values);
   validateNumbers(numbers);
-  const provenance = resolveProvenance(values, null);
+  const provenance = resolveProvenance(
+    { provenance: values.provenance, source },
+    null,
+  );
   if (values.source_food_id !== null) {
     const evidence = selectSourceFood(database, { id: values.source_food_id });
     if (!evidence) throw new OperationError(404, "food_not_found");
@@ -70,7 +75,7 @@ export function insertOwnedFood(
     ...nutrition.row,
     user_id: userId,
     name,
-    source: values.source,
+    source,
     source_food_id: values.source_food_id,
   });
   if (!food) throw new Error("Food insert returned no row");
@@ -128,7 +133,11 @@ const createFood = defineOperation({
       .digest("hex");
     return writeTransaction(context.database, (scope) => {
       const database = scopeDatabase(scope);
-      const key = { user_id: userId, mutation_id: input.mutation_id };
+      // SQLite compares text exactly, so one UUID in two cases must share a receipt.
+      const key = {
+        user_id: userId,
+        mutation_id: input.mutation_id.toLowerCase(),
+      };
       const prior = selectFoodReceipt(database, key);
       if (prior && prior.request_hash !== request_hash)
         throw new OperationError(409, "mutation_conflict");

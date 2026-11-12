@@ -41,11 +41,13 @@ test("create_food stores owned foods with replayable, owner-scoped receipts", as
   assert.equal(created.status, 201);
   assert.equal(created.food.protein_g, null);
   assert.equal(created.food.serving_unit, "cup");
-  assert.deepEqual(await post("/api/foods", rice), {
-    ...created,
-    status: 200,
-    created: false,
-  });
+  const upper = { ...rice, mutation_id: rice.mutation_id.toUpperCase() };
+  for (const replay of [rice, upper])
+    assert.deepEqual(await post("/api/foods", replay), {
+      ...created,
+      status: 200,
+      created: false,
+    });
   assert.equal(
     (await post("/api/foods", { ...rice, kcal: 170 })).error.code,
     "mutation_conflict",
