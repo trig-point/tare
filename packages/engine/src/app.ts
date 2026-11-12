@@ -5,6 +5,7 @@ import { type AuthEnv, accessAuth } from "./auth/middleware.ts";
 import type { AppOptions } from "./auth/routes.ts";
 import { createCalendarRefresher } from "./calendar/refresh.ts";
 import { createCalendarTransport } from "./calendar/transport.ts";
+import { safeGrocyText } from "./grocy/config.ts";
 import { type InboundOptions, mountInboundEmail } from "./inbound/endpoint.ts";
 import { createOrderQuestionKinds } from "./inbound/questions.ts";
 import { mountMcp } from "./mcp/server.ts";
@@ -13,6 +14,7 @@ import { operations } from "./operations/index.ts";
 import { OperationError } from "./operations/registry.ts";
 import { mountOuraCallback } from "./oura/callback.ts";
 import { createOura } from "./oura/service.ts";
+import { pantryEgress } from "./pantry/egress.ts";
 import { createOffAdapter } from "./sources/off.ts";
 import { createUsdaAdapter } from "./sources/usda.ts";
 import { mountWeb } from "./web.ts";
@@ -20,6 +22,8 @@ import { mountWeb } from "./web.ts";
 export function createApp(
   options: AppOptions & InboundOptions & { webRoot?: string },
 ) {
+  if (options.config.grocy && !options.pantry)
+    throw new Error("Pantry service required");
   const dependencies = {
     ...options,
     calendar:
@@ -51,6 +55,7 @@ export function createApp(
       ? ["GET", "POST", "DELETE"].map((method) => ({ method, path: "/mcp" }))
       : [],
   );
+  app.use("*", pantryEgress(options.config.grocy));
   app.use("*", guards.noStore);
   app.onError((error, context) => {
     if (error instanceof OperationError) {
@@ -67,7 +72,13 @@ export function createApp(
       );
     }
     // Name only: messages can carry request data, which stays out of logs.
-    console.error("request_failed", error.name);
+    const message = safeGrocyText(
+      `request_failed ${error.name}`,
+      options.config.grocy?.apiKey,
+    );
+    if (message === `request_failed ${error.name}`)
+      console.error("request_failed", error.name);
+    else if (message !== undefined) console.error(message);
     return context.json({ error: { code: "internal" } }, 500);
   });
   app.notFound((context) =>

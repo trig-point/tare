@@ -172,6 +172,7 @@ async function startEngine(scaleUsers: Map<string, number> | null) {
     config,
     clock,
     dummyHash,
+    pantry,
     questionKinds,
     verifyPassword,
     oura,
