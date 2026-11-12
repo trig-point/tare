@@ -12,18 +12,50 @@ const decimal = z
   ])
   .pipe(z.number().finite());
 const identifier = decimal.pipe(z.number().int().positive());
+const flag = decimal.pipe(z.union([z.literal(0), z.literal(1)]));
 export const grocyProductSchema = z.object({
   id: identifier,
   name: z.string().min(1),
   qu_id_stock: identifier,
-  enable_tare_weight_handling: decimal.pipe(
-    z.union([z.literal(0), z.literal(1)]),
-  ),
+  enable_tare_weight_handling: flag,
 });
 export const grocyCatalogSchema = z.array(
   z.object({
     id: identifier,
-    active: decimal.pipe(z.union([z.literal(0), z.literal(1)])),
+    name: z.string().min(1),
+    qu_id_stock: identifier,
+    active: flag,
+  }),
+);
+export const grocyRecipesSchema = z.array(
+  z.object({
+    id: identifier,
+    name: z.string().min(1),
+    type: z.string(),
+    desired_servings: decimal.nullable(),
+  }),
+);
+// Amounts use the stock unit, except qu_id when only_check_single_unit_in_stock is 1.
+export const grocyRecipePositionsSchema = z.array(
+  z.object({
+    recipe_id: identifier,
+    recipe_pos_id: identifier,
+    product_id: identifier,
+    qu_id: identifier,
+    recipe_amount: decimal,
+    missing_amount: decimal,
+    stock_amount: decimal,
+    need_fulfilled: flag,
+    only_check_single_unit_in_stock: flag,
+    is_nested_recipe_pos: flag,
+    child_recipe_id: identifier,
+  }),
+);
+export const grocyFulfillmentSchema = z.array(
+  z.object({
+    recipe_id: identifier,
+    need_fulfilled: flag,
+    need_fulfilled_with_shopping_list: flag,
   }),
 );
 export const grocyUnitSchema = z.object({
@@ -294,6 +326,16 @@ export function createGrocyClient({
         "/objects/quantity_unit_conversions_resolved",
         grocyConversionsSchema,
       ),
+    recipes: (userId: number) =>
+      request(userId, "/objects/recipes", grocyRecipesSchema),
+    recipePositions: (userId: number) =>
+      request(
+        userId,
+        "/objects/recipes_pos_resolved",
+        grocyRecipePositionsSchema,
+      ),
+    fulfillment: (userId: number) =>
+      request(userId, "/recipes/fulfillment", grocyFulfillmentSchema),
     consume: (userId: number, productId: number, amount: number) =>
       request(
         userId,

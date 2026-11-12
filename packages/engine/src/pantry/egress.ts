@@ -10,6 +10,9 @@ export const isPantryOperation = (name: string) =>
     "propose_pantry_binding",
     "save_pantry_binding",
     "delete_pantry_binding",
+    "list_pantry_recipes",
+    "save_recipe_nutrition_link",
+    "delete_recipe_nutrition_link",
   ].includes(name);
 export const isPantryPath = (path: string) =>
   path === "/api/pantry" || path.startsWith("/api/pantry/");

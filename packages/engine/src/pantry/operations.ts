@@ -5,10 +5,16 @@ import {
   operationPerson,
 } from "../operations/registry.ts";
 import {
+  recipeLinkInput,
+  recipeLinkOutput,
+  recipeLinkRemoval,
+} from "./recipes.ts";
+import {
   type PantryService,
   pantryBindingInput,
   pantryOutput,
   pantryProposal,
+  pantryRecipesOutput,
   pantryReference,
 } from "./service.ts";
 
@@ -23,6 +29,11 @@ const disabled = {
   bindings: [],
   requested: [],
 };
+const positiveId = zod.coerce
+  .number()
+  .int()
+  .positive()
+  .max(Number.MAX_SAFE_INTEGER);
 const operations: {
   name: string;
   method: "GET" | "POST" | "DELETE";
@@ -92,15 +103,51 @@ const operations: {
     path: "/api/pantry/bindings/:reference_kind/:reference_id",
     description: "Remove a food's pantry binding.",
     input: pantryReference.extend({
-      reference_id: zod.coerce
-        .number()
-        .int()
-        .positive()
-        .max(Number.MAX_SAFE_INTEGER),
+      reference_id: positiveId,
     }),
     output: pantryOutput,
     run: (service, userId, input: zod.output<typeof pantryReference>) =>
       service.remove(userId, input),
+  },
+  {
+    name: "list_pantry_recipes",
+    method: "GET",
+    path: "/api/pantry/recipes",
+    description:
+      "Read Grocy recipes with stock fulfillment, missing amounts in Grocy's units and linked nutrition. Cooking a recipe never deducts stock automatically.",
+    input: zod.strictObject({}),
+    output: pantryRecipesOutput,
+    disabled: {
+      state: "disabled",
+      generation: null,
+      fetched_at: null,
+      error: null,
+      deducts_stock: false,
+      recipes: [],
+    },
+    run: (service, userId) => service.recipes(userId),
+  },
+  {
+    name: "save_recipe_nutrition_link",
+    method: "POST",
+    path: "/api/pantry/recipes/nutrition",
+    description:
+      "Link a Grocy recipe at its current servings to servings of a food, replacing any existing link.",
+    input: recipeLinkInput,
+    output: recipeLinkOutput,
+    run: (service, userId, input: zod.output<typeof recipeLinkInput>) =>
+      service.saveLink(userId, input),
+  },
+  {
+    name: "delete_recipe_nutrition_link",
+    method: "DELETE",
+    path: "/api/pantry/recipes/:recipe_id/nutrition",
+    description: "Remove a recipe's nutrition link.",
+    input: zod.strictObject({ recipe_id: positiveId }),
+    output: recipeLinkRemoval,
+    disabled: { outcome: "disabled" },
+    run: (service, userId, input: { recipe_id: number }) =>
+      service.removeLink(userId, input.recipe_id),
   },
 ];
 

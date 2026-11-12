@@ -8,19 +8,29 @@ import { OperationError } from "../operations/registry.ts";
 import { cancelPendingRequests } from "../queries/pantry/cancel-pending-requests.ts";
 import { clearBindings } from "../queries/pantry/clear-bindings.ts";
 import { clearProducts } from "../queries/pantry/clear-products.ts";
+import { clearRecipeLinks } from "../queries/pantry/clear-recipe-links.ts";
 import { countUnresolvedRequests } from "../queries/pantry/count-unresolved-requests.ts";
 import { deleteBinding } from "../queries/pantry/delete-binding.ts";
+import { deleteRecipeLink } from "../queries/pantry/delete-recipe-link.ts";
 import { insertProduct } from "../queries/pantry/insert-product.ts";
 import { listBindings } from "../queries/pantry/list-bindings.ts";
 import { listProducts } from "../queries/pantry/list-products.ts";
+import { listRecipeLinks } from "../queries/pantry/list-recipe-links.ts";
 import { readBinding } from "../queries/pantry/read-binding.ts";
 import { readConnection } from "../queries/pantry/read-connection.ts";
 import { requestTotals } from "../queries/pantry/request-totals.ts";
 import { saveBinding } from "../queries/pantry/save-binding.ts";
 import { saveConnection } from "../queries/pantry/save-connection.ts";
+import { saveRecipeLink } from "../queries/pantry/save-recipe-link.ts";
 import { updateBindingStatus } from "../queries/pantry/update-binding-status.ts";
 import { selectFood } from "../queries/select-food.ts";
 import { selectSourceFood } from "../queries/select-source-food.ts";
+import {
+  assembleRecipes,
+  pantryRecipe,
+  type recipeLinkInput,
+  recipeNutrition,
+} from "./recipes.ts";
 
 const identifier = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 export const pantryProduct = z.strictObject({
@@ -121,6 +131,16 @@ export const pantryOutput = z.strictObject({
   bindings: z.array(pantryBinding),
   requested: z.array(requestedAmount),
 });
+export const pantryRecipesOutput = z
+  .strictObject({
+    state: z.enum(["disabled", "reset_required", "unavailable", "ready"]),
+    generation: z.number().nullable(),
+    fetched_at: z.string().nullable(),
+    error: pantryError.nullable(),
+    deducts_stock: z.literal(false),
+    recipes: z.array(pantryRecipe),
+  })
+  .refine((result) => (result.state === "unavailable") === !!result.error);
 type Product = z.infer<typeof pantryProduct>;
 type PantryError = z.infer<typeof pantryError>;
 type Reference = z.infer<typeof pantryReference>;
@@ -163,7 +183,15 @@ export function createPantryService({
   clock: { now(): Date };
   client?: Pick<
     ReturnType<typeof createGrocyClient>,
-    "stock" | "product" | "catalog" | "barcodes"
+    | "stock"
+    | "product"
+    | "catalog"
+    | "barcodes"
+    | "recipes"
+    | "recipePositions"
+    | "fulfillment"
+    | "units"
+    | "conversions"
   >;
 }) {
   let stopping = false;
@@ -259,6 +287,133 @@ export function createPantryService({
       row.generation === generation &&
       matches(row)
     );
+  }
+  function ensure(generation: number) {
+    if (stopping) throw new OperationError(503, "pantry_stopping");
+    if (!current(generation))
+      throw new OperationError(409, "pantry_generation_changed");
+  }
+  async function recipes(userId: number) {
+    authorize(userId);
+    const empty = {
+      generation: null,
+      fetched_at: null,
+      error: null,
+      deducts_stock: false,
+      recipes: [],
+    };
+    if (!config)
+      return pantryRecipesOutput.parse({ ...empty, state: "disabled" });
+    const row = readConnection(database);
+    if (!row) throw new Error("Pantry connection missing");
+    const { generation } = row;
+    if (row.reset_required)
+      return pantryRecipesOutput.parse({
+        ...empty,
+        state: "reset_required",
+        generation,
+      });
+    ensure(generation);
+    const fetchedAt = clock.now().toISOString();
+    const settled = async <Value>(
+      work: Promise<GrocyResult<Value> | undefined>,
+    ) => {
+      const value = ok(await work);
+      ensure(generation);
+      return value;
+    };
+    let assembled: ReturnType<typeof assembleRecipes> = null;
+    let error: PantryError = { reason: "invalid_response" };
+    try {
+      assembled = assembleRecipes({
+        recipes: await settled(client.recipes(owner)),
+        positions: await settled(client.recipePositions(owner)),
+        products: await settled(client.catalog(owner)),
+        fulfillment: await settled(client.fulfillment(owner)),
+        units: await settled(client.units(owner)),
+        conversions: await settled(client.conversions(owner)),
+      });
+    } catch (caught) {
+      if (!(caught instanceof ReadFailure)) throw caught;
+      error = caught.detail;
+    }
+    ensure(generation);
+    if (!assembled)
+      return pantryRecipesOutput.parse({
+        ...empty,
+        state: "unavailable",
+        generation,
+        fetched_at: fetchedAt,
+        error,
+      });
+    const links = new Map(
+      listRecipeLinks(database, { user_id: userId, generation }).map((row) => [
+        row.recipe_id,
+        row,
+      ]),
+    );
+    return pantryRecipesOutput.parse({
+      ...empty,
+      state: "ready",
+      generation,
+      fetched_at: fetchedAt,
+      recipes: assembled.map((recipe) => {
+        const saved = links.get(recipe.recipe_id);
+        const food =
+          saved &&
+          (saved.reference_kind === "food"
+            ? selectFood(database, { user_id: userId, id: saved.reference_id })
+            : selectSourceFood(database, { id: saved.reference_id }));
+        return {
+          ...recipe,
+          nutrition: recipeNutrition(
+            saved,
+            recipe.desired_servings,
+            food ?? null,
+          ),
+        };
+      }),
+    });
+  }
+  async function saveLink(
+    userId: number,
+    input: z.infer<typeof recipeLinkInput>,
+  ) {
+    authorize(userId);
+    const { generation } = connection();
+    if (!referenced(database, userId, input))
+      throw new OperationError(404, "food_not_found");
+    let desiredServings: number | null | undefined;
+    try {
+      desiredServings = ok(await client.recipes(owner)).find(
+        (recipe) => recipe.id === input.recipe_id && recipe.type === "normal",
+      )?.desired_servings;
+    } catch {
+      throw new OperationError(503, "pantry_read_failed");
+    }
+    if (desiredServings === undefined)
+      throw new OperationError(404, "pantry_recipe_missing");
+    if (desiredServings === null || !(desiredServings > 0))
+      throw new OperationError(409, "pantry_recipe_servings_invalid");
+    const link = {
+      reference_kind: input.reference_kind,
+      reference_id: input.reference_id,
+      servings: input.servings,
+      desired_servings_at_link: desiredServings,
+    };
+    writeTransaction(database, (scope) => {
+      const database = scopeDatabase(scope);
+      ensure(generation);
+      if (!referenced(database, userId, input))
+        throw new OperationError(404, "food_not_found");
+      saveRecipeLink(database, {
+        ...link,
+        user_id: userId,
+        generation,
+        recipe_id: input.recipe_id,
+      });
+    });
+    return { recipe_id: input.recipe_id, link };
   }
   async function activeProducts() {
     return new Set(
@@ -534,6 +689,26 @@ export function createPantryService({
   return {
     read,
     refresh,
+    recipes: (userId: number) => track(recipes(userId)),
+    saveLink: (userId: number, input: z.infer<typeof recipeLinkInput>) =>
+      track(saveLink(userId, input)),
+    removeLink(userId: number, recipeId: number) {
+      authorize(userId);
+      if (!config) return { outcome: "disabled" as const };
+      const row = readConnection(database);
+      if (!row) throw new Error("Pantry connection missing");
+      if (row.reset_required) return { outcome: "reset_required" as const };
+      const { changes } = writeTransaction(database, (scope) =>
+        deleteRecipeLink(scopeDatabase(scope), {
+          user_id: userId,
+          generation: row.generation,
+          recipe_id: recipeId,
+        }),
+      );
+      return {
+        outcome: changes ? ("deleted" as const) : ("not_found" as const),
+      };
+    },
     propose: (userId: number, ref: Reference) => track(propose(userId, ref)),
     save: (userId: number, input: z.infer<typeof pantryBindingInput>) =>
       track(save(userId, input)),
@@ -565,6 +740,7 @@ export function createPantryService({
         cancelPendingRequests(database);
         clearProducts(database);
         clearBindings(database);
+        clearRecipeLinks(database);
         saveConnection(database, initial(row.generation + 1));
         return false;
       });

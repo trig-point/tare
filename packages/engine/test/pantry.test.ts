@@ -40,7 +40,9 @@ function setupService(context: TestContext) {
     stock: stock as unknown,
     detail: { product, quantity_unit_stock: unit } as unknown,
     details: {} as Record<string, unknown>,
-    catalog: [{ id: 1, active: 1 }] as unknown,
+    catalog: [
+      { id: 1, name: "Synthetic item", qu_id_stock: 1, active: 1 },
+    ] as unknown,
     barcodes: [] as unknown,
     hold: undefined as ReturnType<typeof deferred<void>> | undefined,
     held: deferred<void>(),
@@ -219,6 +221,7 @@ test("shutdown rejects queued refreshes and drains the active request", async (c
   const draining = createPantryService({
     ...setup.options,
     client: {
+      ...setup.options.client,
       stock: async () => ({
         status: "ok",
         value: [
@@ -229,8 +232,8 @@ test("shutdown rejects queued refreshes and drains the active request", async (c
       catalog: async () => ({
         status: "ok",
         value: [
-          { id: 1, active: 1 },
-          { id: 2, active: 1 },
+          { id: 1, name: "Synthetic item", qu_id_stock: 1, active: 1 },
+          { id: 2, name: "Synthetic item", qu_id_stock: 1, active: 1 },
         ],
       }),
       barcodes: async () => ({ status: "ok", value: [] }),
@@ -308,9 +311,9 @@ test("bindings validate, replace, track refresh status and clear on reset", asyn
       ...change,
     });
   data.catalog = [
-    { id: 1, active: 1 },
-    { id: 2, active: 1 },
-    { id: 3, active: 0 },
+    { id: 1, name: "Synthetic item", qu_id_stock: 1, active: 1 },
+    { id: 2, name: "Synthetic item", qu_id_stock: 1, active: 1 },
+    { id: 3, name: "Synthetic item", qu_id_stock: 1, active: 0 },
   ];
   data.details["2"] = {
     product: { ...product, id: 2, enable_tare_weight_handling: 1 },
@@ -361,7 +364,7 @@ test("bindings validate, replace, track refresh status and clear on reset", asyn
   const failed = await service.refresh(admin.id);
   assert.equal(failed.error?.reason, "invalid_response");
   assert.equal(failed.bindings[0]?.status, "valid");
-  data.catalog = [{ id: 1, active: 1 }];
+  data.catalog = [{ id: 1, name: "Synthetic item", qu_id_stock: 1, active: 1 }];
   data.detail = {
     product: { ...product, qu_id_stock: 5, enable_tare_weight_handling: 1 },
     quantity_unit_stock: gram,
@@ -369,12 +372,12 @@ test("bindings validate, replace, track refresh status and clear on reset", asyn
   const tared = await service.refresh(admin.id);
   assert.equal(tared.bindings[0]?.status, "tare_enabled");
   data.stock = [{ ...stockRow, product: { ...product, qu_id_stock: 5 } }];
-  data.catalog = [{ id: 1, active: 0 }];
+  data.catalog = [{ id: 1, name: "Synthetic item", qu_id_stock: 1, active: 0 }];
   const missing = await service.refresh(admin.id);
   assert.deepEqual(missing.products, []);
   assert.equal(missing.bindings[0]?.status, "product_missing");
 
-  data.catalog = [{ id: 1, active: 1 }];
+  data.catalog = [{ id: 1, name: "Synthetic item", qu_id_stock: 1, active: 1 }];
   data.stock = stock;
   data.detail = { product, quantity_unit_stock: unit };
   const held = async <Value>(work: () => Promise<Value>) => {
@@ -420,9 +423,9 @@ test("barcode proposals need one exact active product and never save", async (co
     amount: null,
   });
   data.catalog = [
-    { id: 1, active: 1 },
-    { id: 2, active: 1 },
-    { id: 3, active: 0 },
+    { id: 1, name: "Synthetic item", qu_id_stock: 1, active: 1 },
+    { id: 2, name: "Synthetic item", qu_id_stock: 1, active: 1 },
+    { id: 3, name: "Synthetic item", qu_id_stock: 1, active: 0 },
   ];
   data.barcodes = [row(1), row(1), row(3), row(2, "00000000000170")];
   assert.deepEqual(await propose("source_food", ids.source), {
