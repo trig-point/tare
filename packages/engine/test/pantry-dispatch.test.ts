@@ -313,7 +313,10 @@ test("stop admits no new claims and drains the send in flight", async (context) 
   assert.equal(drained, false);
   answer.resolve();
   await stopped;
-  assert.equal(request(inFlight)?.state, "delivered");
-  assert.equal(request(waiting)?.state, "pending");
+  // Equal timestamps leave the send order to the random request ids.
+  assert.deepEqual([request(inFlight)?.state, request(waiting)?.state].sort(), [
+    "delivered",
+    "pending",
+  ]);
   assert.equal(consumes(), 1);
 });
