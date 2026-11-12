@@ -4,14 +4,10 @@ import type { Database } from "better-sqlite3";
 import { createGrocyClient } from "../src/grocy/client.ts";
 import { createJobRunner } from "../src/jobs.ts";
 import { createPantryService } from "../src/pantry/service.ts";
-import { credentials, fixture } from "./auth-support.ts";
+import { fixture } from "./auth-support.ts";
 import { test } from "./support/hang-ceiling.ts";
+import { grocy as config, grocyFetch } from "./support/pantry-fake.ts";
 
-const config = {
-  url: "http://grocy/api",
-  apiKey: "invented-secret",
-  username: credentials.username,
-};
 const product = {
   id: 1,
   name: "Synthetic beans",
@@ -26,13 +22,6 @@ const stockRow = {
   product,
 };
 const stock = [stockRow];
-function deferred<Value>() {
-  let resolve!: (value: Value) => void;
-  const promise = new Promise<Value>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
 function setupService(context: TestContext) {
   const setup = fixture(context);
   const data = {
@@ -44,31 +33,18 @@ function setupService(context: TestContext) {
       { id: 1, name: "Synthetic item", qu_id_stock: 1, active: 1 },
     ] as unknown,
     barcodes: [] as unknown,
-    hold: undefined as ReturnType<typeof deferred<void>> | undefined,
-    held: deferred<void>(),
   };
+  const grocy = grocyFetch({
+    "/stock": () => data.stock,
+    "/objects/products": () => data.catalog,
+    "/objects/product_barcodes": () => data.barcodes,
+    "/stock/products/:id": ({ id }: { id?: string }) =>
+      data.details[id ?? ""] ?? data.detail,
+  });
   const client = createGrocyClient({
     config,
     ownerId: setup.admin.id,
-    fetch: async (url) => {
-      const path = new URL(String(url)).pathname;
-      const productId = path.match(/\/stock\/products\/(\d+)$/)?.[1];
-      const hold = productId ? data.hold : undefined;
-      if (hold) {
-        data.hold = undefined;
-        data.held.resolve();
-        await hold.promise;
-      }
-      return Response.json(
-        path.endsWith("/stock")
-          ? data.stock
-          : path.endsWith("/objects/products")
-            ? data.catalog
-            : path.endsWith("/objects/product_barcodes")
-              ? data.barcodes
-              : (data.details[productId ?? ""] ?? data.detail),
-      );
-    },
+    fetch: grocy.fetch,
   });
   const options = {
     database: setup.database,
@@ -78,7 +54,7 @@ function setupService(context: TestContext) {
     client,
   };
   const service = createPantryService(options);
-  return { ...setup, options, service, data };
+  return { ...setup, options, service, data, hold: grocy.hold };
 }
 
 test("snapshots replace atomically, preserve success on failed assembly and age from fetch start", async (context) => {
@@ -164,12 +140,16 @@ test("identity changes latch until reset, no-op preserves and disabled never tou
 for (const outcome of ["success", "failure"] as const)
   test(`job/manual joining discards obsolete ${outcome}`, async (context) => {
     const setup = setupService(context);
-    const entered = deferred<void>();
+    const entered = Promise.withResolvers<void>();
     const pending =
-      deferred<Awaited<ReturnType<typeof setup.options.client.stock>>>();
-    const successorEntered = deferred<void>();
+      Promise.withResolvers<
+        Awaited<ReturnType<typeof setup.options.client.stock>>
+      >();
+    const successorEntered = Promise.withResolvers<void>();
     const successorStock =
-      deferred<Awaited<ReturnType<typeof setup.options.client.stock>>>();
+      Promise.withResolvers<
+        Awaited<ReturnType<typeof setup.options.client.stock>>
+      >();
     let calls = 0;
     const client = {
       ...setup.options.client,
@@ -214,9 +194,11 @@ for (const outcome of ["success", "failure"] as const)
 
 test("shutdown rejects queued refreshes and drains the active request", async (context) => {
   const setup = setupService(context);
-  const detailStarted = deferred<void>();
+  const detailStarted = Promise.withResolvers<void>();
   const detailPending =
-    deferred<Awaited<ReturnType<typeof setup.options.client.product>>>();
+    Promise.withResolvers<
+      Awaited<ReturnType<typeof setup.options.client.product>>
+    >();
   let details = 0;
   const draining = createPantryService({
     ...setup.options,
@@ -296,7 +278,7 @@ function addFoods(database: Database, userId: number) {
 const gram = { id: 5, name: "gram", name_plural: "grams" };
 
 test("bindings validate, replace, track refresh status and clear on reset", async (context) => {
-  const { service, admin, database, data } = setupService(context);
+  const { service, admin, database, data, hold } = setupService(context);
   const ids = addFoods(database, admin.id);
   const generation = Number(service.read(admin.id).generation);
   const food = { reference_kind: "food", reference_id: ids.food } as const;
@@ -381,12 +363,10 @@ test("bindings validate, replace, track refresh status and clear on reset", asyn
   data.stock = stock;
   data.detail = { product, quantity_unit_stock: unit };
   const held = async <Value>(work: () => Promise<Value>) => {
-    data.hold = deferred<void>();
-    data.held = deferred<void>();
-    const hold = data.hold;
+    const paused = hold(/^\/stock\/products\/\d+$/);
     const started = work();
-    await data.held.promise;
-    return { started, release: () => hold.resolve() };
+    await paused.reached;
+    return { started, release: paused.release };
   };
   const stale = await held(() => service.refresh(admin.id));
   service.remove(admin.id, food);

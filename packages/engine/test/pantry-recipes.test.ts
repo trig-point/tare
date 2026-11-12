@@ -2,14 +2,10 @@ import assert from "node:assert/strict";
 import type { TestContext } from "node:test";
 import { createGrocyClient } from "../src/grocy/client.ts";
 import { createPantryService } from "../src/pantry/service.ts";
-import { credentials, fixture } from "./auth-support.ts";
+import { fixture } from "./auth-support.ts";
 import { test } from "./support/hang-ceiling.ts";
+import { grocy as config, grocyFetch } from "./support/pantry-fake.ts";
 
-const config = {
-  url: "http://grocy/api",
-  apiKey: "invented-secret",
-  username: credentials.username,
-};
 // Values follow a disposable Grocy 4.7.1 capture, which returns native numbers.
 const position = (
   recipe: number,
@@ -74,26 +70,11 @@ const grocyData = () =>
 
 function setupRecipes(context: TestContext) {
   const setup = fixture(context);
-  const data = {
-    grocy: grocyData(),
-    hold: undefined as
-      | { path: string; started(): void; release: Promise<void> }
-      | undefined,
-  };
+  const grocy = grocyFetch(grocyData());
   const client = createGrocyClient({
     config,
     ownerId: setup.admin.id,
-    fetch: async (url) => {
-      const path = new URL(String(url)).pathname.slice(4);
-      if (data.hold?.path === path) {
-        const { started, release } = data.hold;
-        data.hold = undefined;
-        started();
-        await release;
-      }
-      const body = data.grocy[path];
-      return body instanceof Response ? body : Response.json(body);
-    },
+    fetch: grocy.fetch,
   });
   const options = {
     database: setup.database,
@@ -102,17 +83,12 @@ function setupRecipes(context: TestContext) {
     clock: { now: () => new Date("2026-01-01T00:00:00Z") },
     client,
   };
-  const hold = (path: string) => {
-    const reached = Promise.withResolvers<void>();
-    const released = Promise.withResolvers<void>();
-    data.hold = {
-      path,
-      started: reached.resolve,
-      release: released.promise,
-    };
-    return { reached: reached.promise, release: released.resolve };
+  return {
+    ...setup,
+    routes: grocy.routes,
+    hold: grocy.hold,
+    service: createPantryService(options),
   };
-  return { ...setup, data, hold, service: createPantryService(options) };
 }
 
 test("recipes report Grocy fulfillment and missing amounts in their own units", async (context) => {
@@ -152,7 +128,7 @@ test("malformed or unjoinable Grocy reads make the whole recipe read unavailable
     ["/objects/products", [], "invalid_response"],
     ["/objects/recipes", new Response("{}", { status: 500 }), "http"],
   ] as const) {
-    setup.data.grocy = { ...grocyData(), [path]: body };
+    Object.assign(setup.routes, grocyData(), { [path]: body });
     const result = await setup.service.recipes(setup.admin.id);
     assert.deepEqual(
       [result.state, result.recipes, result.error?.reason],
@@ -162,7 +138,7 @@ test("malformed or unjoinable Grocy reads make the whole recipe read unavailable
 });
 
 test("nutrition links scale the linked food, keep their basis, and clear on reset", async (context) => {
-  const { service, admin, database, data } = setupRecipes(context);
+  const { service, admin, database, routes } = setupRecipes(context);
   const own = Number(
     database
       .prepare(
@@ -182,7 +158,7 @@ test("nutrition links scale the linked food, keep their basis, and clear on rese
       (await service.recipes(admin.id)).recipes[0]?.nutrition ?? {};
     return [status, basis_matches, nutrients?.kcal, nutrients?.protein_g];
   };
-  const [toast] = data.grocy["/objects/recipes"] as {
+  const [toast] = routes["/objects/recipes"] as {
     desired_servings: number;
   }[];
   assert.ok(toast);

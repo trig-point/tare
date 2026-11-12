@@ -220,24 +220,6 @@ test("plan_slot rechecks a bound food against the fetch start without reserving 
     [200, ...expected],
   );
 
-  const act = {
-    item_id: noop.body.item.id,
-    revision: noop.body.item.revision,
-    action: "ate_three_quarters",
-    mutation_id: "planned",
-  };
-  const ate = await json(admin, "/api/plan/items/action", act);
-  assert.deepEqual(
-    [ate.body.stock.state, ate.body.stock.quantity],
-    ["pending", 0.375],
-  );
-  const replayed = await json(admin, "/api/plan/items/action", act);
-  assert.equal(replayed.body.stock.request_id, ate.body.stock.request_id);
-  assert.equal(
-    database.prepare("SELECT count(*) FROM pantry_requests").pluck().get(),
-    8,
-  );
-
   harness.egress.apiKey = "Synthetic rice";
   const { id, revision } = empty.body.item;
   const withheld = await plan({

@@ -20,12 +20,69 @@ export const grocy = {
 };
 type Person = Awaited<ReturnType<typeof twoUsers>>["admin"];
 
-export async function json(person: Person, path: string, body?: unknown) {
+export async function json(
+  person: Person,
+  path: string,
+  body?: unknown,
+  method = body === undefined ? "GET" : "POST",
+) {
   const response = await person.request(path, {
-    method: body === undefined ? "GET" : "POST",
+    method,
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   return { status: response.status, body: await response.json() };
+}
+
+type GrocyRoute =
+  | ((request: { path: string; id?: string; body: unknown }) => unknown)
+  | unknown;
+
+/**
+ * A fetch for createGrocyClient that answers each API path from `routes`, where numeric
+ * segments match `:id`. A route may be a value, a Response or a function of the request.
+ */
+export function grocyFetch(routes: Record<string, GrocyRoute>) {
+  const calls: string[] = [];
+  let paused:
+    | { path: RegExp; reached: () => void; release: Promise<void> }
+    | undefined;
+  const fetch = async (url: string | URL | Request, init?: RequestInit) => {
+    const path = new URL(String(url)).pathname.replace(/^\/api/, "");
+    calls.push(path);
+    if (paused?.path.test(path)) {
+      const { reached, release } = paused;
+      paused = undefined;
+      reached();
+      await release;
+    }
+    const pattern = path.replace(/\/\d+(?=\/|$)/g, "/:id");
+    if (!(path in routes || pattern in routes))
+      throw new Error(`Unexpected Grocy path ${path}`);
+    const route = routes[path] ?? routes[pattern];
+    const body =
+      typeof route === "function"
+        ? await route({
+            path,
+            id: path.match(/\/(\d+)(?=\/|$)/)?.[1],
+            body: init?.body
+              ? JSON.parse(await new Response(init.body).text())
+              : undefined,
+          })
+        : route;
+    return body instanceof Response ? body : Response.json(body);
+  };
+  /** Pauses the next request whose path matches until `release` is called. */
+  const hold = (path: string | RegExp) => {
+    const reached = Promise.withResolvers<void>();
+    const released = Promise.withResolvers<void>();
+    paused = {
+      path: typeof path === "string" ? new RegExp(`^${path}$`) : path,
+      reached: reached.resolve,
+      release: released.promise,
+    };
+    return { reached: reached.promise, release: released.resolve };
+  };
+  return { fetch, calls, routes, hold };
 }
 
 /** Grocy stock: product 7 holds 10, 9 holds 3, 10 holds 5, and 8 is active but empty; every unit is 2. */
@@ -93,10 +150,12 @@ export async function pantryHarness(context: TestContext) {
       conversions: () => ok([]),
     },
   });
+  const kicks: number[] = [];
   wired.stock = createPantryStock({
     config: grocy,
     ownerId: admin.user.id,
     clock,
+    kick: () => kicks.push(1),
     report: assert.fail,
   });
   const bind = (kind: string, id: number, productId: number, unit = 2) =>
@@ -136,5 +195,13 @@ export async function pantryHarness(context: TestContext) {
       attempt.run(id, id, "confirmed", "[]", at, at);
     return id;
   };
-  return { ...harness, clock, egress, reads: () => reads, bind, request };
+  return {
+    ...harness,
+    clock,
+    egress,
+    kicks,
+    reads: () => reads,
+    bind,
+    request,
+  };
 }
