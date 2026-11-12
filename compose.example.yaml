@@ -73,6 +73,7 @@ services:
       UMASK: "077"
     volumes:
       - grocy-config:/config
+    # Use compose.grocy-auth.example.yaml for Access identity forwarding.
     # Only a proxy running directly on the host can use this mapping.
     # ports:
     #   - "127.0.0.1:9283:80"

@@ -177,14 +177,63 @@ Without the profile, the service list contains only Tare. With it, Grocy starts 
 inside the default Compose network, with no published host port. Tare retains outbound network
 access. A proxy container attached to that same network uses `http://grocy:80`; a proxy running
 directly on the host can use the commented loopback mapping. A proxy on another host needs an
-explicit reachable origin restricted to that proxy, including firewall rules that survive reboot.
+explicit reachable origin restricted to that proxy.
 A separate proxy container cannot use the Docker host's loopback address as its own localhost.
 
 Configure an authenticated HTTPS hostname specifically for Grocy. An existing Tare route or Access
 application does not protect this new hostname. With Cloudflare Tunnel, preserve the existing
 ingress rules and final catch-all when adding the route. Create a separate Access application
-with one-time PIN login and an allow policy for only the pantry owner's email. Keep Grocy's
-own login enabled. Change its initial `admin` / `admin` password before publishing the route.
+with the same identity providers as your existing protected applications, including GitHub through
+Cloudflare when configured, and an allow policy for only the pantry owner's email. Change Grocy's
+initial `admin` / `admin` password before publishing the route. Keep this account and its API key;
+the private listener still supports password login and API keys.
+
+### Forward the Access identity
+
+Use `compose.grocy-auth.example.yaml` with Compose 2.24.4 or newer to sign in through Access
+without a second Grocy login. It reuses Grocy's bundled nginx and reverse-proxy middleware.
+The published port reaches nginx's connector-only listener on port 8080. nginx maps the approved
+Access email to an existing Grocy username, replaces incoming identity headers, and adds a private
+secret before forwarding to port 80. The second listener selects `GROCY_AUTH_CLASS` per request:
+Grocy's reverse-proxy middleware only when both secret and username match, otherwise its normal
+password/API authentication. The middleware reads the mapped username from a FastCGI variable,
+not a client header. Keep `AUTH_CLASS` and reverse-proxy settings out of `config.php` and
+`data/settingoverrides`; those overrides take precedence over FastCGI settings.
+
+In a private environment file, mode `600`, set `GROCY_OWNER_EMAIL`, `GROCY_OWNER_USERNAME`,
+`GROCY_TUNNEL_ADDRESS` (the connector's source IP as seen by nginx), and `GROCY_BIND_ADDRESS`.
+Use a single IP for each address, not a subnet or forwarded-header value. The username must already
+exist and belong to the owner; a typo can make upstream Grocy create an unintended administrator.
+Use a simple username of at most 32 letters, digits, underscores or hyphens.
+Generate the separate shared secret into that file without printing it:
+
+```sh
+umask 077
+printf 'GROCY_FORWARD_AUTH_SECRET=' >> grocy-auth.env
+openssl rand -hex 32 >> grocy-auth.env
+chmod 600 grocy-auth.env
+docker compose --env-file .env --env-file grocy-auth.env -p pantry-live \
+  -f compose.example.yaml -f compose.grocy-auth.example.yaml --profile pantry \
+  up --detach --force-recreate --wait grocy
+docker compose --env-file .env --env-file grocy-auth.env -p pantry-live \
+  -f compose.example.yaml -f compose.grocy-auth.example.yaml --profile pantry \
+  exec -T grocy chmod 600 /config/nginx/site-confs/default.conf
+```
+
+Supply the four other settings before running this command. Never render `docker compose config`
+or `nginx -T` to logs: the expanded configuration contains the secret. Restrict the generated nginx
+configuration to mode `600`, and protect its parent directories and backups. Recreate Grocy after
+changing the auth override or secret; a plain `up` can leave old generated config in place.
+Use both environment files and the auth override on later live Compose commands too.
+
+The override replaces existing published ports using `!override`. Only the connector address can
+reach this listener; do not allow the whole Docker subnet or trust `X-Forwarded-For`. The connector
+host is trusted to send the Access identity, as with a forwarding authentication proxy. Restrict
+administration of that host and require the Grocy app's audience in the tunnel rule's
+`originRequest.access` settings (`required: true`, your Access `teamName`, and `audTag` list).
+Keep every other ingress rule and the final catch-all when updating that rule. No host firewall
+rule is required for this topology: nginx enforces its source-IP restriction. The private
+`http://grocy:80` API path stays on the Compose network and retains API-key authentication.
 
 Log in to Grocy and create an API key in its API key management screen. For the pantry client,
 store it as `TARE_GROCY_API_KEY` in the same private `.env` file Compose reads, mode `600`. Set the
@@ -213,7 +262,11 @@ engine's network; verify the product and quantity. An unauthenticated API reques
 Recreate Grocy with its existing volume and verify the same stock remains.
 
 Check the actual proxy can reach its configured origin. An anonymous HTTPS request must redirect
-to Access, while the owner's authorized browser must reach Grocy's login and then its stock UI.
+to Access, while the owner's authorized browser must reach the stock UI without a Grocy login.
+From a different LAN host, send forged Access email, `Remote-User` and secret headers to the
+published address: expect `403`. Repeat against the private listener with a wrong or missing
+secret: expect a login redirect for the stock page and `401` for API calls without a key.
+Verify the existing admin password and Tare's API key still work on the private listener.
 Sign in to Access as another identity and verify it is denied before reaching Grocy. On a phone,
 open the HTTPS URL, grant camera access and verify the barcode scanner opens the camera. A redirect
 alone proves Access is present; it does not prove origin reachability or camera access.
