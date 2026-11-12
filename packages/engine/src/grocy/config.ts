@@ -53,13 +53,12 @@ export function normalizeGrocyUrl(value: string) {
 
 function parsePublicUrl(value: string) {
   const url = URL.canParse(value) ? new URL(value) : null;
+  // The raw text is checked because URL drops a bare "?", "#" or "@".
   if (
     !url ||
-    !["http:", "https:"].includes(url.protocol) ||
-    url.username ||
-    url.password ||
-    url.search ||
-    url.hash
+    /[?#]/.test(value) ||
+    /^[a-z]+:\/\/[^/]*@/i.test(value) ||
+    !["http:", "https:"].includes(url.protocol)
   )
     throw new Error(
       "TARE_GROCY_PUBLIC_URL must be an HTTP or HTTPS URL without credentials, query or fragment",

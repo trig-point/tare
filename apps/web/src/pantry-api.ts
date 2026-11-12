@@ -55,7 +55,11 @@ const stockRequest = z.object({
   current_number: z.number(),
   created_at: z.string(),
   resolved_at: z.string().nullable(),
-  frozen: z.object({ product_id: z.number(), quantity: z.number() }),
+  frozen: z.object({
+    product_id: z.number(),
+    stock_unit_id: z.number(),
+    quantity: z.number(),
+  }),
   reference: z.object({ kind: z.string(), id: z.number() }),
   intake: z.object({ name: z.string().nullable() }).nullable(),
   edit_notice: z.object({ servings: z.number() }).nullable(),
@@ -129,7 +133,7 @@ const messages: Record<string, string> = {
   mutation_conflict: "Request changed",
   pantry_reset_required: "Reset the connection first",
   pantry_requests_unresolved: "Resolve open requests first",
-  pantry_generation_changed: "Pantry changed. Try again",
+  pantry_generation_changed: "Pantry changed",
   pantry_binding_conflict: "Remove the current binding first",
   pantry_product_missing: "Product not found",
   pantry_unit_changed: "Product unit changed",
@@ -138,5 +142,8 @@ const messages: Record<string, string> = {
   pantry_disabled: "Pantry not set up",
 };
 export const failureText = (error: unknown) =>
-  (error instanceof ApiError && error.code && messages[error.code]) ||
+  (error instanceof ApiError &&
+    error.code &&
+    Object.hasOwn(messages, error.code) &&
+    messages[error.code]) ||
   "Couldn’t save";

@@ -139,7 +139,7 @@ Relative filesystem paths resolve from `/app/packages/engine` in the image.
 
 The administrator settings are read only while the database has no users.
 Store credentials in the private environment file or process environment, never in the image.
-The three Grocy settings are passed through for the separately installed pantry client. That client
+The Grocy settings are passed through for the separately installed pantry client. That client
 trims values, treats empty as unset, and rejects partial configuration or an unknown owner at startup.
 
 ## Backup storage

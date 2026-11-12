@@ -23,26 +23,30 @@ import {
 
 type Props = { person: number; online: boolean };
 
+const forbidden = (error: unknown) =>
+  error instanceof ApiError && error.status === 403;
+
 export function PantrySection({ person, online }: Props) {
-  const options = { ...liveRefresh, enabled: online, retry: false };
+  const options = { ...liveRefresh, retry: false };
+  // Only the Grocy owner has a pantry; a 403 stops polling and hides the section.
   const pantry = useQuery({
     ...options,
     queryKey: pantryKey(person),
     queryFn: ({ signal }) => readPantry(signal),
+    enabled: (query) => online && !forbidden(query.state.error),
   });
+  const owner = { ...options, enabled: online && pantry.data !== undefined };
   const requests = useQuery({
-    ...options,
+    ...owner,
     queryKey: requestsKey(person),
     queryFn: ({ signal }) => readRequests(signal),
   });
   const link = useQuery({
-    ...options,
+    ...owner,
     queryKey: linkKey(person),
     queryFn: ({ signal }) => readLink(signal),
   });
-  // Only the Grocy owner has a pantry.
-  if (pantry.error instanceof ApiError && pantry.error.status === 403)
-    return null;
+  if (forbidden(pantry.error)) return null;
   return (
     <PantryView
       person={person}
@@ -143,7 +147,11 @@ export function PantryView({
         <ul className="entries">
           {pantry.products.map((product) => {
             const held = pantry.requested
-              .filter((entry) => entry.product_id === product.product_id)
+              .filter(
+                (entry) =>
+                  entry.product_id === product.product_id &&
+                  entry.stock_unit_id === product.stock_unit.id,
+              )
               .reduce(
                 (sum, entry) =>
                   sum + entry.pending + entry.sending + entry.uncertain,
@@ -234,16 +242,18 @@ function BindingForm({
   const product = pantry.products.find(
     (entry) => String(entry.product_id) === productId,
   );
+  const amount = Number(quantity);
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!food || !product || pantry.generation === null) return;
+    if (!food || !product || pantry.generation === null || !(amount > 0))
+      return;
     save(() =>
       saveBinding({
         reference_kind: food.reference.kind,
         reference_id: food.reference.id,
         product_id: product.product_id,
         stock_unit_id: product.stock_unit.id,
-        quantity_per_serving: Number(quantity),
+        quantity_per_serving: amount,
         expected_generation: pantry.generation as number,
       }),
     );
@@ -297,12 +307,23 @@ function BindingForm({
           value={quantity}
           onChange={(event) => setQuantity(event.target.value)}
         />
-        <button type="submit" disabled={!food}>
+        <button type="submit" disabled={!food || !(amount > 0)}>
           Bind
         </button>
       </fieldset>
     </form>
   );
+}
+
+// A frozen request keeps its own unit; the product's unit may have changed since.
+function unitName(
+  products: Map<number, Pantry["products"][number]>,
+  frozen: StockRequest["frozen"],
+) {
+  const unit = products.get(frozen.product_id)?.stock_unit;
+  return unit?.id === frozen.stock_unit_id
+    ? unit.name
+    : `unit ${frozen.stock_unit_id}`;
 }
 
 function Requests({
@@ -324,7 +345,7 @@ function Requests({
     [
       `${request.intake?.name ?? `Food ${request.reference.id}`}:`,
       request.frozen.quantity,
-      products.get(request.frozen.product_id)?.stock_unit.name,
+      unitName(products, request.frozen),
       request.state,
       request.edit_notice &&
         `(edited to ${request.edit_notice.servings} servings)`,

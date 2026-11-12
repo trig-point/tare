@@ -48,6 +48,9 @@ test("Grocy config is optional, normalized, owner-scoped and safe at startup", (
     "grocy",
     "ftp://grocy.example.com",
     "https://user:pass@grocy.example.com",
+    "https://@grocy.example.com",
+    "https://grocy.example.com?",
+    "https://grocy.example.com/#",
   ])
     assert.throws(
       () => loadConfig({ ...settings, TARE_GROCY_PUBLIC_URL: publicUrl }),

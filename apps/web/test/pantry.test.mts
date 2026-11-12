@@ -101,6 +101,28 @@ test("a failed refresh keeps the last stock and shows the failure", () => {
   assert.doesNotMatch(markup, /No stock/);
 });
 
+test("a request frozen in another unit keeps its own unit", () => {
+  const request = (unit: number) => ({
+    request_id: `request-${unit}`,
+    state: "uncertain" as const,
+    current_number: 1,
+    created_at: "2026-01-01T00:00:00.000Z",
+    resolved_at: null,
+    frozen: { product_id: 7, stock_unit_id: unit, quantity: 2 },
+    reference: { kind: "food", id: 1 },
+    intake: { name: `Example meal ${unit}` },
+    edit_notice: null,
+    retry: { eligible: false, not_before: null },
+  });
+  const markup = render(ready, {
+    state: "ready",
+    unresolved: [request(2), request(3)],
+    history: [],
+  });
+  assert.match(markup, /Example meal 2: 2 can uncertain/);
+  assert.match(markup, /Example meal 3: 2 unit 3 uncertain/);
+});
+
 test("abandoning a pending request moves it to history and keeps its error code", async (context) => {
   const harness = await pantryHarness(context);
   context.mock.method(globalThis, "fetch", harness.admin.request);
@@ -111,7 +133,7 @@ test("abandoning a pending request moves it to history and keeps its error code"
   assert.ok(request);
   assert.match(
     render(await readPantry(), open),
-    /Food 1: 2 pending<\/strong><p class="actions"><button type="button">Abandon</,
+    /Food 1: 2 unit 2 pending<\/strong><p class="actions"><button type="button">Abandon</,
   );
   const decision = {
     request_id: request.request_id,
