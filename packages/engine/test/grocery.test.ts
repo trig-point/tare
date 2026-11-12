@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createGroceryClient } from "../src/grocy/grocery.ts";
+import { createGroceryClient, purchaseMatches } from "../src/grocy/grocery.ts";
 import { test } from "./support/hang-ceiling.ts";
 
 const config = {
@@ -15,7 +15,7 @@ const purchase = {
   best_before_date: "2999-12-31",
   purchased_date: "2026-11-10",
   transaction_type: "purchase",
-  undone: 0,
+  undone: 0 as const,
   location_id: 2,
   transaction_id: "6af62c0058842",
 };
@@ -138,6 +138,10 @@ test("Stock adds confirm only a receipt matching the confirmed purchase", async 
     rows = changed;
     assert.equal((await client.addStock(1, 1, add))?.status, "uncertain");
   }
+  assert.equal(
+    purchaseMatches([purchase], 1, { ...add, amount: Infinity }),
+    false,
+  );
 });
 
 test("Grocery reads gate the version, filter exactly and report capped discovery", async () => {
@@ -160,6 +164,8 @@ test("Grocery reads gate the version, filter exactly and report capped discovery
   const count = sent.length;
   assert.equal((await client.productNamed(1, "Rice {x}"))?.status, "failed");
   assert.equal((await client.barcodeRows(1, "null"))?.status, "failed");
+  assert.equal((await client.productNamed(1, "\ud800"))?.status, "failed");
+  assert.equal((await client.transaction(1, "\ud800"))?.status, "failed");
   assert.equal(sent.length, count);
   body = [purchase, { ...purchase, id: 4 }, { ...purchase, id: 5 }];
   assert.deepEqual(await client.purchasesAfter(1, 1, 2, 2), {

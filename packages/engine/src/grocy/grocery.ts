@@ -109,6 +109,7 @@ export function purchaseMatches(
   const total = rows.reduce((sum, row) => sum + row.amount, 0);
   return (
     rows.length > 0 &&
+    isAmount(add.amount) &&
     Number.isFinite(total) &&
     rows.every(
       (row) =>
@@ -149,7 +150,10 @@ export function createGroceryClient(dependencies: GrocyDependencies) {
   ) =>
     request(
       userId,
-      `/objects/${entity}?${query([`${uniqueColumns[entity]}=${value}`], "id:asc", 2)}`,
+      // Encoding runs only after validation; a lone surrogate would throw.
+      findable(value)
+        ? `/objects/${entity}?${query([`${uniqueColumns[entity]}=${value}`], "id:asc", 2)}`
+        : "",
       z
         .array(schema)
         .max(1)
@@ -276,7 +280,9 @@ export function createGroceryClient(dependencies: GrocyDependencies) {
     transaction: (userId: number, transactionId: string) =>
       request(
         userId,
-        `/stock/transactions/${encodeURIComponent(transactionId)}`,
+        transactionIdSchema.safeParse(transactionId).success
+          ? `/stock/transactions/${transactionId}`
+          : "",
         z
           .array(groceryStockLogSchema)
           .nonempty()

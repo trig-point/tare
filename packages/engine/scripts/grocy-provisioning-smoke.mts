@@ -270,6 +270,23 @@ try {
     "capped discovery reports itself incomplete",
     !capped.complete && capped.rows.length === 2,
   );
+  const highest = Math.max(
+    ...(await rows("/objects/stock_log"))
+      .filter((row) => row.product_id === oats)
+      .map((row) => row.id),
+  );
+  check(
+    "stock-log maximum is the highest id, not the first",
+    highest > afterFirst &&
+      value(await grocery.stockLogMax(1, oats)) === highest,
+  );
+  const shelfAdd = { ...fractional, amount: 0.05, location_id: shelf };
+  check(
+    "an add to a non-default location books at that location",
+    value(await grocery.addStock(1, oats, shelfAdd)).rows.every(
+      (row) => row.location_id === shelf,
+    ),
+  );
   const missingBefore = (await rows("/objects/stock_log")).length;
   check(
     "add to a missing product is proven rejected without a booking",
@@ -285,7 +302,7 @@ try {
     stock.find((row) => row.product_id === productId)?.amount ?? 0;
   check(
     "stock equals confirmed and adopted quantities",
-    amountOf(rice) === 500 && Math.abs(amountOf(oats) - 1.35) < 1e-9,
+    amountOf(rice) === 500 && Math.abs(amountOf(oats) - 1.4) < 1e-9,
   );
   await raw("POST", `/stock/transactions/${riceReceipt.transactionId}/undo`);
   check(
@@ -301,10 +318,8 @@ try {
 }
 const failed = checks.filter((entry) => !entry.pass);
 console.log(
-  JSON.stringify(
-    { exchanges, checks, passed: !failed.length },
-    null,
-    2,
-  ).replaceAll(apiKey, "[redacted]"),
+  JSON.stringify({ exchanges, checks, passed: !failed.length }, null, 2)
+    .replaceAll(JSON.stringify(apiKey).slice(1, -1), "[redacted]")
+    .replaceAll(apiKey, "[redacted]"),
 );
 if (failed.length) process.exitCode = 1;
