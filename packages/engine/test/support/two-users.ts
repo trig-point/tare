@@ -20,7 +20,7 @@ export async function twoUsers(
 ) {
   const setup =
     mode === "access"
-      ? accessFixture(context)
+      ? accessFixture(context, undefined, overrides)
       : fixture(context, { verifyPassword, ...overrides });
   setup.database
     .prepare("UPDATE users SET password_hash = ? WHERE id = ?")

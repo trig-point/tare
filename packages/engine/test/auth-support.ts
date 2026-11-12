@@ -145,8 +145,13 @@ export const assertionHeader = (token: string) => ({
 export function accessFixture(
   context: TestContext,
   accessKeySet: AppOptions["accessKeySet"] = keySet,
+  overrides: Partial<AppOptions> = {},
 ) {
-  const setup = fixture(context, { config: accessConfig, accessKeySet });
+  const setup = fixture(context, {
+    config: accessConfig,
+    accessKeySet,
+    ...overrides,
+  });
   setup.database
     .prepare("UPDATE users SET access_email = ? WHERE id = ?")
     .run("admin@example.com", setup.admin.id);
