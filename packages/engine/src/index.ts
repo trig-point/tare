@@ -40,7 +40,8 @@ await ensureFirstUser(
   .then(() =>
     config.scale ? resolveScaleUsers(connection.database, config.scale) : null,
   )
-  .then(startEngine, (error: unknown) => {
+  .then(startEngine)
+  .catch((error: unknown) => {
     reportStartupError(error, config.grocy?.apiKey);
     connection.close();
     process.exitCode = 1;
@@ -158,15 +159,20 @@ async function startEngine(scaleUsers: Map<string, number> | null) {
   );
   runner.register(calendar.job);
   calendar.start();
-  runner.register(pantry.job);
+  if (config.grocy) runner.register(pantry.job);
   runner.start();
-  void runner.runNow(pantry.job.name).catch(() => {
-    const message = safeGrocyText(
-      "pantry_startup_failed",
-      config.grocy?.apiKey,
-    );
-    if (message !== undefined) console.error(message);
-  });
+  if (config.grocy) {
+    const reportFailure = () => {
+      const message = safeGrocyText(
+        "pantry_startup_failed",
+        config.grocy?.apiKey,
+      );
+      if (message !== undefined) console.error(message);
+    };
+    void runner.runNow(pantry.job.name).then((result) => {
+      if (result.status === "failed") reportFailure();
+    }, reportFailure);
+  }
   const app = createApp({
     database: connection.database,
     config,
