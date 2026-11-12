@@ -18,6 +18,7 @@ const position = (
   qu_id: number,
   [recipe_amount, missing_amount, stock_amount]: number[],
   anyStock = 0,
+  child = recipe,
 ) => ({
   recipe_id: recipe,
   recipe_pos_id,
@@ -28,8 +29,8 @@ const position = (
   stock_amount,
   need_fulfilled: missing_amount ? 0 : 1,
   only_check_single_unit_in_stock: anyStock,
-  is_nested_recipe_pos: anyStock,
-  child_recipe_id: anyStock ? 3 : recipe,
+  is_nested_recipe_pos: child === recipe ? 0 : 1,
+  child_recipe_id: child,
 });
 const grocyData = () =>
   ({
@@ -48,7 +49,7 @@ const grocyData = () =>
       position(1, 1, 3, 1, [5, 0, 100]),
       position(2, 2, 1, 2, [250, 125, 125]),
       position(2, 3, 2, 1, [100, 100, 0], 1),
-      position(2, 4, 3, 2, [10, 10, 0]),
+      position(2, 4, 3, 2, [10, 10, 0], 0, 5),
       position(4, 5, 3, 1, [1, 0, 100]),
     ],
     "/objects/products": [
@@ -135,8 +136,8 @@ test("recipes report Grocy fulfillment and missing amounts in their own units", 
       [
         "Synthetic cake false none",
         "Synthetic flour 125 gram false false: 1 cup converted",
-        "Synthetic eggs 100 gram false true: 100 gram same_unit",
-        "Synthetic salt 10 gram false false: null cup conversion_unknown",
+        "Synthetic eggs 100 gram false false: 100 gram same_unit",
+        "Synthetic salt 10 gram false true: null cup conversion_unknown",
       ],
       ["Synthetic empty true none"],
     ],

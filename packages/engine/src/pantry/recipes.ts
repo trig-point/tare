@@ -40,7 +40,8 @@ export const recipeReference = z.strictObject({
 });
 export const recipeLinkInput = recipeReference.extend({
   recipe_id: identifier,
-  servings: z.number().positive().finite(),
+  // A bound keeps scaled nutrients finite, so one link cannot break every recipe read.
+  servings: z.number().positive().max(1000),
 });
 const link = recipeReference.extend({
   servings: z.number().positive().finite(),
