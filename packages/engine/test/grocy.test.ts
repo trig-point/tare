@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import { createServer } from "node:http";
-import { loadConfig, reportStartupError } from "../src/config.ts";
+import {
+  loadConfig,
+  loadStartupConfig,
+  reportStartupError,
+} from "../src/config.ts";
 import { openDatabase } from "../src/db.ts";
 import { createGrocyClient } from "../src/grocy/client.ts";
 import { normalizeGrocyUrl, resolveGrocyOwner } from "../src/grocy/config.ts";
@@ -44,8 +48,16 @@ test("Grocy config is optional, normalized, owner-scoped and safe at startup", (
     "https://grocy/api/../api",
     "https://user:pass@grocy",
   ])
-    assert.throws(() => normalizeGrocyUrl(url));
-  for (const host of ["127.0.0.1", "192.168.1.2", "[::1]"])
+    assert.throws(() => normalizeGrocyUrl(url), /TARE_GROCY_URL/);
+  for (const host of [
+    "127.0.0.1",
+    "10.1.2.3",
+    "172.16.1.2",
+    "192.168.1.2",
+    "[::1]",
+    "[fd00::1]",
+    "[fe80::1]",
+  ])
     assert.equal(normalizeGrocyUrl(`http://${host}/`), `http://${host}/api`);
   const connection = openDatabase(":memory:");
   try {
@@ -59,6 +71,12 @@ test("Grocy config is optional, normalized, owner-scoped and safe at startup", (
     connection.close();
   }
   const logs: string[] = [];
+  assert.equal(
+    loadStartupConfig({ ...settings, DATABASE_URL: "" }, (message) =>
+      logs.push(message),
+    ),
+    undefined,
+  );
   for (const [message, key] of [
     ["synthetic-key upstream URL and body", "synthetic-key"],
     ["Safe startup error", undefined],
@@ -66,7 +84,11 @@ test("Grocy config is optional, normalized, owner-scoped and safe at startup", (
     reportStartupError(new Error(message), key, (message) =>
       logs.push(message),
     );
-  assert.deepEqual(logs, ["Grocy operation failed", "Safe startup error"]);
+  assert.deepEqual(logs, [
+    "DATABASE_URL is required",
+    "Grocy operation failed",
+    "Safe startup error",
+  ]);
 });
 
 test("Grocy reads validate responses and normalize native values; invalid consumes are not sent", async () => {
