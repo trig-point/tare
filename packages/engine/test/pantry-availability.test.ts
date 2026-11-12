@@ -71,7 +71,7 @@ test("plan_slot rechecks a bound food against the fetch start without reserving 
     position: 0,
     food_id: memberSoup,
   });
-  assert.equal("pantry" in other.body, false);
+  assert.deepEqual([other.status, "pantry" in other.body], [201, false]);
 
   // An old snapshot is stale against the request clock.
   clock.now = () => new Date("2025-12-31T23:00:00.000Z");
@@ -247,7 +247,7 @@ test("plan_slot rechecks a bound food against the fetch start without reserving 
     revision,
   });
   assert.deepEqual(
-    [withheld.status, withheld.body.error.code],
-    [503, "pantry_response_withheld"],
+    [withheld.status, withheld.body],
+    [503, { error: { code: "pantry_response_withheld" } }],
   );
 });
