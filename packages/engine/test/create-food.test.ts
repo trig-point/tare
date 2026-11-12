@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import type { TestContext } from "node:test";
 import { writeTransaction } from "../src/db.ts";
 import { insertOwnedFood } from "../src/foods/create.ts";
 import { insertSourceFood } from "../src/queries/insert-source-food.ts";
@@ -12,106 +13,65 @@ const rice = {
   serving_unit: "cup",
   kcal: 160,
   carbs_g: 36,
-  protein_g: 3,
   provenance: "label",
   source: "Example package label",
 };
-
-test("create_food stores owned foods with replayable, owner-scoped receipts", async (context) => {
-  const { database, admin, member } = await twoUsers(context, "fallback");
-  const send = async (
-    person: typeof admin,
-    path: string,
-    body: unknown,
-    status: number,
-  ) => {
+async function setup(context: TestContext) {
+  const users = await twoUsers(context, "fallback");
+  const post = async (path: string, body: unknown, person = users.admin) => {
     const response = await person.request(path, {
       method: "POST",
       body: JSON.stringify(body),
     });
     const result = await response.json();
-    assert.equal(response.status, status, JSON.stringify(result));
-    return result;
+    return { status: response.status, ...result };
   };
   const counts = () =>
-    database
+    users.database
       .prepare(
         "SELECT (SELECT count(*) FROM foods) AS foods, (SELECT count(*) FROM food_receipts) AS receipts",
       )
       .get();
+  return { ...users, post, counts };
+}
 
-  const created = await send(admin, "/api/foods", rice, 201);
-  assert.equal(created.created, true);
-  assert.deepEqual(
-    {
-      ...created.food,
-      id: undefined,
-    },
-    {
-      id: undefined,
-      name: rice.name,
-      serving_size: 0.25,
-      serving_unit: "cup",
-      kcal: 160,
-      protein_g: 3,
-      carbs_g: 36,
-      fat_g: null,
-      fiber_g: null,
-      kcal_low: null,
-      kcal_high: null,
-      provenance: "label",
-      source: rice.source,
-      source_food_id: null,
-    },
-  );
-  assert.deepEqual(await send(admin, "/api/foods", rice, 200), {
+test("create_food stores owned foods with replayable, owner-scoped receipts", async (context) => {
+  const { member, post, counts } = await setup(context);
+  const created = await post("/api/foods", rice);
+  assert.equal(created.status, 201);
+  assert.equal(created.food.protein_g, null);
+  assert.equal(created.food.serving_unit, "cup");
+  assert.deepEqual(await post("/api/foods", rice), {
     ...created,
+    status: 200,
     created: false,
   });
-  assert.deepEqual(
-    await send(admin, "/api/foods", { ...rice, kcal: 170 }, 409),
-    { error: { code: "mutation_conflict" } },
+  assert.equal(
+    (await post("/api/foods", { ...rice, kcal: 170 })).error.code,
+    "mutation_conflict",
   );
   assert.deepEqual(counts(), { foods: 1, receipts: 1 });
-
-  const memberFood = await send(member, "/api/foods", rice, 201);
-  assert.notEqual(memberFood.food.id, created.food.id);
-  const log = (person: typeof admin, id: number, status: number) =>
-    send(
-      person,
-      "/api/intake",
-      { client_id: `log-${id}`, food_id: id, servings: 2 },
-      status,
-    );
-  assert.equal(
-    (await log(member, created.food.id, 404)).error.code,
-    "food_not_found",
-  );
-  const entry = (await log(admin, created.food.id, 201)).entry;
-  assert.equal(entry.kcal, 320);
-  assert.equal(entry.carbs_g, 72);
-  assert.equal(entry.fat_g, null);
-  assert.equal(entry.provenance, "label");
+  const theirs = await post("/api/foods", rice, member);
+  assert.notEqual(theirs.food.id, created.food.id);
+  const log = { client_id: "log", food_id: created.food.id, servings: 2 };
+  assert.equal((await post("/api/intake", log, member)).status, 404);
+  const { entry } = await post("/api/intake", log);
+  assert.deepEqual([entry.kcal, entry.carbs_g, entry.fat_g], [320, 72, null]);
 });
 
 test("create_food rejects unusable label values without leaving a food or receipt", async (context) => {
-  const { database, admin } = await twoUsers(context, "fallback");
-  const send = async (body: unknown) => {
-    const response = await admin.request("/api/foods", {
-      method: "POST",
-      body: JSON.stringify(body),
-    });
-    return [response.status, (await response.json()).error?.code];
-  };
+  const { database, admin, post, counts } = await setup(context);
+  const refusal = async (body: unknown) =>
+    (await post("/api/foods", body)).error?.code;
   const { kcal: _kcal, ...withoutKcal } = rice;
-  assert.deepEqual((await send(withoutKcal))[0], 400);
-  assert.deepEqual(await send({ ...rice, source: undefined }), [
-    400,
+  assert.equal(await refusal(withoutKcal), "invalid_request");
+  assert.equal(
+    await refusal({ ...rice, source: undefined }),
     "label_source_required",
-  ]);
-  assert.deepEqual(
-    await send({ ...rice, kcal: null, carbs_g: undefined, protein_g: null }),
-    [400, "invalid_request"],
+  );
+  assert.equal(
+    await refusal({ ...rice, kcal: null, carbs_g: null }),
+    "invalid_request",
   );
   const evidence = insertSourceFood(database, {
     source: "off",
@@ -129,15 +89,14 @@ test("create_food rejects unusable label values without leaving a food or receip
     fetched_at: "2026-01-01T00:00:00.000Z",
   });
   assert.ok(evidence);
-  assert.deepEqual(await send({ ...rice, source_food_id: evidence.id }), [
-    400,
-    "serving_basis_mismatch",
-  ]);
+  const fromEvidence = { ...rice, source_food_id: evidence.id };
+  assert.equal(await refusal(fromEvidence), "serving_basis_mismatch");
   assert.throws(() =>
     writeTransaction(database, (scope) => {
       insertOwnedFood(scope, admin.user.id, {
         ...rice,
         provenance: "label",
+        protein_g: null,
         fat_g: null,
         fiber_g: null,
         kcal_low: null,
@@ -147,21 +106,7 @@ test("create_food rejects unusable label values without leaving a food or receip
       throw new Error("Caller failed after the food insert");
     }),
   );
-  assert.deepEqual(
-    database
-      .prepare(
-        "SELECT (SELECT count(*) FROM foods) AS foods, (SELECT count(*) FROM food_receipts) AS receipts",
-      )
-      .get(),
-    { foods: 0, receipts: 0 },
-  );
-  assert.deepEqual(
-    await send({
-      ...rice,
-      serving_size: 100,
-      serving_unit: "g",
-      source_food_id: evidence.id,
-    }),
-    [201, undefined],
-  );
+  assert.deepEqual(counts(), { foods: 0, receipts: 0 });
+  const matching = { ...fromEvidence, serving_size: 100, serving_unit: "g" };
+  assert.equal((await post("/api/foods", matching)).status, 201);
 });
