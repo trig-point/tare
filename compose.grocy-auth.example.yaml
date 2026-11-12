@@ -45,6 +45,7 @@ configs:
               proxy_pass http://127.0.0.1:80;
           }
           location = /login {
+              absolute_redirect off;
               return 302 /stockoverview;
           }
       }
