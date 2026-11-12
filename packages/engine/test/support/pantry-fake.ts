@@ -44,12 +44,16 @@ type GrocyRoute =
 export function grocyFetch(routes: Record<string, GrocyRoute>) {
   const calls: string[] = [];
   let paused:
-    | { path: RegExp; reached: () => void; release: Promise<void> }
+    | {
+        matches: (path: string) => boolean;
+        reached: () => void;
+        release: Promise<void>;
+      }
     | undefined;
   const fetch = async (url: string | URL | Request, init?: RequestInit) => {
     const path = new URL(String(url)).pathname.replace(/^\/api/, "");
     calls.push(path);
-    if (paused?.path.test(path)) {
+    if (paused?.matches(path)) {
       const { reached, release } = paused;
       paused = undefined;
       reached();
@@ -71,12 +75,14 @@ export function grocyFetch(routes: Record<string, GrocyRoute>) {
         : route;
     return body instanceof Response ? body : Response.json(body);
   };
-  /** Pauses the next request whose path matches until `release` is called. */
+  /** Pauses the next request whose path equals or matches until `release` is called. */
   const hold = (path: string | RegExp) => {
+    if (paused) throw new Error("A Grocy hold is already armed");
     const reached = Promise.withResolvers<void>();
     const released = Promise.withResolvers<void>();
     paused = {
-      path: typeof path === "string" ? new RegExp(`^${path}$`) : path,
+      matches: (candidate) =>
+        typeof path === "string" ? candidate === path : path.test(candidate),
       reached: reached.resolve,
       release: released.promise,
     };
