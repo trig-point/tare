@@ -13,11 +13,16 @@ export type Session = z.infer<typeof sessionSchema>;
 
 export class ApiError extends Error {
   status: number;
-  constructor(status: number) {
+  /** The server's error code from its `{error: {code}}` body, when present. */
+  code: string | undefined;
+  constructor(status: number, code?: string) {
     super(`Request failed (${status})`);
     this.status = status;
+    this.code = code;
   }
 }
+
+const errorBody = z.object({ error: z.object({ code: z.string() }) });
 
 export async function request(
   path: string,
@@ -41,7 +46,14 @@ export async function api(
   options: RequestInit = {},
 ): Promise<unknown> {
   const response = await request(path, options);
-  if (!response.ok) throw new ApiError(response.status);
+  if (!response.ok) {
+    const body = response.headers
+      .get("Content-Type")
+      ?.includes("application/json")
+      ? errorBody.safeParse(await response.json().catch(() => null))
+      : undefined;
+    throw new ApiError(response.status, body?.data?.error.code);
+  }
   if (response.status === 204) return undefined;
   if (!response.headers.get("Content-Type")?.includes("application/json"))
     throw new Error("Invalid response");

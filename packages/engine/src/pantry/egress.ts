@@ -15,6 +15,7 @@ export const isPantryOperation = (name: string) =>
     "delete_recipe_nutrition_link",
     "pantry_suggestion_context",
     "list_pantry_requests",
+    "read_pantry_link",
     "reconcile_pantry_request",
   ].includes(name);
 export const isPantryPath = (path: string) =>

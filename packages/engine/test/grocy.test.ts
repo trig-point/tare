@@ -36,6 +36,31 @@ const product = {
 test("Grocy config is optional, normalized, owner-scoped and safe at startup", () => {
   assert.equal(loadConfig({ DATABASE_URL: ":memory:" }).grocy, null);
   assert.equal(config.url, "http://grocy/api");
+  assert.equal(config.publicUrl, undefined);
+  assert.equal(
+    loadConfig({
+      ...settings,
+      TARE_GROCY_PUBLIC_URL: " https://grocy.example.com ",
+    }).grocy?.publicUrl,
+    "https://grocy.example.com/",
+  );
+  for (const publicUrl of [
+    "grocy",
+    "ftp://grocy.example.com",
+    "https://user:pass@grocy.example.com",
+  ])
+    assert.throws(
+      () => loadConfig({ ...settings, TARE_GROCY_PUBLIC_URL: publicUrl }),
+      /TARE_GROCY_PUBLIC_URL/,
+    );
+  assert.throws(
+    () =>
+      loadConfig({
+        DATABASE_URL: ":memory:",
+        TARE_GROCY_PUBLIC_URL: "https://grocy.example.com",
+      }),
+    /TARE_GROCY_PUBLIC_URL/,
+  );
   for (const field of [
     "TARE_GROCY_URL",
     "TARE_GROCY_API_KEY",

@@ -47,6 +47,7 @@ const operations: {
   input: zod.ZodType;
   output: zod.ZodType;
   description?: string;
+  callerClass?: "browser";
   disabled?: unknown;
   run(service: PantryService, userId: number, input: never): unknown;
 }[] = [
@@ -156,6 +157,16 @@ const operations: {
       service.removeLink(userId, input.recipe_id),
   },
   {
+    name: "read_pantry_link",
+    method: "GET",
+    path: "/api/pantry/link",
+    callerClass: "browser",
+    input: zod.strictObject({}),
+    output: zod.strictObject({ url: zod.string().nullable() }),
+    disabled: { url: null },
+    run: (service, userId) => service.link(userId),
+  },
+  {
     name: "list_pantry_requests",
     method: "GET",
     path: "/api/pantry/requests",
@@ -187,7 +198,7 @@ export const pantryOperations = [
       method: operation.method,
       path: operation.path,
       modes: ["access", "fallback"],
-      callerClass: "browser_and_agent",
+      callerClass: operation.callerClass ?? "browser_and_agent",
       admin: false,
       ...(operation.method === "POST" ? { bodyLimit: 1024 } : {}),
       input: operation.input,
