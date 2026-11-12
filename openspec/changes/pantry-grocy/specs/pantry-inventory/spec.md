@@ -104,7 +104,7 @@ A non-suppressed intake by the configured owner whose reference has a binding wi
 - **WHEN** Grocy might have accepted a consume but Tare cannot confirm the result
 - **THEN** intake remains saved, the stock effect is shown as uncertain, and only an explicit reconciliation can authorize another attempt
 
-#### Scenario: Grocy is unreachable before sending
+#### Scenario: Client refuses before starting the consume
 - **WHEN** the client refuses to start the consume request, such as for disabled configuration or invalid input
 - **THEN** the request stays pending with the error and the next sweep tries again
 

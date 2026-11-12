@@ -128,48 +128,43 @@ export function createPantryStock({
       const database = scopeDatabase(scope);
       if (entry.food_id === null && entry.source_food_id === null) return null;
       if (created) {
-        const { generation, reason, binding } = decide(
-          database,
-          personId,
-          entry,
-        );
-        let requestId = null;
-        if (binding && generation !== null) {
-          // A lifetime client match means this log replays a deleted intake, which must not consume again.
-          requestId =
-            readRequestByClient(database, {
-              user_id: personId,
-              client_id: entry.client_id,
-            })[0]?.id ?? null;
-          if (requestId === null) {
-            const quantity =
-              (entry.servings ?? 0) * binding.quantity_per_serving;
-            if (!Number.isFinite(quantity) || quantity <= 0)
-              throw new OperationError(400, "invalid_request");
-            requestId = randomUUID();
-            insertRequest(database, {
-              id: requestId,
-              user_id: personId,
-              generation,
-              client_id: entry.client_id,
-              intake_id: entry.id,
-              reference_kind: entry.food_id !== null ? "food" : "source_food",
-              reference_id: (entry.food_id ?? entry.source_food_id) as number,
-              product_id: binding.product_id,
-              stock_unit_id: binding.stock_unit_id,
-              quantity_per_serving: binding.quantity_per_serving,
-              quantity,
-              created_at: clock.now().toISOString(),
-            });
-            if (kick) afterCommit(scope, kick, report);
-          }
+        // A lifetime client match means this log replays a deleted intake: name that request, never consume again.
+        const [retained] = readRequestByClient(database, {
+          user_id: personId,
+          client_id: entry.client_id,
+        });
+        const decided = retained
+          ? { generation: retained.generation, reason: null }
+          : decide(database, personId, entry);
+        let requestId = retained?.id ?? null;
+        if ("binding" in decided && decided.binding) {
+          const { binding, generation } = decided;
+          const quantity = (entry.servings ?? 0) * binding.quantity_per_serving;
+          if (!Number.isFinite(quantity) || quantity <= 0)
+            throw new OperationError(400, "invalid_request");
+          requestId = randomUUID();
+          insertRequest(database, {
+            id: requestId,
+            user_id: personId,
+            generation,
+            client_id: entry.client_id,
+            intake_id: entry.id,
+            reference_kind: entry.food_id !== null ? "food" : "source_food",
+            reference_id: (entry.food_id ?? entry.source_food_id) as number,
+            product_id: binding.product_id,
+            stock_unit_id: binding.stock_unit_id,
+            quantity_per_serving: binding.quantity_per_serving,
+            quantity,
+            created_at: clock.now().toISOString(),
+          });
+          if (kick) afterCommit(scope, kick, report);
         }
         insertOutcome(database, {
           intake_id: entry.id,
           user_id: personId,
-          generation,
+          generation: decided.generation,
           request_id: requestId,
-          reason,
+          reason: decided.reason,
         });
       }
       const outcome = readOutcome(database, {

@@ -7,6 +7,7 @@ export type ReadRequestByClientParams = {
 
 export type ReadRequestByClientResult = {
   id: string;
+  generation: number;
 };
 
 export function readRequestByClient(
@@ -14,7 +15,7 @@ export function readRequestByClient(
   params: ReadRequestByClientParams,
 ): ReadRequestByClientResult[] {
   const sql = `
-	SELECT id FROM pantry_requests WHERE user_id = ? AND client_id = ?;
+	SELECT id, generation FROM pantry_requests WHERE user_id = ? AND client_id = ?;
 	
 	`;
   const rows = db
@@ -28,6 +29,7 @@ export function readRequestByClient(
 function mapArrayToReadRequestByClientResult(data: any) {
   const result: ReadRequestByClientResult = {
     id: data[0],
+    generation: data[1],
   };
   return result;
 }

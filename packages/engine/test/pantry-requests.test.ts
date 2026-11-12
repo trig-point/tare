@@ -197,14 +197,17 @@ test("deleted, reused and replayed intakes never create a second request", (cont
   const reused = log(owner, "second");
   assert.equal(reused.entry.id, first.entry.id);
   assert.notEqual(reused.stock?.request_id, first.stock?.request_id);
-  const attempted = claim(reused.stock?.request_id);
-  assert.ok(attempted);
-  requests.finalizeClaim(
-    database,
-    attempted,
-    { status: "not_sent", reason: "transport" },
-    clock,
-  );
+  for (const attempt of [1, 2]) {
+    const attempted = claim(reused.stock?.request_id);
+    assert.equal(attempted?.attempt_count, attempt);
+    if (attempted)
+      requests.finalizeClaim(
+        database,
+        attempted,
+        { status: "not_sent", reason: "transport" },
+        clock,
+      );
+  }
   setServings.run(4, reused.entry.id);
   const edited = request(reused.stock?.request_id);
   assert.deepEqual(
@@ -214,12 +217,13 @@ test("deleted, reused and replayed intakes never create a second request", (cont
   deleteIntake(database, { user_id: owner.id, id: reused.entry.id });
   assert.equal(request(reused.stock?.request_id)?.state, "cancelled");
   service.reset(owner.id, true);
+  assert.deepEqual(log(owner, "first").stock, {
+    generation: 1,
+    request_id: first.stock?.request_id,
+    reason: null,
+    state: "cancelled",
+  });
   bind(2);
-  const replayed = log(owner, "first");
-  assert.deepEqual(
-    [replayed.stock?.request_id, replayed.stock?.generation],
-    [first.stock?.request_id, 2],
-  );
   const unattempted = log(owner, "third");
   setServings.run(3, unattempted.entry.id);
   assert.equal(request(unattempted.stock?.request_id)?.quantity, 1.5);
@@ -338,6 +342,17 @@ test("backup copies are marked and restart treats possibly sent work as uncertai
       request(sending)?.reason,
     ],
     ["pending", "uncertain", "restarted"],
+  );
+  const attempts = "SELECT outcome, reason FROM pantry_attempts";
+  assert.deepEqual(
+    [
+      restored.database.prepare(attempts).all(),
+      database.prepare(attempts).all(),
+    ],
+    [
+      [{ outcome: "uncertain", reason: "restored_backup" }],
+      [{ outcome: "uncertain", reason: "restarted" }],
+    ],
   );
 });
 
