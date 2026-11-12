@@ -58,10 +58,19 @@ export const grocyBookingsSchema = z
     z.object({
       id: identifier,
       transaction_id: z.string().refine((value) => value.trim().length > 0),
+      product_id: identifier,
+      transaction_type: z.literal("consume"),
+      amount: decimal.pipe(z.number().negative()),
     }),
   )
   .nonempty();
 const grocyErrorSchema = z.object({ error_message: z.string().trim().min(1) });
+// Grocy 4.7.1 StockService.php:367-370,419-423 throws these before writes.
+// https://github.com/grocy/grocy/blob/v4.7.1/services/StockService.php#L365-L423
+const refusedConsumeMessages = new Set([
+  "Product does not exist or is inactive",
+  "Amount to be consumed cannot be > current stock amount (if supplied, at the desired location)",
+]);
 
 type Reason =
   | "disabled"
@@ -210,10 +219,11 @@ export function createGrocyClient({
         );
       }
       if (httpStatus < 200 || httpStatus >= 300) {
+        const error = grocyErrorSchema.safeParse(body);
         const rejected =
-          httpStatus >= 400 &&
-          httpStatus < 500 &&
-          grocyErrorSchema.safeParse(body).success;
+          httpStatus === 400 &&
+          error.success &&
+          refusedConsumeMessages.has(error.data.error_message);
         return failure(
           consume ? (rejected ? "rejected" : "uncertain") : "failed",
           httpReason,
@@ -280,7 +290,18 @@ export function createGrocyClient({
       request(
         userId,
         `/stock/products/${productId}/consume`,
-        grocyBookingsSchema,
+        grocyBookingsSchema.refine((bookings) => {
+          const consumed = -bookings.reduce(
+            (total, booking) => total + booking.amount,
+            0,
+          );
+          return (
+            Number.isFinite(consumed) &&
+            bookings.every((booking) => booking.product_id === productId) &&
+            Math.abs(consumed - amount) <=
+              Number.EPSILON * Math.max(consumed, amount) * bookings.length
+          );
+        }),
         productIdValid(productId) && Number.isFinite(amount) && amount > 0,
         amount,
         true,

@@ -25,8 +25,20 @@ const settings = {
 const config =
   loadConfig(settings).grocy ?? assert.fail("Missing fixture configuration");
 const bookings = [
-  { id: "7", transaction_id: "example-transaction" },
-  { id: 8, transaction_id: "example-transaction" },
+  {
+    id: "7",
+    transaction_id: "example-transaction",
+    product_id: "1",
+    transaction_type: "consume",
+    amount: "-0.1",
+  },
+  {
+    id: 8,
+    transaction_id: "example-transaction",
+    product_id: 1,
+    transaction_type: "consume",
+    amount: -0.15,
+  },
 ];
 const stockRow: z.input<typeof grocyStockSchema>[number] = {
   product_id: 1,
@@ -207,6 +219,39 @@ test("Grocy consumes classify HTTP, lost response and bounded body outcomes with
     }
     const responses: Record<string, [number, string]> = {
       success: [200, JSON.stringify(bookings)],
+      "400": [
+        400,
+        JSON.stringify({
+          error_message: "Product does not exist or is inactive",
+        }),
+      ],
+      "400-stock": [
+        400,
+        JSON.stringify({
+          error_message:
+            "Amount to be consumed cannot be > current stock amount (if supplied, at the desired location)",
+        }),
+      ],
+      "400-applied": [
+        400,
+        JSON.stringify({ error_message: "Shopping list does not exist" }),
+      ],
+      partial: [200, JSON.stringify([{ ...bookings[0], amount: -0.1 }])],
+      excess: [200, JSON.stringify([{ ...bookings[0], amount: -0.5 }])],
+      wrongProduct: [
+        200,
+        JSON.stringify(bookings.map((row) => ({ ...row, product_id: 2 }))),
+      ],
+      wrongType: [
+        200,
+        JSON.stringify(
+          bookings.map((row) => ({ ...row, transaction_type: "purchase" })),
+        ),
+      ],
+      missingAmount: [
+        200,
+        JSON.stringify([{ id: 7, transaction_id: "example-transaction" }]),
+      ],
       empty: [200, "[]"],
       blank: [200, ""],
       malformed: [200, "{"],
@@ -247,12 +292,23 @@ test("Grocy consumes classify HTTP, lost response and bounded body outcomes with
     },
   });
   for (const [next, expected] of [
+    ["partial", "uncertain"],
     ["success", "confirmed"],
+    ["excess", "uncertain"],
+    ["wrongProduct", "uncertain"],
+    ["wrongType", "uncertain"],
+    ["missingAmount", "uncertain"],
     ["400", "rejected"],
-    ["421", "rejected"],
+    ["400-stock", "rejected"],
+    ["400-applied", "uncertain"],
+    ["400-unknown", "uncertain"],
+    ["408", "uncertain"],
+    ["409", "uncertain"],
+    ["429", "uncertain"],
+    ["421", "uncertain"],
     ["401", "uncertain"],
-    ["403", "rejected"],
-    ["404", "rejected"],
+    ["403", "uncertain"],
+    ["404", "uncertain"],
     ["403-invalid", "uncertain"],
     ["404-invalid", "uncertain"],
     ["302", "uncertain"],
@@ -282,8 +338,20 @@ test("Grocy consumes classify HTTP, lost response and bounded body outcomes with
     });
     if (result?.status === "confirmed")
       assert.deepEqual(result.value, [
-        { id: 7, transaction_id: "example-transaction" },
-        { id: 8, transaction_id: "example-transaction" },
+        {
+          id: 7,
+          transaction_id: "example-transaction",
+          product_id: 1,
+          transaction_type: "consume",
+          amount: -0.1,
+        },
+        {
+          id: 8,
+          transaction_id: "example-transaction",
+          product_id: 1,
+          transaction_type: "consume",
+          amount: -0.15,
+        },
       ]);
     else
       assert.doesNotMatch(
