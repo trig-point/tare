@@ -9,7 +9,7 @@ import { createCalendarRefresher } from "./calendar/refresh.ts";
 import { createCalendarTransport } from "./calendar/transport.ts";
 import { loadStartupConfig, reportStartupError } from "./config.ts";
 import { openDatabase } from "./db.ts";
-import { resolveGrocyOwner } from "./grocy/config.ts";
+import { resolveGrocyOwner, safeGrocyText } from "./grocy/config.ts";
 import { createMealButtons } from "./home-assistant/meal-buttons.ts";
 import { nextSlotProvider } from "./home-assistant/next-slot.ts";
 import { createHomeAssistantPublisher } from "./home-assistant/publisher.ts";
@@ -21,6 +21,7 @@ import { createJobRunner } from "./jobs.ts";
 import { createOrderMaintenanceJob } from "./orders/maintenance.ts";
 import { createOura } from "./oura/service.ts";
 import { createOuraSyncJob } from "./oura/sync.ts";
+import { createPantryService } from "./pantry/service.ts";
 import { deleteExpiredSessions } from "./queries/delete-expired-sessions.ts";
 import { createScaleSubscriber, resolveScaleUsers } from "./scale/ingest.ts";
 import { createTargetRecomputeJob } from "./target/job.ts";
@@ -36,11 +37,11 @@ await ensureFirstUser(
   config.identity,
 )
   .then(() => ensureSignInCapableUsers(connection.database, config.identity))
-  .then(() => resolveGrocyOwner(connection.database, config.grocy))
   .then(() =>
     config.scale ? resolveScaleUsers(connection.database, config.scale) : null,
   )
-  .then(startEngine, (error: unknown) => {
+  .then(startEngine)
+  .catch((error: unknown) => {
     reportStartupError(error, config.grocy?.apiKey);
     connection.close();
     process.exitCode = 1;
@@ -48,6 +49,12 @@ await ensureFirstUser(
 
 async function startEngine(scaleUsers: Map<string, number> | null) {
   const clock = { now: () => new Date() };
+  const pantry = createPantryService({
+    database: connection.database,
+    config: config.grocy,
+    ownerId: resolveGrocyOwner(connection.database, config.grocy),
+    clock,
+  });
   const oura = createOura({ database: connection.database, config, clock });
   oura.cleanup();
   const questionKinds = createOrderQuestionKinds({
@@ -100,7 +107,14 @@ async function startEngine(scaleUsers: Map<string, number> | null) {
     database: connection.database,
     timezone: config.timezone,
     clock,
-    report: (code, jobName) => console.error(code, jobName),
+    report: (code, jobName) => {
+      if (
+        jobName !== "pantry-refresh" ||
+        !config.grocy ||
+        !`${code} ${jobName}`.includes(config.grocy.apiKey)
+      )
+        console.error(code, jobName);
+    },
   });
   if (config.backupDir !== undefined) {
     runner.register(
@@ -145,7 +159,20 @@ async function startEngine(scaleUsers: Map<string, number> | null) {
   );
   runner.register(calendar.job);
   calendar.start();
+  if (config.grocy) runner.register(pantry.job);
   runner.start();
+  if (config.grocy) {
+    const reportFailure = () => {
+      const message = safeGrocyText(
+        "pantry_startup_failed",
+        config.grocy?.apiKey,
+      );
+      if (message !== undefined) console.error(message);
+    };
+    void runner.runNow(pantry.job.name).then((result) => {
+      if (result.status === "failed") reportFailure();
+    }, reportFailure);
+  }
   const app = createApp({
     database: connection.database,
     config,
@@ -167,9 +194,11 @@ async function startEngine(scaleUsers: Map<string, number> | null) {
   async function shutdown() {
     if (shuttingDown) process.exit(1);
     shuttingDown = true;
+    const pantryStopped = pantry.stop();
     try {
       const results = await Promise.allSettled([
         runner.stop(),
+        pantryStopped,
         oura.stop(),
         calendar.stop(),
         homeAssistant?.stop(),
