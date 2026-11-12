@@ -44,9 +44,15 @@ export function createPantryDispatcher({
   report(code: DispatchReport): void;
 }) {
   let stopping = false;
-  let sweeping: Promise<void> | undefined;
+  let sweeping: Promise<boolean> | undefined;
   let again = false;
   const tracked = new Set<Promise<unknown>>();
+  let failures = 0;
+  // Failures that leave work undone; the scheduled job must not record them as ok.
+  function fail(code: DispatchReport) {
+    failures++;
+    report(code);
+  }
 
   function connection(): PantryConnection | null {
     const row = readConnection(database);
@@ -97,7 +103,7 @@ export function createPantryDispatcher({
     if (candidates.length === 0) return;
     const catalog = await client.catalog(ownerId);
     if (stopping) return;
-    if (catalog?.status !== "ok") return report("pantry_read_failed");
+    if (catalog?.status !== "ok") return fail("pantry_read_failed");
     const active = new Set(
       catalog.value
         .filter((product) => product.active === 1)
@@ -135,7 +141,7 @@ export function createPantryDispatcher({
         finalized = false;
       }
       // A failed write leaves the request sending; startup recovery marks it uncertain.
-      if (!finalized) report("pantry_finalize_failed");
+      if (!finalized) fail("pantry_finalize_failed");
       else if (result?.status === "rejected") report("pantry_consume_rejected");
       else if (result?.status !== "confirmed")
         report("pantry_consume_unconfirmed");
@@ -145,25 +151,28 @@ export function createPantryDispatcher({
           () => report("pantry_refresh_failed"),
         );
     }
-    if (unreadable) report("pantry_read_failed");
+    if (unreadable) fail("pantry_read_failed");
   }
 
-  function sweep(): Promise<void> {
-    if (stopping) return Promise.resolve();
+  // Resolves true when a pass in this sweep failed.
+  function sweep(): Promise<boolean> {
+    if (stopping) return Promise.resolve(false);
     if (sweeping) {
       again = true;
       return sweeping;
     }
     const work = Promise.resolve().then(async () => {
+      const before = failures;
       try {
         do {
           again = false;
           try {
             await pass();
           } catch {
-            report("pantry_dispatch_failed");
+            fail("pantry_dispatch_failed");
           }
         } while (again && !stopping);
+        return failures !== before;
       } finally {
         sweeping = undefined;
       }
@@ -187,7 +196,8 @@ export function createPantryDispatcher({
       name: "pantry-dispatch",
       schedule: "* * * * *",
       async run() {
-        await sweep();
+        // Empty details cannot collide with a configured credential.
+        if (await sweep()) throw new Error("");
         return "";
       },
     },

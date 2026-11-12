@@ -276,7 +276,7 @@ test("a dropped response before restart leaves one uncertain consume", async (co
   recoverRequests(restarted.database, clock);
   await dispatcherOn(restarted.database).job.run();
   dropped.resolve(Response.error());
-  await dispatcher.job.run();
+  await assert.rejects(dispatcher.job.run());
   assert.deepEqual(request(id), { state: "uncertain", reason: "restarted" });
   assert.equal(consumes(), 1);
   assert.deepEqual(reports, ["pantry_finalize_failed"]);
@@ -286,7 +286,7 @@ test("a product changed, deleted or unreadable before send is never consumed", a
   const { grocy, dispatcher, log, request, consumes, reports } = setup(context);
   grocy.detailStatus = 500;
   const unreadable = log("unreadable");
-  await dispatcher.job.run();
+  await assert.rejects(dispatcher.job.run());
   assert.equal(request(unreadable)?.state, "pending");
   assert.deepEqual(reports, ["pantry_read_failed"]);
   grocy.detailStatus = 200;
