@@ -10,12 +10,8 @@ import { createPantryDispatcher } from "../src/pantry/dispatch.ts";
 import { createPantryStock, recoverRequests } from "../src/pantry/requests.ts";
 import { createPantryService } from "../src/pantry/service.ts";
 import { test } from "./support/hang-ceiling.ts";
+import { grocy as config, grocyFetch } from "./support/pantry-fake.ts";
 
-const config = {
-  url: "http://grocy/api",
-  apiKey: "invented-secret",
-  username: "example-owner",
-};
 const clock = { now: () => new Date("2026-01-01T00:00:00.000Z") };
 const unit = { id: 2, name: "can", name_plural: null };
 const product = {
@@ -24,14 +20,17 @@ const product = {
   qu_id_stock: 2,
   enable_tare_weight_handling: 0,
 };
-
-function deferred<Value = void>() {
-  let resolve!: (value: Value) => void;
-  const promise = new Promise<Value>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
+const detail = "/stock/products/:id";
+const consume = "/stock/products/:id/consume";
+const confirm = ({ body }: { body: unknown }) => [
+  {
+    id: 1,
+    transaction_id: "synthetic-transaction",
+    product_id: 7,
+    transaction_type: "consume",
+    amount: -(body as { amount: number }).amount,
+  },
+];
 
 function setup(context: TestContext) {
   const directory = mkdtempSync(join(tmpdir(), "tare-dispatch-"));
@@ -47,7 +46,7 @@ function setup(context: TestContext) {
         )
         .run(username, clock.now().toISOString()).lastInsertRowid,
     );
-  const ownerId = user("example-owner");
+  const ownerId = user(config.username);
   const memberId = user("example-member");
   const food = Number(
     database
@@ -56,44 +55,15 @@ function setup(context: TestContext) {
       )
       .run(ownerId).lastInsertRowid,
   );
-  const grocy = {
-    catalog: [{ id: 7, name: product.name, qu_id_stock: 2, active: 1 }],
-    detail: { product, quantity_unit_stock: unit } as unknown,
-    detailStatus: 200,
-    calls: [] as string[],
-    stockHold: undefined as Promise<void> | undefined,
-    onStock: () => {},
-    detailHold: undefined as Promise<void> | undefined,
-    onDetail: () => {},
-    consume: (amount: number): Promise<Response> | Response =>
-      Response.json([
-        {
-          id: 1,
-          transaction_id: "synthetic-transaction",
-          product_id: 7,
-          transaction_type: "consume",
-          amount: -amount,
-        },
-      ]),
-  };
-  const fetch = async (url: string | URL | Request, init?: RequestInit) => {
-    const route = new URL(String(url)).pathname.replace("/api", "");
-    grocy.calls.push(route);
-    if (route.endsWith("/consume"))
-      return grocy.consume(
-        JSON.parse(await new Response(init?.body).text()).amount,
-      );
-    if (route === "/stock") {
-      grocy.onStock();
-      await grocy.stockHold;
-      return Response.json([]);
-    }
-    if (route === "/objects/products") return Response.json(grocy.catalog);
-    grocy.onDetail();
-    await grocy.detailHold;
-    return Response.json(grocy.detail, { status: grocy.detailStatus });
-  };
-  const client = createGrocyClient({ config, ownerId, fetch });
+  const grocy = grocyFetch({
+    "/objects/products": [
+      { id: 7, name: product.name, qu_id_stock: 2, active: 1 },
+    ],
+    [detail]: { product, quantity_unit_stock: unit },
+    "/stock": [],
+    [consume]: confirm,
+  });
+  const client = createGrocyClient({ config, ownerId, fetch: grocy.fetch });
   const service = createPantryService({
     database,
     config,
@@ -131,7 +101,7 @@ function setup(context: TestContext) {
         scope,
         {
           id: ownerId,
-          username: "example-owner",
+          username: config.username,
           is_admin: 0,
           timezone: "UTC",
           day_start_hour: 0,
@@ -185,14 +155,17 @@ test("a committed request is sent once and the snapshot refetches after delivery
   } = setup(context);
   let id = "";
   const seen: (string | undefined)[] = [];
-  const first = deferred();
-  const second = deferred();
-  grocy.onStock = () => {
+  const first = Promise.withResolvers<void>();
+  const earlier = Promise.withResolvers<void>();
+  const second = Promise.withResolvers<void>();
+  grocy.routes["/stock"] = async () => {
     seen.push(request(id)?.state);
-    (seen.length === 1 ? first : second).resolve();
+    if (seen.length === 1) {
+      first.resolve();
+      await earlier.promise;
+    } else second.resolve();
+    return [];
   };
-  const earlier = deferred();
-  grocy.stockHold = earlier.promise;
   const inFlight = service.refresh(ownerId);
   await first.promise;
   id = log("first");
@@ -239,7 +212,7 @@ test("competing dispatchers on separate connections send a request once", async 
 
 test("a refused connection after dispatch is uncertain and never resent", async (context) => {
   const { grocy, dispatcher, log, request, consumes, reports } = setup(context);
-  grocy.consume = () => {
+  grocy.routes[consume] = () => {
     throw new TypeError("fetch failed", {
       cause: Object.assign(new Error("connect"), { code: "ECONNREFUSED" }),
     });
@@ -263,19 +236,15 @@ test("a dropped response before restart leaves one uncertain consume", async (co
     consumes,
     reports,
   } = setup(context);
-  const sent = deferred();
-  const dropped = deferred<Response>();
-  grocy.consume = () => {
-    sent.resolve();
-    return dropped.promise;
-  };
+  const sent = grocy.hold(/consume$/);
   const id = log("dropped");
-  await sent.promise;
+  await sent.reached;
   const restarted = openDatabase(path);
   context.after(restarted.close);
   recoverRequests(restarted.database, clock);
   await dispatcherOn(restarted.database).job.run();
-  dropped.resolve(Response.error());
+  grocy.routes[consume] = () => Response.error();
+  sent.release();
   await assert.rejects(dispatcher.job.run());
   assert.deepEqual(request(id), { state: "uncertain", reason: "restarted" });
   assert.equal(consumes(), 1);
@@ -284,52 +253,47 @@ test("a dropped response before restart leaves one uncertain consume", async (co
 
 test("a product changed, deleted or unreadable before send is never consumed", async (context) => {
   const { grocy, dispatcher, log, request, consumes, reports } = setup(context);
-  grocy.detailStatus = 500;
+  grocy.routes[detail] = () => Response.json({}, { status: 500 });
   const unreadable = log("unreadable");
   await assert.rejects(dispatcher.job.run());
   assert.equal(request(unreadable)?.state, "pending");
   assert.deepEqual(reports, ["pantry_read_failed"]);
-  grocy.detailStatus = 200;
-  grocy.detail = {
+  const rejects = async (id: string, routes: object) => {
+    Object.assign(grocy.routes, routes);
+    await dispatcher.job.run();
+    return request(id);
+  };
+  const changed = {
     product: { ...product, qu_id_stock: 3 },
     quantity_unit_stock: { ...unit, id: 3 },
   };
-  await dispatcher.job.run();
-  assert.deepEqual(request(unreadable), {
-    state: "rejected",
-    reason: "unit_mismatch",
-  });
-  grocy.detail = { product, quantity_unit_stock: unit };
-  grocy.detailStatus = 404;
-  const gone = log("gone");
-  await dispatcher.job.run();
-  assert.deepEqual(request(gone), {
-    state: "rejected",
-    reason: "product_missing",
-  });
-  grocy.catalog = [];
-  const deleted = log("deleted");
-  await dispatcher.job.run();
-  assert.deepEqual(request(deleted), {
-    state: "rejected",
-    reason: "product_missing",
-  });
+  assert.deepEqual(
+    [
+      await rejects(unreadable, { [detail]: changed }),
+      await rejects(log("gone"), {
+        [detail]: () => Response.json({}, { status: 404 }),
+      }),
+      await rejects(log("deleted"), {
+        [detail]: { product, quantity_unit_stock: unit },
+        "/objects/products": [],
+      }),
+    ],
+    [
+      { state: "rejected", reason: "unit_mismatch" },
+      { state: "rejected", reason: "product_missing" },
+      { state: "rejected", reason: "product_missing" },
+    ],
+  );
   assert.equal(consumes(), 0);
 });
 
 test("stop admits no new claims and drains the send in flight", async (context) => {
   const { grocy, service, dispatcher, dispatcherOn, log, request, consumes } =
     setup(context);
-  const sent = deferred();
-  const answer = deferred();
-  const confirm = grocy.consume;
-  grocy.consume = (amount) => {
-    sent.resolve();
-    return answer.promise.then(() => confirm(amount));
-  };
+  const answer = grocy.hold(/consume$/);
   const inFlight = log("in-flight");
   const waiting = log("waiting");
-  await sent.promise;
+  await answer.reached;
   const held = () =>
     [inFlight, waiting].filter((id) => dispatcher.holds(id ?? "", 1)).length;
   assert.equal(held(), 1);
@@ -339,7 +303,7 @@ test("stop admits no new claims and drains the send in flight", async (context) 
   });
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(drained, false);
-  answer.resolve();
+  answer.release();
   await stopped;
   assert.equal(held(), 0);
   // Equal timestamps leave the send order to the random request ids.
@@ -353,15 +317,12 @@ test("stop admits no new claims and drains the send in flight", async (context) 
     1,
   );
   // A stop that lands during the pre-send read still admits no claim.
-  const reading = deferred();
-  const release = deferred();
-  grocy.onDetail = reading.resolve;
-  grocy.detailHold = release.promise;
+  const reading = grocy.hold("/stock/products/7");
   const late = dispatcherOn();
   const lateRun = late.job.run();
-  await reading.promise;
+  await reading.reached;
   const lateStopped = late.stop();
-  release.resolve();
+  reading.release();
   await Promise.all([lateRun, lateStopped]);
   assert.equal(consumes(), 1);
 });

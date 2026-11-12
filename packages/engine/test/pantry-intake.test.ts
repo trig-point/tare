@@ -1,55 +1,14 @@
 import assert from "node:assert/strict";
 import type { TestContext } from "node:test";
-import { loadConfig } from "../src/config.ts";
-import { createPantryStock, type PantryStock } from "../src/pantry/requests.ts";
-import {
-  createPantryService,
-  type PantryService,
-} from "../src/pantry/service.ts";
-import { accessConfig, credentials, mcpSession } from "./auth-support.ts";
+import { mcpSession } from "./auth-support.ts";
 import { test } from "./support/hang-ceiling.ts";
 import { orderMeal } from "./support/order-meals.ts";
+import { json, pantryHarness } from "./support/pantry-fake.ts";
 import { planDay } from "./support/plan-day.ts";
-import { twoUsers } from "./support/two-users.ts";
-
-const config = {
-  url: "http://grocy/api",
-  apiKey: "invented-secret",
-  username: credentials.username,
-};
 
 async function setup(context: TestContext) {
-  // The owner exists only after the app does, so both are wired in afterwards.
-  const wired: { pantry?: PantryService; stock?: PantryStock } = {};
-  const late = <Value extends object>(read: () => Value | undefined) =>
-    new Proxy({} as Value, {
-      get: (_target, key) => Reflect.get(read() as Value, key),
-    });
-  const harness = await twoUsers(context, "access", {
-    pantry: late(() => wired.pantry),
-    stock: late(() => wired.stock),
-    config: {
-      ...loadConfig({ DATABASE_URL: ":memory:" }),
-      ...accessConfig,
-      grocy: config,
-    },
-  });
+  const harness = await pantryHarness(context);
   const { database, admin } = harness;
-  const clock = { now: () => new Date("2026-01-01T00:00:00.000Z") };
-  wired.pantry = createPantryService({
-    database,
-    config,
-    ownerId: admin.user.id,
-    clock,
-  });
-  const kicks: number[] = [];
-  wired.stock = createPantryStock({
-    config,
-    ownerId: admin.user.id,
-    clock,
-    kick: () => kicks.push(1),
-    report: assert.fail,
-  });
   const count = () =>
     database.prepare("SELECT count(*) FROM pantry_requests").pluck().get();
   // Binds every food the owner has, so order nutrition foods are bound too.
@@ -67,19 +26,7 @@ async function setup(context: TestContext) {
         )
         .run(userId).lastInsertRowid,
     );
-  const send = async (
-    person: typeof admin,
-    path: string,
-    body: unknown,
-    method = "POST",
-  ) => {
-    const response = await person.request(path, {
-      method,
-      body: JSON.stringify(body),
-    });
-    return { status: response.status, body: await response.json() };
-  };
-  return { ...harness, kicks, count, bindAll, addFood, send };
+  return { ...harness, count, bindAll, addFood, send: json };
 }
 
 const pending = (request_id: string, quantity: number) => ({
