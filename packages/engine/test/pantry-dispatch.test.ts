@@ -330,6 +330,9 @@ test("stop admits no new claims and drains the send in flight", async (context) 
   const inFlight = log("in-flight");
   const waiting = log("waiting");
   await sent.promise;
+  const held = () =>
+    [inFlight, waiting].filter((id) => dispatcher.holds(id ?? "", 1)).length;
+  assert.equal(held(), 1);
   let drained = false;
   const stopped = Promise.all([dispatcher.stop(), service.stop()]).then(() => {
     drained = true;
@@ -338,6 +341,7 @@ test("stop admits no new claims and drains the send in flight", async (context) 
   assert.equal(drained, false);
   answer.resolve();
   await stopped;
+  assert.equal(held(), 0);
   // Equal timestamps leave the send order to the random request ids.
   assert.deepEqual([request(inFlight)?.state, request(waiting)?.state].sort(), [
     "delivered",
@@ -350,14 +354,14 @@ test("stop admits no new claims and drains the send in flight", async (context) 
   );
   // A stop that lands during the pre-send read still admits no claim.
   const reading = deferred();
-  const held = deferred();
+  const release = deferred();
   grocy.onDetail = reading.resolve;
-  grocy.detailHold = held.promise;
+  grocy.detailHold = release.promise;
   const late = dispatcherOn();
   const lateRun = late.job.run();
   await reading.promise;
   const lateStopped = late.stop();
-  held.resolve();
+  release.resolve();
   await Promise.all([lateRun, lateStopped]);
   assert.equal(consumes(), 1);
 });
