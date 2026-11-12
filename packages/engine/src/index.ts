@@ -9,6 +9,7 @@ import { createCalendarRefresher } from "./calendar/refresh.ts";
 import { createCalendarTransport } from "./calendar/transport.ts";
 import { loadStartupConfig, reportStartupError } from "./config.ts";
 import { openDatabase } from "./db.ts";
+import { createGrocyClient } from "./grocy/client.ts";
 import { resolveGrocyOwner, safeGrocyText } from "./grocy/config.ts";
 import { createMealButtons } from "./home-assistant/meal-buttons.ts";
 import { nextSlotProvider } from "./home-assistant/next-slot.ts";
@@ -21,6 +22,7 @@ import { createJobRunner } from "./jobs.ts";
 import { createOrderMaintenanceJob } from "./orders/maintenance.ts";
 import { createOura } from "./oura/service.ts";
 import { createOuraSyncJob } from "./oura/sync.ts";
+import { createPantryDispatcher } from "./pantry/dispatch.ts";
 import { recoverRequests } from "./pantry/requests.ts";
 import { createPantryService } from "./pantry/service.ts";
 import { deleteExpiredSessions } from "./queries/delete-expired-sessions.ts";
@@ -51,12 +53,32 @@ await ensureFirstUser(
 async function startEngine(scaleUsers: Map<string, number> | null) {
   const clock = { now: () => new Date() };
   recoverRequests(connection.database, clock);
+  const grocyOwner = resolveGrocyOwner(connection.database, config.grocy);
   const pantry = createPantryService({
     database: connection.database,
     config: config.grocy,
-    ownerId: resolveGrocyOwner(connection.database, config.grocy),
+    ownerId: grocyOwner,
     clock,
   });
+  const reportPantry = (code: string) => {
+    const message = safeGrocyText(code, config.grocy?.apiKey);
+    if (message !== undefined) console.error(message);
+  };
+  const dispatcher =
+    config.grocy && grocyOwner !== null
+      ? createPantryDispatcher({
+          database: connection.database,
+          config: config.grocy,
+          ownerId: grocyOwner,
+          clock,
+          client: createGrocyClient({
+            config: config.grocy,
+            ownerId: grocyOwner,
+          }),
+          refresh: pantry.refreshAfterDelivery,
+          report: reportPantry,
+        })
+      : undefined;
   const oura = createOura({ database: connection.database, config, clock });
   oura.cleanup();
   const questionKinds = createOrderQuestionKinds({
@@ -111,7 +133,7 @@ async function startEngine(scaleUsers: Map<string, number> | null) {
     clock,
     report: (code, jobName) => {
       if (
-        jobName !== "pantry-refresh" ||
+        !jobName.startsWith("pantry-") ||
         !config.grocy ||
         !`${code} ${jobName}`.includes(config.grocy.apiKey)
       )
@@ -162,18 +184,15 @@ async function startEngine(scaleUsers: Map<string, number> | null) {
   runner.register(calendar.job);
   calendar.start();
   if (config.grocy) runner.register(pantry.job);
+  if (dispatcher) runner.register(dispatcher.job);
   runner.start();
   if (config.grocy) {
-    const reportFailure = () => {
-      const message = safeGrocyText(
-        "pantry_startup_failed",
-        config.grocy?.apiKey,
-      );
-      if (message !== undefined) console.error(message);
-    };
-    void runner.runNow(pantry.job.name).then((result) => {
-      if (result.status === "failed") reportFailure();
-    }, reportFailure);
+    const reportFailure = () => reportPantry("pantry_startup_failed");
+    for (const job of [pantry.job, dispatcher?.job])
+      if (job)
+        void runner.runNow(job.name).then((result) => {
+          if (result.status === "failed") reportFailure();
+        }, reportFailure);
   }
   const app = createApp({
     database: connection.database,
@@ -197,10 +216,13 @@ async function startEngine(scaleUsers: Map<string, number> | null) {
   async function shutdown() {
     if (shuttingDown) process.exit(1);
     shuttingDown = true;
+    // Stop new claims before anything else; in-flight sends still finalize.
+    const dispatchStopped = dispatcher?.stop();
     const pantryStopped = pantry.stop();
     try {
       const results = await Promise.allSettled([
         runner.stop(),
+        dispatchStopped,
         pantryStopped,
         oura.stop(),
         calendar.stop(),
