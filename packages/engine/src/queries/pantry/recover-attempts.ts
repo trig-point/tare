@@ -2,6 +2,7 @@ import type { Database } from "better-sqlite3";
 
 export type RecoverAttemptsData = {
   finished_at: string | null;
+  uncertain_since: string | null;
 };
 
 export type RecoverAttemptsResult = {
@@ -13,8 +14,10 @@ export function recoverAttempts(
   data: RecoverAttemptsData,
 ): RecoverAttemptsResult {
   const sql = `
-	UPDATE pantry_attempts SET outcome = 'uncertain', reason = CASE WHEN EXISTS (SELECT 1 FROM pantry_backup_marker) THEN 'restored_backup' ELSE 'restarted' END, finished_at = ? WHERE outcome = 'sending';
+	UPDATE pantry_attempts SET outcome = 'uncertain', reason = CASE WHEN EXISTS (SELECT 1 FROM pantry_backup_marker) THEN 'restored_backup' ELSE 'restarted' END, finished_at = ?, uncertain_since = ? WHERE outcome = 'sending';
 	
 	`;
-  return db.prepare(sql).run([data.finished_at]) as RecoverAttemptsResult;
+  return db
+    .prepare(sql)
+    .run([data.finished_at, data.uncertain_since]) as RecoverAttemptsResult;
 }

@@ -115,6 +115,26 @@ for (const mode of ["fallback", "access"] as const)
             : "never_refreshed",
       );
     }
+    const decision = JSON.stringify({
+      request_id: "00000000-0000-4000-8000-000000000000",
+      attempt_number: 0,
+      mutation_id: "synthetic-decision",
+      decision: "abandoned",
+    });
+    for (const [path, body] of [
+      ["/api/pantry/requests", undefined],
+      ["/api/pantry/requests/reconcile", decision],
+    ] as const) {
+      const method = body ? "POST" : "GET";
+      const refused = await setup.member.request(path, { method, body });
+      const answered = await setup.admin.request(path, { method, body });
+      assert.deepEqual(
+        [refused.status, answered.status, await answered.text()],
+        body
+          ? [403, 404, '{"error":{"code":"pantry_request_not_found"}}']
+          : [403, 200, '{"state":"ready","unresolved":[],"history":[]}'],
+      );
+    }
     const addFood = (userId: number) =>
       Number(
         setup.database
@@ -265,6 +285,7 @@ for (const mode of ["fallback", "access"] as const)
             ["save_pantry_binding", binding(own)],
             ["save_pantry_binding", binding(own, { product_id: 2 })],
             ["list_pantry_recipes", {}],
+            ["list_pantry_requests", {}],
           ].map(([name, args]) => ({
             jsonrpc: "2.0",
             id: ++sequence,
@@ -277,6 +298,7 @@ for (const mode of ["fallback", "access"] as const)
       assert.match(outcomes, /"status\\":\\"valid/);
       assert.match(outcomes, /pantry_binding_conflict/);
       assert.match(outcomes, /Synthetic soup/);
+      assert.match(outcomes, /\\"unresolved\\":\[\]/);
       connectionConfig.apiKey = "structuredContent";
       for (const batch of [false, true]) {
         const blocked = await send(

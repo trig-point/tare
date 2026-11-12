@@ -1,0 +1,5 @@
+INSERT INTO pantry_attempts (request_id, number, kind, outcome, reason, finished_at, uncertain_since, recovered_from_number)
+SELECT id, attempt_count + 1, 'recovery', 'uncertain',
+  CASE WHEN EXISTS (SELECT 1 FROM pantry_backup_marker) THEN 'restored_backup' WHEN state = 'uncertain' THEN reason ELSE 'restarted' END,
+  :now, :now, nullif(attempt_count, 0)
+FROM pantry_requests WHERE state = 'sending' OR (state = 'pending' AND EXISTS (SELECT 1 FROM pantry_backup_marker)) OR (state = 'uncertain' AND uncertain_since IS NULL);

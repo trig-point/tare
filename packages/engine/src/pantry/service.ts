@@ -31,6 +31,7 @@ import {
   type recipeLinkInput,
   recipeNutrition,
 } from "./recipes.ts";
+import { createReconciliation, type reconcileInput } from "./reconcile.ts";
 
 const identifier = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 export const pantryProduct = z.strictObject({
@@ -176,11 +177,18 @@ export function createPantryService({
   ownerId,
   clock,
   client = createGrocyClient({ config, ownerId }),
+  dispatch,
+  report = () => {},
 }: {
   database: Database;
   config: GrocyConfig | null;
   ownerId: number | null;
   clock: { now(): Date };
+  dispatch?: {
+    kick(): void;
+    holds(requestId: string, number: number): boolean;
+  };
+  report?: (code: string) => void;
   client?: Pick<
     ReturnType<typeof createGrocyClient>,
     | "stock"
@@ -707,10 +715,31 @@ export function createPantryService({
     });
     return read(userId);
   }
+  const reconciliation = createReconciliation({
+    database,
+    ownerId: owner,
+    clock,
+    stopping: () => stopping,
+    dispatch,
+    refresh: refreshAfterDelivery,
+    report,
+  });
   return {
     read,
     refresh,
     refreshAfterDelivery,
+    requests(userId: number) {
+      authorize(userId);
+      if (!config)
+        return { state: "disabled" as const, unresolved: [], history: [] };
+      return reconciliation.list();
+    },
+    reconcile(userId: number, input: z.output<typeof reconcileInput>) {
+      if (!config) throw new OperationError(503, "pantry_disabled");
+      // Replaying a recorded decision must work while stopping, so only ownership is checked here.
+      if (userId !== ownerId) throw new OperationError(403, "forbidden");
+      return reconciliation.decide(userId, input);
+    },
     recipes: (userId: number) => track(recipes(userId)),
     saveLink: (userId: number, input: z.infer<typeof recipeLinkInput>) =>
       track(saveLink(userId, input)),
@@ -759,7 +788,8 @@ export function createPantryService({
           if (replaced) saveConnection(database, { ...row, reset_required: 1 });
           return true;
         }
-        cancelPendingRequests(database);
+        const now = clock.now().toISOString();
+        cancelPendingRequests(database, { resolved_at: now, updated_at: now });
         clearProducts(database);
         clearBindings(database);
         clearRecipeLinks(database);

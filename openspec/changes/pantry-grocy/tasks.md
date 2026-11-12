@@ -30,7 +30,7 @@ Each checkbox is one implementation PR. Estimates below count hand-written sourc
 
   New ticket. Estimated 250 lines. Acceptance: shows stale, never-refreshed and failed refresh, disabled and reset-required states; creates and deletes bindings; lists unresolved requests and recent resolved history with edit notices; records delivered, not-delivered-and-retry and abandoned decisions. Tests: one rendering test per state and a reconciliation decision round trip. No new barcode intake screen.
 
-- [ ] 1.8 Add owner-only stock request listing and reconciliation decisions with a two-user test; builds on the request store from 1.5, TypeSQL and the operation registry (depends on: 1.5) (complexity: judgment) (gate: none)
+- [x] 1.8 Add owner-only stock request listing and reconciliation decisions with a two-user test; builds on the request store from 1.5, TypeSQL and the operation registry (depends on: 1.5) (complexity: judgment) (gate: none)
 
   New ticket. Estimated 350 lines. Acceptance: `list_pantry_requests` for unresolved requests and resolved history from the last 30 days with edit notices; `reconcile_pantry_request` with one delivered, not-delivered-and-retry or abandoned decision per uncertain or rejected attempt, carrying a mutation id and attempt number; abandon also allowed on pending; not-delivered refused while reset is required and, for an uncertain attempt, while a dispatcher holds the claim or before the fixed 15-minute settling wait; a retry sends the frozen quantity; every decision and attempt kept. Tests: stale, early and repeated decisions, abandon on pending and rejected, retry while reset is required, and two-user rejection.
 

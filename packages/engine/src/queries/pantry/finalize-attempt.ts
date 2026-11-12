@@ -1,7 +1,7 @@
 import type { Database } from "better-sqlite3";
 
 export type FinalizeAttemptData = {
-  outcome: string;
+  outcome: string | null;
   reason: string | null;
   http_status: number | null;
   receipt: string | null;
@@ -22,7 +22,9 @@ export function finalizeAttempt(
   params: FinalizeAttemptParams,
 ): FinalizeAttemptResult {
   const sql = `
-	UPDATE pantry_attempts SET outcome = ?, reason = ?, http_status = ?, receipt = ?, finished_at = ? WHERE token = ? AND outcome = 'sending';
+	UPDATE pantry_attempts SET outcome = ?, reason = ?, http_status = ?, receipt = ?, finished_at = ?,
+	  uncertain_since = CASE WHEN ? = 'uncertain' THEN ? END
+	WHERE token = ? AND outcome = 'sending';
 	
 	`;
   return db
@@ -32,6 +34,8 @@ export function finalizeAttempt(
       data.reason,
       data.http_status,
       data.receipt,
+      data.finished_at,
+      data.outcome,
       data.finished_at,
       params.token,
     ]) as FinalizeAttemptResult;

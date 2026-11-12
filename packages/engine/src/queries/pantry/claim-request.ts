@@ -2,6 +2,7 @@ import type { Database } from "better-sqlite3";
 
 export type ClaimRequestData = {
   claim_token: string | null;
+  now: string | null;
 };
 
 export type ClaimRequestParams = {
@@ -29,7 +30,7 @@ export function claimRequest(
   params: ClaimRequestParams,
 ): ClaimRequestResult[] {
   const sql = `
-	UPDATE pantry_requests SET state = 'sending', attempt_count = attempt_count + 1, claim_token = ?
+	UPDATE pantry_requests SET state = 'sending', attempt_count = attempt_count + 1, claim_token = ?, updated_at = ?
 	WHERE id = ? AND state = 'pending' AND user_id = ? AND generation = ? AND product_id = ? AND stock_unit_id = ?
 	RETURNING id, user_id, generation, product_id, stock_unit_id, quantity, attempt_count, claim_token;
 	
@@ -39,6 +40,7 @@ export function claimRequest(
     .raw(true)
     .all([
       data.claim_token,
+      data.now,
       params.id,
       params.user_id,
       params.generation,
