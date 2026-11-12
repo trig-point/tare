@@ -48,8 +48,8 @@ for (const mode of ["fallback", "access"] as const)
         catalog: async () => ({
           status: "ok",
           value: [
-            { id: 1, active: 1 },
-            { id: 2, active: 1 },
+            { id: 1, name: "Synthetic item", qu_id_stock: 1, active: 1 },
+            { id: 2, name: "Synthetic item", qu_id_stock: 1, active: 1 },
           ],
         }),
         barcodes: async () => ({ status: "ok", value: [] }),
@@ -65,6 +65,30 @@ for (const mode of ["fallback", "access"] as const)
             quantity_unit_stock: { id: 1, name: "can", name_plural: null },
           },
         }),
+        recipes: async () => ({
+          status: "ok",
+          value: [
+            {
+              id: 1,
+              name: "Synthetic soup",
+              type: "normal",
+              desired_servings: 2,
+            },
+          ],
+        }),
+        recipePositions: async () => ({ status: "ok", value: [] }),
+        fulfillment: async () => ({
+          status: "ok",
+          value: [
+            {
+              recipe_id: 1,
+              need_fulfilled: 1,
+              need_fulfilled_with_shopping_list: 1,
+            },
+          ],
+        }),
+        units: async () => ({ status: "ok", value: [] }),
+        conversions: async () => ({ status: "ok", value: [] }),
       },
     });
     for (const [path, method, body] of [
@@ -109,6 +133,14 @@ for (const mode of ["fallback", "access"] as const)
       expected_generation: generation,
       ...change,
     });
+    const link = (reference_id: number) =>
+      JSON.stringify({
+        recipe_id: 1,
+        reference_kind: "food",
+        reference_id,
+        servings: 1,
+      });
+    const recipeLink = "/api/pantry/recipes/1/nutrition";
     const proposal = JSON.stringify({
       reference_kind: "food",
       reference_id: own,
@@ -117,6 +149,13 @@ for (const mode of ["fallback", "access"] as const)
       [setup.member, "/api/pantry/bindings/proposal", "POST", proposal, 403],
       [setup.member, "/api/pantry/bindings", "POST", binding(theirs), 403],
       [setup.member, `/api/pantry/bindings/food/${own}`, "DELETE", null, 403],
+      [setup.member, "/api/pantry/recipes", "GET", null, 403],
+      [setup.member, "/api/pantry/recipes/nutrition", "POST", link(own), 403],
+      [setup.member, recipeLink, "DELETE", null, 403],
+      [setup.admin, "/api/pantry/recipes/nutrition", "POST", link(theirs), 404],
+      [setup.admin, "/api/pantry/recipes/nutrition", "POST", link(own), 200],
+      [setup.admin, "/api/pantry/recipes", "GET", null, 200],
+      [setup.admin, recipeLink, "DELETE", null, 200],
       [setup.admin, "/api/pantry/bindings", "POST", binding(theirs), 404],
       [
         setup.admin,
@@ -188,6 +227,9 @@ for (const mode of ["fallback", "access"] as const)
           "delete_pantry_binding",
           { reference_kind: "food", reference_id: own },
         ],
+        ["save_recipe_nutrition_link", JSON.parse(link(own))],
+        ["list_pantry_recipes", {}],
+        ["delete_recipe_nutrition_link", { recipe_id: 1 }],
       ] as const) {
         const result = await agent.callTool({ name, arguments: args });
         assert.equal(result.isError, undefined);
@@ -217,17 +259,22 @@ for (const mode of ["fallback", "access"] as const)
         method: "POST",
         headers: { ...headers, "mcp-session-id": session },
         body: JSON.stringify(
-          [binding(own), binding(own, { product_id: 2 })].map((args) => ({
+          [
+            ["save_pantry_binding", binding(own)],
+            ["save_pantry_binding", binding(own, { product_id: 2 })],
+            ["list_pantry_recipes", {}],
+          ].map(([name, args]) => ({
             jsonrpc: "2.0",
             id: ++sequence,
             method: "tools/call",
-            params: { name: "save_pantry_binding", arguments: args },
+            params: { name, arguments: args },
           })),
         ),
       });
       const outcomes = await mixed.text();
       assert.match(outcomes, /"status\\":\\"valid/);
       assert.match(outcomes, /pantry_binding_conflict/);
+      assert.match(outcomes, /Synthetic soup/);
       connectionConfig.apiKey = "structuredContent";
       for (const batch of [false, true]) {
         const blocked = await send(
