@@ -747,6 +747,10 @@ export function createPantryService({
     refresh,
     foodAvailability,
     refreshAfterDelivery,
+    link(userId: number) {
+      authorize(userId);
+      return { url: config?.publicUrl ?? null };
+    },
     requests(userId: number) {
       authorize(userId);
       if (!config)

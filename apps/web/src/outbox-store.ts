@@ -44,7 +44,8 @@ type StoreOptions = {
   persist?: () => Promise<boolean>;
 };
 
-function clientId(crypto: NonNullable<StoreOptions["crypto"]>): string {
+/** A v4 UUID, also on plain-HTTP origins where `randomUUID` is missing. */
+export function clientId(crypto: NonNullable<StoreOptions["crypto"]>): string {
   if (crypto.randomUUID) return crypto.randomUUID();
   const hex = Array.from(
     crypto.getRandomValues(new Uint8Array(16)),

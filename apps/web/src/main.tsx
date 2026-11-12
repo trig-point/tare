@@ -26,6 +26,7 @@ import { OutboxReplay, type QueueSnapshot } from "./outbox-replay.ts";
 import { OutboxSession } from "./outbox-session.ts";
 import { openOutboxStore } from "./outbox-store.ts";
 import { outboxView } from "./outbox-view.ts";
+import { PantrySection } from "./pantry.tsx";
 import { AccountSettings } from "./settings.tsx";
 import { Today } from "./today.tsx";
 import { UpdateNotice } from "./update-notice.tsx";
@@ -174,6 +175,11 @@ function SessionHome({ runtime }: { runtime: Runtime }) {
             person={view.session.user}
             replay={runtime.queue}
             records={view.records}
+            online={online}
+          />
+          <PantrySection
+            key={`pantry-${view.session.user.id}`}
+            person={view.session.user.id}
             online={online}
           />
           <AccountSettings

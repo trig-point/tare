@@ -135,10 +135,11 @@ Relative filesystem paths resolve from `/app/packages/engine` in the image.
 | `TARE_GROCY_URL` | Unset | Pantry client base URL, for example `http://grocy:80`. Set all three Grocy settings or none. |
 | `TARE_GROCY_API_KEY` | Unset | Pantry client API key. Store in the private `.env` file that Compose reads. Never send it to the browser. |
 | `TARE_GROCY_USERNAME` | Unset | Existing Tare username of the pantry owner. Only that owner's operations use the connection. |
+| `TARE_GROCY_PUBLIC_URL` | Unset (no Grocy link) | Grocy UI address the owner opens in the browser, for example `https://grocy.example.com`. The pantry view links to it for adding stock. HTTP or HTTPS without credentials, query or fragment. Requires the other three Grocy settings. Trimmed; empty counts as unset. |
 
 The administrator settings are read only while the database has no users.
 Store credentials in the private environment file or process environment, never in the image.
-The three Grocy settings are passed through for the separately installed pantry client. That client
+The Grocy settings are passed through for the separately installed pantry client. That client
 trims values, treats empty as unset, and rejects partial configuration or an unknown owner at startup.
 
 ## Backup storage

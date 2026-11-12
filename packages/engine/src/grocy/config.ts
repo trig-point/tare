@@ -6,6 +6,8 @@ export interface GrocyConfig {
   url: string;
   apiKey: string;
   username: string;
+  /** Browser-facing Grocy address for the owner; never used for API calls. */
+  publicUrl?: string;
 }
 
 export function safeGrocyText(candidate: string, key: string | undefined) {
@@ -49,18 +51,47 @@ export function normalizeGrocyUrl(value: string) {
   return `${url.origin}/api`;
 }
 
+function parsePublicUrl(value: string) {
+  const url = URL.canParse(value) ? new URL(value) : null;
+  // The raw text is checked because URL drops a bare "?", "#" or "@".
+  if (
+    !url ||
+    /[?#]/.test(value) ||
+    /^[a-z]+:\/*[^/]*@/i.test(value) ||
+    !["http:", "https:"].includes(url.protocol) ||
+    url.username ||
+    url.password
+  )
+    throw new Error(
+      "TARE_GROCY_PUBLIC_URL must be an HTTP or HTTPS URL without credentials, query or fragment",
+    );
+  return url.href;
+}
+
 export function parseGrocyConfig(
   env: Record<string, string | undefined>,
 ): GrocyConfig | null {
   const url = env.TARE_GROCY_URL?.trim();
   const apiKey = env.TARE_GROCY_API_KEY?.trim();
   const username = env.TARE_GROCY_USERNAME?.trim();
-  if (!url && !apiKey && !username) return null;
+  if (!url && !apiKey && !username) {
+    if (env.TARE_GROCY_PUBLIC_URL?.trim())
+      throw new Error(
+        "TARE_GROCY_PUBLIC_URL requires the other Grocy settings",
+      );
+    return null;
+  }
   if (!url || !apiKey || !username)
     throw new Error(
       "TARE_GROCY_URL, TARE_GROCY_API_KEY and TARE_GROCY_USERNAME must be set together",
     );
-  return { url: normalizeGrocyUrl(url), apiKey, username };
+  const publicUrl = env.TARE_GROCY_PUBLIC_URL?.trim();
+  return {
+    url: normalizeGrocyUrl(url),
+    apiKey,
+    username,
+    ...(publicUrl ? { publicUrl: parsePublicUrl(publicUrl) } : {}),
+  };
 }
 
 export function resolveGrocyOwner(
