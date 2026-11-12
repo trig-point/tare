@@ -1,0 +1,75 @@
+services:
+  grocy:
+    ports: !override
+      - "${GROCY_BIND_ADDRESS:?Set GROCY_BIND_ADDRESS}:9283:8080"
+    configs:
+      - source: grocy-auth
+        target: /config/nginx/site-confs/default.conf
+
+configs:
+  grocy-auth:
+    content: |
+      map $$http_cf_access_authenticated_user_email $$access_user {
+          default "";
+          "${GROCY_OWNER_EMAIL:?Set GROCY_OWNER_EMAIL}" "${GROCY_OWNER_USERNAME:?Set GROCY_OWNER_USERNAME}";
+      }
+      map $$http_x_forward_auth_secret $$trusted_secret {
+          default 0;
+          "~^${GROCY_FORWARD_AUTH_SECRET:?Set a random 64-character hex secret}$$" 1;
+      }
+      map "${GROCY_FORWARD_AUTH_SECRET}" $$secret_valid {
+          default 0;
+          "~^[0-9a-f]{64}$$" 1;
+      }
+      map "$$secret_valid:$$trusted_secret:$$http_remote_user" $$grocy_user {
+          default "";
+          "1:1:${GROCY_OWNER_USERNAME}" "${GROCY_OWNER_USERNAME}";
+      }
+      map $$grocy_user $$grocy_auth_class {
+          default 'Grocy\\Middleware\\Auth\\DefaultAuthMiddleware';
+          "${GROCY_OWNER_USERNAME}" 'Grocy\\Middleware\\Auth\\ReverseProxyAuthMiddleware';
+      }
+
+      server {
+          listen 8080;
+          server_name _;
+          allow ${GROCY_TUNNEL_ADDRESS:?Set the connector source IP};
+          deny all;
+
+          location / {
+              if ($$access_user = "") { return 403; }
+              proxy_set_header Remote-User $$access_user;
+              proxy_set_header X-Forward-Auth-Secret "${GROCY_FORWARD_AUTH_SECRET}";
+              proxy_set_header Host $$host;
+              proxy_set_header X-Forwarded-Proto https;
+              proxy_pass http://127.0.0.1:80;
+          }
+          location = /login {
+              absolute_redirect off;
+              return 302 /stockoverview;
+          }
+      }
+
+      server {
+          listen 80 default_server;
+          server_name _;
+          root /app/www/public;
+          index index.php;
+
+          location / {
+              try_files $$uri $$uri/ /index.php$$is_args$$args;
+          }
+          location ~ ^(.+\.php)(.*)$$ {
+              fastcgi_split_path_info ^(.+\.php)(.*)$$;
+              if (!-f $$document_root$$fastcgi_script_name) { return 404; }
+              fastcgi_pass 127.0.0.1:9000;
+              include /etc/nginx/fastcgi_params;
+              fastcgi_param GROCY_AUTH_CLASS $$grocy_auth_class;
+              fastcgi_param GROCY_REVERSE_PROXY_AUTH_HEADER REMOTE_USER;
+              fastcgi_param GROCY_REVERSE_PROXY_AUTH_USE_ENV true;
+              fastcgi_param REMOTE_USER $$grocy_user;
+          }
+          location ~ /\.ht {
+              deny all;
+          }
+      }

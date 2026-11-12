@@ -37,6 +37,9 @@ services:
       TARE_MCP_ALLOWED_ORIGINS: ${TARE_MCP_ALLOWED_ORIGINS:-}
       TARE_USDA_API_KEY: ${TARE_USDA_API_KEY:-}
       TARE_OFF_USER_AGENT: ${TARE_OFF_USER_AGENT:-}
+      TARE_GROCY_URL: ${TARE_GROCY_URL:-}
+      TARE_GROCY_API_KEY: ${TARE_GROCY_API_KEY:-}
+      TARE_GROCY_USERNAME: ${TARE_GROCY_USERNAME:-}
       TARE_OURA_CLIENT_ID: ${TARE_OURA_CLIENT_ID:-}
       TARE_OURA_CLIENT_SECRET: ${TARE_OURA_CLIENT_SECRET:-}
       TARE_OURA_REDIRECT_URL: ${TARE_OURA_REDIRECT_URL:-}
@@ -60,6 +63,29 @@ services:
       retries: 3
     restart: unless-stopped
 
+  grocy:
+    profiles: [pantry]
+    image: linuxserver/grocy@sha256:e4e34a0a84f407b1bcd2c3b6cd1999bf99bcad1defa8847adea7dc82a9cd6b8c
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: ${TARE_TIMEZONE-UTC}
+      UMASK: "077"
+    volumes:
+      - grocy-config:/config
+    # Use compose.grocy-auth.example.yaml for Access identity forwarding.
+    # Only a proxy running directly on the host can use this mapping.
+    # ports:
+    #   - "127.0.0.1:9283:80"
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, --output, /dev/null, http://127.0.0.1:80/]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+    restart: unless-stopped
+
 volumes:
   tare-data:
   tare-backups:
+  grocy-config:
