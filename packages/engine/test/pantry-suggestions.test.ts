@@ -185,6 +185,28 @@ test("suggestion context combines owner candidates, budgets and caveats", async 
   const owner = await agent(harness, admin);
   assert.match(await owner(["pantry_suggestion_context"]), /plan_food/);
 
+  // The agent plans the suggested food; the person confirms it through the shared action.
+  const planned = await json(admin, "/api/plan/slot", {
+    position: 0,
+    food_id: bound.action.food_id,
+  });
+  const act = {
+    item_id: planned.body.item.id,
+    revision: planned.body.item.revision,
+    action: "ate_three_quarters",
+    mutation_id: "suggested",
+  };
+  const ate = await json(admin, "/api/plan/items/action", act);
+  const replayed = await json(admin, "/api/plan/items/action", act);
+  assert.deepEqual(
+    [planned.status, ate.body.stock.quantity, replayed.body.stock.request_id],
+    [201, 0.375, ate.body.stock.request_id],
+  );
+  assert.equal(
+    database.prepare("SELECT count(*) FROM pantry_requests").pluck().get(),
+    2,
+  );
+
   // A binding saved after Grocy's unit changed but before the next refresh.
   harness.bind("food", soup, 7, 3);
   const [mismatched] = (await read()).groceries;
