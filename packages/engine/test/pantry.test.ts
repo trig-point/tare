@@ -361,6 +361,13 @@ test("bindings validate, replace, track refresh status and clear on reset", asyn
   const failed = await service.refresh(admin.id);
   assert.equal(failed.error?.reason, "invalid_response");
   assert.equal(failed.bindings[0]?.status, "valid");
+  data.catalog = [{ id: 1, active: 1 }];
+  data.detail = {
+    product: { ...product, qu_id_stock: 5, enable_tare_weight_handling: 1 },
+    quantity_unit_stock: gram,
+  };
+  const tared = await service.refresh(admin.id);
+  assert.equal(tared.bindings[0]?.status, "tare_enabled");
   data.stock = [{ ...stockRow, product: { ...product, qu_id_stock: 5 } }];
   data.catalog = [{ id: 1, active: 0 }];
   const missing = await service.refresh(admin.id);
