@@ -1,5 +1,5 @@
 import type { Database } from "better-sqlite3";
-import { z } from "zod";
+import { z as zod } from "zod";
 import { numbersFrom, nutrientKeys } from "../logging/schemas.ts";
 import { mealNutritionState } from "../meal-nutrition/index.ts";
 import {
@@ -28,57 +28,66 @@ import {
   pantryReference,
 } from "./service.ts";
 
-const identifier = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
-const provenance = z.enum(["verified", "label", "estimated"]);
-const nutrition = <Basis extends z.ZodType>(basis: Basis) =>
-  z.strictObject({
-    numbers: z.strictObject(
+const identifier = zod.number().int().positive().max(Number.MAX_SAFE_INTEGER);
+const provenance = zod.enum(["verified", "label", "estimated"]);
+const nutrition = <Basis extends zod.ZodType>(basis: Basis) =>
+  zod.strictObject({
+    numbers: zod.strictObject(
       Object.fromEntries(
-        nutrientKeys.map((key) => [key, z.number().finite().nullable()]),
-      ) as Record<(typeof nutrientKeys)[number], z.ZodNullable<z.ZodNumber>>,
+        nutrientKeys.map((key) => [key, zod.number().finite().nullable()]),
+      ) as Record<
+        (typeof nutrientKeys)[number],
+        zod.ZodNullable<zod.ZodNumber>
+      >,
     ),
     basis,
-    source: z.string().nullable(),
+    source: zod.string().nullable(),
     provenance: provenance.nullable(),
   });
-const grocery = z.strictObject({
+const grocery = zod.strictObject({
   reference: pantryReference,
-  reference_name: z.string().nullable(),
+  reference_name: zod.string().nullable(),
   product_id: identifier,
-  product_name: z.string().nullable(),
+  product_name: zod.string().nullable(),
   stock_unit_id: identifier,
   stock_unit: pantryProduct.shape.stock_unit.nullable(),
-  quantity_per_serving: z.number().positive().finite(),
+  quantity_per_serving: zod.number().positive().finite(),
   binding_status: bindingStatus,
-  nutrition: nutrition(z.strictObject({ servings: z.literal(1) })),
+  nutrition: nutrition(zod.strictObject({ servings: zod.literal(1) })),
   availability: availabilitySchema,
-  action: z
+  action: zod
     .union([
-      z.strictObject({ kind: z.literal("plan_food"), food_id: identifier }),
-      z.strictObject({
-        kind: z.literal("log_source_food"),
+      zod.strictObject({ kind: zod.literal("plan_food"), food_id: identifier }),
+      zod.strictObject({
+        kind: zod.literal("log_source_food"),
         source_food_id: identifier,
       }),
     ])
     .nullable(),
 });
-const meal = z.strictObject({
+const meal = zod.strictObject({
   id: identifier,
   order_id: identifier,
-  name: z.string(),
-  chef: z.string().nullable(),
-  quantity: z.number().int().positive(),
-  revision: z.number().int(),
-  delivery_date: z.string(),
-  delivered_at: z.string().nullable(),
-  service: z.string(),
-  nutrition_state: z.union([
-    z.strictObject({ status: z.literal("known"), food_id: identifier }),
-    z.strictObject({ status: z.literal("pending"), question_id: identifier }),
-    z.strictObject({ status: z.literal("unknown") }),
+  name: zod.string(),
+  chef: zod.string().nullable(),
+  quantity: zod.number().int().positive(),
+  revision: zod.number().int(),
+  delivery_date: zod.string(),
+  delivered_at: zod.string().nullable(),
+  service: zod.string(),
+  nutrition_state: zod.union([
+    zod.strictObject({ status: zod.literal("known"), food_id: identifier }),
+    zod.strictObject({
+      status: zod.literal("pending"),
+      question_id: identifier,
+    }),
+    zod.strictObject({ status: zod.literal("unknown") }),
   ]),
-  nutrition: nutrition(z.strictObject({ meals: z.literal(1) })),
-  action: z.strictObject({ kind: z.literal("plan_meal"), meal_id: identifier }),
+  nutrition: nutrition(zod.strictObject({ meals: zod.literal(1) })),
+  action: zod.strictObject({
+    kind: zod.literal("plan_meal"),
+    meal_id: identifier,
+  }),
 });
 const metadata = pantryOutput.pick({
   state: true,
@@ -88,17 +97,17 @@ const metadata = pantryOutput.pick({
   stale: true,
   error: true,
 });
-export const suggestionOutput = z.strictObject({
+export const suggestionOutput = zod.strictObject({
   state: metadata.shape.state,
   pantry: metadata,
   plan: planSchema.nullable(),
-  groceries: z.array(grocery),
-  unbound_stock: z.array(pantryProduct),
-  meals: z.array(meal),
+  groceries: zod.array(grocery),
+  unbound_stock: zod.array(pantryProduct),
+  meals: zod.array(meal),
   recipes: pantryRecipesOutput,
-  ingredient_deduction_automatic: z.literal(false),
+  ingredient_deduction_automatic: zod.literal(false),
 });
-type Snapshot = z.infer<typeof pantryOutput>;
+type Snapshot = zod.infer<typeof pantryOutput>;
 const meta = ({
   products: _products,
   bindings: _bindings,
@@ -281,7 +290,7 @@ export const pantrySuggestionContext = defineOperation({
   modes: ["access", "fallback"],
   callerClass: "browser_and_agent",
   admin: false,
-  input: z.strictObject({}),
+  input: zod.strictObject({}),
   output: suggestionOutput,
   async handler(_input, context) {
     return { status: 200, body: await suggestionContext(context) };
