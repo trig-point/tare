@@ -3,6 +3,7 @@ import type { TestContext } from "node:test";
 import { openDatabase, writeTransaction } from "../src/db.ts";
 import { insertIntake } from "../src/logging/intake.ts";
 import { OperationError } from "../src/operations/registry.ts";
+import { stockRequests } from "../src/pantry/availability.ts";
 import { createReconciliation } from "../src/pantry/reconcile.ts";
 import * as requests from "../src/pantry/requests.ts";
 import { createPantryService } from "../src/pantry/service.ts";
@@ -86,6 +87,7 @@ function setup(context: TestContext, holds = () => false) {
   return {
     database,
     clock,
+    owner,
     member,
     effects,
     state,
@@ -282,6 +284,15 @@ test("decisions follow state, reset and predecessor rules, and only the active c
     [pending, 0, "abandoned", "abandoned"],
   ];
   const before = rest.outcomes(beforeReset);
+  // A manual delivery is timed by its decision, so a fetch after that drops it from the list.
+  const delivered = (fetchStartedAt: string) =>
+    stockRequests(database, rest.owner, 1, fetchStartedAt)
+      .filter((request) => request.state === "delivered")
+      .map((request) => request.confirmed_at);
+  assert.deepEqual(
+    [delivered(start), delivered("2026-01-01T00:00:00.001Z")],
+    [[start], []],
+  );
   database.exec("UPDATE pantry_connection SET reset_required = 1");
   assert.deepEqual(
     [before, rest.outcomes(afterReset), effects, rest.list().state],
