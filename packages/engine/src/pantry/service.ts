@@ -383,9 +383,11 @@ export function createPantryService({
     const { generation } = connection();
     if (!referenced(database, userId, input))
       throw new OperationError(404, "food_not_found");
+    const catalog = await client.recipes(owner);
+    ensure(generation);
     let desiredServings: number | null | undefined;
     try {
-      desiredServings = ok(await client.recipes(owner)).find(
+      desiredServings = ok(catalog).find(
         (recipe) => recipe.id === input.recipe_id && recipe.type === "normal",
       )?.desired_servings;
     } catch {
