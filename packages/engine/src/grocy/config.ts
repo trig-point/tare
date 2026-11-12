@@ -15,7 +15,12 @@ export function safeGrocyText(candidate: string, key: string | undefined) {
 }
 
 export function normalizeGrocyUrl(value: string) {
-  const url = new URL(value);
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error("TARE_GROCY_URL must be an HTTP or HTTPS root or /api URL");
+  }
   if (
     !/^https?:\/\/[^/?#\\]+(?:\/api)?\/?$/i.test(value) ||
     url.username ||
@@ -37,7 +42,7 @@ export function normalizeGrocyUrl(value: string) {
         (octets[0] === 192 && octets[1] === 168) ||
         (octets[0] === 169 && octets[1] === 254)
       : isIP(host) === 6
-        ? host === "::1" || /^(fc|fd|fe[89ab])/i.test(host)
+        ? host === "::1" || /^(f[cd][0-9a-f]{2}|fe[89ab][0-9a-f]):/i.test(host)
         : /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(host);
   if (url.protocol !== "https:" && !privateHost)
     throw new Error("TARE_GROCY_URL requires HTTPS outside private hosts");

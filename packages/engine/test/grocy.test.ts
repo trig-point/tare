@@ -8,7 +8,11 @@ import {
   reportStartupError,
 } from "../src/config.ts";
 import { openDatabase } from "../src/db.ts";
-import { createGrocyClient, grocyStockSchema } from "../src/grocy/client.ts";
+import {
+  createGrocyClient,
+  grocyStockSchema,
+  type grocyUnitSchema,
+} from "../src/grocy/client.ts";
 import { normalizeGrocyUrl, resolveGrocyOwner } from "../src/grocy/config.ts";
 import { test } from "./support/hang-ceiling.ts";
 
@@ -39,6 +43,7 @@ const stockRow: z.input<typeof grocyStockSchema>[number] = {
 test("Grocy config is optional, normalized, owner-scoped and safe at startup", () => {
   assert.equal(loadConfig({ DATABASE_URL: ":memory:" }).grocy, null);
   assert.equal(config?.url, "http://grocy/api");
+  assert.throws(() => normalizeGrocyUrl("grocy"), /TARE_GROCY_URL/);
   for (const field of [
     "TARE_GROCY_URL",
     "TARE_GROCY_API_KEY",
@@ -54,6 +59,11 @@ test("Grocy config is optional, normalized, owner-scoped and safe at startup", (
     "https://user:pass@grocy",
     "https://grocy/api%2f",
     "https://grocy\\api",
+    "http://[fc::1]",
+    "http://[fd1::1]",
+    "http://[fe8::1]",
+    "http://134744072/",
+    "http://0x08080808/",
   ])
     assert.throws(() => normalizeGrocyUrl(url));
   for (const host of [
@@ -135,6 +145,18 @@ test("Grocy reads validate whole responses and preserve native numeric and barco
   ];
   const stock = await client.stock(1);
   assert.equal(stock?.status === "ok" && stock.value[0]?.amount, 2.5);
+  const nullableUnit: z.input<typeof grocyUnitSchema> = {
+    id: 6,
+    name: "Synthetic measure",
+    name_plural: null,
+  };
+  response = [nullableUnit];
+  assert.deepEqual(await client.units(1), { status: "ok", value: response });
+  response = {
+    product: { ...stockRow.product, qu_id_stock: 6 },
+    quantity_unit_stock: nullableUnit,
+  };
+  assert.equal((await client.product(1, 1))?.status, "ok");
   response = {};
   assert.equal((await client.product(1, 1))?.status, "failed");
   response = new Response("", { status: 401 });
@@ -227,6 +249,7 @@ test("Grocy consumes classify HTTP, lost response and bounded body outcomes with
   for (const [next, expected] of [
     ["success", "confirmed"],
     ["400", "rejected"],
+    ["421", "rejected"],
     ["401", "uncertain"],
     ["403", "rejected"],
     ["404", "rejected"],
@@ -246,6 +269,10 @@ test("Grocy consumes classify HTTP, lost response and bounded body outcomes with
     const before = posts.length;
     const result = await client.consume(1, 1, 0.25);
     assert.equal(result?.status, expected, mode);
+    if (mode === "cancel") {
+      assert.ok(result && "reason" in result);
+      assert.equal(result.reason, "transport");
+    }
     assert.equal(posts.length, before + 1);
     assert.deepEqual(posts.at(-1), {
       amount: 0.25,

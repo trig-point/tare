@@ -23,7 +23,7 @@ export const grocyProductSchema = z.object({
 export const grocyUnitSchema = z.object({
   id: identifier,
   name: z.string().min(1),
-  name_plural: z.string(),
+  name_plural: z.string().nullable(),
 });
 export const grocyStockSchema = z.array(
   z.object({
@@ -131,7 +131,7 @@ export function createGrocyClient({
       controller.abort();
     }, 30_000);
     try {
-      const init: RequestInit = {
+      const init: RequestInit & { duplex?: "half" } = {
         method: consume ? "POST" : "GET",
         headers: {
           "GROCY-API-KEY": config.apiKey,
@@ -141,11 +141,22 @@ export function createGrocyClient({
         signal: controller.signal,
         ...(consume
           ? {
-              body: JSON.stringify({
-                amount,
-                transaction_type: "consume",
-                exact_amount: true,
-                allow_subproduct_substitution: false,
+              duplex: "half",
+              // A stream prevents Node fetch from replaying consume after HTTP 421.
+              body: new ReadableStream<Uint8Array>({
+                start(controller) {
+                  controller.enqueue(
+                    new TextEncoder().encode(
+                      JSON.stringify({
+                        amount,
+                        transaction_type: "consume",
+                        exact_amount: true,
+                        allow_subproduct_substitution: false,
+                      }),
+                    ),
+                  );
+                  controller.close();
+                },
               }),
             }
           : {}),
@@ -153,7 +164,7 @@ export function createGrocyClient({
       dispatched = true;
       const response = await fetchRequest(`${config.url}${path}`, init);
       const httpStatus = response.status;
-      reason =
+      const httpReason =
         httpStatus === 401 || httpStatus === 403
           ? "unauthorized"
           : httpStatus === 404
@@ -163,7 +174,7 @@ export function createGrocyClient({
       if (!reader)
         return failure(
           consume ? "uncertain" : "failed",
-          response.ok ? "invalid_response" : reason,
+          response.ok ? "invalid_response" : httpReason,
           httpStatus,
         );
       const chunks: Uint8Array[] = [];
@@ -194,7 +205,7 @@ export function createGrocyClient({
       } catch {
         return failure(
           consume ? "uncertain" : "failed",
-          response.ok ? "invalid_response" : reason,
+          response.ok ? "invalid_response" : httpReason,
           httpStatus,
         );
       }
@@ -205,7 +216,7 @@ export function createGrocyClient({
           grocyErrorSchema.safeParse(body).success;
         return failure(
           consume ? (rejected ? "rejected" : "uncertain") : "failed",
-          reason,
+          httpReason,
           httpStatus,
         );
       }
