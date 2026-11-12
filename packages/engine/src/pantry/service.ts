@@ -264,7 +264,10 @@ export function createPantryService({
     const started = clock.now().toISOString();
     const products: Product[] = [];
     const bindings = listBindings(database, { user_id: owner, generation });
-    const statuses: [(typeof bindings)[number], string][] = [];
+    const statuses: [
+      (typeof bindings)[number],
+      z.infer<typeof bindingStatus>,
+    ][] = [];
     let error: PantryError | null = null;
     try {
       if (!current(generation)) return;

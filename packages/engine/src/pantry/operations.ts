@@ -89,6 +89,7 @@ const operations: {
     name: "delete_pantry_binding",
     method: "DELETE",
     path: "/api/pantry/bindings/:reference_kind/:reference_id",
+    description: "Remove a food's pantry binding.",
     input: pantryReference.extend({
       reference_id: zod.coerce
         .number()
