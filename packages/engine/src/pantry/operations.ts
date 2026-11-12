@@ -17,6 +17,7 @@ import {
   pantryRecipesOutput,
   pantryReference,
 } from "./service.ts";
+import { pantrySuggestionContext } from "./suggestions.ts";
 
 const disabled = {
   state: "disabled",
@@ -151,33 +152,36 @@ const operations: {
   },
 ];
 
-export const pantryOperations = operations.map((operation) =>
-  defineOperation({
-    name: operation.name,
-    ...(operation.description ? { description: operation.description } : {}),
-    method: operation.method,
-    path: operation.path,
-    modes: ["access", "fallback"],
-    callerClass: "browser_and_agent",
-    admin: false,
-    ...(operation.method === "POST" ? { bodyLimit: 1024 } : {}),
-    input: operation.input,
-    output: operation.output,
-    async handler(input, context) {
-      const userId = operationPerson(context).id;
-      const service = context.pantry;
-      if (!service) {
-        if (context.config.grocy || operation.disabled === undefined)
-          throw new OperationError(
-            503,
-            context.config.grocy ? "pantry_unavailable" : "pantry_disabled",
-          );
-        return { status: 200, body: operation.disabled };
-      }
-      return {
-        status: 200,
-        body: await operation.run(service, userId, input as never),
-      };
-    },
-  }),
-);
+export const pantryOperations = [
+  ...operations.map((operation) =>
+    defineOperation({
+      name: operation.name,
+      ...(operation.description ? { description: operation.description } : {}),
+      method: operation.method,
+      path: operation.path,
+      modes: ["access", "fallback"],
+      callerClass: "browser_and_agent",
+      admin: false,
+      ...(operation.method === "POST" ? { bodyLimit: 1024 } : {}),
+      input: operation.input,
+      output: operation.output,
+      async handler(input, context) {
+        const userId = operationPerson(context).id;
+        const service = context.pantry;
+        if (!service) {
+          if (context.config.grocy || operation.disabled === undefined)
+            throw new OperationError(
+              503,
+              context.config.grocy ? "pantry_unavailable" : "pantry_disabled",
+            );
+          return { status: 200, body: operation.disabled };
+        }
+        return {
+          status: 200,
+          body: await operation.run(service, userId, input as never),
+        };
+      },
+    }),
+  ),
+  pantrySuggestionContext,
+];
