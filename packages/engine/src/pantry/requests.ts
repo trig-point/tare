@@ -233,7 +233,7 @@ export function claimRequest(
   });
 }
 
-/** Rejects a still-pending request after a pre-send read proved it ineligible, under a new local record number; false when anything moved first. */
+/** Rejects a still-pending request after a pre-send read proved it ineligible, under a new local record number; returns false if the state changed first. */
 export function rejectRequest(
   database: Database,
   request: RequestKey,

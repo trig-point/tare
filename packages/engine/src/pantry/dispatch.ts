@@ -47,7 +47,7 @@ export function createPantryDispatcher({
   let sweeping: Promise<boolean> | undefined;
   let again = false;
   const tracked = new Set<Promise<unknown>>();
-  // Claims this process may still be sending; a stored token alone is not live ownership.
+  // Claims this process may still be sending; a stored token alone does not prove live ownership.
   const live = new Set<string>();
   let failures = 0;
   // Failures that leave work undone; the scheduled job must not record them as ok.

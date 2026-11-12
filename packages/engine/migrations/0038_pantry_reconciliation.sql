@@ -24,7 +24,7 @@ SELECT request_id, number, 'network', token, outcome, reason, http_status, recei
 DROP TABLE pantry_attempts;
 ALTER TABLE pantry_attempts_replacement RENAME TO pantry_attempts;
 
--- Uncertain rows without uncertain_since get a recovery record at the next startup, never a guessed time.
+-- Uncertain rows without uncertain_since get a recovery record at the next startup instead of a guessed time.
 ALTER TABLE pantry_requests ADD COLUMN uncertain_since TEXT;
 ALTER TABLE pantry_requests ADD COLUMN updated_at TEXT;
 ALTER TABLE pantry_requests ADD COLUMN resolved_at TEXT;
