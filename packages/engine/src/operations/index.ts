@@ -3,6 +3,7 @@ import { authOperations } from "../auth/routes.ts";
 import { calendarOperations } from "../calendar/operations.ts";
 import { dayReadOperations } from "../days/operations.ts";
 import { daySignOffOperations } from "../days/sign-off.ts";
+import { foodOperations } from "../foods/create.ts";
 import { inboundTokenOperations } from "../inbound/tokens.ts";
 import { loggingOperations } from "../logging/operations.ts";
 import { lookupOperations } from "../lookup/operations.ts";
@@ -35,6 +36,7 @@ export const operations: Operation[] = [
   ...profileOperations,
   ...targetNoticeOperations,
   ...regularMealOperations,
+  ...foodOperations,
   ...planOperations,
   ...pantryOperations,
 ];
