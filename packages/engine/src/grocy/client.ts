@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { GrocyConfig } from "./config.ts";
 
-const decimal = z
+export const decimal = z
   .union([
     z.number(),
     z
@@ -11,8 +11,8 @@ const decimal = z
       .transform(Number),
   ])
   .pipe(z.number().finite());
-const identifier = decimal.pipe(z.number().int().positive());
-const flag = decimal.pipe(z.union([z.literal(0), z.literal(1)]));
+export const identifier = decimal.pipe(z.number().int().positive());
+export const flag = decimal.pipe(z.union([z.literal(0), z.literal(1)]));
 export const grocyProductSchema = z.object({
   id: identifier,
   name: z.string().min(1),
@@ -120,7 +120,8 @@ type Reason =
   | "invalid_response"
   | "transport"
   | "timeout"
-  | "too_large";
+  | "too_large"
+  | "unsupported_version";
 export type GrocyFailure = {
   status: "failed" | "not_sent" | "rejected" | "uncertain";
   reason: Reason;
@@ -129,16 +130,19 @@ export type GrocyFailure = {
 export type GrocyResult<Value> =
   | { status: "ok" | "confirmed"; value: Value }
   | GrocyFailure;
-
-export function createGrocyClient({
-  config,
-  ownerId,
-  fetch: fetchRequest = globalThis.fetch,
-}: {
+export type GrocyDependencies = {
   config: GrocyConfig | null;
   ownerId: number | null;
   fetch?: typeof globalThis.fetch;
-}) {
+};
+/** A POST body sent once; HTTP 400 with a refused message is a proven pre-write refusal. */
+export type GrocyWrite = { body: unknown; refused: ReadonlySet<string> };
+
+export function createGrocyTransport({
+  config,
+  ownerId,
+  fetch: fetchRequest = globalThis.fetch,
+}: GrocyDependencies) {
   function failure(
     status: GrocyFailure["status"],
     reason: Reason,
@@ -157,15 +161,15 @@ export function createGrocyClient({
       : fallback;
   }
 
-  async function request<Schema extends z.ZodType>(
+  return async function request<Schema extends z.ZodType>(
     userId: number,
     path: string,
     schema: Schema,
     valid = true,
-    amount?: number,
-    consume = false,
+    write?: GrocyWrite,
   ): Promise<GrocyResult<z.output<Schema>> | undefined> {
-    const before = consume ? "not_sent" : "failed";
+    const before = write ? "not_sent" : "failed";
+    const after = write ? "uncertain" : "failed";
     if (!config) return failure(before, "disabled");
     if (ownerId === null || userId !== ownerId)
       return failure(before, "not_owner");
@@ -179,28 +183,21 @@ export function createGrocyClient({
     }, 30_000);
     try {
       const init: RequestInit & { duplex?: "half" } = {
-        method: consume ? "POST" : "GET",
+        method: write ? "POST" : "GET",
         headers: {
           "GROCY-API-KEY": config.apiKey,
           "Content-Type": "application/json",
         },
         redirect: "manual",
         signal: controller.signal,
-        ...(consume
+        ...(write
           ? {
               duplex: "half",
-              // A stream prevents Node fetch from replaying consume after HTTP 421.
+              // A stream prevents Node fetch from replaying a write after HTTP 421.
               body: new ReadableStream<Uint8Array>({
                 start(controller) {
                   controller.enqueue(
-                    new TextEncoder().encode(
-                      JSON.stringify({
-                        amount,
-                        transaction_type: "consume",
-                        exact_amount: true,
-                        allow_subproduct_substitution: false,
-                      }),
-                    ),
+                    new TextEncoder().encode(JSON.stringify(write.body)),
                   );
                   controller.close();
                 },
@@ -220,7 +217,7 @@ export function createGrocyClient({
       const reader = response.body?.getReader();
       if (!reader)
         return failure(
-          consume ? "uncertain" : "failed",
+          after,
           response.ok ? "invalid_response" : httpReason,
           httpStatus,
         );
@@ -235,11 +232,7 @@ export function createGrocyClient({
             reason = "too_large";
             controller.abort();
             await reader.cancel();
-            return failure(
-              consume ? "uncertain" : "failed",
-              reason,
-              httpStatus,
-            );
+            return failure(after, reason, httpStatus);
           }
           chunks.push(chunk.value);
         }
@@ -251,7 +244,7 @@ export function createGrocyClient({
         body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
       } catch {
         return failure(
-          consume ? "uncertain" : "failed",
+          after,
           response.ok ? "invalid_response" : httpReason,
           httpStatus,
         );
@@ -261,31 +254,27 @@ export function createGrocyClient({
         const rejected =
           httpStatus === 400 &&
           error.success &&
-          refusedConsumeMessages.has(error.data.error_message);
-        return failure(
-          consume ? (rejected ? "rejected" : "uncertain") : "failed",
-          httpReason,
-          httpStatus,
-        );
+          write?.refused.has(error.data.error_message);
+        return failure(rejected ? "rejected" : after, httpReason, httpStatus);
       }
       const parsed = schema.safeParse(body);
       return parsed.success
-        ? { status: consume ? "confirmed" : "ok", value: parsed.data }
-        : failure(
-            consume ? "uncertain" : "failed",
-            "invalid_response",
-            httpStatus,
-          );
+        ? { status: write ? "confirmed" : "ok", value: parsed.data }
+        : failure(after, "invalid_response", httpStatus);
     } catch {
       controller.abort();
       return failure(
-        consume ? (dispatched ? "uncertain" : "not_sent") : "failed",
+        write ? (dispatched ? "uncertain" : "not_sent") : "failed",
         reason,
       );
     } finally {
       clearTimeout(timer);
     }
-  }
+  };
+}
+
+export function createGrocyClient(dependencies: GrocyDependencies) {
+  const request = createGrocyTransport(dependencies);
   const productIdValid = (productId: number) =>
     Number.isSafeInteger(productId) && productId > 0;
   return {
@@ -353,8 +342,15 @@ export function createGrocyClient({
           );
         }),
         productIdValid(productId) && Number.isFinite(amount) && amount > 0,
-        amount,
-        true,
+        {
+          body: {
+            amount,
+            transaction_type: "consume",
+            exact_amount: true,
+            allow_subproduct_substitution: false,
+          },
+          refused: refusedConsumeMessages,
+        },
       ),
   };
 }

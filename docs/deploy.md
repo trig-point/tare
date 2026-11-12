@@ -352,3 +352,18 @@ docker compose -p grocy-restore-check -f compose.example.yaml -f compose.restore
 This retains the scratch volume. Once the restore evidence is saved, remove only that project's
 identified scratch volume. Never remove the live volume. To roll back deployment changes, stop
 Grocy and restore the prior Compose configuration while retaining both services' data and backups.
+
+### Grocy provisioning smoke
+
+`packages/engine/scripts/grocy-provisioning-smoke.mts` checks the Grocy write calls Tare uses to
+create units, locations, products and barcodes and to add stock. It writes made-up data, deletes
+every unit and location, and undoes a purchase, so run it only against a new
+throwaway Grocy 4.7.1 container published on a loopback port, never the pantry install:
+
+```sh
+TARE_GROCY_SMOKE_DISPOSABLE=yes TARE_GROCY_SMOKE_URL=http://127.0.0.1:19288/api \
+  TARE_GROCY_SMOKE_API_KEY=<throwaway key> node packages/engine/scripts/grocy-provisioning-smoke.mts
+```
+
+It refuses a Grocy that already has products or stock history and prints one JSON document
+with every request and response and a pass or fail entry per check. Rerun it before raising the supported Grocy version.
