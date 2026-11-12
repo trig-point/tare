@@ -157,6 +157,27 @@ test("plan_slot rechecks a bound food against the fetch start without reserving 
   const empty = await plan({ position: 1, food_id: oats });
   const { raw, shortfall, reasons } = empty.body.pantry;
   assert.deepEqual([raw, shortfall, reasons], [0, 0.5, ["short"]]);
+  // An unresolved request in an older unit is still unresolved.
+  database
+    .prepare(
+      "UPDATE pantry_requests SET product_id = 8, stock_unit_id = 3, reference_id = ? WHERE id = ?",
+    )
+    .run(oats, harness.request(soup, "uncertain", 1));
+  const { id: oatsItem, revision: oatsRevision } = empty.body.item;
+  const resent = await plan({
+    position: 1,
+    food_id: oats,
+    item_id: oatsItem,
+    revision: oatsRevision,
+  });
+  assert.deepEqual(
+    [
+      resent.body.pantry.state_amounts.uncertain,
+      resent.body.pantry.unit_mismatch,
+      resent.body.pantry.reasons,
+    ],
+    [null, true, ["unknown", "uncertain"]],
+  );
 
   // A binding saved after Grocy's unit changed but before the next refresh.
   const rice = Number(
@@ -214,7 +235,7 @@ test("plan_slot rechecks a bound food against the fetch start without reserving 
   assert.equal(replayed.body.stock.request_id, ate.body.stock.request_id);
   assert.equal(
     database.prepare("SELECT count(*) FROM pantry_requests").pluck().get(),
-    7,
+    8,
   );
 
   harness.egress.apiKey = "Synthetic rice";

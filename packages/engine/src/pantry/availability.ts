@@ -173,39 +173,30 @@ export function assessAvailability(
   let requestMismatch = false;
   for (const request of requests) {
     if (request.product_id !== binding.product_id) continue;
-    const affected: Bucket[] =
-      request.state === "sending"
-        ? ["sending_after", "sending_before_or_equal"]
-        : request.state === "delivered"
-          ? ["delivered_after_or_equal"]
-          : [request.state as Bucket];
-    if (request.stock_unit_id !== comparable) {
-      for (const bucket of affected) amounts[bucket] = null;
-      if (request.state !== "rejected") requestMismatch = true;
-      continue;
-    }
-    if (request.state === "pending" || request.state === "rejected")
-      add(request.state, request.quantity);
-    else if (request.state === "uncertain") {
-      add("uncertain", request.quantity);
-      uncertain = true;
-    } else {
+    let bucket: Bucket | null = null;
+    if (request.state === "sending" || request.state === "delivered") {
       const time = instant(
         request.state === "sending" ? request.sent_at : request.confirmed_at,
       );
       if (time === null || fetch === null) {
-        for (const bucket of affected) amounts[bucket] = null;
         timingUnknown = true;
-      } else if (request.state === "sending") {
-        add(
-          time > fetch ? "sending_after" : "sending_before_or_equal",
-          request.quantity,
-        );
-        uncertain ||= time <= fetch;
-      } else if (time >= fetch) {
-        add("delivered_after_or_equal", request.quantity);
-        uncertain = true;
-      }
+        if (request.state === "sending")
+          amounts.sending_after = amounts.sending_before_or_equal = null;
+        else amounts.delivered_after_or_equal = null;
+      } else if (request.state === "sending")
+        bucket = time > fetch ? "sending_after" : "sending_before_or_equal";
+      else if (time >= fetch) bucket = "delivered_after_or_equal";
+    } else bucket = request.state as Bucket;
+    // Timing and state uncertainty hold whatever unit the request was frozen in.
+    uncertain ||=
+      bucket === "uncertain" ||
+      bucket === "sending_before_or_equal" ||
+      bucket === "delivered_after_or_equal";
+    if (bucket === null) continue;
+    if (request.stock_unit_id === comparable) add(bucket, request.quantity);
+    else {
+      amounts[bucket] = null;
+      requestMismatch ||= bucket !== "rejected";
     }
   }
   for (const bucket of buckets) amounts[bucket] = finite(amounts[bucket]);
