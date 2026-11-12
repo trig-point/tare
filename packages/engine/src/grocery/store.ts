@@ -6,17 +6,25 @@ import type { GrocyResult } from "../grocy/client.ts";
 import type { PurchaseReceipt } from "../grocy/grocery.ts";
 import { nutrientKeys } from "../logging/schemas.ts";
 import { OperationError } from "../operations/registry.ts";
+import { abandonRequest } from "../queries/grocery/abandon-request.ts";
+import { abandonSteps } from "../queries/grocery/abandon-steps.ts";
+import { adoptStep } from "../queries/grocery/adopt-step.ts";
 import { claimStep } from "../queries/grocery/claim-step.ts";
 import { countOpen } from "../queries/grocery/count-open.ts";
 import { finalizeStep } from "../queries/grocery/finalize-step.ts";
+import { insertBindingAbsent } from "../queries/grocery/insert-binding-absent.ts";
+import { insertDecision } from "../queries/grocery/insert-decision.ts";
 import { insertRequest } from "../queries/grocery/insert-request.ts";
 import { insertStep } from "../queries/grocery/insert-step.ts";
 import { listOpen } from "../queries/grocery/list-open.ts";
 import { listSteps } from "../queries/grocery/list-steps.ts";
+import { readBindingToken } from "../queries/grocery/read-binding-token.ts";
+import { readDecision } from "../queries/grocery/read-decision.ts";
 import { readNonce } from "../queries/grocery/read-nonce.ts";
 import { readRequest } from "../queries/grocery/read-request.ts";
 import { readRequestById } from "../queries/grocery/read-request-by-id.ts";
 import { recoverSteps } from "../queries/grocery/recover-steps.ts";
+import { replaceBinding } from "../queries/grocery/replace-binding.ts";
 import { reserveTransaction } from "../queries/grocery/reserve-transaction.ts";
 import { rotateNonce } from "../queries/grocery/rotate-nonce.ts";
 import { setRequestState } from "../queries/grocery/set-request-state.ts";
@@ -284,6 +292,239 @@ export function finalizeGroceryStep(
     throw caught;
   }
 }
+
+/** Replays a recorded decision before any state check; otherwise runs `act` and records it. */
+function decide(
+  database: Database,
+  decision: {
+    userId: number;
+    mutationId: string;
+    requestId: number;
+    stepNumber: number | null;
+    kind: "adopt" | "abandon" | "bind";
+    input: unknown;
+  },
+  clock: Clock,
+  act: (database: Database, request: GroceryRequest, now: string) => string,
+) {
+  const key = {
+    user_id: decision.userId,
+    mutation_id: decision.mutationId.toLowerCase(),
+  };
+  const decisionHash = sha256([
+    decision.kind,
+    decision.requestId,
+    decision.stepNumber,
+    decision.input,
+  ]);
+  return writeTransaction(database, (scope) => {
+    const database = scopeDatabase(scope);
+    const prior = readDecision(database, key);
+    if (prior) {
+      if (prior.decision_hash !== decisionHash)
+        throw new OperationError(409, "decision_conflict");
+      return { state: prior.resulting_state, replayed: true };
+    }
+    const request = readRequestById(database, { id: decision.requestId });
+    if (!request) throw new OperationError(404, "grocery_not_found");
+    const now = clock.now().toISOString();
+    const state = act(database, request, now);
+    insertDecision(database, {
+      ...key,
+      decision_hash: decisionHash,
+      request_id: request.id,
+      step_number: decision.stepNumber,
+      decision: decision.kind,
+      resulting_state: state,
+      created_at: now,
+    });
+    return { state, replayed: false };
+  });
+}
+
+function requireOwner(
+  ownerId: number | null,
+  userId: number,
+  request?: GroceryRequest,
+) {
+  if (userId !== ownerId || (request && request.user_id !== userId))
+    throw new OperationError(403, "forbidden");
+}
+
+/**
+ * Accepts a caller-verified object id or purchase transaction for an uncertain step. Needs the
+ * current restore nonce and the request's original connection and generation.
+ */
+export function adoptGroceryStep(
+  database: Database,
+  input: {
+    ownerId: number | null;
+    userId: number;
+    mutationId: string;
+    requestId: number;
+    number: number;
+    restoreNonce: string;
+    proof: { object_id: number } | { transaction_id: string };
+  },
+  clock: Clock,
+) {
+  return decide(
+    database,
+    {
+      userId: input.userId,
+      mutationId: input.mutationId,
+      requestId: input.requestId,
+      stepNumber: input.number,
+      kind: "adopt",
+      input: input.proof,
+    },
+    clock,
+    (database, request, now) => {
+      requireOwner(input.ownerId, input.userId, request);
+      if (!live(database, request, input.restoreNonce))
+        throw new OperationError(409, "grocery_connection_changed");
+      const transactionId =
+        "transaction_id" in input.proof ? input.proof.transaction_id : null;
+      if (
+        transactionId !== null &&
+        !reserveTransaction(database, {
+          transaction_id: transactionId,
+          request_id: request.id,
+          step_number: input.number,
+        })
+      )
+        throw new OperationError(409, "grocery_transaction_reserved");
+      const [adopted] = adoptStep(
+        database,
+        {
+          object_id: "object_id" in input.proof ? input.proof.object_id : null,
+          transaction_id: transactionId,
+          now,
+        },
+        { request_id: request.id, number: input.number },
+      );
+      if (
+        !adopted ||
+        (adopted.kind === "stock_add") !== (transactionId !== null)
+      )
+        throw new OperationError(409, "grocery_step_not_uncertain");
+      if (transactionId === null) return request.state;
+      setRequestState(
+        database,
+        { state: "binding_pending", now },
+        { id: request.id, expected_state: "open" },
+      );
+      return "binding_pending";
+    },
+  );
+}
+
+/**
+ * Stops local work with no external write; works while reset is required and on a previous
+ * owner's request, but only for the configured owner and never while a step is sending.
+ */
+export function abandonGrocery(
+  database: Database,
+  input: {
+    ownerId: number | null;
+    userId: number;
+    mutationId: string;
+    requestId: number;
+  },
+  clock: Clock,
+) {
+  return decide(
+    database,
+    { ...input, stepNumber: null, kind: "abandon", input: null },
+    clock,
+    (database, request, now) => {
+      requireOwner(input.ownerId, input.userId);
+      if (!abandonRequest(database, { now }, { id: request.id }).length)
+        throw new OperationError(409, "grocery_not_abandonable");
+      abandonSteps(database, { now }, { request_id: request.id });
+      return "abandoned";
+    },
+  );
+}
+
+/**
+ * Binds the request's food to its purchased product only if the binding is still what the
+ * caller saw (absent, or the same token and status) and the food is unchanged.
+ */
+export function bindGrocery(
+  database: Database,
+  input: {
+    ownerId: number | null;
+    userId: number;
+    mutationId: string;
+    requestId: number;
+    restoreNonce: string;
+    expected: { change_token: string; status: string } | null;
+    binding: {
+      product_id: number;
+      stock_unit_id: number;
+      quantity_per_serving: number;
+    };
+  },
+  clock: Clock,
+) {
+  return decide(
+    database,
+    {
+      ...input,
+      stepNumber: null,
+      kind: "bind",
+      input: [input.expected, input.binding],
+    },
+    clock,
+    (database, request, now) => {
+      requireOwner(input.ownerId, input.userId, request);
+      if (request.state !== "binding_pending")
+        throw new OperationError(409, "grocery_not_binding");
+      if (!live(database, request, input.restoreNonce))
+        throw new OperationError(409, "grocery_connection_changed");
+      const added = listSteps(database, { request_id: request.id }).find(
+        (step) => step.kind === "stock_add",
+      );
+      if (added?.product_id !== input.binding.product_id)
+        throw new OperationError(409, "grocery_product_mismatch");
+      const food = selectFood(database, {
+        user_id: request.user_id,
+        id: request.food_id,
+      });
+      if (!food || foodFingerprint(food) !== request.food_fingerprint)
+        throw new OperationError(409, "grocery_food_changed");
+      const key = {
+        user_id: request.user_id,
+        generation: request.generation,
+        reference_id: request.food_id,
+      };
+      const values = { ...key, ...input.binding, change_token: randomUUID() };
+      const saved = input.expected
+        ? replaceBinding(database, values, {
+            ...key,
+            expected_token: input.expected.change_token,
+            expected_status: input.expected.status,
+          })[0]
+        : insertBindingAbsent(database, values);
+      if (!saved) throw new OperationError(409, "grocery_binding_changed");
+      setRequestState(
+        database,
+        { state: "completed", now },
+        { id: request.id, expected_state: "binding_pending" },
+      );
+      return "completed";
+    },
+  );
+}
+
+/** The binding a later bindGrocery call must still find, or null when it must stay absent. */
+export const groceryBinding = (database: Database, request: GroceryRequest) =>
+  readBindingToken(database, {
+    user_id: request.user_id,
+    generation: request.generation,
+    reference_id: request.food_id,
+  });
 
 /** Startup, inside the transaction that consumes the backup marker and before its clear. */
 export function recoverGroceries(scope: WriteScope, now: string) {
