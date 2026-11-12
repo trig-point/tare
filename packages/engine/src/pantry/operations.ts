@@ -21,6 +21,7 @@ const disabled = {
   error: null,
   products: [],
   bindings: [],
+  requested: [],
 };
 const operations: {
   name: string;

@@ -162,6 +162,7 @@ test("calendar selection: manual first, exact cache key and expiry, plan, item, 
           claim: {},
         },
         clock,
+        "suppress",
       ),
     );
   await state.save();

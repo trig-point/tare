@@ -106,6 +106,7 @@ export async function importFiles(
                   claim: { provenance: input.provenance, source: input.source },
                 },
                 clock,
+                "suppress",
               ).created;
             }
             if (kind === "weight") {

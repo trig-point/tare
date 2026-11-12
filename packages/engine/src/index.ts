@@ -21,6 +21,7 @@ import { createJobRunner } from "./jobs.ts";
 import { createOrderMaintenanceJob } from "./orders/maintenance.ts";
 import { createOura } from "./oura/service.ts";
 import { createOuraSyncJob } from "./oura/sync.ts";
+import { recoverRequests } from "./pantry/requests.ts";
 import { createPantryService } from "./pantry/service.ts";
 import { deleteExpiredSessions } from "./queries/delete-expired-sessions.ts";
 import { createScaleSubscriber, resolveScaleUsers } from "./scale/ingest.ts";
@@ -49,6 +50,7 @@ await ensureFirstUser(
 
 async function startEngine(scaleUsers: Map<string, number> | null) {
   const clock = { now: () => new Date() };
+  recoverRequests(connection.database, clock);
   const pantry = createPantryService({
     database: connection.database,
     config: config.grocy,

@@ -22,7 +22,7 @@ test("ledger totals distinguish complete, partial, empty and all-unknown snapsho
   const clock = { now: () => new Date("2026-01-02T12:00:00.000Z") };
   const log = (input: Parameters<typeof insertIntake>[2]) =>
     writeTransaction(database, (scope) =>
-      insertIntake(scope, admin, input, clock),
+      insertIntake(scope, admin, input, clock, "suppress"),
     );
   const first = log({
     client_id: "catalog",

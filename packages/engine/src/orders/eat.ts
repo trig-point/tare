@@ -168,6 +168,7 @@ function applyMealAction(
           : {}),
       },
       { now: () => new Date(now) },
+      "suppress",
     ).entry;
     if (meal) {
       const changed = consumeOrderMeal(

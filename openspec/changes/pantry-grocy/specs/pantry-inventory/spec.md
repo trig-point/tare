@@ -86,7 +86,7 @@ Tare SHALL consume only a confirmed binding from the exact food or source-food r
 - **THEN** the intake and its request are saved with a shortage warning, and Grocy's response decides the outcome
 
 ### Requirement: Durable consumption delivery
-A non-suppressed intake by the configured owner whose reference has a binding with a valid recorded status in the active connection generation SHALL create its consumption request in the same SQLite transaction as the intake. Every non-suppressed referenced intake SHALL record, in that transaction, either its request or the reason no request was created, and that record SHALL be deleted with its intake. An ad hoc intake SHALL report an unmatched reason derived from its missing reference. A request SHALL have its own never-reused id, belong to one connection generation, keep its intake's client id and freeze its product, unit, per-serving amount and quantity. An intake whose owner and client id match a retained request SHALL NOT create another request. An engine starting on a restored backup SHALL convert pending and sending requests to uncertain before any dispatch. At most one request SHALL link to an existing intake per generation. Delivery SHALL occur outside that transaction and only to the request's own generation. Replays SHALL reuse the request and return its current state. Dispatch claims SHALL be durable and exclusive. A failure before any request bytes are written SHALL leave the request pending for the next sweep and SHALL NOT count as an attempt. A 2xx response with a schema-valid body SHALL be confirmed and record Grocy's returned transaction identifiers. Only HTTP 400 with a known pre-write refusal message SHALL be rejected with its reason. Every other result after request bytes may have been written, including a timeout, lost response, 3xx or 5xx response, schema-invalid body or restart after claim, SHALL be uncertain and SHALL NOT be resent automatically.
+A non-suppressed intake by the configured owner whose reference has a binding with a valid recorded status in the active connection generation SHALL create its consumption request in the same SQLite transaction as the intake. Every non-suppressed referenced intake SHALL record, in that transaction, either its request or the reason no request was created, and that record SHALL be deleted with its intake. An ad hoc intake SHALL report an unmatched reason derived from its missing reference. A request SHALL have its own never-reused id, belong to one connection generation, keep its intake's client id and freeze its product, unit, per-serving amount and quantity. An intake whose owner and client id match a retained request SHALL NOT create another request. An engine starting on a restored backup SHALL convert pending and sending requests to uncertain before any dispatch. At most one request SHALL link to an existing intake per generation. Delivery SHALL occur outside that transaction and only to the request's own generation. Replays SHALL reuse the request and return its current state. Dispatch claims SHALL be durable and exclusive. A failure before the consume request starts SHALL return the request to pending for the next sweep; the attempt stays in its history and its quantity stays frozen. A 2xx response with a schema-valid body SHALL be confirmed and record Grocy's returned transaction identifiers. Only HTTP 400 with a known pre-write refusal message SHALL be rejected with its reason. Every other result once the consume request has started, including a refused connection, a timeout, lost response, 3xx or 5xx response, schema-invalid body or restart after claim, SHALL be uncertain and SHALL NOT be resent automatically.
 
 #### Scenario: Replayed log or meal action
 - **WHEN** the same client id or mutation id is submitted again
@@ -94,7 +94,7 @@ A non-suppressed intake by the configured owner whose reference has a binding wi
 
 #### Scenario: Replay after the intake was deleted
 - **WHEN** a client id is submitted again after its intake was deleted and its request retained
-- **THEN** the new intake gets no consumption request and reports a replay-of-deleted-intake reason
+- **THEN** the new intake gets no consumption request and its outcome names the retained request
 
 #### Scenario: Backup restored with unresolved requests
 - **WHEN** the engine starts on a restored Tare backup that contains pending or sending requests
@@ -105,7 +105,7 @@ A non-suppressed intake by the configured owner whose reference has a binding wi
 - **THEN** intake remains saved, the stock effect is shown as uncertain, and only an explicit reconciliation can authorize another attempt
 
 #### Scenario: Grocy is unreachable before sending
-- **WHEN** the connection to Grocy is refused before any request bytes are written
+- **WHEN** the client refuses to start the consume request, such as for disabled configuration or invalid input
 - **THEN** the request stays pending with the error and the next sweep tries again
 
 #### Scenario: Grocy refuses the consume

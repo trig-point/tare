@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readdir, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { Database } from "better-sqlite3";
+import { markBackupCopy } from "./db.ts";
 
 interface BackupOptions {
   database: Database;
@@ -34,6 +35,7 @@ export function createBackupJob({
             return 100;
           },
         });
+        markBackupCopy(temporary);
         signal.throwIfAborted();
         await rename(temporary, destination);
         const entries = await readdir(directory, { withFileTypes: true });
@@ -47,7 +49,8 @@ export function createBackupJob({
         }
         return "backup_saved";
       } finally {
-        await rm(temporary, { force: true });
+        for (const suffix of ["", "-wal", "-shm", "-journal"])
+          await rm(`${temporary}${suffix}`, { force: true });
       }
     },
   };
