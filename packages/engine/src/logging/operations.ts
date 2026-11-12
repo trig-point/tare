@@ -4,7 +4,9 @@ import {
   defineOperation,
   OperationError,
   operationPerson,
+  operationStock,
 } from "../operations/registry.ts";
+import { stockResult, stockView } from "../pantry/stock-view.ts";
 import { deleteIntake } from "../queries/delete-intake.ts";
 import { deleteWeight } from "../queries/delete-weight.ts";
 import { selectIntakeEntry } from "../queries/select-intake-entry.ts";
@@ -43,9 +45,13 @@ const logFood = defineOperation({
   path: "/api/intake",
   input: logFoodInput,
   inputIssues: true,
-  output: zod.object({ entry: intakeRow, created: zod.boolean() }),
+  output: zod.object({
+    entry: intakeRow,
+    created: zod.boolean(),
+    stock: stockResult.optional(),
+  }),
   handler(input, context) {
-    const body = writeTransaction(context.database, (scope) =>
+    const { stock, ...body } = writeTransaction(context.database, (scope) =>
       insertIntake(
         scope,
         operationPerson(context),
@@ -66,10 +72,13 @@ const logFood = defineOperation({
               claim: { provenance: input.provenance, source: input.source },
             },
         context.clock,
-        "suppress",
+        operationStock(context),
       ),
     );
-    return { status: body.created ? 201 : 200, body };
+    return {
+      status: body.created ? 201 : 200,
+      body: { ...body, stock: stockView(context.database, stock) },
+    };
   },
 });
 const logWeight = defineOperation({
@@ -92,10 +101,10 @@ const editIntake = defineOperation({
   method: "PATCH",
   path: "/api/intake/:id",
   input: editIntakeInput,
-  output: zod.object({ entry: intakeRow }),
+  output: zod.object({ entry: intakeRow, stock: stockResult.optional() }),
   handler(input, context) {
     const person = operationPerson(context);
-    const entry = writeTransaction(context.database, (scope) => {
+    const body = writeTransaction(context.database, (scope) => {
       const owner = { user_id: person.id, id: input.id };
       const stored = selectIntakeEntry(context.database, owner);
       if (!stored) throw new OperationError(404, "not_found");
@@ -160,9 +169,19 @@ const editIntake = defineOperation({
       }
       const updated = updateIntake(context.database, merged, owner)[0];
       if (!updated) throw new Error("Intake update returned no entry");
-      return updated;
+      // The servings trigger has already resized or frozen the request; this only reads it.
+      const outcome = operationStock(context).record(
+        scope,
+        person.id,
+        updated,
+        false,
+      );
+      return {
+        entry: updated,
+        stock: stockView(context.database, outcome),
+      };
     });
-    return { status: 200, body: { entry } };
+    return { status: 200, body };
   },
 });
 const editWeight = defineOperation({
@@ -202,35 +221,62 @@ const editWeight = defineOperation({
     return { status: 200, body: { entry } };
   },
 });
-const deletes = (
-  [
-    ["delete_intake", "/api/intake/:id", deleteIntake],
-    ["delete_weight", "/api/weights/:id", deleteWeight],
-  ] as const
-).map(([name, path, remove]) =>
-  defineOperation({
-    ...base,
-    name,
-    path,
-    method: "DELETE",
-    input: idInput,
-    output: zod.object({ deleted: zod.literal(true), id: zod.number() }),
-    handler(input, context) {
-      const deleted = writeTransaction(context.database, () =>
-        remove(context.database, {
-          id: input.id,
-          user_id: operationPerson(context).id,
-        }),
+const deleted = zod.object({ deleted: zod.literal(true), id: zod.number() });
+const removeIntake = defineOperation({
+  ...base,
+  name: "delete_intake",
+  path: "/api/intake/:id",
+  method: "DELETE",
+  input: idInput,
+  output: deleted.extend({ stock: stockResult.optional() }),
+  handler(input, context) {
+    const person = operationPerson(context);
+    const body = writeTransaction(context.database, (scope) => {
+      const owner = { id: input.id, user_id: person.id };
+      const stored = selectIntakeEntry(context.database, owner);
+      if (!stored) throw new OperationError(404, "not_found");
+      const outcome = operationStock(context).record(
+        scope,
+        person.id,
+        stored,
+        false,
       );
-      if (!deleted[0]) throw new OperationError(404, "not_found");
-      return { status: 200, body: { deleted: true, id: deleted[0].id } };
-    },
-  }),
-);
+      // The delete trigger cancels or detaches the request; report its state afterwards.
+      deleteIntake(context.database, owner);
+      return {
+        deleted: true as const,
+        id: stored.id,
+        stock: outcome?.request_id
+          ? stockView(context.database, outcome)
+          : undefined,
+      };
+    });
+    return { status: 200, body };
+  },
+});
+const removeWeight = defineOperation({
+  ...base,
+  name: "delete_weight",
+  path: "/api/weights/:id",
+  method: "DELETE",
+  input: idInput,
+  output: deleted,
+  handler(input, context) {
+    const removed = writeTransaction(context.database, () =>
+      deleteWeight(context.database, {
+        id: input.id,
+        user_id: operationPerson(context).id,
+      }),
+    );
+    if (!removed[0]) throw new OperationError(404, "not_found");
+    return { status: 200, body: { deleted: true, id: removed[0].id } };
+  },
+});
 export const loggingOperations = [
   logFood,
   editIntake,
   logWeight,
   editWeight,
-  ...deletes,
+  removeIntake,
+  removeWeight,
 ];

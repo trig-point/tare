@@ -10,6 +10,7 @@ import {
   operationPerson,
 } from "../operations/registry.ts";
 import type { OuraService } from "../oura/service.ts";
+import type { PantryStock } from "../pantry/requests.ts";
 import type { PantryService } from "../pantry/service.ts";
 import { deleteSession } from "../queries/delete-session.ts";
 import { insertAccount } from "../queries/insert-account.ts";
@@ -27,6 +28,7 @@ import { createSession, hashToken } from "./sessions.ts";
 
 export interface AppOptions {
   pantry?: PantryService;
+  stock?: PantryStock;
   database: Database;
   config: Config;
   clock: { now(): Date };

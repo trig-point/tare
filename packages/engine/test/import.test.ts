@@ -121,6 +121,9 @@ for (const kind of ["intake", "weight", "days"] as const)
       assert.equal(stored?.protein_g, null);
       assert.equal(stored?.provenance, "estimated");
       assert.equal(stored?.day, day);
+      // History is never consumed from the pantry, not even as a disabled outcome.
+      const outcomes = "SELECT count(*) FROM pantry_outcomes";
+      assert.equal(database.prepare(outcomes).pluck().get(), 0);
     }
     if (kind === "weight") {
       const stored = selectWeightByClient(database, {

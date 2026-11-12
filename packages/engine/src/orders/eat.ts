@@ -2,10 +2,12 @@ import { z as zod } from "zod";
 import type { Person } from "../auth/middleware.ts";
 import { scopeDatabase, type WriteScope } from "../db.ts";
 import { localDay } from "../logging/day.ts";
-import { insertIntake } from "../logging/intake.ts";
+import { type IntakeInput, insertIntake } from "../logging/intake.ts";
 import { intakeRow } from "../logging/schemas.ts";
 import { mealNutritionState } from "../meal-nutrition/index.ts";
 import { OperationError } from "../operations/registry.ts";
+import type { PantryStock, StockOutcome } from "../pantry/requests.ts";
+import { retainedStock, stockResult, stockView } from "../pantry/stock-view.ts";
 import { markPlannedItem } from "../queries/mark-planned-item.ts";
 import { consumeOrderMeal } from "../queries/orders/consume-order-meal.ts";
 import { insertMealAction } from "../queries/orders/insert-meal-action.ts";
@@ -13,6 +15,7 @@ import { selectMealAction } from "../queries/orders/select-meal-action.ts";
 import { selectOrder } from "../queries/orders/select-order.ts";
 import { selectOrderMeal } from "../queries/orders/select-order-meal.ts";
 import { selectIntakeByClient } from "../queries/select-intake-by-client.ts";
+import { selectIntakeEntry } from "../queries/select-intake-entry.ts";
 import { selectPlannedItem } from "../queries/select-planned-item.ts";
 import { isDue } from "./index.ts";
 
@@ -30,6 +33,7 @@ const mealResult = zod.strictObject({
 export const eatMealOutput = zod.strictObject({
   entry: intakeRow,
   meal: mealResult,
+  stock: stockResult.optional(),
 });
 export const plannedItemActionInput = zod.strictObject({
   item_id: zod.number().int().positive(),
@@ -45,6 +49,7 @@ export const plannedItemActionOutput = zod.strictObject({
   }),
   entry: intakeRow.nullable(),
   meal: mealResult.nullable(),
+  stock: stockResult.optional(),
 });
 
 export function eatOrderMeal(
@@ -53,7 +58,7 @@ export function eatOrderMeal(
   input: zod.infer<typeof eatMealInput>,
   now: string,
 ): zod.infer<typeof eatMealOutput> {
-  return eatMealOutput.parse(applyMealAction(scope, person, input, now));
+  return eatMealOutput.parse(applyMealAction(scope, person, input, now, null));
 }
 
 export function actOnPlannedItem(
@@ -61,9 +66,10 @@ export function actOnPlannedItem(
   person: Person,
   input: zod.infer<typeof plannedItemActionInput>,
   now: string,
+  stock: PantryStock,
 ): zod.infer<typeof plannedItemActionOutput> {
   return plannedItemActionOutput.parse(
-    applyMealAction(scope, person, input, now),
+    applyMealAction(scope, person, input, now, stock),
   );
 }
 
@@ -74,6 +80,7 @@ function applyMealAction(
     | zod.infer<typeof eatMealInput>
     | zod.infer<typeof plannedItemActionInput>,
   now: string,
+  stock: PantryStock | null,
 ) {
   const database = scopeDatabase(scope);
   const planned = "item_id" in input;
@@ -90,9 +97,10 @@ function applyMealAction(
           receipt.order_meal_id !== input.meal_id)
     )
       throw new OperationError(409, "mutation_conflict");
-    return (planned ? plannedItemActionOutput : eatMealOutput).parse(
+    const saved = (planned ? plannedItemActionOutput : eatMealOutput).parse(
       JSON.parse(receipt.result),
     );
+    return { ...saved, stock: replayStock(scope, person, receipt, stock) };
   }
   const item = planned
     ? selectPlannedItem(database, { user_id: person.id, id: input.item_id })
@@ -107,6 +115,7 @@ function applyMealAction(
   let entry: ReturnType<typeof insertIntake>["entry"] | null = null;
   let consumed: zod.infer<typeof mealResult> | null = null;
   let mealId: number | null = null;
+  let outcome: StockOutcome | null = null;
   if (input.action !== "skip") {
     mealId = planned ? (item?.order_meal_id ?? null) : input.meal_id;
     const meal =
@@ -148,28 +157,31 @@ function applyMealAction(
     if (item && (item.template_id === null || item.position === null))
       throw new OperationError(400, "slot_not_found");
     if (foodId === null) throw new Error("Meal action has no food");
-    entry = insertIntake(
-      scope,
-      person,
-      {
-        client_id: input.mutation_id,
-        reference: { kind: "food", id: foodId },
-        servings:
-          (meal ? 1 : (item?.servings ?? 1)) *
-          (input.action === "ate" ? 1 : 0.75),
-        claim: {},
-        ...(item
-          ? {
-              slot: {
-                template_id: item.template_id as number,
-                position: item.position as number,
-              },
-            }
-          : {}),
-      },
-      { now: () => new Date(now) },
-      "suppress",
-    ).entry;
+    const intake: IntakeInput = {
+      client_id: input.mutation_id,
+      reference: { kind: "food", id: foodId },
+      servings:
+        (meal ? 1 : (item?.servings ?? 1)) *
+        (input.action === "ate" ? 1 : 0.75),
+      claim: {},
+      ...(item
+        ? {
+            slot: {
+              template_id: item.template_id as number,
+              position: item.position as number,
+            },
+          }
+        : {}),
+    };
+    const clock = { now: () => new Date(now) };
+    // Order meals draw on Tare's own order stock, never the pantry.
+    if (meal || !stock)
+      entry = insertIntake(scope, person, intake, clock, "suppress").entry;
+    else {
+      const written = insertIntake(scope, person, intake, clock, stock);
+      entry = written.entry;
+      outcome = written.stock;
+    }
     if (meal) {
       const changed = consumeOrderMeal(
         database,
@@ -214,5 +226,30 @@ function applyMealAction(
     created_at: now,
   });
   if (inserted.changes !== 1) throw new Error("Meal action insert failed");
-  return result;
+  return { ...result, stock: stockView(database, outcome) };
+}
+
+/** Current stock for a stored receipt; only planned grocery food ever had a request. */
+function replayStock(
+  scope: WriteScope,
+  person: Person,
+  receipt: NonNullable<ReturnType<typeof selectMealAction>>,
+  stock: PantryStock | null,
+) {
+  const database = scopeDatabase(scope);
+  if (
+    !stock ||
+    receipt.action === "skip" ||
+    receipt.order_meal_id !== null ||
+    receipt.intake_entry_id === null
+  )
+    return undefined;
+  const live = selectIntakeEntry(database, {
+    user_id: person.id,
+    id: receipt.intake_entry_id,
+  });
+  // SQLite can reuse a deleted intake's id, so the client id must match too.
+  if (live?.client_id === receipt.mutation_id)
+    return stockView(database, stock.record(scope, person.id, live, false));
+  return retainedStock(database, person.id, receipt.mutation_id);
 }

@@ -10,6 +10,7 @@ import {
   plannedItemActionInput,
 } from "../orders/eat.ts";
 import { listMealsOnHand } from "../orders/index.ts";
+import type { PantryStock } from "../pantry/requests.ts";
 import { readPlannedItems } from "../plan/items.ts";
 import { selectedTemplate } from "../plan/reader.ts";
 import { selectInstallId } from "../queries/home-assistant/select-install-id.ts";
@@ -37,6 +38,7 @@ export const pressResultTopic = (install: string, userId: number) =>
 export function createMealButtons({
   database,
   publisher,
+  stock,
   clock = systemClock,
   log = console.error,
 }: {
@@ -45,6 +47,7 @@ export function createMealButtons({
     refreshAll(): void;
     subscribe(topic: string, handler: (payload: Buffer) => void): void;
   };
+  stock: PantryStock;
   clock?: { now(): Date };
   log?: (code: string, detail?: string) => void;
 }) {
@@ -76,6 +79,7 @@ export function createMealButtons({
                 mutation_id: `ha:plan:${userId}:${fields.item_id}:${fields.action}:${fields.revision}`,
               },
               now,
+              stock,
             )
           : eatOrderMeal(
               scope,

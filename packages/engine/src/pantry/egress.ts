@@ -16,6 +16,26 @@ export const isPantryOperation = (name: string) =>
   ].includes(name);
 export const isPantryPath = (path: string) =>
   path === "/api/pantry" || path.startsWith("/api/pantry/");
+// Logging responses can carry stock details, so they get the same outgoing checks as pantry reads.
+const stockOperations = [
+  "log_food",
+  "log_regular_meal",
+  "edit_intake",
+  "delete_intake",
+  "eat_meal",
+  "planned_item_action",
+];
+export const isGuardedOperation = (name: string) =>
+  isPantryOperation(name) || stockOperations.includes(name);
+const isGuardedPath = (path: string) =>
+  isPantryPath(path) ||
+  path === "/api/intake" ||
+  path.startsWith("/api/intake/") ||
+  [
+    "/api/regular-meals/log",
+    "/api/meals/eat",
+    "/api/plan/items/action",
+  ].includes(path);
 
 export async function guardPantryResponse(response: Response, key: string) {
   const escaped = JSON.stringify(key).slice(1, -1);
@@ -96,7 +116,7 @@ export function pantryEgress(
 ): MiddlewareHandler<AuthEnv> {
   return async (context, next) => {
     const key = config?.apiKey;
-    let guarded = isPantryPath(context.req.path);
+    let guarded = isGuardedPath(context.req.path);
     if (key && context.req.path === "/mcp" && context.req.method === "POST") {
       const reader = context.req.raw.clone().body?.getReader();
       if (reader) {
@@ -119,7 +139,7 @@ export function pantryEgress(
             guarded = requests.some(
               (request) =>
                 request?.method === "tools/call" &&
-                isPantryOperation(request.params?.name),
+                isGuardedOperation(request.params?.name),
             );
           }
         } catch {

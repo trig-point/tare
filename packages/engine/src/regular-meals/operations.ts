@@ -12,7 +12,9 @@ import {
   defineOperation,
   OperationError,
   operationPerson,
+  operationStock,
 } from "../operations/registry.ts";
+import { stockResult, stockView } from "../pantry/stock-view.ts";
 import { archiveRegularMeal } from "../queries/archive-regular-meal.ts";
 import { insertFood } from "../queries/insert-food.ts";
 import { insertRegularMeal } from "../queries/insert-regular-meal.ts";
@@ -174,10 +176,14 @@ const logRegularMeal = defineOperation({
     client_id: text,
     eaten_at: zod.string(),
   }),
-  output: zod.strictObject({ entry: intakeRow, created: zod.boolean() }),
+  output: zod.strictObject({
+    entry: intakeRow,
+    created: zod.boolean(),
+    stock: stockResult.optional(),
+  }),
   handler(input, context) {
     const person = operationPerson(context);
-    const body = writeTransaction(context.database, (scope) => {
+    const { stock, ...body } = writeTransaction(context.database, (scope) => {
       // Replays must still reject meals this person cannot log.
       if (
         !selectRegularMeal(context.database, {
@@ -197,10 +203,13 @@ const logRegularMeal = defineOperation({
           claim: {},
         },
         context.clock,
-        "suppress",
+        operationStock(context),
       );
     });
-    return { status: body.created ? 201 : 200, body };
+    return {
+      status: body.created ? 201 : 200,
+      body: { ...body, stock: stockView(context.database, stock) },
+    };
   },
 });
 

@@ -30,6 +30,7 @@ import { brokerPresses } from "./support/broker-presses.ts";
 import { test } from "./support/hang-ceiling.ts";
 import { orderMeal } from "./support/order-meals.ts";
 import { planDay } from "./support/plan-day.ts";
+import { disabledStock } from "./support/stock.ts";
 import { twoUsers } from "./support/two-users.ts";
 
 type Retained = Map<string, string>;
@@ -292,7 +293,8 @@ test("meal button presses arrive through the broker, after a reconnect and a new
   const later = await orderMeal(database, admin, "2026-01-02", 1, now);
   const foreign = await orderMeal(database, member, "2026-01-01", 1, now);
   publisher.addProvider(
-    createMealButtons({ database, clock, publisher }).provider,
+    createMealButtons({ database, clock, publisher, stock: disabledStock })
+      .provider,
   );
   const button = `homeassistant/button/tare_${install}_${admin.user.id}`;
   const config = (now: Retained, meal: number, action = "ate") =>
@@ -352,7 +354,8 @@ test("planned-item buttons and the next-slot sensor follow presses, entries, pla
   const dinner = await plan(admin, 1);
   const foreign = await plan(member, 1, memberSoup);
   publisher.addProvider(
-    createMealButtons({ database, clock, publisher }).provider,
+    createMealButtons({ database, clock, publisher, stock: disabledStock })
+      .provider,
   );
   publisher.addProvider(nextSlotProvider(database, clock, harness.settings));
   let failing = false;

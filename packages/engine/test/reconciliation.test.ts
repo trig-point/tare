@@ -17,6 +17,7 @@ import { updateInboundParse } from "../src/queries/update-inbound-parse.ts";
 import { createQuestion } from "../src/questions/kinds.ts";
 import { rejection } from "./auth-support.ts";
 import { test } from "./support/hang-ceiling.ts";
+import { disabledStock } from "./support/stock.ts";
 import { twoUsers } from "./support/two-users.ts";
 
 const field = <Value>(value: Value) => ({
@@ -354,6 +355,7 @@ test("day-start changes and late lists preserve eaten stock; zero meals are hidd
           mutation_id: `planned-${action}`,
         },
         plannedAt,
+        disabledStock,
       ),
     );
     const before = meals();

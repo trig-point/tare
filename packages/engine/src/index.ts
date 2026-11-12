@@ -23,7 +23,7 @@ import { createOrderMaintenanceJob } from "./orders/maintenance.ts";
 import { createOura } from "./oura/service.ts";
 import { createOuraSyncJob } from "./oura/sync.ts";
 import { createPantryDispatcher } from "./pantry/dispatch.ts";
-import { recoverRequests } from "./pantry/requests.ts";
+import { createPantryStock, recoverRequests } from "./pantry/requests.ts";
 import { createPantryService } from "./pantry/service.ts";
 import { deleteExpiredSessions } from "./queries/delete-expired-sessions.ts";
 import { createScaleSubscriber, resolveScaleUsers } from "./scale/ingest.ts";
@@ -79,6 +79,13 @@ async function startEngine(scaleUsers: Map<string, number> | null) {
           report: reportPantry,
         })
       : undefined;
+  const stock = createPantryStock({
+    config: config.grocy,
+    ownerId: grocyOwner,
+    clock,
+    kick: dispatcher?.kick,
+    report: () => reportPantry("pantry_dispatch_failed"),
+  });
   const oura = createOura({ database: connection.database, config, clock });
   oura.cleanup();
   const questionKinds = createOrderQuestionKinds({
@@ -104,6 +111,7 @@ async function startEngine(scaleUsers: Map<string, number> | null) {
       createMealButtons({
         database: connection.database,
         publisher: homeAssistant,
+        stock,
       }).provider,
     );
   homeAssistant?.addProvider(
@@ -200,6 +208,7 @@ async function startEngine(scaleUsers: Map<string, number> | null) {
     clock,
     dummyHash,
     pantry,
+    stock,
     questionKinds,
     verifyPassword,
     oura,

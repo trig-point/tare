@@ -4,6 +4,7 @@ import { mealNutritionKinds } from "../src/meal-nutrition/index.ts";
 import { actOnPlannedItem } from "../src/orders/eat.ts";
 import { createOrder } from "../src/orders/index.ts";
 import { test } from "./support/hang-ceiling.ts";
+import { disabledStock } from "./support/stock.ts";
 import { twoUsers } from "./support/two-users.ts";
 
 for (const mode of ["fallback", "access"] as const) {
@@ -334,7 +335,7 @@ for (const mode of ["fallback", "access"] as const) {
       person = admin.user,
     ) =>
       writeTransaction(database, (scope) =>
-        actOnPlannedItem(scope, person, request, time),
+        actOnPlannedItem(scope, person, request, time, disabledStock),
       );
     const question = (await send("questions")).questions[0];
     await send("questions/answer", {

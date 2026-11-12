@@ -1,7 +1,8 @@
 import type { z as zod } from "zod";
 import type { AuthEnv, Person } from "../auth/middleware.ts";
 import type { AppOptions } from "../auth/routes.ts";
-import { isPantryOperation } from "../pantry/egress.ts";
+import { isGuardedOperation, isPantryOperation } from "../pantry/egress.ts";
+import type { PantryStock } from "../pantry/requests.ts";
 import { selectUser } from "../queries/select-user.ts";
 
 export interface OperationIdentity {
@@ -21,6 +22,11 @@ export type OperationContext = OperationIdentity &
 export function operationPerson(identity: OperationIdentity): Person {
   if (!identity.person) throw new OperationError(401, "unauthenticated");
   return identity.person;
+}
+/** createApp always supplies stock; a missing one is a wiring bug, never a reason to skip consumption. */
+export function operationStock(context: OperationDependencies): PantryStock {
+  if (!context.stock) throw new Error("Pantry stock missing");
+  return context.stock;
 }
 export interface OperationResult {
   status: 200 | 201 | 204 | 302;
@@ -165,7 +171,7 @@ export async function executeOperation(
   const output = operation.output.safeParse(result.body);
   if (!output.success) {
     // Name only: the rejected body can hold private fields.
-    if (!isPantryOperation(operation.name))
+    if (!isGuardedOperation(operation.name))
       console.error("operation_output_rejected", operation.name);
     throw new OperationError(500, "internal");
   }

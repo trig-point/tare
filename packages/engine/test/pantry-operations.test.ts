@@ -13,6 +13,7 @@ import {
   signAccessToken,
 } from "./auth-support.ts";
 import { test } from "./support/hang-ceiling.ts";
+import { disabledStock } from "./support/stock.ts";
 import { twoUsers } from "./support/two-users.ts";
 
 const config = {
@@ -28,6 +29,7 @@ for (const mode of ["fallback", "access"] as const)
     });
     const setup = await twoUsers(context, mode, {
       pantry,
+      stock: disabledStock,
       config: {
         ...loadConfig({ DATABASE_URL: ":memory:" }),
         ...(mode === "access" ? accessConfig : {}),
