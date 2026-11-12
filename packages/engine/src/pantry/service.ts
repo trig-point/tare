@@ -575,6 +575,25 @@ export function createPantryService({
     await slot?.work;
     return read(userId);
   }
+  let followUp: Promise<ReturnType<typeof read> | undefined> | undefined;
+  /** Refreshes with a fetch that starts after this call, so a delivered consume shows in the snapshot. */
+  function refreshAfterDelivery() {
+    if (stopping) return Promise.resolve(undefined);
+    // A queued flight has not started fetching yet, so it already covers this call.
+    if (followUp) return followUp;
+    const queued = Promise.resolve().then(async () => {
+      while (slot) await Promise.allSettled([slot.work]);
+      if (followUp === queued) followUp = undefined;
+      if (stopping) return undefined;
+      // A stop that lands mid-refresh is shutdown, not a failed refresh.
+      return refresh(owner).catch((caught: unknown) => {
+        if (stopping) return undefined;
+        throw caught;
+      });
+    });
+    followUp = queued;
+    return track(queued);
+  }
   function connection() {
     if (!config) throw new OperationError(503, "pantry_disabled");
     const row = readConnection(database);
@@ -691,6 +710,7 @@ export function createPantryService({
   return {
     read,
     refresh,
+    refreshAfterDelivery,
     recipes: (userId: number) => track(recipes(userId)),
     saveLink: (userId: number, input: z.infer<typeof recipeLinkInput>) =>
       track(saveLink(userId, input)),
