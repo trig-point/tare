@@ -39,6 +39,8 @@ Biome handles linting and formatting for the workspace. TypeScript runs in stric
 
 ## Configuration
 
+`TARE_GROCY_URL`, `TARE_GROCY_API_KEY` and `TARE_GROCY_USERNAME` enable Grocy together. Values are trimmed; empty counts as unset. Partial configuration or an unknown Tare username prevents startup. The URL accepts a root or `/api` path, with an optional trailing slash. HTTP requires a private or loopback IP literal or a single-label service hostname; other hosts require HTTPS. Requests use a 30-second deadline, a 1 MB response limit and no redirects. Only the configured owner can use the client. Consume is never retried automatically. A schema-valid Grocy 4xx error is rejected; other unconfirmed dispatched consumes are uncertain. Error output is withheld when even the fixed fallback contains the API key.
+
 `DATABASE_URL` is required and is a SQLite file path, or `:memory:` for an ephemeral database. Surrounding whitespace is trimmed. Relative paths resolve from the engine process working directory (`packages/engine` when using the workspace command). Parent directories are created automatically. Startup applies migrations before listening. File databases use WAL; every connection sets a 5000 ms busy timeout.
 
 `PORT` defaults to `3000` and must be an integer from 1 to 65535. `.env.example` lists the configuration variables with safe local values. The startup command loads the root `.env` file if it exists; process environment variables can override it. Set the required variables in the process environment when running without a file.

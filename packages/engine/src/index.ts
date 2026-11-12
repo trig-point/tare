@@ -7,8 +7,9 @@ import { hashPassword, verifyPassword } from "./auth/password.ts";
 import { createBackupJob } from "./backup.ts";
 import { createCalendarRefresher } from "./calendar/refresh.ts";
 import { createCalendarTransport } from "./calendar/transport.ts";
-import { loadConfig } from "./config.ts";
+import { loadStartupConfig, reportStartupError } from "./config.ts";
 import { openDatabase } from "./db.ts";
+import { resolveGrocyOwner } from "./grocy/config.ts";
 import { createMealButtons } from "./home-assistant/meal-buttons.ts";
 import { nextSlotProvider } from "./home-assistant/next-slot.ts";
 import { createHomeAssistantPublisher } from "./home-assistant/publisher.ts";
@@ -24,7 +25,7 @@ import { deleteExpiredSessions } from "./queries/delete-expired-sessions.ts";
 import { createScaleSubscriber, resolveScaleUsers } from "./scale/ingest.ts";
 import { createTargetRecomputeJob } from "./target/job.ts";
 
-const config = loadConfig(process.env);
+const config = loadStartupConfig(process.env) ?? process.exit(1);
 const connection = openDatabase(config.databaseUrl);
 await ensureFirstUser(
   connection.database,
@@ -35,15 +36,12 @@ await ensureFirstUser(
   config.identity,
 )
   .then(() => ensureSignInCapableUsers(connection.database, config.identity))
+  .then(() => resolveGrocyOwner(connection.database, config.grocy))
   .then(() =>
     config.scale ? resolveScaleUsers(connection.database, config.scale) : null,
   )
   .then(startEngine, (error: unknown) => {
-    console.error(
-      error instanceof Error
-        ? error.message
-        : "First administrator setup failed",
-    );
+    reportStartupError(error, config.grocy?.apiKey);
     connection.close();
     process.exitCode = 1;
   });
