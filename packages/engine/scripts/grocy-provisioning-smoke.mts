@@ -58,12 +58,18 @@ const raw = async (method: string, path: string, body?: unknown) => {
   const response = await recordingFetch(`${url}${path}`, {
     method,
     headers: { "GROCY-API-KEY": apiKey, "Content-Type": "application/json" },
+    redirect: "manual",
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
+  if (!response.ok)
+    throw new Error(`${method} ${path} returned ${response.status}`);
   return response.status === 204 ? null : response.json();
 };
-const rows = async (path: string) =>
-  (await raw("GET", path)) as { id: number; [field: string]: unknown }[];
+const rows = async (path: string) => {
+  const listed = await raw("GET", path);
+  if (!Array.isArray(listed)) throw new Error(`${path} is not a list`);
+  return listed as { id: number; [field: string]: unknown }[];
+};
 const check = (name: string, pass: boolean) => checks.push({ name, pass });
 const value = <Value,>(
   result: { status: string; value?: Value } | undefined,
@@ -86,10 +92,8 @@ try {
     throw new Error("Refusing: Grocy already has products");
   if ((await rows("/objects/stock_log")).length)
     throw new Error("Refusing: Grocy already has stock history");
-  check(
-    "version is supported",
-    (await grocery.requireSupportedVersion(1))?.status === "ok",
-  );
+  if ((await grocery.requireSupportedVersion(1))?.status !== "ok")
+    throw new Error("Refusing: Grocy version is not supported");
   for (const entity of ["quantity_units", "locations"])
     for (const row of await rows(`/objects/${entity}`))
       await raw("DELETE", `/objects/${entity}/${row.id}`);
@@ -242,6 +246,13 @@ try {
         riceAdd,
       ),
   );
+  const punctuated = "Smoke shelf (2%) $5 ^top";
+  const shelf = value(await grocery.createLocation(1, { name: punctuated }));
+  check(
+    "a name with parentheses, percent, dollar and caret is found by name",
+    value(await grocery.locationNamed(1, punctuated))[0]?.id === shelf &&
+      value(await grocery.locationNamed(1, pantryName))[0]?.id === pantry,
+  );
   const lostCreate = await lost(() =>
     grocery.createLocation(1, { name: "Smoke freezer" }),
   );
@@ -290,6 +301,10 @@ try {
 }
 const failed = checks.filter((entry) => !entry.pass);
 console.log(
-  JSON.stringify({ exchanges, checks, passed: !failed.length }, null, 2),
+  JSON.stringify(
+    { exchanges, checks, passed: !failed.length },
+    null,
+    2,
+  ).replaceAll(apiKey, "[redacted]"),
 );
 if (failed.length) process.exitCode = 1;

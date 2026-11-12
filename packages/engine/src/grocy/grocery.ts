@@ -12,7 +12,8 @@ import {
 export const supportedGrocyVersion = "4.7.1";
 export const neverExpires = { defaultDays: -1, bestBeforeDate: "2999-12-31" };
 
-const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const date = z.iso.date();
+const transactionIdSchema = z.string().regex(/^[A-Za-z0-9]{1,64}$/);
 
 export const groceryUnitSchema = z.object({
   id: identifier,
@@ -51,7 +52,7 @@ export const groceryStockLogSchema = z.object({
   amount: decimal,
   best_before_date: date.nullable(),
   purchased_date: date.nullable(),
-  transaction_id: z.string().min(1),
+  transaction_id: transactionIdSchema,
   transaction_type: z.string(),
   location_id: identifier.nullable(),
   undone: flag,
@@ -67,8 +68,8 @@ const uniqueColumns: Record<Entity, string> = {
   product_barcodes: "barcode",
 };
 
-// Grocy matches filter values against an unanchored pattern and silently
-// truncates at the first other character, so only fully matching text is sent.
+// Grocy parses each filter with an unanchored pattern and silently truncates the
+// value at the first character outside it before an SQL equality match.
 const filterValue = /^[A-Za-z\p{L}\p{M}0-9*_.$#^| -\\]+$/u;
 const findable = (value: unknown): value is string =>
   typeof value === "string" &&
@@ -80,10 +81,7 @@ const isId = (value: unknown): value is number =>
   Number.isSafeInteger(value) && (value as number) > 0;
 const isAmount = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value) && value > 0;
-const isDate = (value: unknown) =>
-  typeof value === "string" &&
-  date.safeParse(value).success &&
-  new Date(`${value}T00:00:00Z`).toISOString().startsWith(value);
+const isDate = (value: unknown) => date.safeParse(value).success;
 const query = (filters: string[], order: string, limit: number) =>
   [
     ...filters.map((filter) => `query%5B%5D=${encodeURIComponent(filter)}`),
@@ -111,8 +109,10 @@ export function purchaseMatches(
   const total = rows.reduce((sum, row) => sum + row.amount, 0);
   return (
     rows.length > 0 &&
+    Number.isFinite(total) &&
     rows.every(
       (row) =>
+        row.amount > 0 &&
         row.transaction_id === rows[0]?.transaction_id &&
         row.product_id === productId &&
         row.transaction_type === "purchase" &&
@@ -129,12 +129,18 @@ export function purchaseMatches(
 /** Grocery provisioning calls; writes send once and never retry. */
 export function createGroceryClient(dependencies: GrocyDependencies) {
   const request = createGrocyTransport(dependencies);
-  const byId = <Schema extends z.ZodType>(
+  const byId = <Row extends { id: number }>(
     userId: number,
     entity: Entity,
-    schema: Schema,
+    schema: z.ZodType<Row>,
     id: number,
-  ) => request(userId, `/objects/${entity}/${id}`, schema, isId(id));
+  ) =>
+    request(
+      userId,
+      `/objects/${entity}/${id}`,
+      schema.refine((row) => row.id === id),
+      isId(id),
+    );
   const findUnique = <Schema extends z.ZodType>(
     userId: number,
     entity: Entity,
@@ -277,8 +283,7 @@ export function createGroceryClient(dependencies: GrocyDependencies) {
           .refine((rows) =>
             rows.every((row) => row.transaction_id === transactionId),
           ),
-        typeof transactionId === "string" &&
-          /^[A-Za-z0-9]{1,64}$/.test(transactionId),
+        transactionIdSchema.safeParse(transactionId).success,
       ),
     createUnit: (userId: number, unit: { name: string; name_plural: string }) =>
       create(

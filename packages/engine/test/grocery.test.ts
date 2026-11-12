@@ -104,6 +104,7 @@ test("Grocery writes send the frozen body once and classify each outcome", async
       default_best_before_days: -2,
     }),
     await client.addStock(1, 1, { ...add, purchased_date: "2026-02-30" }),
+    await client.addStock(1, 1, { ...add, best_before_date: "2026-13-01" }),
   ])
     assert.equal(result?.status, "not_sent");
   assert.equal(sent.length, count);
@@ -122,6 +123,14 @@ test("Stock adds confirm only a receipt matching the confirmed purchase", async 
   });
   for (const changed of [
     [{ ...purchase, amount: 0.5 }],
+    [
+      { ...purchase, amount: 1e308 },
+      { ...purchase, amount: 1e308 },
+    ],
+    [
+      { ...purchase, amount: 1.75 },
+      { ...purchase, amount: -1 },
+    ],
     [{ ...purchase, undone: 1 }],
     [{ ...purchase, best_before_date: "2026-11-10" }],
     [],
@@ -157,6 +166,8 @@ test("Grocery reads gate the version, filter exactly and report capped discovery
     status: "ok",
     value: { rows: [purchase, { ...purchase, id: 4 }], complete: false },
   });
+  body = { id: 5, name: "Example gram", name_plural: null, active: 1 };
+  assert.equal((await client.unit(1, 4))?.status, "failed");
   body = [{ ...purchase, id: 2 }];
   assert.equal((await client.purchasesAfter(1, 1, 2, 2))?.status, "failed");
 });
