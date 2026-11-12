@@ -191,7 +191,8 @@ the private listener still supports password login and API keys.
 ### Forward the Access identity
 
 Use `compose.grocy-auth.example.yaml` with Compose 2.24.4 or newer to sign in through Access
-without a second Grocy login. It reuses Grocy's bundled nginx and reverse-proxy middleware.
+without a second Grocy login. The commands below were verified with Compose 5.7.0.
+It reuses Grocy's bundled nginx and reverse-proxy middleware.
 The published port reaches nginx's connector-only listener on port 8080. nginx maps the approved
 Access email to an existing Grocy username, replaces incoming identity headers, and adds a private
 secret before forwarding to port 80. The second listener selects `GROCY_AUTH_CLASS` per request:
@@ -200,7 +201,7 @@ password/API authentication. The middleware reads the mapped username from a Fas
 not a client header. Keep `AUTH_CLASS` and reverse-proxy settings out of `config.php` and
 `data/settingoverrides`; those overrides take precedence over FastCGI settings.
 
-In a private environment file, mode `600`, set `GROCY_OWNER_EMAIL`, `GROCY_OWNER_USERNAME`,
+In a private environment file outside the checkout, mode `600`, set `GROCY_OWNER_EMAIL`, `GROCY_OWNER_USERNAME`,
 `GROCY_TUNNEL_ADDRESS` (the connector's source IP as seen by nginx), and `GROCY_BIND_ADDRESS`.
 Use a single IP for each address, not a subnet or forwarded-header value. The username must already
 exist and belong to the owner; a typo can make upstream Grocy create an unintended administrator.
@@ -209,13 +210,13 @@ Generate the separate shared secret into that file without printing it:
 
 ```sh
 umask 077
-printf 'GROCY_FORWARD_AUTH_SECRET=' >> grocy-auth.env
-openssl rand -hex 32 >> grocy-auth.env
-chmod 600 grocy-auth.env
-docker compose --env-file .env --env-file grocy-auth.env -p pantry-live \
+printf 'GROCY_FORWARD_AUTH_SECRET=' >> ../grocy-auth.env
+openssl rand -hex 32 >> ../grocy-auth.env
+chmod 600 ../grocy-auth.env
+docker compose --env-file .env --env-file ../grocy-auth.env -p pantry-live \
   -f compose.example.yaml -f compose.grocy-auth.example.yaml --profile pantry \
   up --detach --force-recreate --wait grocy
-docker compose --env-file .env --env-file grocy-auth.env -p pantry-live \
+docker compose --env-file .env --env-file ../grocy-auth.env -p pantry-live \
   -f compose.example.yaml -f compose.grocy-auth.example.yaml --profile pantry \
   exec -T grocy chmod 600 /config/nginx/site-confs/default.conf
 ```
