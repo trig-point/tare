@@ -40,7 +40,8 @@ await ensureFirstUser(
   .then(() =>
     config.scale ? resolveScaleUsers(connection.database, config.scale) : null,
   )
-  .then(startEngine, (error: unknown) => {
+  .then(startEngine)
+  .catch((error: unknown) => {
     reportStartupError(error, config.grocy?.apiKey);
     connection.close();
     process.exitCode = 1;

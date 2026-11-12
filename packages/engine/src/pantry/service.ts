@@ -207,13 +207,22 @@ export function createPantryService({
     } catch {
       error ??= { reason: "invalid_response" };
     }
+    const serializedError = error === null ? null : JSON.stringify(error);
+    const fallback = JSON.stringify({ reason: "response_withheld" });
+    const containsKey = (text: string) =>
+      config !== null && text.includes(config.apiKey);
+    const storedError =
+      serializedError !== null && containsKey(serializedError)
+        ? containsKey(fallback)
+          ? null
+          : fallback
+        : serializedError;
     writeTransaction(database, (scope) => {
       if (!current(generation)) return;
       const database = scopeDatabase(scope);
       const row = readConnection(database);
       if (!row) throw new Error("Pantry connection missing");
-      if (error)
-        saveConnection(database, { ...row, error: JSON.stringify(error) });
+      if (error) saveConnection(database, { ...row, error: storedError });
       else {
         clearProducts(database);
         for (const product of products)
@@ -231,6 +240,8 @@ export function createPantryService({
         });
       }
     });
+    if (error && storedError === null && current(generation))
+      throw new OperationError(503, "");
   }
   async function refresh(userId: number) {
     authorize(userId);
@@ -239,7 +250,8 @@ export function createPantryService({
     if (!admitted) throw new Error("Pantry connection missing");
     if (admitted.reset_required) return read(userId);
     while (slot && slot.generation !== admitted.generation) {
-      await slot.work;
+      // Only the current generation may fail its caller; this slot is obsolete.
+      await Promise.allSettled([slot.work]);
       authorize(userId);
       if (!current(admitted.generation)) return read(userId);
     }
@@ -280,7 +292,9 @@ export function createPantryService({
       name: "pantry-refresh",
       schedule: "*/5 * * * *",
       async run() {
-        await refresh(ownerId ?? 0);
+        const result = await refresh(ownerId ?? 0);
+        if (result.error || result.state === "reset_required")
+          throw new Error("");
         // Empty job details cannot collide with a configured credential.
         return "";
       },

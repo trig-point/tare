@@ -166,10 +166,11 @@ for (const obsolete of [undefined, { status: "ok" as const, value: stock }])
       },
     };
     const service = createPantryService({ ...setup.options, client });
+    const reports: string[] = [];
     const runner = createJobRunner({
       ...setup.options,
       timezone: "UTC",
-      report: () => assert.fail("unexpected job error"),
+      report: (code) => reports.push(code),
     });
     runner.register(service.job);
     runner.start();
@@ -187,6 +188,7 @@ for (const obsolete of [undefined, { status: "ok" as const, value: stock }])
     assert.equal(service.read(setup.admin.id).error, null);
     assert.equal(service.read(setup.admin.id).products.length, 1);
     await runner.stop();
+    assert.deepEqual(reports, []);
     assert.equal(discarded.state, "never_refreshed");
     assert.equal(discarded.error, null);
     const detailStarted = deferred<void>();
@@ -212,6 +214,11 @@ for (const obsolete of [undefined, { status: "ok" as const, value: stock }])
     });
     const work = draining.refresh(setup.admin.id);
     await detailStarted.promise;
+    draining.reset(setup.admin.id, true);
+    const queued = assert.rejects(
+      draining.refresh(setup.admin.id),
+      /pantry_stopping/,
+    );
     const stopped = draining.stop();
     await assert.rejects(draining.refresh(setup.admin.id), /pantry_stopping/);
     detailPending.resolve({
@@ -220,5 +227,92 @@ for (const obsolete of [undefined, { status: "ok" as const, value: stock }])
     });
     await assert.rejects(work, /pantry_stopping/);
     await stopped;
+    await queued;
     assert.equal(details, 1);
   });
+
+test("refresh failures fail jobs", async (context) => {
+  const setup = setupService(context);
+  setup.data.stock = null;
+  const reports: string[] = [];
+  const runner = createJobRunner({
+    ...setup.options,
+    timezone: "UTC",
+    report: (code) => reports.push(code),
+  });
+  runner.register(setup.service.job);
+  runner.start();
+  context.after(() => runner.stop());
+  assert.equal((await runner.runNow(setup.service.job.name)).status, "failed");
+  assert.deepEqual(reports, []);
+});
+
+test("colliding errors are withheld from storage", async (context) => {
+  const setup = setupService(context);
+  setup.data.stock = null;
+  for (const apiKey of ["invalid_response", "reason"]) {
+    const service = createPantryService({
+      ...setup.options,
+      config: { ...config, apiKey },
+    });
+    if (apiKey === "reason")
+      await assert.rejects(service.refresh(setup.admin.id));
+    else
+      assert.equal(
+        (await service.refresh(setup.admin.id)).error?.reason,
+        "response_withheld",
+      );
+    const row = setup.database
+      .prepare("SELECT error FROM pantry_connection")
+      .get() as { error: string | null };
+    assert.equal(row.error?.includes(apiKey) ?? false, false);
+  }
+});
+
+test("pantry schema rejects malformed persisted state", (context) => {
+  const { database } = setupService(context);
+  for (const [column, value] of [
+    ["generation", 0],
+    ["reset_required", 2],
+    ["fetch_started_at", "invalid"],
+    ["last_success_at", "2026-02-30T00:00:00.000Z"],
+    ["username", Buffer.from("invalid")],
+  ] as const)
+    assert.throws(() =>
+      database.prepare(`UPDATE pantry_connection SET ${column} = ?`).run(value),
+    );
+});
+
+test("post-reset caller starts a successor after obsolete persistence rejects", async (context) => {
+  const setup = setupService(context);
+  const entered = deferred<void>();
+  const pending =
+    deferred<Awaited<ReturnType<typeof setup.options.client.stock>>>();
+  let calls = 0;
+  const service = createPantryService({
+    ...setup.options,
+    client: {
+      ...setup.options.client,
+      stock: () => {
+        calls++;
+        entered.resolve();
+        return calls === 1
+          ? pending.promise
+          : setup.options.client.stock(setup.admin.id);
+      },
+    },
+  });
+  const old = service.refresh(setup.admin.id);
+  const rejected = assert.rejects(old, /synthetic write failure/);
+  await entered.promise;
+  service.reset(setup.admin.id, true);
+  const successor = service.refresh(setup.admin.id);
+  const transaction = context.mock.method(setup.database, "transaction", () => {
+    transaction.mock.restore();
+    throw new Error("synthetic write failure");
+  });
+  pending.resolve({ status: "ok", value: [] });
+  assert.equal((await successor).products.length, 1);
+  await rejected;
+  assert.equal(calls, 2);
+});
