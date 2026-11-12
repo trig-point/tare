@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Database } from "better-sqlite3";
 import { z } from "zod";
 import { scopeDatabase, writeTransaction } from "../db.ts";
+import { openGroceryCount } from "../grocery/store.ts";
 import { createGrocyClient, type GrocyResult } from "../grocy/client.ts";
 import type { GrocyConfig } from "../grocy/config.ts";
 import { OperationError } from "../operations/registry.ts";
@@ -807,7 +808,10 @@ export function createPantryService({
         if (!row) throw new Error("Pantry connection missing");
         if (!replaced && !row.reset_required && matches(row)) return false;
         // Requests from any owner or generation may have reached Grocy, so all of them block.
-        if (countUnresolvedRequests(database)?.unresolved) {
+        if (
+          countUnresolvedRequests(database)?.unresolved ||
+          openGroceryCount(database)
+        ) {
           if (replaced) saveConnection(database, { ...row, reset_required: 1 });
           return true;
         }
