@@ -152,6 +152,9 @@ Compose prefixes their names with the project name, so keep that name stable whe
 and backups; with the `pantry` profile, it also deletes Grocy's config volume. Separate volumes survive container recreation, but do not protect against losing the host;
 copy backups to separate storage.
 
+Each copy is marked as a backup. An engine that starts on a restored copy turns its pending and sending
+pantry requests uncertain, so nothing is sent to Grocy until the owner reconciles them.
+
 ## Optional Grocy pantry
 
 Grocy supplies the pantry UI, barcode scanner and product lookup. Enable the `pantry` profile
@@ -300,7 +303,8 @@ files separately; they contain credentials. A second volume on the same host is 
 
 Before a production restore on an engine-connected install, the pantry owner must run
 `reset_pantry_connection` with `replaced: true` and resolve any requests that prevent the reset
-from completing. This stops refresh and dispatch and clears identifiers belonging to the previous
+from completing. Sending, uncertain and rejected requests from any owner refuse the reset; the
+pantry stays in `reset_required` until they are resolved. This stops refresh and dispatch and clears identifiers belonging to the previous
 database, even when the URL stays the same. The operation arrives with pantry snapshots (task 1.3);
 until it is available, keep the Tare pantry integration disabled during a production restore.
 An isolated recovery check below does not replace Tare's connected database and needs no reset.

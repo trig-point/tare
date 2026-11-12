@@ -424,6 +424,7 @@ for (const mode of ["fallback", "access"] as const) {
             slot: { template_id: planned.template.id, position },
           },
           { now: () => new Date("2026-01-01T15:00:00.000Z") },
+          "suppress",
         ),
       );
     assert.equal(insert(0).entry.slot_position, 0);

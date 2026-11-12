@@ -197,6 +197,7 @@ const logRegularMeal = defineOperation({
           claim: {},
         },
         context.clock,
+        "suppress",
       );
     });
     return { status: body.created ? 201 : 200, body };

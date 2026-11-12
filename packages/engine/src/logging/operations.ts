@@ -66,6 +66,7 @@ const logFood = defineOperation({
               claim: { provenance: input.provenance, source: input.source },
             },
         context.clock,
+        "suppress",
       ),
     );
     return { status: body.created ? 201 : 200, body };

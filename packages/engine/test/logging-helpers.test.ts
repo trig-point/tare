@@ -89,8 +89,14 @@ test("write scopes admit one immediate batch and reject nesting, expiry and forg
   const clock = { now: () => new Date("2026-01-01T00:00:00.000Z") };
   traces.length = 0;
   const expired = writeTransaction(database, (scope) => {
-    insertIntake(scope, person, input, clock);
-    insertIntake(scope, person, { ...input, client_id: "two" }, clock);
+    insertIntake(scope, person, input, clock, "suppress");
+    insertIntake(
+      scope,
+      person,
+      { ...input, client_id: "two" },
+      clock,
+      "suppress",
+    );
     return scope;
   });
   assert.equal(
@@ -104,10 +110,16 @@ test("write scopes admit one immediate batch and reject nesting, expiry and forg
       .get(),
     2,
   );
-  assert.throws(() => insertIntake(expired, person, input, clock), /Inactive/);
+  assert.throws(
+    () => insertIntake(expired, person, input, clock, "suppress"),
+    /Inactive/,
+  );
   const forged = { database };
-  // @ts-expect-error A database alone cannot grant a write scope.
-  assert.throws(() => insertIntake(forged, person, input, clock), /Inactive/);
+  assert.throws(
+    // @ts-expect-error A database alone cannot grant a write scope.
+    () => insertIntake(forged, person, input, clock, "suppress"),
+    /Inactive/,
+  );
   let ran = false;
   database.transaction(() =>
     assert.throws(
@@ -131,7 +143,7 @@ test("write scopes admit one immediate batch and reject nesting, expiry and forg
   assert.ok(failedScope);
   const invalidated = failedScope;
   assert.throws(
-    () => insertIntake(invalidated, person, input, clock),
+    () => insertIntake(invalidated, person, input, clock, "suppress"),
     /Inactive/,
   );
 });

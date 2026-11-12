@@ -1,0 +1,1 @@
+UPDATE pantry_attempts SET outcome = 'uncertain', reason = CASE WHEN EXISTS (SELECT 1 FROM pantry_backup_marker) THEN 'restored_backup' ELSE 'restarted' END, finished_at = :finished_at WHERE outcome = 'sending';

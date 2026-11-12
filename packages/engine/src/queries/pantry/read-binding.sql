@@ -1,1 +1,1 @@
-SELECT product_id FROM pantry_bindings WHERE user_id = :user_id AND generation = :generation AND reference_kind = :reference_kind AND reference_id = :reference_id;
+SELECT product_id, stock_unit_id, quantity_per_serving, status FROM pantry_bindings WHERE user_id = :user_id AND generation = :generation AND reference_kind = :reference_kind AND reference_id = :reference_id;

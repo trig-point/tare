@@ -1,6 +1,7 @@
 import type { Person } from "../auth/middleware.ts";
 import { scopeDatabase, type WriteScope } from "../db.ts";
 import { OperationError } from "../operations/registry.ts";
+import type { PantryStock, StockOutcome } from "../pantry/requests.ts";
 import { selectedTemplate } from "../plan/reader.ts";
 import { assignSlot, minuteOfDay } from "../plan/slots.ts";
 import { insertIntakeEntry } from "../queries/insert-intake-entry.ts";
@@ -61,7 +62,38 @@ export function referenceSnapshot(
   };
 }
 
+type Inserted = ReturnType<typeof writeIntake>;
+/** `suppress` writes nutrition only; a pantry stock records the outcome in the same scope. */
 export function insertIntake(
+  scope: WriteScope,
+  person: Person,
+  input: IntakeInput,
+  clock: Clock,
+  stock: "suppress",
+): Inserted;
+export function insertIntake(
+  scope: WriteScope,
+  person: Person,
+  input: IntakeInput,
+  clock: Clock,
+  stock: PantryStock,
+): Inserted & { stock: StockOutcome | null };
+export function insertIntake(
+  scope: WriteScope,
+  person: Person,
+  input: IntakeInput,
+  clock: Clock,
+  stock: "suppress" | PantryStock,
+) {
+  const result = writeIntake(scope, person, input, clock);
+  if (stock === "suppress") return result;
+  return {
+    ...result,
+    stock: stock.record(scope, person.id, result.entry, result.created),
+  };
+}
+
+function writeIntake(
   scope: WriteScope,
   person: Person,
   input: IntakeInput,

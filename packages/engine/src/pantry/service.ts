@@ -5,14 +5,17 @@ import { scopeDatabase, writeTransaction } from "../db.ts";
 import { createGrocyClient, type GrocyResult } from "../grocy/client.ts";
 import type { GrocyConfig } from "../grocy/config.ts";
 import { OperationError } from "../operations/registry.ts";
+import { cancelPendingRequests } from "../queries/pantry/cancel-pending-requests.ts";
 import { clearBindings } from "../queries/pantry/clear-bindings.ts";
 import { clearProducts } from "../queries/pantry/clear-products.ts";
+import { countUnresolvedRequests } from "../queries/pantry/count-unresolved-requests.ts";
 import { deleteBinding } from "../queries/pantry/delete-binding.ts";
 import { insertProduct } from "../queries/pantry/insert-product.ts";
 import { listBindings } from "../queries/pantry/list-bindings.ts";
 import { listProducts } from "../queries/pantry/list-products.ts";
 import { readBinding } from "../queries/pantry/read-binding.ts";
 import { readConnection } from "../queries/pantry/read-connection.ts";
+import { requestTotals } from "../queries/pantry/request-totals.ts";
 import { saveBinding } from "../queries/pantry/save-binding.ts";
 import { saveConnection } from "../queries/pantry/save-connection.ts";
 import { updateBindingStatus } from "../queries/pantry/update-binding-status.ts";
@@ -100,6 +103,13 @@ export const pantryProposal = z
       (result.outcome === "proposal") === (result.proposal !== null) &&
       (result.outcome === "failed") === (result.error !== null),
   );
+const requestedAmount = z.strictObject({
+  product_id: identifier,
+  stock_unit_id: identifier,
+  pending: z.number().finite().nonnegative(),
+  sending: z.number().finite().nonnegative(),
+  uncertain: z.number().finite().nonnegative(),
+});
 export const pantryOutput = z.strictObject({
   state: z.enum(["disabled", "reset_required", "never_refreshed", "ready"]),
   generation: z.number().nullable(),
@@ -109,6 +119,7 @@ export const pantryOutput = z.strictObject({
   error: pantryError.nullable(),
   products: z.array(pantryProduct),
   bindings: z.array(pantryBinding),
+  requested: z.array(requestedAmount),
 });
 type Product = z.infer<typeof pantryProduct>;
 type PantryError = z.infer<typeof pantryError>;
@@ -205,6 +216,7 @@ export function createPantryService({
       error: null,
       products: [],
       bindings: [],
+      requested: [],
     };
     if (!config) return pantryOutput.parse({ ...empty, state: "disabled" });
     const row = readConnection(database);
@@ -232,6 +244,10 @@ export function createPantryService({
         user_id: userId,
         generation: row.generation,
       }).map(({ change_token: _token, ...binding }) => binding),
+      requested: requestTotals(database, {
+        user_id: userId,
+        generation: row.generation,
+      }),
     });
   }
   function current(generation: number) {
@@ -536,16 +552,23 @@ export function createPantryService({
     reset(userId: number, replaced = false) {
       authorize(userId);
       if (!config) return read(userId);
-      writeTransaction(database, (scope) => {
+      const refused = writeTransaction(database, (scope) => {
         const database = scopeDatabase(scope);
         const row = readConnection(database);
         if (!row) throw new Error("Pantry connection missing");
-        if (!replaced && !row.reset_required && matches(row)) return;
-        // Future consumption guards and cancellation belong in this transaction.
+        if (!replaced && !row.reset_required && matches(row)) return false;
+        // Requests from any owner or generation may have reached Grocy, so all of them block.
+        if (countUnresolvedRequests(database)?.unresolved) {
+          if (replaced) saveConnection(database, { ...row, reset_required: 1 });
+          return true;
+        }
+        cancelPendingRequests(database);
         clearProducts(database);
         clearBindings(database);
         saveConnection(database, initial(row.generation + 1));
+        return false;
       });
+      if (refused) throw new OperationError(409, "pantry_requests_unresolved");
       return read(userId);
     },
     stop() {

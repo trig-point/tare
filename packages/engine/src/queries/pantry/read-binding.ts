@@ -9,6 +9,9 @@ export type ReadBindingParams = {
 
 export type ReadBindingResult = {
   product_id: number;
+  stock_unit_id: number;
+  quantity_per_serving: number;
+  status: string;
 };
 
 export function readBinding(
@@ -16,7 +19,7 @@ export function readBinding(
   params: ReadBindingParams,
 ): ReadBindingResult[] {
   const sql = `
-	SELECT product_id FROM pantry_bindings WHERE user_id = ? AND generation = ? AND reference_kind = ? AND reference_id = ?;
+	SELECT product_id, stock_unit_id, quantity_per_serving, status FROM pantry_bindings WHERE user_id = ? AND generation = ? AND reference_kind = ? AND reference_id = ?;
 	
 	`;
   const rows = db
@@ -35,6 +38,9 @@ export function readBinding(
 function mapArrayToReadBindingResult(data: any) {
   const result: ReadBindingResult = {
     product_id: data[0],
+    stock_unit_id: data[1],
+    quantity_per_serving: data[2],
+    status: data[3],
   };
   return result;
 }

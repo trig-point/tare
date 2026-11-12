@@ -1,6 +1,7 @@
 import { mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import Database from "better-sqlite3";
+import { markBackup } from "./queries/pantry/mark-backup.ts";
 
 export function applyMigrations(
   database: Database.Database,
@@ -146,6 +147,43 @@ export interface WriteScope {
   readonly [scopeBrand]: true;
 }
 const liveScopes = new WeakSet<WriteScope>();
+const commitQueues = new WeakMap<WriteScope, (() => void)[]>();
+
+/** Runs `callback` once the scope's transaction commits; a throw or rejection calls `onFailure` instead of reaching the writer. */
+export function afterCommit(
+  scope: WriteScope,
+  callback: () => unknown,
+  onFailure: () => void,
+) {
+  scopeDatabase(scope);
+  const fail = () => {
+    try {
+      onFailure();
+    } catch {
+      // The write already committed; a failing reporter must not fail it.
+    }
+  };
+  commitQueues.get(scope)?.push(() => {
+    try {
+      const result = callback();
+      if (result instanceof Promise) result.catch(fail);
+    } catch {
+      fail();
+    }
+  });
+}
+
+/** Marks a completed backup copy without migrations, leaving it in DELETE journal mode so the file stands alone. */
+export function markBackupCopy(path: string) {
+  const copy = new Database(path, { fileMustExist: true });
+  try {
+    if (copy.pragma("journal_mode = DELETE", { simple: true }) !== "delete")
+      throw new Error("Backup copy journal mode unchanged");
+    markBackup(copy);
+  } finally {
+    copy.close();
+  }
+}
 
 export function scopeDatabase(scope: WriteScope): Database.Database {
   if (!liveScopes.has(scope) || !scope.database.inTransaction)
@@ -158,10 +196,12 @@ export function writeTransaction<Result>(
   callback: (scope: WriteScope) => Result,
 ): Result {
   if (database.inTransaction) throw new Error("Write transaction cannot nest");
-  return database
+  const committed: (() => void)[] = [];
+  const result = database
     .transaction(() => {
       const scope: WriteScope = { database, [scopeBrand]: true };
       liveScopes.add(scope);
+      commitQueues.set(scope, committed);
       try {
         return callback(scope);
       } finally {
@@ -169,6 +209,8 @@ export function writeTransaction<Result>(
       }
     })
     .immediate();
+  for (const run of committed) run();
+  return result;
 }
 
 import { createHash } from "node:crypto";
