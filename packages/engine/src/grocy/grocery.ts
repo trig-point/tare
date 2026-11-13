@@ -71,7 +71,7 @@ const uniqueColumns: Record<Entity, string> = {
 // Grocy parses each filter with an unanchored pattern and silently truncates the
 // value at the first character outside it before an SQL equality match.
 const filterValue = /^[A-Za-z\p{L}\p{M}0-9*_.$#^| -\\]+$/u;
-const findable = (value: unknown): value is string =>
+export const findable = (value: unknown): value is string =>
   typeof value === "string" &&
   filterValue.test(value) &&
   value.trim() === value &&

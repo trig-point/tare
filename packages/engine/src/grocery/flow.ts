@@ -1,10 +1,13 @@
 import type { Database } from "better-sqlite3";
 import { z } from "zod";
-import { ownedFoodInput, ownedFoodValues } from "../foods/create.ts";
+import {
+  checkOwnedFood,
+  ownedFoodInput,
+  ownedFoodValues,
+} from "../foods/create.ts";
 import type { GrocyResult } from "../grocy/client.ts";
 import type { GrocyConfig } from "../grocy/config.ts";
-import type { createGroceryClient } from "../grocy/grocery.ts";
-import { validateNumbers } from "../logging/schemas.ts";
+import { type createGroceryClient, findable } from "../grocy/grocery.ts";
 import { OperationError } from "../operations/registry.ts";
 import { readBindingToken } from "../queries/grocery/read-binding-token.ts";
 import { readRequestById } from "../queries/grocery/read-request-by-id.ts";
@@ -14,7 +17,8 @@ import * as store from "./store.ts";
 
 const id = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 const amount = z.number().positive().finite();
-const label = z.string().min(1).max(100);
+// Names the Grocy client can look up and create; anything else would fail as a read error later.
+const label = z.string().max(100).refine(findable);
 const reuseOr = <Create extends z.ZodType>(create: Create) =>
   z.union([z.strictObject({ id }), z.strictObject({ create })]);
 export const groceryInput = z.strictObject({
@@ -26,7 +30,13 @@ export const groceryInput = z.strictObject({
   location: reuseOr(z.strictObject({ name: label })),
   product: reuseOr(z.strictObject({ name: label })),
   barcode: z
-    .strictObject({ code: z.string().regex(/^[0-9A-Za-z]{1,48}$/), amount })
+    .strictObject({
+      code: z
+        .string()
+        .regex(/^[0-9A-Za-z]{1,48}$/)
+        .refine(findable),
+      amount,
+    })
     .nullable(),
   amount,
   purchased_date: z.iso.date(),
@@ -37,6 +47,7 @@ const bindingSeen = z
   .strictObject({ change_token: z.uuid(), status: z.string().max(40) })
   .nullable();
 export const groceryPlan = groceryInput.extend({
+  food_seen: z.string().length(64).nullable(),
   generation: id,
   restore_nonce: z.string().regex(/^[0-9a-f]{32}$/),
   binding_seen: bindingSeen,
@@ -105,6 +116,14 @@ const touches = (plan: Input, foodId?: number, productId?: number | null) =>
     plan.barcode ? `barcode:${plan.barcode.code}` : "",
   ].filter((key) => key && !key.endsWith(":undefined"));
 
+/** Grocy stores barcodes as raw text, but a UPC-A and its zero-padded EAN-13 are one code. */
+const barcodeForms = (code: string) =>
+  /^\d{12}$/.test(code)
+    ? [code, `0${code}`]
+    : /^0\d{12}$/.test(code)
+      ? [code, code.slice(1)]
+      : [code];
+
 export type GroceryService = ReturnType<typeof createGroceryService>;
 
 export function createGroceryService({
@@ -152,7 +171,13 @@ export function createGroceryService({
       .filter((row) => {
         const found = readRequestById(database, { id: row.id });
         if (!found) return false;
-        const other = groceryPlan.safeParse(JSON.parse(found.plan));
+        let stored: unknown;
+        try {
+          stored = JSON.parse(found.plan);
+        } catch {
+          stored = null;
+        }
+        const other = groceryPlan.safeParse(stored);
         const productStep = store
           .readGrocery(database, found.user_id, found.mutation_id)
           ?.steps.find((step) => step.kind === "product");
@@ -172,7 +197,7 @@ export function createGroceryService({
   async function propose(userId: number, input: Input) {
     admit(userId);
     const row = readConnection(database);
-    if (!row || row.reset_required)
+    if (!row || row.reset_required || row.user_id !== ownerId)
       throw new OperationError(503, "pantry_reset_required");
     const version = await checkVersion();
     if (version) throw new OperationError(503, `grocy_${version}`.slice(0, 40));
@@ -180,6 +205,7 @@ export function createGroceryService({
     const flag = (code: string, found: number | null = null) =>
       issues.push({ code, id: found });
     let food: z.output<typeof groceryProposal>["food"];
+    let foodSeen: string | null = null;
     if ("food_id" in input.food) {
       const owned = selectFood(database, {
         user_id: userId,
@@ -187,16 +213,24 @@ export function createGroceryService({
       });
       if (!owned) throw new OperationError(404, "food_not_found");
       food = owned;
+      foodSeen = store.foodFingerprint(owned);
     } else {
-      validateNumbers(ownedFoodValues(input.food.create));
-      food = { ...input.food.create, name: input.food.create.name.trim() };
+      checkOwnedFood(database, ownedFoodValues(input.food.create));
+      food = input.food.create;
     }
     const unit =
       "id" in input.unit
         ? await maybe(client.unit(owner, input.unit.id))
         : (await live(client.unitNamed(owner, input.unit.create.name)))[0];
     if ("id" in input.unit ? unit?.active !== 1 : unit)
-      flag("id" in input.unit ? "unit_inactive" : "unit_exists", unit?.id);
+      flag(
+        "id" in input.unit
+          ? unit
+            ? "unit_inactive"
+            : "unit_missing"
+          : "unit_exists",
+        "id" in input.unit ? input.unit.id : unit?.id,
+      );
     const location =
       "id" in input.location
         ? await maybe(client.location(owner, input.location.id))
@@ -205,8 +239,12 @@ export function createGroceryService({
           )[0];
     if ("id" in input.location ? location?.active !== 1 : location)
       flag(
-        "id" in input.location ? "location_inactive" : "location_exists",
-        location?.id,
+        "id" in input.location
+          ? location
+            ? "location_inactive"
+            : "location_missing"
+          : "location_exists",
+        "id" in input.location ? input.location.id : location?.id,
       );
     const product =
       "id" in input.product
@@ -216,17 +254,33 @@ export function createGroceryService({
           )[0];
     if (!("id" in input.product)) {
       if (product) flag("product_exists", product.id);
-    } else if (product?.active !== 1) flag("product_inactive", product?.id);
+    } else if (product?.active !== 1)
+      flag(product ? "product_inactive" : "product_missing", input.product.id);
     else if (product.enable_tare_weight_handling === 1)
       flag("product_tare", product.id);
     else if (!("id" in input.unit) || product.qu_id_stock !== input.unit.id)
       flag("unit_mismatch", product.qu_id_stock);
     let barcode = input.barcode;
     if (barcode) {
-      const [taken] = await live(client.barcodeRows(owner, barcode.code));
-      if (taken && "id" in input.product && taken.product_id === product?.id)
+      const rows = [];
+      for (const form of barcodeForms(barcode.code))
+        rows.push(...(await live(client.barcodeRows(owner, form))));
+      const [taken] = rows;
+      if (
+        rows.length &&
+        rows.every(
+          (row) => "id" in input.product && row.product_id === input.product.id,
+        )
+      )
         barcode = null;
-      else if (taken) flag("barcode_taken", taken.product_id);
+      else if (taken)
+        flag(
+          "barcode_taken",
+          rows.find(
+            (row) =>
+              !("id" in input.product) || row.product_id !== input.product.id,
+          )?.product_id ?? taken.product_id,
+        );
     }
     const seen =
       "food_id" in input.food
@@ -236,7 +290,10 @@ export function createGroceryService({
             reference_id: input.food.food_id,
           })
         : null;
-    if (seen && (!("id" in input.product) || seen.product_id !== product?.id))
+    if (
+      seen &&
+      (!("id" in input.product) || seen.product_id !== input.product.id)
+    )
       flag("food_bound", seen.product_id);
     const plan = groceryPlan.parse({
       ...input,
@@ -245,6 +302,7 @@ export function createGroceryService({
           ? input.food
           : { create: ownedFoodValues(input.food.create) },
       barcode,
+      food_seen: foodSeen,
       generation: row.generation,
       restore_nonce: store.currentNonce(database),
       binding_seen: seen && {
@@ -289,7 +347,7 @@ export function createGroceryService({
       },
       open:
         userId === ownerId
-          ? store.openGroceries(database).map((row) => ({
+          ? store.openGroceries(database, 100).map((row) => ({
               mutation_id: row.mutation_id,
               state: row.state,
             }))
@@ -298,10 +356,10 @@ export function createGroceryService({
     });
   }
 
-  /** Owner-only candidate purchases for an uncertain add, read after its proved stock_log maximum. */
+  /** Candidates come only from the request's own live connection; a failed read lists none and is incomplete. */
   async function status(userId: number, mutationId?: string) {
     if (mutationId === undefined) {
-      if (userId !== ownerId) throw new OperationError(403, "forbidden");
+      admit(userId);
       return view(userId, "");
     }
     const found = store.readGrocery(database, userId, mutationId);
@@ -309,21 +367,37 @@ export function createGroceryService({
     const add = found.steps.find(
       (step) => step.kind === "stock_add" && step.state === "uncertain",
     );
+    const row = readConnection(database);
+    const live =
+      !!config &&
+      userId === ownerId &&
+      !!row &&
+      !row.reset_required &&
+      row.user_id === found.request.user_id &&
+      row.generation === found.request.generation &&
+      row.url === found.request.url &&
+      row.username === found.request.username;
     let candidates: z.output<typeof request>["candidates"] = null;
-    if (add?.product_id && add.stock_log_max !== null) {
+    if (live && add?.product_id && add.stock_log_max !== null) {
       const after = await client.purchasesAfter(
         owner,
         add.product_id,
         add.stock_log_max,
         10,
       );
-      if (after?.status === "ok")
-        candidates = {
-          transactions: [
-            ...new Set(after.value.rows.map((row) => row.transaction_id)),
-          ],
-          complete: after.value.complete,
-        };
+      candidates =
+        after?.status === "ok"
+          ? {
+              transactions: [
+                ...new Set(
+                  after.value.rows
+                    .filter((row) => row.undone === 0)
+                    .map((row) => row.transaction_id),
+                ),
+              ],
+              complete: after.value.complete,
+            }
+          : { transactions: [], complete: false };
     }
     return view(userId, mutationId, null, candidates);
   }

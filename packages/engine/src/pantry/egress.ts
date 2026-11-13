@@ -4,6 +4,8 @@ import type { AuthEnv } from "../auth/middleware.ts";
 import type { GrocyConfig } from "../grocy/config.ts";
 
 const groceryOperations = ["propose_grocery", "read_grocery"];
+export const isGroceryOperation = (name: string) =>
+  groceryOperations.includes(name);
 export const isPantryOperation = (name: string) =>
   [
     ...groceryOperations,
@@ -169,7 +171,7 @@ export function pantryEgress(
               .filter((request) => request?.method === "tools/call")
               .map((request) => request.params?.name);
             guarded = called.some(isGuardedOperation);
-            grocery = called.some((name) => groceryOperations.includes(name));
+            grocery = called.some(isGroceryOperation);
           }
         } catch {
           guarded = grocery = true;

@@ -34,7 +34,7 @@ const operations: {
     name: "read_grocery",
     path: "/api/pantry/groceries/status",
     description:
-      "Read a grocery request's steps, or the open requests when mutation_id is omitted. An uncertain purchase lists candidate transaction ids.",
+      "Read a grocery request's steps, or the open requests when mutation_id is omitted. An uncertain purchase lists candidate transaction ids; complete is false when some may be missing.",
     input: z.strictObject({ mutation_id: z.uuid().optional() }),
     output: groceryStatus,
     run: (service, userId, input: { mutation_id?: string }) =>

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { fromStoredNutrition, toStoredNutrition } from "@tare/nutrition";
+import type { Database } from "better-sqlite3";
 import { z as zod } from "zod";
 import { scopeDatabase, type WriteScope, writeTransaction } from "../db.ts";
 import { resolveProvenance } from "../logging/provenance.ts";
@@ -29,13 +30,8 @@ export type OwnedFoodValues = Numbers & {
   source_food_id: number | null;
 };
 
-/** Validates and inserts one owned food in the caller's transaction; callers keep their own replay records. */
-export function insertOwnedFood(
-  scope: WriteScope,
-  userId: number,
-  values: OwnedFoodValues,
-) {
-  const database = scopeDatabase(scope);
+/** Every check insertOwnedFood makes, without writing; throws the same errors. */
+export function checkOwnedFood(database: Database, values: OwnedFoodValues) {
   const name = values.name.trim();
   const unit = values.serving_unit.trim();
   const source = values.source?.trim() ?? null;
@@ -70,9 +66,20 @@ export function insertOwnedFood(
     "food",
   );
   if (!nutrition.ok) throw new OperationError(400, "invalid_request");
+  return { name, source, numbers, row: nutrition.row };
+}
+
+/** Validates and inserts one owned food in the caller's transaction; callers keep their own replay records. */
+export function insertOwnedFood(
+  scope: WriteScope,
+  userId: number,
+  values: OwnedFoodValues,
+) {
+  const database = scopeDatabase(scope);
+  const { name, source, numbers, row } = checkOwnedFood(database, values);
   const food = insertFood(database, {
     ...numbers,
-    ...nutrition.row,
+    ...row,
     user_id: userId,
     name,
     source,
