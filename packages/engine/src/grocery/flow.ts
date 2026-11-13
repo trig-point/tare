@@ -768,12 +768,19 @@ export function createGroceryService({
     userId: number,
     input: { mutation_id: string; request_mutation_id: string },
   ) {
-    const found = lookup(userId, input.request_mutation_id);
-    if (!found) throw new OperationError(404, "grocery_not_found");
     const decided = readDecision(database, {
       user_id: userId,
       mutation_id: input.mutation_id.toLowerCase(),
     });
+    // A recorded abandon replays through its request, which has left the open list.
+    const recorded =
+      decided && readRequestById(database, { id: decided.request_id });
+    const found =
+      recorded &&
+      recorded.mutation_id === input.request_mutation_id.toLowerCase()
+        ? store.readGrocery(database, recorded.user_id, recorded.mutation_id)
+        : lookup(userId, input.request_mutation_id);
+    if (!found) throw new OperationError(404, "grocery_not_found");
     if (!decided && stopping) throw new OperationError(503, "pantry_stopping");
     store.abandonGrocery(
       database,
