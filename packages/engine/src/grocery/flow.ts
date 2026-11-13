@@ -16,6 +16,7 @@ import {
   purchaseMatches,
 } from "../grocy/grocery.ts";
 import { OperationError } from "../operations/registry.ts";
+import { listSteps } from "../queries/grocery/list-steps.ts";
 import { readBindingToken } from "../queries/grocery/read-binding-token.ts";
 import { readDecision } from "../queries/grocery/read-decision.ts";
 import { readRequestById } from "../queries/grocery/read-request-by-id.ts";
@@ -114,16 +115,6 @@ const planSteps = (plan: Input): store.StepKind[] => [
   ...(plan.barcode ? (["barcode"] as const) : []),
   "stock_add",
 ];
-const touches = (plan: Input, foodId?: number, productId?: number | null) =>
-  [
-    `food:${"food_id" in plan.food ? plan.food.food_id : foodId}`,
-    "id" in plan.product
-      ? `product:${plan.product.id}`
-      : `name:${plan.product.create.name}`,
-    productId ? `product:${productId}` : "",
-    plan.barcode ? `barcode:${plan.barcode.code}` : "",
-  ].filter((key) => key && !key.endsWith(":undefined"));
-
 /** Grocy stores barcodes as raw text, but a UPC-A and its zero-padded EAN-13 are one code. */
 const barcodeForms = (code: string) =>
   /^\d{12}$/.test(code)
@@ -131,6 +122,17 @@ const barcodeForms = (code: string) =>
     : /^0\d{12}$/.test(code)
       ? [code, code.slice(1)]
       : [code];
+const touches = (plan: Input, foodId?: number, productId?: number | null) =>
+  [
+    `food:${"food_id" in plan.food ? plan.food.food_id : foodId}`,
+    "id" in plan.product
+      ? `product:${plan.product.id}`
+      : `name:${plan.product.create.name}`,
+    productId ? `product:${productId}` : "",
+    ...(plan.barcode
+      ? barcodeForms(plan.barcode.code).map((form) => `barcode:${form}`)
+      : []),
+  ].filter((key) => key && !key.endsWith(":undefined"));
 
 const sha256 = (text: string) =>
   createHash("sha256").update(text).digest("hex");
@@ -211,9 +213,9 @@ export function createGroceryService({
           stored = null;
         }
         const other = groceryPlan.safeParse(stored);
-        const productStep = store
-          .readGrocery(database, found.user_id, found.mutation_id)
-          ?.steps.find((step) => step.kind === "product");
+        const productStep = listSteps(database, {
+          request_id: found.id,
+        }).find((step) => step.kind === "product");
         // An unreadable plan cannot prove it is unrelated.
         return (
           !other.success ||
@@ -737,7 +739,7 @@ export function createGroceryService({
       (step) => step.kind === "stock_add" && step.state === "uncertain",
     );
     const row = readConnection(database);
-    const live =
+    const ownConnection =
       !!config &&
       userId === ownerId &&
       !!row &&
@@ -747,7 +749,7 @@ export function createGroceryService({
       row.url === found.request.url &&
       row.username === found.request.username;
     let candidates: z.output<typeof request>["candidates"] = null;
-    if (live && add?.product_id && add.stock_log_max !== null) {
+    if (ownConnection && add?.product_id && add.stock_log_max !== null) {
       const after = await client.purchasesAfter(
         owner,
         add.product_id,
