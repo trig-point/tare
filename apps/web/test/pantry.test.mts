@@ -194,19 +194,24 @@ test("food search results offer each match by name", () => {
   const markup = results([
     {
       reference: { kind: "food", id: 1 },
+      source: null,
       name: "Jasmine rice (Example), dry",
       brand: null,
       serving: "45 g",
     },
     {
       reference: { kind: "source_food", id: 1 },
+      source: "off",
       name: "Example rice",
       brand: "Example brand",
       serving: null,
     },
   ]);
   assert.match(markup, /Jasmine rice \(Example\), dry<\/strong><span>45 g</);
-  assert.match(markup, /Example rice<\/strong><span>Example brand</);
+  assert.match(
+    markup,
+    /Example rice<\/strong><span>Example brand<\/span><span>Open Food Facts</,
+  );
   assert.match(markup, /aria-label="Choose Jasmine rice \(Example\), dry"/);
 });
 

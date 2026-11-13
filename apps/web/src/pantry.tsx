@@ -21,6 +21,7 @@ import {
   type StockRequests,
   saveBinding,
 } from "./pantry-api.ts";
+import { sourceName } from "./today-api.ts";
 
 type Props = { person: number; online: boolean };
 
@@ -327,6 +328,7 @@ export function FoodResults({
           <strong>{food.name}</strong>
           {food.brand && <span>{food.brand}</span>}
           {food.serving && <span>{food.serving}</span>}
+          {food.source && <span>{sourceName(food.source)}</span>}
           <button
             type="button"
             aria-label={`Choose ${food.name}`}

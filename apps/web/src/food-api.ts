@@ -79,6 +79,7 @@ const foodMatchesSchema = z.object({
         kind: z.enum(["food", "source_food"]),
         id: z.number().int().positive(),
       }),
+      source: z.enum(["usda", "off"]).nullable(),
       name: z.string(),
       brand: z.string().nullable(),
       serving: z.string().nullable(),

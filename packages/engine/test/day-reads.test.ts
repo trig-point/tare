@@ -230,13 +230,14 @@ test("food search matches part of a name in the person's own foods and cached fo
   food.run(admin.user.id, "Jasmine rice (Example), dry", 45, "g");
   food.run(admin.user.id, "Example soup", null, null);
   food.run(member.user.id, "Example brown rice", 1, "cup");
-  database
-    .prepare(
-      "INSERT INTO source_foods (source, source_key, name, brand, provenance, fetched_at) VALUES ('off', 'example-rice', 'Example rice', 'Example brand', 'label', '2026-01-01T00:00:00.000Z')",
-    )
-    .run();
+  const cache = database.prepare(
+    "INSERT INTO source_foods (source, source_key, name, brand, provenance, fetched_at) VALUES ('off', ?, ?, 'Example brand', 'label', '2026-01-01T00:00:00.000Z')",
+  );
+  cache.run("example-rice", "Example rice");
+  cache.run("example-oats", "Example oats");
   const match = (kind: string, id: number, name: string, serving: unknown) => ({
     reference: { kind, id },
+    source: kind === "food" ? null : "off",
     name,
     brand: kind === "food" ? null : "Example brand",
     serving,

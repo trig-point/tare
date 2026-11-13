@@ -94,6 +94,7 @@ export const dayReadOperations = [
             kind: zod.enum(["food", "source_food"]),
             id: zod.number().int().positive(),
           }),
+          source: zod.enum(["usda", "off"]).nullable(),
           name: zod.string(),
           brand: zod.string().nullable(),
           serving: zod.string().nullable(),
@@ -109,6 +110,7 @@ export const dayReadOperations = [
         pattern,
       }).map((food) => ({
         reference: { kind: "food" as const, id: food.id },
+        source: null,
         name: food.name,
         brand: null,
         serving: serving(food.serving_size, food.serving_unit),
@@ -116,6 +118,7 @@ export const dayReadOperations = [
       const cached = searchSourceFoods(context.database, { pattern }).map(
         (food) => ({
           reference: { kind: "source_food" as const, id: food.id },
+          source: food.source,
           name: food.name,
           brand: food.brand,
           serving: serving(food.serving_size, food.serving_unit),
