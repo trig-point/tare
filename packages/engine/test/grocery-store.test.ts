@@ -307,6 +307,8 @@ test("restart and restore make unfinished steps uncertain and rotate the nonce",
   assert.throws(() => adopt(2, 1, { object_id: 9 }, before), {
     code: "grocery_connection_changed",
   });
+  const mixed = { object_id: 9, transaction_id: "tx8", product_id: 9 };
+  assert.throws(() => adopt(8, 1, mixed), { code: "grocery_proof_ambiguous" });
   assert.equal(adopt(3, 1, { object_id: 9 }).state, "open");
   assert.throws(() => adopt(5, 2, { object_id: 9 }), {
     code: "grocery_step_not_adoptable",

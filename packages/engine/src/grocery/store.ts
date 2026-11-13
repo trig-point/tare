@@ -371,6 +371,9 @@ export function adoptGroceryStep(
   },
   clock: Clock,
 ) {
+  // A mixed proof would adopt an object step yet reserve a purchase and close the request.
+  if ("transaction_id" in input.proof && "object_id" in input.proof)
+    throw new OperationError(400, "grocery_proof_ambiguous");
   const purchase = "transaction_id" in input.proof ? input.proof : null;
   const objectId = "object_id" in input.proof ? input.proof.object_id : null;
   return decide(
