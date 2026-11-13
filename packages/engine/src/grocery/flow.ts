@@ -301,13 +301,21 @@ export function createGroceryService({
       for (const form of barcodeForms(barcode.code))
         rows.push(...(await live(client.barcodeRows(owner, form))));
       const [taken] = rows;
-      if (
-        rows.length &&
+      const onProduct =
+        rows.length > 0 &&
         rows.every(
           (row) => "id" in input.product && row.product_id === input.product.id,
+        );
+      const amount = barcode.amount;
+      // A kept barcode must scan the amount the person confirmed.
+      if (
+        onProduct &&
+        rows.every(
+          (row) => row.amount === amount && row.qu_id === product?.qu_id_stock,
         )
       )
         barcode = null;
+      else if (onProduct) flag("barcode_differs", taken?.product_id);
       else if (taken)
         flag(
           "barcode_taken",
