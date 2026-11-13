@@ -7,6 +7,7 @@ import {
   type WriteScope,
   writeTransaction,
 } from "../db.ts";
+import { recoverGroceries } from "../grocery/store.ts";
 import type { GrocyResult, grocyBookingsSchema } from "../grocy/client.ts";
 import type { GrocyConfig } from "../grocy/config.ts";
 import { OperationError } from "../operations/registry.ts";
@@ -340,6 +341,7 @@ export function recoverRequests(database: Database, clock: { now(): Date }) {
     recoverAttempts(database, { finished_at: now, uncertain_since: now });
     recoverRecords(database, { now });
     recoverQuery(database, { uncertain_since: now, updated_at: now });
+    recoverGroceries(scope, now);
     clearBackupMarker(database);
   });
 }
