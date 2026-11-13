@@ -18,6 +18,7 @@ import {
   type PantryService,
   pantryBindingInput,
   pantryOutput,
+  pantryProductsOutput,
   pantryProposal,
   pantryRecipesOutput,
   pantryReference,
@@ -155,6 +156,21 @@ const operations: {
     disabled: { outcome: "disabled" },
     run: (service, userId, input: { recipe_id: number }) =>
       service.removeLink(userId, input.recipe_id),
+  },
+  {
+    name: "list_pantry_products",
+    method: "GET",
+    path: "/api/pantry/products",
+    callerClass: "browser",
+    input: zod.strictObject({}),
+    output: pantryProductsOutput,
+    disabled: {
+      state: "disabled",
+      generation: null,
+      error: null,
+      products: [],
+    },
+    run: (service, userId) => service.products(userId),
   },
   {
     name: "read_pantry_link",

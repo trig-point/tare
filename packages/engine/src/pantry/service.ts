@@ -120,6 +120,20 @@ export const pantryOutput = z.strictObject({
   bindings: z.array(pantryBinding),
   requested: z.array(requestedAmount),
 });
+export const pantryProductsOutput = z
+  .strictObject({
+    state: z.enum(["disabled", "reset_required", "unavailable", "ready"]),
+    generation: z.number().nullable(),
+    error: pantryError.nullable(),
+    products: z.array(
+      pantryProduct
+        .pick({ product_id: true, name: true, stock_unit: true })
+        .extend({
+          amount: z.number().finite(),
+        }),
+    ),
+  })
+  .refine((result) => (result.state === "unavailable") === !!result.error);
 export const pantryRecipesOutput = z
   .strictObject({
     state: z.enum(["disabled", "reset_required", "unavailable", "ready"]),
@@ -381,6 +395,65 @@ export function createPantryService({
         };
       }),
     });
+  }
+  async function products(userId: number) {
+    authorize(userId);
+    const empty = { generation: null, error: null, products: [] };
+    if (!config)
+      return pantryProductsOutput.parse({ ...empty, state: "disabled" });
+    const row = readConnection(database);
+    if (!row) throw new Error("Pantry connection missing");
+    const { generation } = row;
+    if (row.reset_required)
+      return pantryProductsOutput.parse({
+        ...empty,
+        state: "reset_required",
+        generation,
+      });
+    ensure(generation);
+    try {
+      const catalog = ok(await client.catalog(owner));
+      ensure(generation);
+      const units = new Map(
+        ok(await client.units(owner)).map((unit) => [unit.id, unit]),
+      );
+      ensure(generation);
+      const stocked = new Map(
+        listProducts(database, { user_id: userId, generation }).map((row) => {
+          const stock = pantryProduct.parse(JSON.parse(row.product));
+          return [stock.product_id, stock];
+        }),
+      );
+      const listed = catalog
+        .filter((product) => product.active === 1)
+        .map((product) => {
+          const unit = units.get(product.qu_id_stock);
+          if (!unit) throw new ReadFailure({ reason: "invalid_response" });
+          const stock = stocked.get(product.id);
+          return {
+            product_id: product.id,
+            name: product.name,
+            stock_unit: unit,
+            amount: stock?.stock_unit.id === unit.id ? stock.amount : 0,
+          };
+        })
+        .sort((left, right) => left.name.localeCompare(right.name));
+      return pantryProductsOutput.parse({
+        ...empty,
+        state: "ready",
+        generation,
+        products: listed,
+      });
+    } catch (caught) {
+      if (!(caught instanceof ReadFailure)) throw caught;
+      ensure(generation);
+      return pantryProductsOutput.parse({
+        ...empty,
+        state: "unavailable",
+        generation,
+        error: caught.detail,
+      });
+    }
   }
   async function saveLink(
     userId: number,
@@ -778,6 +851,7 @@ export function createPantryService({
       return reconciliation.decide(userId, input);
     },
     recipes: (userId: number) => track(recipes(userId)),
+    products: (userId: number) => track(products(userId)),
     saveLink: (userId: number, input: z.infer<typeof recipeLinkInput>) =>
       track(saveLink(userId, input)),
     removeLink(userId: number, recipeId: number) {

@@ -158,7 +158,7 @@ export async function pantryHarness(context: TestContext) {
       recipes: () => ok([]),
       recipePositions: () => ok([]),
       fulfillment: () => ok([]),
-      units: () => ok([]),
+      units: () => ok([{ id: 2, name: "can", name_plural: null }]),
       conversions: () => ok([]),
     },
   });

@@ -6,11 +6,15 @@ import { pantryHarness } from "../../../packages/engine/test/support/pantry-fake
 import { ApiError } from "../src/api.ts";
 import {
   type Pantry,
+  type PantryProducts,
   readLink,
   readPantry,
+  readProducts,
   readRequests,
   reconcile,
+  refreshPantry,
   type StockRequests,
+  saveBinding,
 } from "../src/pantry-api.ts";
 import { test } from "./support.mts";
 import "./tsx.mts";
@@ -34,7 +38,11 @@ const ready: Pantry = {
   bindings: [],
   requested: [],
 };
-const render = (pantry: Pantry, requests?: StockRequests) =>
+const render = (
+  pantry: Pantry,
+  requests?: StockRequests,
+  catalog?: PantryProducts,
+) =>
   renderToStaticMarkup(
     createElement(
       QueryClientProvider,
@@ -47,6 +55,7 @@ const render = (pantry: Pantry, requests?: StockRequests) =>
         requests,
         requestsFailed: false,
         link: "https://grocy.example.com/",
+        catalog,
       }),
     ),
   );
@@ -217,4 +226,64 @@ test("food search results offer each match by name", () => {
 
 test("a food search with no matches says so", () => {
   assert.equal(results([]), "<p>No foods found</p>");
+});
+
+test("the product picker lists an out-of-stock product and binds it", async (context) => {
+  const harness = await pantryHarness(context);
+  context.mock.method(globalThis, "fetch", harness.admin.request);
+  harness.database
+    .prepare(
+      "INSERT INTO foods (user_id, name, provenance) VALUES (?, ?, 'label')",
+    )
+    .run(harness.admin.user.id, "Example soup");
+  const pantry = await refreshPantry();
+  const catalog = await readProducts();
+  assert.match(
+    render(pantry, undefined, catalog),
+    /<option value="8">Synthetic item 8 \(0 can\)<\/option>/,
+  );
+  const bound = await saveBinding({
+    reference_kind: "food",
+    reference_id: 1,
+    product_id: 8,
+    stock_unit_id: 2,
+    quantity_per_serving: 1,
+    expected_generation: Number(pantry.generation),
+  });
+  assert.deepEqual(
+    bound.bindings.map((binding) => binding.product_id),
+    [8],
+  );
+  context.mock.method(globalThis, "fetch", harness.member.request);
+  await assert.rejects(
+    readProducts(),
+    (error) => error instanceof ApiError && error.status === 403,
+  );
+});
+
+test("an unavailable Grocy says so and keeps stocked products", () => {
+  const markup = render(ready, undefined, {
+    state: "unavailable",
+    generation: null,
+    products: [],
+  });
+  assert.match(markup, /Grocy unavailable/);
+  assert.match(markup, /<option value="7">Synthetic beans \(4 can\)/);
+});
+
+test("a product list from before a reset is not offered", () => {
+  const markup = render(ready, undefined, {
+    state: "ready",
+    generation: 2,
+    products: [
+      {
+        product_id: 8,
+        name: "Old item",
+        amount: 0,
+        stock_unit: { id: 2, name: "can", name_plural: null },
+      },
+    ],
+  });
+  assert.doesNotMatch(markup, /Old item/);
+  assert.match(markup, /<option value="7">Synthetic beans/);
 });
