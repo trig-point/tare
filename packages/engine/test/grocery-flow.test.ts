@@ -528,6 +528,46 @@ test("execute_grocery sets up the rice plan once from empty Grocy and from reuse
   assert.notEqual(binding()?.change_token, before);
 });
 
+test("a food edit during a run stops the plan before the next send", async (context) => {
+  const { propose, execute, database, fake, posts } = await runner(context);
+  const first = await execute({
+    mutation_id: mutation(1),
+    plan: (await propose(rice)).body.plan,
+  });
+  const foodId = first.body.request.food_id;
+  const owned = {
+    ...rice,
+    food: { food_id: foodId },
+    unit: { id: 10 },
+    location: { id: 10 },
+    product: { id: 10 },
+  };
+  const editDuring = async (path: string, mutationId: string) => {
+    const { plan } = (await propose(owned)).body;
+    const held = fake.hold(path);
+    const running = execute({ mutation_id: mutationId, plan });
+    await held.reached;
+    database
+      .prepare("UPDATE foods SET kcal = kcal + 1 WHERE id = ?")
+      .run(foodId);
+    held.release();
+    return (await running).body;
+  };
+  const inserting = await editDuring("/objects/products/10", mutation(2));
+  assert.equal(inserting.error.code, "grocery_plan_changed");
+  const sending = await editDuring("/objects/stock_log", mutation(3));
+  assert.equal(sending.request.stopped, "grocery_plan_changed");
+  assert.equal(sending.request.state, "open");
+  assert.equal(posts(), 5);
+  const stored = database
+    .prepare("SELECT mutation_id FROM grocery_requests ORDER BY id")
+    .all();
+  assert.deepEqual(stored, [
+    { mutation_id: mutation(1) },
+    { mutation_id: mutation(3) },
+  ]);
+});
+
 test("a lost purchase response is never resent and is adopted only with a matching transaction", async (context) => {
   const {
     propose,
@@ -567,6 +607,15 @@ test("a lost purchase response is never resent and is adopted only with a matchi
     transaction_id: "9500",
   });
   assert.equal(wrong.body.error.code, "grocery_proof_mismatch");
+  const unknown = { ...proof, mutation_id: mutation(4) };
+  assert.equal(
+    (await adopt({ ...unknown, transaction_id: "9999" })).body.error.code,
+    "grocery_proof_mismatch",
+  );
+  assert.equal(
+    (await adopt({ ...unknown, object_id: 1 })).body.error.code,
+    "grocery_proof_ambiguous",
+  );
   const adopted = await adopt({
     ...proof,
     mutation_id: mutation(3),
@@ -608,7 +657,7 @@ test("one plan runs at a time, stops on drift or an unsupported version, and shu
   assert.equal(posts(), 4);
 
   grocyState.version = "4.7.1";
-  held = fake.hold("/objects/products/10");
+  held = fake.hold("/stock/products/10/add");
   const last = run();
   await held.reached;
   const drained = (wired.grocery as { stop(): Promise<void> }).stop();
@@ -621,6 +670,17 @@ test("one plan runs at a time, stops on drift or an unsupported version, and shu
   assert.equal((await last).body.request.state, "completed");
   assert.equal(posts(), 5);
   assert.equal((await propose(rice)).body.error.code, "pantry_stopping");
+
+  const before = await runner(context);
+  const early = (await before.propose(rice)).body.plan;
+  const reading = before.fake.hold("/objects/products/10");
+  const unsent = before.execute({ mutation_id: mutation(3), plan: early });
+  await reading.reached;
+  const stopped = (before.wired.grocery as { stop(): Promise<void> }).stop();
+  reading.release();
+  await stopped;
+  assert.equal((await unsent).body.request.stopped, "pantry_stopping");
+  assert.equal(before.posts(), 4);
 });
 
 test("a plan from before a restore cannot start, and abandon works while reset is required", async (context) => {
