@@ -103,6 +103,7 @@ test("Grocery writes send the frozen body once and classify each outcome", async
       qu_id_stock: 4,
       default_best_before_days: -2,
     }),
+    await client.addStock(1, 1, { ...add, purchased_date: "2026-02-30" }),
     await client.addStock(1, 1, { ...add, best_before_date: "2026-13-01" }),
   ])
     assert.equal(result?.status, "not_sent");

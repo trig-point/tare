@@ -37,6 +37,7 @@ test("create_food stores owned foods with replayable, owner-scoped receipts", as
   const { member, post, counts } = await setup(context);
   const created = await post("/api/foods", rice);
   assert.equal(created.status, 201);
+  assert.equal(created.food.serving_unit, "cup");
   const upper = { ...rice, mutation_id: rice.mutation_id.toUpperCase() };
   for (const replay of [rice, upper])
     assert.deepEqual(await post("/api/foods", replay), {
@@ -60,7 +61,8 @@ test("create_food rejects unusable label values without leaving a food or receip
   const refusal = async (body: unknown) =>
     (await post("/api/foods", body)).error?.code;
   const { kcal: _kcal, ...withoutKcal } = rice;
-  assert.equal(await refusal(withoutKcal), "invalid_request");
+  for (const unusable of [withoutKcal, { ...rice, kcal: null, carbs_g: null }])
+    assert.equal(await refusal(unusable), "invalid_request");
   assert.equal(
     await refusal({ ...rice, source: undefined }),
     "label_source_required",

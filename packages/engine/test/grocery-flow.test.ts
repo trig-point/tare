@@ -221,6 +221,8 @@ test("propose_grocery plans from empty Grocy and from reuse with no write, and b
     (await propose({ ...rice, food: { create: unsourced } })).body.error.code,
     "label_source_required",
   );
+  const spaced = { create: { name: "Serving", name_plural: "Servings " } };
+  assert.equal((await propose({ ...rice, unit: spaced })).status, 400);
 
   seed(tables);
   const padded = { ...rice, barcode: { code: "001234567890", amount: 1 } };
@@ -350,6 +352,11 @@ test("grocery reads list overlaps, bindings and live purchase candidates", async
 
   database.prepare("UPDATE pantry_connection SET reset_required = 1").run();
   assert.equal((await status()).body.request.candidates, null);
+  const unknown = { mutation_id: "00000000-0000-4000-8000-000000000009" };
+  assert.equal(
+    (await json(admin, "/api/pantry/groceries/status", unknown)).status,
+    404,
+  );
 });
 
 test("grocery responses withhold the private Grocy address while the public link stays", async (context) => {
