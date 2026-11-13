@@ -3,7 +3,13 @@ import type { MiddlewareHandler } from "hono";
 import type { AuthEnv } from "../auth/middleware.ts";
 import type { GrocyConfig } from "../grocy/config.ts";
 
-const groceryOperations = ["propose_grocery", "read_grocery"];
+const groceryOperations = [
+  "propose_grocery",
+  "read_grocery",
+  "execute_grocery",
+  "adopt_grocery_step",
+  "abandon_grocery",
+];
 export const isGroceryOperation = (name: string) =>
   groceryOperations.includes(name);
 export const isPantryOperation = (name: string) =>

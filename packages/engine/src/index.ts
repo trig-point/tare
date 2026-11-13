@@ -92,7 +92,10 @@ async function startEngine(scaleUsers: Map<string, number> | null) {
     database: connection.database,
     config: config.grocy,
     ownerId: grocyOwner,
+    clock,
     client: createGroceryClient({ config: config.grocy, ownerId: grocyOwner }),
+    refresh: pantry.refreshAfterDelivery,
+    report: reportPantry,
   });
   const stock = createPantryStock({
     config: config.grocy,
@@ -244,11 +247,13 @@ async function startEngine(scaleUsers: Map<string, number> | null) {
     // Stop new claims before anything else; in-flight sends still finalize.
     const dispatchStopped = dispatcher?.stop();
     const pantryStopped = pantry.stop();
+    const groceryStopped = grocery.stop();
     try {
       const results = await Promise.allSettled([
         runner.stop(),
         dispatchStopped,
         pantryStopped,
+        groceryStopped,
         oura.stop(),
         calendar.stop(),
         homeAssistant?.stop(),

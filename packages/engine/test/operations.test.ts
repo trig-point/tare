@@ -112,6 +112,9 @@ test("registry constrains public and administrator operations and inventories ev
       "reconcile_pantry_request",
       "pantry_suggestion_context",
       "propose_grocery",
+      "execute_grocery",
+      "adopt_grocery_step",
+      "abandon_grocery",
       "read_grocery",
     ],
   );
