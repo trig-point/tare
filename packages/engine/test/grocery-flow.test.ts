@@ -49,7 +49,7 @@ const rice = {
   quantity_per_serving: 1,
 };
 
-/** Grocy rows answer exact `column=value` filters; every method is recorded. */
+/** Grocy rows answer exact `column=value` filters and grow on POST; every method is recorded. */
 async function setup(context: TestContext) {
   const tables: Record<string, Record<string, unknown>[]> = {
     quantity_units: [],
@@ -62,15 +62,25 @@ async function setup(context: TestContext) {
     Object.keys(tables).flatMap((table) => [
       [
         `/objects/${table}`,
-        ({ search }: { search: URLSearchParams }) =>
-          (tables[table] ?? []).filter((row) =>
-            search.getAll("query[]").every((filter) => {
-              const [column, value] = filter.split(/[=>]/);
-              return filter.includes(">")
-                ? Number(row[column ?? ""]) > Number(value)
-                : String(row[column ?? ""]) === value;
-            }),
-          ),
+        ({ search, body }: { search: URLSearchParams; body: unknown }) =>
+          body
+            ? {
+                created_object_id: String(
+                  (tables[table] ?? []).push({
+                    active: 1,
+                    ...(body as object),
+                    id: (tables[table]?.length ?? 0) + 10,
+                  }) + 9,
+                ),
+              }
+            : (tables[table] ?? []).filter((row) =>
+                search.getAll("query[]").every((filter) => {
+                  const [column, value] = filter.split(/[=>]/);
+                  return filter.includes(">")
+                    ? Number(row[column ?? ""]) > Number(value)
+                    : String(row[column ?? ""]) === value;
+                }),
+              ),
       ],
       [
         `/objects/${table}/:id`,
@@ -80,9 +90,30 @@ async function setup(context: TestContext) {
       ],
     ]),
   );
+  const grocyState = { version: "4.7.1", loseAdd: false, refreshes: 0 };
   const fake = grocyFetch({
     ...routes,
-    "/system/info": { grocy_version: { Version: "4.7.1" } },
+    "/system/info": () => ({ grocy_version: { Version: grocyState.version } }),
+    "/stock/products/:id/add": ({
+      id,
+      body,
+    }: {
+      id: string;
+      body: Record<string, unknown>;
+    }) => {
+      const row = {
+        ...body,
+        id: (tables.stock_log?.length ?? 0) + 42,
+        product_id: Number(id),
+        transaction_id: String((tables.stock_log?.length ?? 0) + 9000),
+        undone: 0,
+      };
+      tables.stock_log?.push(row);
+      if (grocyState.loseAdd) throw new Error("Response lost");
+      return [row];
+    },
+    "/stock/transactions/:id": ({ id }: { id: string }) =>
+      tables.stock_log?.filter((row) => row.transaction_id === id),
   });
   const methods: string[] = [];
   const wired: Record<string, object> = {};
@@ -112,6 +143,8 @@ async function setup(context: TestContext) {
     database,
     config: grocy,
     ownerId: admin.user.id,
+    clock,
+    refresh: async () => grocyState.refreshes++,
     client: createGroceryClient({
       config: grocy,
       ownerId: admin.user.id,
@@ -123,7 +156,7 @@ async function setup(context: TestContext) {
   });
   const changes = () =>
     database.prepare("SELECT total_changes() AS count").get();
-  return { ...harness, tables, methods, changes };
+  return { ...harness, tables, methods, changes, fake, grocyState, wired };
 }
 
 const reuse = {
@@ -390,4 +423,196 @@ test("grocery responses withhold the private Grocy address while the public link
       (await (await send(body, session)).text()).includes("//grocy"),
       false,
     );
+});
+
+const mutation = (digit: number) =>
+  `00000000-0000-4000-8000-00000000000${digit}`;
+async function runner(context: TestContext) {
+  const harness = await setup(context);
+  const call = (path: string) => (body: unknown) =>
+    json(harness.admin, `/api/pantry/groceries${path}`, body);
+  const posts = () =>
+    harness.methods.filter((method) => method === "POST").length;
+  const binding = () =>
+    harness.database
+      .prepare(
+        "SELECT product_id, stock_unit_id, change_token FROM pantry_bindings",
+      )
+      .get() as { product_id: number; change_token: string } | undefined;
+  return {
+    ...harness,
+    propose: call("/proposal"),
+    execute: call(""),
+    status: call("/status"),
+    adopt: call("/adopt"),
+    abandon: call("/abandon"),
+    posts,
+    binding,
+  };
+}
+
+test("execute_grocery sets up the rice plan once from empty Grocy and from reuse, and replays", async (context) => {
+  const { propose, execute, member, tables, posts, binding, grocyState } =
+    await runner(context);
+  const { plan } = (await propose(rice)).body;
+  const first = await execute({ mutation_id: mutation(1), plan });
+  assert.equal(first.body.request.state, "completed");
+  assert.equal(posts(), 5);
+  assert.equal(tables.products?.[0]?.default_best_before_days, -1);
+  assert.deepEqual(
+    [tables.stock_log?.[0]?.amount, tables.stock_log?.[0]?.best_before_date],
+    [2.5, "2999-12-31"],
+  );
+  assert.equal(binding()?.product_id, 10);
+  assert.equal(grocyState.refreshes, 1);
+  const replayed = await execute({ mutation_id: mutation(1), plan });
+  assert.deepEqual(replayed.body.request, first.body.request);
+  assert.equal(posts(), 5);
+  const changed = { ...plan, amount: 3 };
+  assert.equal(
+    (await execute({ mutation_id: mutation(1), plan: changed })).body.error
+      .code,
+    "grocery_conflict",
+  );
+  const other = await json(member, "/api/pantry/groceries", {
+    mutation_id: mutation(2),
+    plan,
+  });
+  assert.equal(other.status, 403);
+
+  const before = binding()?.change_token;
+  const again = await propose({
+    ...rice,
+    food: { food_id: first.body.request.food_id },
+    unit: { id: 10 },
+    location: { id: 10 },
+    product: { id: 10 },
+  });
+  assert.deepEqual(again.body.steps, ["stock_add"]);
+  const bought = await execute({
+    mutation_id: mutation(3),
+    plan: again.body.plan,
+  });
+  assert.equal(bought.body.request.state, "completed");
+  assert.equal(posts(), 6);
+  assert.notEqual(binding()?.change_token, before);
+});
+
+test("a lost purchase response is never resent and is adopted only with a matching transaction", async (context) => {
+  const {
+    propose,
+    execute,
+    status,
+    adopt,
+    tables,
+    posts,
+    binding,
+    grocyState,
+  } = await runner(context);
+  seed(tables);
+  const { plan } = (await propose(reuse)).body;
+  grocyState.loseAdd = true;
+  const lost = await execute({ mutation_id: mutation(1), plan });
+  assert.equal(lost.body.request.steps[0].state, "uncertain");
+  grocyState.loseAdd = false;
+  await execute({ mutation_id: mutation(1), plan });
+  assert.equal(posts(), 1);
+  const { request, restore_nonce } = (
+    await status({ mutation_id: mutation(1) })
+  ).body;
+  assert.deepEqual(request.candidates, {
+    transactions: ["9000"],
+    complete: true,
+  });
+  tables.stock_log?.push({
+    ...tables.stock_log[0],
+    id: 43,
+    amount: 1,
+    transaction_id: "9500",
+  });
+  const proof = { request_mutation_id: mutation(1), number: 1, restore_nonce };
+  const wrong = await adopt({
+    ...proof,
+    mutation_id: mutation(2),
+    transaction_id: "9500",
+  });
+  assert.equal(wrong.body.error.code, "grocery_proof_mismatch");
+  const adopted = await adopt({
+    ...proof,
+    mutation_id: mutation(3),
+    transaction_id: "9000",
+  });
+  assert.equal(adopted.body.request.state, "completed");
+  assert.equal(binding()?.product_id, 1);
+  assert.equal(grocyState.refreshes, 1);
+  const replay = await adopt({
+    ...proof,
+    mutation_id: mutation(3),
+    transaction_id: "9000",
+  });
+  assert.equal(replay.body.request.state, "completed");
+  assert.equal(posts(), 1);
+});
+
+test("one plan runs at a time, stops on drift or an unsupported version, and shutdown drains a send", async (context) => {
+  const { propose, execute, tables, posts, fake, grocyState, wired } =
+    await runner(context);
+  const { plan } = (await propose(rice)).body;
+  const run = () => execute({ mutation_id: mutation(1), plan });
+  let held = fake.hold("/objects/products/10");
+  const first = run();
+  await held.reached;
+  assert.equal(
+    (await execute({ mutation_id: mutation(2), plan })).body.error.code,
+    "grocery_busy",
+  );
+  assert.equal((await run()).body.error.code, "grocery_in_progress");
+  const product = tables.products?.[0] as Record<string, unknown>;
+  product.enable_tare_weight_handling = 1;
+  held.release();
+  assert.equal((await first).body.request.stopped, "grocery_product_changed");
+  assert.equal(posts(), 4);
+  product.enable_tare_weight_handling = 0;
+  grocyState.version = "4.8.0";
+  assert.equal((await run()).body.request.stopped, "unsupported_version");
+  assert.equal(posts(), 4);
+
+  grocyState.version = "4.7.1";
+  held = fake.hold("/objects/products/10");
+  const last = run();
+  await held.reached;
+  const drained = (wired.grocery as { stop(): Promise<void> }).stop();
+  held.release();
+  await drained;
+  assert.equal((await last).body.request.state, "completed");
+  assert.equal(posts(), 5);
+  assert.equal((await propose(rice)).body.error.code, "pantry_stopping");
+});
+
+test("a plan from before a restore cannot start, and abandon works while reset is required", async (context) => {
+  const { propose, execute, abandon, database, tables, posts, grocyState } =
+    await runner(context);
+  seed(tables);
+  const stale = (await propose(reuse)).body.plan;
+  grocyState.loseAdd = true;
+  const plan = (await propose({ ...reuse, amount: 1 })).body.plan;
+  await execute({ mutation_id: mutation(1), plan });
+  database
+    .prepare("UPDATE grocery_restore_nonce SET nonce = ?")
+    .run("0".repeat(32));
+  assert.equal(
+    (await execute({ mutation_id: mutation(2), plan: stale })).body.error.code,
+    "grocery_plan_changed",
+  );
+  database.prepare("UPDATE pantry_connection SET reset_required = 1").run();
+  const stopped = await abandon({
+    mutation_id: mutation(3),
+    request_mutation_id: mutation(1),
+  });
+  assert.equal(stopped.body.request.state, "abandoned");
+  assert.equal(
+    (await execute({ mutation_id: mutation(1), plan })).body.request.state,
+    "abandoned",
+  );
+  assert.equal(posts(), 1);
 });
