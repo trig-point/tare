@@ -25,7 +25,7 @@ export function claimStep(
   params: ClaimStepParams,
 ): ClaimStepResult[] {
   const sql = `
-	UPDATE grocery_steps SET state = 'sending', claim_token = ?, product_id = ?, stock_log_max = ?, updated_at = ?
+	UPDATE grocery_steps SET state = 'sending', reason = NULL, claim_token = ?, product_id = ?, stock_log_max = ?, updated_at = ?
 	WHERE request_id = ? AND number = ? AND state = 'pending'
 	  AND EXISTS (SELECT 1 FROM grocery_requests WHERE id = ? AND state = 'open')
 	  AND NOT EXISTS (SELECT 1 FROM grocery_steps AS earlier WHERE earlier.request_id = ? AND earlier.number < ? AND earlier.state NOT IN ('confirmed', 'adopted'))
