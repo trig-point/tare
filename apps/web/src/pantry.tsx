@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 import { ApiError, liveRefresh } from "./api.ts";
-import { catalogQuery, type FoodChoice } from "./food-api.ts";
+import { type OwnFood, ownFoodsQuery } from "./food-api.ts";
 import { clientId } from "./outbox-store.ts";
 import {
   type Decision,
@@ -180,8 +180,7 @@ export function PantryView({
                     `Product ${binding.product_id}`}
                 </strong>{" "}
                 {binding.quantity_per_serving} per serving of{" "}
-                {binding.reference_kind === "food" ? "food" : "source food"}{" "}
-                {binding.reference_id}
+                {binding.name ?? `food ${binding.reference_id}`}
                 {binding.status !== "valid" && (
                   <span> ({binding.status.replaceAll("_", " ")})</span>
                 )}{" "}
@@ -233,11 +232,11 @@ function BindingForm({
   save: (run: () => Promise<Pantry>) => void;
 }) {
   const [name, setName] = useState("");
-  const [food, setFood] = useState<FoodChoice | null>(null);
+  const [food, setFood] = useState<OwnFood | null>(null);
   const [productId, setProductId] = useState("");
   const [quantity, setQuantity] = useState("");
-  const catalog = useQuery({
-    ...catalogQuery(person, name),
+  const search = useQuery({
+    ...ownFoodsQuery(person, name),
     enabled: !disabled && name.trim().length >= 2 && food === null,
   });
   const product = pantry.products.find(
@@ -250,8 +249,8 @@ function BindingForm({
       return;
     save(() =>
       saveBinding({
-        reference_kind: food.reference.kind,
-        reference_id: food.reference.id,
+        reference_kind: "food",
+        reference_id: food.id,
         product_id: product.product_id,
         stock_unit_id: product.stock_unit.id,
         quantity_per_serving: amount,
@@ -265,24 +264,18 @@ function BindingForm({
         <label htmlFor="pantry-food">Food</label>
         <input
           id="pantry-food"
+          type="search"
+          autoComplete="off"
           value={food ? food.name : name}
           onChange={(event) => {
             setFood(null);
             setName(event.target.value);
           }}
         />
-        {!food &&
-          catalog.data?.foods.map((choice) => (
-            <button
-              key={`${choice.reference.kind}-${choice.reference.id}`}
-              type="button"
-              onClick={() => setFood(choice)}
-            >
-              {[choice.name, choice.brand, choice.serving]
-                .filter(Boolean)
-                .join(", ")}
-            </button>
-          ))}
+        {!food && search.isError && <p role="alert">Couldn’t search foods</p>}
+        {!food && search.data && (
+          <FoodResults foods={search.data} choose={setFood} />
+        )}
         <label htmlFor="pantry-product">Product</label>
         <select
           id="pantry-product"
@@ -315,6 +308,33 @@ function BindingForm({
         </button>
       </fieldset>
     </form>
+  );
+}
+
+export function FoodResults({
+  foods,
+  choose,
+}: {
+  foods: OwnFood[];
+  choose: (food: OwnFood) => void;
+}) {
+  if (foods.length === 0) return <p>No foods found</p>;
+  return (
+    <ul className="entries" aria-label="Foods">
+      {foods.map((food) => (
+        <li key={food.id}>
+          <strong>{food.name}</strong>
+          {food.serving && <span>{food.serving}</span>}
+          <button
+            type="button"
+            aria-label={`Choose ${food.name}`}
+            onClick={() => choose(food)}
+          >
+            Choose
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }
 

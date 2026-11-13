@@ -2,6 +2,7 @@ import { z as zod } from "zod";
 import { localDay } from "../logging/day.ts";
 import { weightRow } from "../logging/schemas.ts";
 import { defineOperation, operationPerson } from "../operations/registry.ts";
+import { searchOwnFoods } from "../queries/search-own-foods.ts";
 import { selectTargetNotice } from "../queries/select-target-notice.ts";
 import { selectTodayWeights } from "../queries/select-today-weights.ts";
 import { targetNoticeSchema } from "../target/operations.ts";
@@ -74,6 +75,43 @@ export const dayReadOperations = [
       return {
         status: 200,
         body: findFood(context.database, operationPerson(context).id, input),
+      };
+    },
+  }),
+  defineOperation({
+    ...shared,
+    name: "search_foods",
+    callerClass: "browser",
+    method: "POST",
+    path: "/api/foods/search",
+    bodyLimit: 1024,
+    input: zod.strictObject({ name: zod.string().trim().min(1).max(200) }),
+    output: zod.strictObject({
+      foods: zod.array(
+        zod.strictObject({
+          id: zod.number().int().positive(),
+          name: zod.string(),
+          serving: zod.string().nullable(),
+        }),
+      ),
+    }),
+    handler(input, context) {
+      const foods = searchOwnFoods(context.database, {
+        user_id: operationPerson(context).id,
+        pattern: input.name.replace(/[!%_]/g, "!$&"),
+      });
+      return {
+        status: 200,
+        body: {
+          foods: foods.map((food) => ({
+            id: food.id,
+            name: food.name,
+            serving:
+              food.serving_size === null
+                ? null
+                : `${food.serving_size} ${food.serving_unit ?? ""}`.trim(),
+          })),
+        },
       };
     },
   }),

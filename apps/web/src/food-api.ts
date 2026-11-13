@@ -72,6 +72,32 @@ export function catalogQuery(person: number, name: string) {
   };
 }
 
+const ownFoodsSchema = z.object({
+  foods: z.array(
+    z.object({
+      id: z.number().int().positive(),
+      name: z.string(),
+      serving: z.string().nullable(),
+    }),
+  ),
+});
+export type OwnFood = z.infer<typeof ownFoodsSchema>["foods"][number];
+
+export function ownFoodsQuery(person: number, name: string) {
+  const term = name.trim();
+  return {
+    queryKey: ["search_foods", person, term] as const,
+    queryFn: async ({ signal }: { signal: AbortSignal }) =>
+      ownFoodsSchema.parse(
+        await api("/api/foods/search", {
+          method: "POST",
+          body: JSON.stringify({ name: term }),
+          signal,
+        }),
+      ).foods,
+  };
+}
+
 export async function findFood(
   name: string,
   signal?: AbortSignal,

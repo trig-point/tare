@@ -24,6 +24,7 @@ export const pantrySchema = z.object({
     z.object({
       reference_kind: z.enum(["food", "source_food"]),
       reference_id: z.number(),
+      name: z.string().nullable(),
       product_id: z.number(),
       quantity_per_serving: z.number(),
       status: z.string(),

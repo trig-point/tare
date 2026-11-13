@@ -15,7 +15,7 @@ import {
 import { test } from "./support.mts";
 import "./tsx.mts";
 
-const { PantryView } = await import("../src/pantry.tsx");
+const { FoodResults, PantryView } = await import("../src/pantry.tsx");
 
 const ready: Pantry = {
   state: "ready",
@@ -162,4 +162,37 @@ test("abandoning a pending request moves it to history and keeps its error code"
     readLink(),
     (error) => error instanceof ApiError && error.status === 403,
   );
+});
+
+test("a binding row names its food", () => {
+  const binding = {
+    reference_kind: "food" as const,
+    product_id: 7,
+    quantity_per_serving: 0.5,
+    status: "valid",
+  };
+  const markup = render({
+    ...ready,
+    bindings: [
+      { ...binding, reference_id: 1, name: "Jasmine rice (Example), dry" },
+      { ...binding, reference_id: 2, name: null },
+    ],
+  });
+  assert.match(markup, /0.5 per serving of Jasmine rice \(Example\), dry/);
+  assert.match(markup, /0.5 per serving of food 2/);
+});
+
+const results = (foods: Parameters<typeof FoodResults>[0]["foods"]) =>
+  renderToStaticMarkup(createElement(FoodResults, { foods, choose: () => {} }));
+
+test("food search results offer each match by name", () => {
+  const markup = results([
+    { id: 1, name: "Jasmine rice (Example), dry", serving: "45 g" },
+  ]);
+  assert.match(markup, /Jasmine rice \(Example\), dry<\/strong><span>45 g</);
+  assert.match(markup, /aria-label="Choose Jasmine rice \(Example\), dry"/);
+});
+
+test("a food search with no matches says so", () => {
+  assert.equal(results([]), "<p>No foods found</p>");
 });

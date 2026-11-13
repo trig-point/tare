@@ -305,6 +305,7 @@ test("bindings validate, replace, track refresh status and clear on reset", asyn
   assert.deepEqual(saved, [
     {
       ...food,
+      name: "Synthetic soup",
       product_id: 1,
       stock_unit_id: 1,
       quantity_per_serving: 0.5,

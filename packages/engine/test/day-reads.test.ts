@@ -221,3 +221,27 @@ for (const mode of ["fallback", "access"] as const)
       ["2026-01-01", [], 0],
     );
   });
+
+test("food search matches part of a name and lists only the person's own foods", async (context) => {
+  const { database, admin, member } = await twoUsers(context, "fallback");
+  const food = database.prepare(
+    "INSERT INTO foods (user_id, name, serving_size, serving_unit, provenance) VALUES (?, ?, ?, ?, 'label')",
+  );
+  food.run(admin.user.id, "Jasmine rice (Example), dry", 45, "g");
+  food.run(admin.user.id, "Example soup", null, null);
+  food.run(member.user.id, "Example brown rice", 1, "cup");
+  const search = async (person: typeof admin, name: string) => {
+    const response = await person.request("/api/foods/search", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
+    assert.equal(response.status, 200);
+    return response.json();
+  };
+  assert.deepEqual(await search(admin, "RICE"), {
+    foods: [{ id: 1, name: "Jasmine rice (Example), dry", serving: "45 g" }],
+  });
+  assert.deepEqual(await search(member, "rice"), {
+    foods: [{ id: 3, name: "Example brown rice", serving: "1 cup" }],
+  });
+});
