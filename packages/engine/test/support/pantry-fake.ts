@@ -34,7 +34,12 @@ export async function json(
 }
 
 type GrocyRoute =
-  | ((request: { path: string; id?: string; body: unknown }) => unknown)
+  | ((request: {
+      path: string;
+      id?: string;
+      body: unknown;
+      search: URLSearchParams;
+    }) => unknown)
   | unknown;
 
 /**
@@ -68,6 +73,7 @@ export function grocyFetch(routes: Record<string, GrocyRoute>) {
         ? await route({
             path,
             id: path.match(/\/(\d+)(?=\/|$)/)?.[1],
+            search: new URL(String(url)).searchParams,
             body: init?.body
               ? JSON.parse(await new Response(init.body).text())
               : undefined,

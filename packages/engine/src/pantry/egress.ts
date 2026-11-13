@@ -1,9 +1,14 @@
+import { isIP } from "node:net";
 import type { MiddlewareHandler } from "hono";
 import type { AuthEnv } from "../auth/middleware.ts";
 import type { GrocyConfig } from "../grocy/config.ts";
 
+const groceryOperations = ["propose_grocery", "read_grocery"];
+export const isGroceryOperation = (name: string) =>
+  groceryOperations.includes(name);
 export const isPantryOperation = (name: string) =>
   [
+    ...groceryOperations,
     "list_pantry",
     "refresh_pantry",
     "reset_pantry_connection",
@@ -43,11 +48,30 @@ const isGuardedPath = (path: string) =>
     "/api/plan/slot",
   ].includes(path);
 
-export async function guardPantryResponse(response: Response, key: string) {
+/** Text forms of the private Grocy address; a single-label host only counts inside URL syntax. */
+export function grocyLocators(url: string) {
+  const parsed = new URL(url);
+  const bare = parsed.hostname.replace(/^\[|\]$/g, "");
+  const single = isIP(bare) === 0 && !bare.includes(".");
+  return [
+    parsed.origin,
+    `//${parsed.host}`,
+    ...(single
+      ? [`//${bare}`, ...(parsed.port ? [`${bare}:${parsed.port}`] : [])]
+      : [parsed.host, bare]),
+  ].map((locator) => locator.toLowerCase());
+}
+
+export async function guardPantryResponse(
+  response: Response,
+  key: string,
+  locators: string[] = [],
+) {
   const escaped = JSON.stringify(key).slice(1, -1);
   const nested = JSON.stringify(escaped).slice(1, -1);
   const unsafe = (payload: string) =>
-    [key, escaped, nested].some((secret) => payload.includes(secret));
+    [key, escaped, nested].some((secret) => payload.includes(secret)) ||
+    locators.some((locator) => payload.toLowerCase().includes(locator));
   const headers = new Headers(response.headers);
   if (!response.body) return response;
   if (!headers.get("content-type")?.includes("text/event-stream")) {
@@ -123,6 +147,7 @@ export function pantryEgress(
   return async (context, next) => {
     const key = config?.apiKey;
     let guarded = isGuardedPath(context.req.path);
+    let grocery = context.req.path.startsWith("/api/pantry/groceries");
     if (key && context.req.path === "/mcp" && context.req.method === "POST") {
       const reader = context.req.raw.clone().body?.getReader();
       if (reader) {
@@ -134,7 +159,7 @@ export function pantryEgress(
             if (chunk.done) break;
             size += chunk.value.byteLength;
             if (size > 65_536) {
-              guarded = true;
+              guarded = grocery = true;
               break;
             }
             chunks.push(chunk.value);
@@ -142,14 +167,14 @@ export function pantryEgress(
           if (!guarded) {
             const request = JSON.parse(Buffer.concat(chunks).toString("utf8"));
             const requests = Array.isArray(request) ? request : [request];
-            guarded = requests.some(
-              (request) =>
-                request?.method === "tools/call" &&
-                isGuardedOperation(request.params?.name),
-            );
+            const called = requests
+              .filter((request) => request?.method === "tools/call")
+              .map((request) => request.params?.name);
+            guarded = called.some(isGuardedOperation);
+            grocery = called.some(isGroceryOperation);
           }
         } catch {
-          guarded = true;
+          guarded = grocery = true;
         } finally {
           void reader.cancel().catch(() => {
             guarded = true;
@@ -160,7 +185,11 @@ export function pantryEgress(
     await next();
     if (key && guarded) {
       try {
-        context.res = await guardPantryResponse(context.res, key);
+        context.res = await guardPantryResponse(
+          context.res,
+          key,
+          grocery && config ? grocyLocators(config.url) : [],
+        );
       } catch {
         context.res = new Response(null, {
           status: 503,

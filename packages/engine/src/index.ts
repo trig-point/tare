@@ -9,8 +9,10 @@ import { createCalendarRefresher } from "./calendar/refresh.ts";
 import { createCalendarTransport } from "./calendar/transport.ts";
 import { loadStartupConfig, reportStartupError } from "./config.ts";
 import { openDatabase } from "./db.ts";
+import { createGroceryService } from "./grocery/flow.ts";
 import { createGrocyClient } from "./grocy/client.ts";
 import { resolveGrocyOwner, safeGrocyText } from "./grocy/config.ts";
+import { createGroceryClient } from "./grocy/grocery.ts";
 import { createMealButtons } from "./home-assistant/meal-buttons.ts";
 import { nextSlotProvider } from "./home-assistant/next-slot.ts";
 import { createHomeAssistantPublisher } from "./home-assistant/publisher.ts";
@@ -86,6 +88,12 @@ async function startEngine(scaleUsers: Map<string, number> | null) {
           report: reportPantry,
         })
       : undefined;
+  const grocery = createGroceryService({
+    database: connection.database,
+    config: config.grocy,
+    ownerId: grocyOwner,
+    client: createGroceryClient({ config: config.grocy, ownerId: grocyOwner }),
+  });
   const stock = createPantryStock({
     config: config.grocy,
     ownerId: grocyOwner,
@@ -215,6 +223,7 @@ async function startEngine(scaleUsers: Map<string, number> | null) {
     clock,
     dummyHash,
     pantry,
+    grocery,
     stock,
     questionKinds,
     verifyPassword,

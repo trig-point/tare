@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { fromStoredNutrition, toStoredNutrition } from "@tare/nutrition";
+import type { Database } from "better-sqlite3";
 import { z as zod } from "zod";
 import { scopeDatabase, type WriteScope, writeTransaction } from "../db.ts";
 import { resolveProvenance } from "../logging/provenance.ts";
@@ -29,13 +30,8 @@ export type OwnedFoodValues = Numbers & {
   source_food_id: number | null;
 };
 
-/** Validates and inserts one owned food in the caller's transaction; callers keep their own replay records. */
-export function insertOwnedFood(
-  scope: WriteScope,
-  userId: number,
-  values: OwnedFoodValues,
-) {
-  const database = scopeDatabase(scope);
+/** Every check insertOwnedFood makes, without writing; throws the same errors. */
+export function checkOwnedFood(database: Database, values: OwnedFoodValues) {
   const name = values.name.trim();
   const unit = values.serving_unit.trim();
   const source = values.source?.trim() ?? null;
@@ -70,9 +66,20 @@ export function insertOwnedFood(
     "food",
   );
   if (!nutrition.ok) throw new OperationError(400, "invalid_request");
+  return { name, source, numbers, row: nutrition.row };
+}
+
+/** Validates and inserts one owned food in the caller's transaction; callers keep their own replay records. */
+export function insertOwnedFood(
+  scope: WriteScope,
+  userId: number,
+  values: OwnedFoodValues,
+) {
+  const database = scopeDatabase(scope);
+  const { name, source, numbers, row } = checkOwnedFood(database, values);
   const food = insertFood(database, {
     ...numbers,
-    ...nutrition.row,
+    ...row,
     user_id: userId,
     name,
     source,
@@ -84,6 +91,28 @@ export function insertOwnedFood(
 
 const text = zod.string().trim().min(1);
 const { kcal, ...optionalNutrients } = nutrientFields;
+export const ownedFoodInput = zod.strictObject({
+  name: text,
+  serving_size: zod.number().positive(),
+  serving_unit: text,
+  kcal,
+  ...zod.object(optionalNutrients).partial().shape,
+  provenance: zod.enum(["label", "estimated"]),
+  source: text.nullable().optional(),
+  source_food_id: zod.number().int().positive().nullable().optional(),
+});
+/** Every key in a fixed order, so the same food always serializes the same way. */
+export const ownedFoodValues = (
+  input: zod.output<typeof ownedFoodInput>,
+): OwnedFoodValues => ({
+  ...numbersFrom(input),
+  name: input.name,
+  serving_size: input.serving_size,
+  serving_unit: input.serving_unit,
+  provenance: input.provenance,
+  source: input.source ?? null,
+  source_food_id: input.source_food_id ?? null,
+});
 const foodView = zod.strictObject({
   id: zod.number().int().positive(),
   name: zod.string(),
@@ -105,29 +134,11 @@ const createFood = defineOperation({
   method: "POST",
   path: "/api/foods",
   bodyLimit: 8192,
-  input: zod.strictObject({
-    mutation_id: zod.uuid(),
-    name: text,
-    serving_size: zod.number().positive(),
-    serving_unit: text,
-    kcal,
-    ...zod.object(optionalNutrients).partial().shape,
-    provenance: zod.enum(["label", "estimated"]),
-    source: text.nullable().optional(),
-    source_food_id: zod.number().int().positive().nullable().optional(),
-  }),
+  input: ownedFoodInput.extend({ mutation_id: zod.uuid() }),
   output: zod.strictObject({ food: foodView, created: zod.boolean() }),
   handler(input, context) {
     const userId = operationPerson(context).id;
-    const values: OwnedFoodValues = {
-      ...numbersFrom(input),
-      name: input.name,
-      serving_size: input.serving_size,
-      serving_unit: input.serving_unit,
-      provenance: input.provenance,
-      source: input.source ?? null,
-      source_food_id: input.source_food_id ?? null,
-    };
+    const values = ownedFoodValues(input);
     const request_hash = createHash("sha256")
       .update(JSON.stringify(values))
       .digest("hex");
