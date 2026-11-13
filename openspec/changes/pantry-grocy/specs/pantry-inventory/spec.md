@@ -85,6 +85,25 @@ Tare SHALL consume only a confirmed binding from the exact food or source-food r
 - **WHEN** a bound food is logged while the snapshot shows less than the requested amount
 - **THEN** the intake and its request are saved with a shortage warning, and Grocy's response decides the outcome
 
+### Requirement: Confirmed grocery provisioning
+Tare SHALL create Grocy units, locations, products and barcodes and add purchases only from a plan the owner or an agent acting for the owner confirmed. A proposal SHALL read Grocy and SHALL NOT write to Grocy or the database. Execution SHALL require the unchanged plan and a mutation id, SHALL send each Grocy write at most once, and SHALL stop at a step whose result is uncertain until the owner adopts a verified object or abandons the request. Adoption SHALL check every planned field against Grocy. Reset SHALL be refused while a grocery request is unfinished. A restored backup SHALL invalidate plans made before it. Grocery responses SHALL withhold the API key and the private Grocy address.
+
+#### Scenario: Proposal for an empty Grocy
+- **WHEN** an agent proposes the rice example against a Grocy with no units, locations or products
+- **THEN** the plan lists unit, location, product, barcode and purchase steps and nothing is written
+
+#### Scenario: Name already taken
+- **WHEN** a planned product name already exists in Grocy
+- **THEN** the proposal is blocked with that product's id so the agent can propose reusing it
+
+#### Scenario: Purchase response is lost
+- **WHEN** Grocy's answer to a purchase never arrives
+- **THEN** the purchase is not sent again; the owner adopts a matching transaction logged after the proved stock_log maximum, or abandons the request
+
+#### Scenario: Another user proposes a grocery
+- **WHEN** a user other than the configured owner calls a grocery operation
+- **THEN** the call is rejected without reading Grocy
+
 ### Requirement: Durable consumption delivery
 A non-suppressed intake by the configured owner whose reference has a binding with a valid recorded status in the active connection generation SHALL create its consumption request in the same SQLite transaction as the intake. Every non-suppressed referenced intake SHALL record, in that transaction, either its request or the reason no request was created, and that record SHALL be deleted with its intake. An ad hoc intake SHALL report an unmatched reason derived from its missing reference. A request SHALL have its own never-reused id, belong to one connection generation, keep its intake's client id and freeze its product, unit, per-serving amount and quantity. An intake whose owner and client id match a retained request SHALL NOT create another request. An engine starting on a restored backup SHALL convert pending and sending requests to uncertain before any dispatch. At most one request SHALL link to an existing intake per generation. Delivery SHALL occur outside that transaction and only to the request's own generation. Replays SHALL reuse the request and return its current state. Dispatch claims SHALL be durable and exclusive. A client refusal after a claim, before the consume request starts, SHALL return the request to pending for the next sweep, keep the attempt and freeze its quantity. A failed pre-send product read SHALL leave the request pending without a claim or an attempt. A 2xx response with a schema-valid body SHALL be confirmed and record Grocy's returned transaction identifiers. Only HTTP 400 with a known pre-write refusal message SHALL be rejected with its reason. Every other result once the consume request has started, including a refused connection, a timeout, lost response, 3xx or 5xx response, schema-invalid body or restart after claim, SHALL be uncertain and SHALL NOT be resent automatically.
 

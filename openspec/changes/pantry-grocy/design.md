@@ -10,7 +10,7 @@ Reuse check: npm offers Grocy MCP servers, Node-RED nodes and a Digital Alchemy 
 
 Goals: accurate grocery stock visible to agents, confirmed eating reflected in stock, and pantry-based suggestions immediately afterward in this same change.
 
-Non-goals: a Tare grocery scanner, automatic product creation, copying order meals into Grocy, shopping-list writes, a numerical meal solver, or automatic consumption when merely planning or suggesting food.
+Non-goals: a Tare grocery scanner, product creation without a confirmed plan, copying order meals into Grocy, shopping-list writes, a numerical meal solver, or automatic consumption when merely planning or suggesting food.
 
 ## Decisions
 
@@ -71,6 +71,10 @@ Provide owner-scoped `list_pantry_requests` (unresolved, or resolved history fro
 Edits and deletions change nutrition history, not physical consumption. While a request is pending and has never had an attempt, a servings edit recomputes its quantity from the frozen per-serving amount in the same transaction. Deleting the intake cancels any pending request, including one returned to pending after a not-sent attempt, because nothing reached Grocy. `edit_intake` cannot change the food reference; edits to the eaten-at time or note have no stock effect. Once a request has had an attempt or is resolved, its frozen quantity never changes. A later servings edit keeps the request linked and records an edit notice; deleting the intake detaches any request that is not pending with a copy of the intake's details. Neither undoes Grocy stock automatically. A delivered request stays resolved and shows the notice. A claimed or uncertain request still needs reconciliation, and a not-delivered retry sends the frozen quantity, with the notice shown beside it. This avoids treating a corrected calorie record as food returned to the cupboard.
 
 The historical importer writes ad hoc entries with no reference, so it already has no binding; it also passes `suppress` so that adding references to imports later cannot turn old records into current pantry consumption.
+
+### Confirmed grocery provisioning
+
+An agent can add a grocery for the owner: create or reuse the Grocy quantity unit, location and product, optionally add a barcode, add the purchase and bind a new or existing Tare food. `propose_grocery` reads Grocy and the local database and returns the full plan (food values and label basis, every object to create or reuse, the amount in the product's stock unit, both dates, the connection generation, the restore nonce, the binding it expects to find and any unfinished grocery requests touching the same food, product or barcode). It writes nothing. The plan runs only when the agent sends it back unchanged with a mutation id after the person confirms it; any live difference, such as a name now taken, refuses the plan. Each step is claimed in SQLite and sent once. A lost response leaves the step uncertain: the owner adopts the object or purchase after Tare checks every planned field, or abandons the request. Nothing is deleted or subtracted to compensate. A purchase with no saved binding retries only the local binding. `read_grocery` shows each step and, for an uncertain purchase, the candidate transactions logged after the proved stock_log maximum. Purchases never expire when the plan says so: the product default is -1 days and the stock entry's best-before date is 2999-12-31, with the real purchase date. Grocy 4.7.1 is the only supported version, checked before every write. Grocery responses get the API key check plus a check for the private Grocy address. Grocery execution assumes one engine process per database.
 
 ### Preserve delivered-meal ownership
 
