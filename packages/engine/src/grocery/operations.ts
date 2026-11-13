@@ -8,9 +8,13 @@ import {
 import {
   type GroceryService,
   groceryInput,
+  groceryPlan,
   groceryProposal,
   groceryStatus,
 } from "./flow.ts";
+
+const id = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
+const decision = { mutation_id: z.uuid(), request_mutation_id: z.uuid() };
 
 const operations: {
   name: string;
@@ -29,6 +33,40 @@ const operations: {
     output: groceryProposal,
     run: (service, userId, input: z.output<typeof groceryInput>) =>
       service.propose(userId, input),
+  },
+  {
+    name: "execute_grocery",
+    path: "/api/pantry/groceries",
+    description:
+      "Run a confirmed grocery plan exactly as proposed, with a new mutation_id. Each Grocy write is sent at most once; replaying the mutation_id resumes or returns the same request. A step left uncertain stops the request until it is adopted or abandoned.",
+    input: z.strictObject({ mutation_id: z.uuid(), plan: groceryPlan }),
+    output: groceryStatus,
+    run: (service, userId, input: { mutation_id: string; plan: never }) =>
+      service.execute(userId, input),
+  },
+  {
+    name: "adopt_grocery_step",
+    path: "/api/pantry/groceries/adopt",
+    description:
+      "Accept an uncertain step's Grocy object id, or a purchase transaction id, after Tare checks every planned field. Sends no write. Run execute_grocery again to continue.",
+    input: z.strictObject({
+      ...decision,
+      number: id,
+      restore_nonce: z.string().max(64),
+      object_id: id.optional(),
+      transaction_id: z.string().max(64).optional(),
+    }),
+    output: groceryStatus,
+    run: (service, userId, input: never) => service.adopt(userId, input),
+  },
+  {
+    name: "abandon_grocery",
+    path: "/api/pantry/groceries/abandon",
+    description:
+      "Stop a grocery request without any Grocy write. Objects and stock already added stay in Grocy.",
+    input: z.strictObject(decision),
+    output: groceryStatus,
+    run: (service, userId, input: never) => service.abandon(userId, input),
   },
   {
     name: "read_grocery",
