@@ -43,6 +43,7 @@ export const pantrySchema = z.object({
 export type Pantry = z.infer<typeof pantrySchema>;
 const productsSchema = z.object({
   state: z.enum(["disabled", "reset_required", "unavailable", "ready"]),
+  generation: z.number().nullable(),
   products: z.array(
     z.object({
       product_id: z.number(),

@@ -264,8 +264,26 @@ test("the product picker lists an out-of-stock product and binds it", async (con
 test("an unavailable Grocy says so and keeps stocked products", () => {
   const markup = render(ready, undefined, {
     state: "unavailable",
+    generation: null,
     products: [],
   });
   assert.match(markup, /Grocy unavailable/);
   assert.match(markup, /<option value="7">Synthetic beans \(4 can\)/);
+});
+
+test("a product list from before a reset is not offered", () => {
+  const markup = render(ready, undefined, {
+    state: "ready",
+    generation: 2,
+    products: [
+      {
+        product_id: 8,
+        name: "Old item",
+        amount: 0,
+        stock_unit: { id: 2, name: "can", name_plural: null },
+      },
+    ],
+  });
+  assert.doesNotMatch(markup, /Old item/);
+  assert.match(markup, /<option value="7">Synthetic beans/);
 });

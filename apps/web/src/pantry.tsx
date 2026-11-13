@@ -66,7 +66,11 @@ export function PantrySection({ person, online }: Props) {
       requests={requests.data}
       requestsFailed={requests.isError}
       link={link.data ?? null}
-      catalog={catalog.data}
+      catalog={
+        catalog.isError
+          ? { state: "unavailable", generation: null, products: [] }
+          : catalog.data
+      }
     />
   );
 }
@@ -103,12 +107,14 @@ export function PantryView({
   catalog?: PantryProducts;
 }) {
   const client = useQueryClient();
-  const reload = () =>
-    Promise.all([
+  // Products are read live from Grocy, so mutations do not wait for them.
+  const reload = () => {
+    void client.invalidateQueries({ queryKey: productsKey(person) });
+    return Promise.all([
       client.invalidateQueries({ queryKey: pantryKey(person) }),
       client.invalidateQueries({ queryKey: requestsKey(person) }),
-      client.invalidateQueries({ queryKey: productsKey(person) }),
     ]);
+  };
   const change = useMutation({
     mutationFn: (run: () => Promise<Pantry>) => run(),
     onSuccess: (next) => client.setQueryData(pantryKey(person), next),
@@ -256,8 +262,11 @@ function BindingForm({
     ...foodMatchesQuery(person, name),
     enabled: !disabled && name.trim().length >= 2 && food === null,
   });
+  // A list from before a connection reset may name another database's products.
   const choices =
-    catalog?.state === "ready" ? catalog.products : pantry.products;
+    catalog?.state === "ready" && catalog.generation === pantry.generation
+      ? catalog.products
+      : pantry.products;
   const product = choices.find(
     (entry) => String(entry.product_id) === productId,
   );
