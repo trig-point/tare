@@ -64,7 +64,6 @@ function setup(context: TestContext, path?: string) {
           ownerId: owner,
           userId,
           mutationId: mutation(digit),
-          planHash: plan.padEnd(64, "0"),
           plan,
           restoreNonce: store.currentNonce(database),
           steps,
@@ -98,12 +97,12 @@ function setup(context: TestContext, path?: string) {
       clock,
     );
   };
-  const count = (table: string) =>
-    (
-      database.prepare(`SELECT count(*) AS rows FROM ${table}`).get() as {
-        rows: number;
-      }
-    ).rows;
+  const counts = database.prepare<[], Record<string, number>>(
+    "SELECT (SELECT count(*) FROM foods) AS foods, (SELECT count(*) FROM grocery_requests) AS grocery_requests, (SELECT count(*) FROM grocery_transactions) AS grocery_transactions",
+  );
+  const count = (
+    table: "foods" | "grocery_requests" | "grocery_transactions",
+  ) => counts.get()?.[table];
   return {
     database,
     directory,
@@ -259,7 +258,6 @@ test("restart and restore make unfinished steps uncertain and rotate the nonce",
             ownerId: owner,
             userId: owner,
             mutationId: mutation(4),
-            planHash: "0".repeat(64),
             plan: "{}",
             restoreNonce: before,
             steps: ["stock_add"],
