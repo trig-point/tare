@@ -109,7 +109,7 @@ function live(database: Database, request: GroceryRequest, nonce: string) {
 
 /**
  * Stores the confirmed plan, its numbered steps and the new or reused food in the caller's
- * transaction. A known UUID replays before any other check; a changed plan conflicts.
+ * transaction. A known UUID replays before any other check; a changed plan text conflicts.
  */
 export function insertGroceryRequest(
   scope: WriteScope,
@@ -117,7 +117,6 @@ export function insertGroceryRequest(
     ownerId: number | null;
     userId: number;
     mutationId: string;
-    planHash: string;
     plan: string;
     restoreNonce: string;
     steps: readonly StepKind[];
@@ -127,9 +126,10 @@ export function insertGroceryRequest(
 ) {
   const database = scopeDatabase(scope);
   const mutationId = input.mutationId.toLowerCase();
+  const planHash = createHash("sha256").update(input.plan).digest("hex");
   const prior = readGrocery(database, input.userId, mutationId);
   if (prior) {
-    if (prior.request.plan_hash !== input.planHash)
+    if (prior.request.plan_hash !== planHash)
       throw new OperationError(409, "grocery_conflict");
     return { ...prior, created: false };
   }
@@ -156,7 +156,7 @@ export function insertGroceryRequest(
   const request = insertRequest(database, {
     user_id: input.userId,
     mutation_id: mutationId,
-    plan_hash: input.planHash,
+    plan_hash: planHash,
     plan: input.plan,
     generation: row.generation,
     url: row.url,
