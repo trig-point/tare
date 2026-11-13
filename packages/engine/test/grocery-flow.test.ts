@@ -207,6 +207,13 @@ test("propose_grocery plans from empty Grocy and from reuse with no write, and b
   assert.equal(reused.body.outcome, "plan");
   assert.deepEqual(reused.body.steps, ["stock_add"]);
   assert.equal(reused.body.plan.barcode, null);
+  const caseBarcode = {
+    ...reuse,
+    barcode: { code: "0001234567890", amount: 6 },
+  };
+  assert.deepEqual((await propose(caseBarcode)).body.issues, [
+    { code: "barcode_differs", id: 1 },
+  ]);
   assert.deepEqual(
     (await propose({ ...reuse, barcode: null, product: { id: 99 } })).body
       .issues,
