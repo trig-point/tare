@@ -1,12 +1,18 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import type { TestContext } from "node:test";
 import { loadConfig } from "../src/config.ts";
 import { writeTransaction } from "../src/db.ts";
+import { ownedFoodValues } from "../src/foods/create.ts";
 import { createGroceryService } from "../src/grocery/flow.ts";
+import { groceryOperations } from "../src/grocery/operations.ts";
 import * as store from "../src/grocery/store.ts";
 import { createGroceryClient } from "../src/grocy/grocery.ts";
-import { numbersFrom } from "../src/logging/schemas.ts";
-import { grocyLocators, guardPantryResponse } from "../src/pantry/egress.ts";
+import {
+  grocyLocators,
+  guardPantryResponse,
+  isGroceryOperation,
+} from "../src/pantry/egress.ts";
 import { createPantryService } from "../src/pantry/service.ts";
 import {
   accessConfig,
@@ -120,34 +126,18 @@ async function setup(context: TestContext) {
   return { ...harness, tables, methods, changes };
 }
 
-test("propose_grocery plans from empty Grocy and from reuse with no write, and blocks collisions", async (context) => {
-  const { admin, tables, methods, changes } = await setup(context);
-  const before = changes();
-  const empty = await json(admin, "/api/pantry/groceries/proposal", rice);
-  assert.equal(empty.status, 200);
-  assert.equal(empty.body.outcome, "plan");
-  assert.deepEqual(empty.body.steps, [
-    "unit",
-    "location",
-    "product",
-    "barcode",
-    "stock_add",
-  ]);
-  assert.equal(empty.body.plan.food.create.protein_g, null);
-  assert.deepEqual(empty.body.food, {
-    name: "Example jasmine rice",
-    serving_size: 45,
-    serving_unit: "g",
-    kcal: 160,
-  });
-  assert.deepEqual(empty.body.plan.overlaps, []);
-
-  tables.quantity_units?.push({
-    id: 4,
-    name: "Serving",
-    name_plural: "Servings",
-    active: 1,
-  });
+const reuse = {
+  ...rice,
+  unit: { id: 4 },
+  location: { id: 3 },
+  product: { id: 1 },
+};
+/** The rice example already in Grocy: unit 4, location 3, product 1 and its barcode; unit 5 is unused. */
+function seed(tables: Record<string, Record<string, unknown>[]>) {
+  tables.quantity_units?.push(
+    { id: 4, name: "Serving", name_plural: "Servings", active: 1 },
+    { id: 5, name: "Gram", name_plural: "Grams", active: 1 },
+  );
   tables.locations?.push({ id: 3, name: "Pantry", active: 1 });
   tables.products?.push({
     id: 1,
@@ -169,7 +159,42 @@ test("propose_grocery plans from empty Grocy and from reuse with no write, and b
     qu_id: 4,
     amount: 1,
   });
-  const blocked = await json(admin, "/api/pantry/groceries/proposal", rice);
+}
+
+test("propose_grocery plans from empty Grocy and from reuse with no write, and blocks collisions", async (context) => {
+  const { admin, tables, methods, changes } = await setup(context);
+  const before = changes();
+  const propose = (body: unknown) =>
+    json(admin, "/api/pantry/groceries/proposal", body);
+  const empty = await propose(rice);
+  assert.equal(empty.status, 200);
+  assert.equal(empty.body.outcome, "plan");
+  assert.deepEqual(empty.body.steps, [
+    "unit",
+    "location",
+    "product",
+    "barcode",
+    "stock_add",
+  ]);
+  assert.equal(empty.body.plan.food.create.protein_g, null);
+  assert.deepEqual(empty.body.food, {
+    name: "Example jasmine rice",
+    serving_size: 45,
+    serving_unit: "g",
+    kcal: 160,
+  });
+  assert.deepEqual(empty.body.plan.overlaps, []);
+  const unsourced = { ...rice.food.create, source: undefined };
+  assert.equal(
+    (await propose({ ...rice, food: { create: unsourced } })).body.error.code,
+    "label_source_required",
+  );
+  const spaced = { create: { name: "Serving", name_plural: "Servings " } };
+  assert.equal((await propose({ ...rice, unit: spaced })).status, 400);
+
+  seed(tables);
+  const padded = { ...rice, barcode: { code: "001234567890", amount: 1 } };
+  const blocked = await propose(padded);
   assert.equal(blocked.body.outcome, "blocked");
   assert.equal(blocked.body.plan, null);
   assert.deepEqual(blocked.body.issues, [
@@ -178,27 +203,29 @@ test("propose_grocery plans from empty Grocy and from reuse with no write, and b
     { code: "product_exists", id: 1 },
     { code: "barcode_taken", id: 1 },
   ]);
-  const reuse = {
-    ...rice,
-    unit: { id: 4 },
-    location: { id: 3 },
-    product: { id: 1 },
-  };
-  const reused = await json(admin, "/api/pantry/groceries/proposal", reuse);
+  const reused = await propose(reuse);
   assert.equal(reused.body.outcome, "plan");
   assert.deepEqual(reused.body.steps, ["stock_add"]);
   assert.equal(reused.body.plan.barcode, null);
+  assert.deepEqual((await propose({ ...reuse, unit: { id: 5 } })).body.issues, [
+    { code: "unit_mismatch", id: 4 },
+  ]);
   const tare = { ...tables.products?.[0], enable_tare_weight_handling: 1 };
   tables.products?.splice(0, 1, tare);
-  const refused = await json(admin, "/api/pantry/groceries/proposal", reuse);
-  assert.deepEqual(refused.body.issues, [{ code: "product_tare", id: 1 }]);
+  assert.deepEqual((await propose(reuse)).body.issues, [
+    { code: "product_tare", id: 1 },
+  ]);
 
   assert.deepEqual(changes(), before);
   assert.equal(methods.includes("POST"), false);
 });
 
-test("grocery reads are owner-only and list overlaps and purchase candidates", async (context) => {
+test("grocery reads are owner-only and list overlaps, bindings and live purchase candidates", async (context) => {
   const { admin, member, database, tables } = await setup(context);
+  seed(tables);
+  const propose = (body: unknown) =>
+    json(admin, "/api/pantry/groceries/proposal", body);
+  const { plan, steps } = (await propose(reuse)).body;
   const mutationId = "00000000-0000-4000-8000-000000000001";
   const { request } = writeTransaction(database, (scope) =>
     store.insertGroceryRequest(
@@ -207,20 +234,10 @@ test("grocery reads are owner-only and list overlaps and purchase candidates", a
         ownerId: admin.user.id,
         userId: admin.user.id,
         mutationId,
-        plan: JSON.stringify({ ...rice, product: { id: 1 } }),
-        restoreNonce: store.currentNonce(database),
-        steps: ["stock_add"],
-        food: {
-          values: {
-            ...numbersFrom({ kcal: 160 }),
-            name: "Example jasmine rice",
-            serving_size: 45,
-            serving_unit: "g",
-            provenance: "label",
-            source: "Example package label",
-            source_food_id: null,
-          },
-        },
+        plan: JSON.stringify(plan),
+        restoreNonce: plan.restore_nonce,
+        steps,
+        food: { values: ownedFoodValues(plan.food.create) },
       },
       clock,
     ),
@@ -239,7 +256,7 @@ test("grocery reads are owner-only and list overlaps and purchase candidates", a
     clock,
   );
   tables.stock_log?.push(
-    ...[41, 42].map((id) => ({
+    ...[41, 42, 43].map((id) => ({
       id,
       product_id: 1,
       amount: 2.5,
@@ -248,24 +265,38 @@ test("grocery reads are owner-only and list overlaps and purchase candidates", a
       transaction_id: `tx${id}`,
       transaction_type: "purchase",
       location_id: 3,
-      undone: 0,
+      undone: id === 43 ? 1 : 0,
     })),
   );
 
-  const status = await json(admin, "/api/pantry/groceries/status", {
-    mutation_id: mutationId,
-  });
-  assert.equal(status.body.request.steps[0].state, "uncertain");
-  assert.deepEqual(status.body.request.candidates, {
+  const status = () =>
+    json(admin, "/api/pantry/groceries/status", { mutation_id: mutationId });
+  const uncertain = (await status()).body;
+  assert.equal(uncertain.request.steps[0].state, "uncertain");
+  assert.deepEqual(uncertain.request.candidates, {
     transactions: ["tx42"],
     complete: true,
   });
-  assert.deepEqual(status.body.open, [
+  assert.deepEqual(uncertain.open, [
     { mutation_id: mutationId, state: "open" },
   ]);
-  const overlapping = await json(admin, "/api/pantry/groceries/proposal", rice);
-  assert.deepEqual(overlapping.body.plan.overlaps, [mutationId]);
+  assert.deepEqual((await propose(reuse)).body.plan.overlaps, [mutationId]);
 
+  const bind = database.prepare(
+    "INSERT OR REPLACE INTO pantry_bindings VALUES (?, 1, 'food', ?, ?, 4, 1, 'valid', ?)",
+  );
+  bind.run(admin.user.id, request.food_id, 1, randomUUID());
+  const owned = { ...reuse, food: { food_id: request.food_id } };
+  const bound = (await propose(owned)).body.plan;
+  assert.equal(bound.binding_seen.status, "valid");
+  assert.equal(bound.food_seen, request.food_fingerprint);
+  bind.run(admin.user.id, request.food_id, 7, randomUUID());
+  assert.deepEqual((await propose(owned)).body.issues, [
+    { code: "food_bound", id: 7 },
+  ]);
+
+  database.prepare("UPDATE pantry_connection SET reset_required = 1").run();
+  assert.equal((await status()).body.request.candidates, null);
   for (const [path, body, code] of [
     ["/api/pantry/groceries/proposal", rice, 403],
     ["/api/pantry/groceries/status", {}, 403],
@@ -295,6 +326,8 @@ test("grocery responses withhold the private Grocy address while the public link
   );
   assert.equal(await sse.text(), "");
 
+  for (const operation of groceryOperations)
+    assert.ok(isGroceryOperation(operation.name), operation.name);
   const { admin, app, database } = await setup(context);
   const copied = { ...rice, product: { create: { name: "http://grocy/api" } } };
   const http = await admin.request("/api/pantry/groceries/proposal", {
@@ -302,7 +335,9 @@ test("grocery responses withhold the private Grocy address while the public link
     body: JSON.stringify(copied),
   });
   assert.equal(http.status, 503);
-  assert.equal((await http.text()).includes("//grocy"), false);
+  assert.deepEqual(await http.json(), {
+    error: { code: "pantry_response_withheld" },
+  });
   const plain = await json(admin, "/api/pantry/groceries/proposal", rice);
   assert.equal(plain.body.outcome, "plan");
   assert.equal(
