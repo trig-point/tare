@@ -4,9 +4,9 @@ CREATE TABLE grocery_decisions (
   mutation_id TEXT NOT NULL CHECK (length(mutation_id) = 36),
   decision_hash TEXT NOT NULL CHECK (length(decision_hash) = 64),
   request_id INTEGER NOT NULL REFERENCES grocery_requests(id),
-  step_number INTEGER,
+  step_number INTEGER CHECK (step_number IS NULL OR step_number > 0),
   decision TEXT NOT NULL CHECK (decision IN ('adopt', 'abandon', 'bind')),
-  resulting_state TEXT NOT NULL,
+  resulting_state TEXT NOT NULL CHECK (resulting_state IN ('open', 'binding_pending', 'completed', 'abandoned')),
   created_at TEXT NOT NULL CHECK (strftime('%Y-%m-%dT%H:%M:%fZ', created_at, '+0 seconds') IS created_at),
   PRIMARY KEY (user_id, mutation_id)
 ) STRICT;

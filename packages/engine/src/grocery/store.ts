@@ -294,16 +294,20 @@ export function finalizeGroceryStep(
   }
 }
 
-/** Replays a recorded decision before any state check; otherwise runs `act` and records it. */
+/**
+ * Replays a recorded decision before any state check, then requires the configured owner
+ * and runs `act`. The hash covers fixed fields, so key order in the input never matters.
+ */
 function decide(
   database: Database,
   decision: {
+    ownerId: number | null;
     userId: number;
     mutationId: string;
     requestId: number;
     stepNumber: number | null;
     kind: "adopt" | "abandon" | "bind";
-    input: unknown;
+    fields: (string | number | null)[];
   },
   clock: Clock,
   act: (database: Database, request: GroceryRequest, now: string) => string,
@@ -316,7 +320,7 @@ function decide(
     decision.kind,
     decision.requestId,
     decision.stepNumber,
-    decision.input,
+    ...decision.fields,
   ]);
   return writeTransaction(database, (scope) => {
     const database = scopeDatabase(scope);
@@ -326,6 +330,10 @@ function decide(
         throw new OperationError(409, "decision_conflict");
       return { state: prior.resulting_state, replayed: true };
     }
+    if (decision.ownerId === null)
+      throw new OperationError(503, "pantry_disabled");
+    if (decision.userId !== decision.ownerId)
+      throw new OperationError(403, "forbidden");
     const request = readRequestById(database, { id: decision.requestId });
     if (!request) throw new OperationError(404, "grocery_not_found");
     const now = clock.now().toISOString();
@@ -343,18 +351,10 @@ function decide(
   });
 }
 
-function requireOwner(
-  ownerId: number | null,
-  userId: number,
-  request?: GroceryRequest,
-) {
-  if (userId !== ownerId || (request && request.user_id !== userId))
-    throw new OperationError(403, "forbidden");
-}
-
 /**
- * Accepts a caller-verified object id or purchase transaction for an uncertain step. Needs the
- * current restore nonce and the request's original connection and generation.
+ * Accepts a caller-verified object id, or a purchase transaction and its product, for an
+ * uncertain step of an open request. Needs the current restore nonce and the request's
+ * original connection and generation.
  */
 export function adoptGroceryStep(
   database: Database,
@@ -365,51 +365,54 @@ export function adoptGroceryStep(
     requestId: number;
     number: number;
     restoreNonce: string;
-    proof: { object_id: number } | { transaction_id: string };
+    proof:
+      | { object_id: number }
+      | { transaction_id: string; product_id: number };
   },
   clock: Clock,
 ) {
+  const purchase = "transaction_id" in input.proof ? input.proof : null;
+  const objectId = "object_id" in input.proof ? input.proof.object_id : null;
   return decide(
     database,
     {
-      userId: input.userId,
-      mutationId: input.mutationId,
-      requestId: input.requestId,
+      ...input,
       stepNumber: input.number,
       kind: "adopt",
-      input: input.proof,
+      fields: [
+        objectId,
+        purchase?.transaction_id ?? null,
+        purchase?.product_id ?? null,
+      ],
     },
     clock,
     (database, request, now) => {
-      requireOwner(input.ownerId, input.userId, request);
+      if (request.user_id !== input.userId)
+        throw new OperationError(403, "forbidden");
       if (!live(database, request, input.restoreNonce))
         throw new OperationError(409, "grocery_connection_changed");
-      const transactionId =
-        "transaction_id" in input.proof ? input.proof.transaction_id : null;
+      if (request.state !== "open")
+        throw new OperationError(409, "grocery_not_open");
+      const proof = {
+        object_id: objectId,
+        transaction_id: purchase?.transaction_id ?? null,
+        product_id: purchase?.product_id ?? null,
+      };
+      const [adopted] = adoptStep(
+        database,
+        { ...proof, now },
+        { ...proof, request_id: request.id, number: input.number },
+      );
+      if (!adopted) throw new OperationError(409, "grocery_step_not_adoptable");
+      if (!purchase) return request.state;
       if (
-        transactionId !== null &&
         !reserveTransaction(database, {
-          transaction_id: transactionId,
+          transaction_id: purchase.transaction_id,
           request_id: request.id,
           step_number: input.number,
         })
       )
         throw new OperationError(409, "grocery_transaction_reserved");
-      const [adopted] = adoptStep(
-        database,
-        {
-          object_id: "object_id" in input.proof ? input.proof.object_id : null,
-          transaction_id: transactionId,
-          now,
-        },
-        { request_id: request.id, number: input.number },
-      );
-      if (
-        !adopted ||
-        (adopted.kind === "stock_add") !== (transactionId !== null)
-      )
-        throw new OperationError(409, "grocery_step_not_uncertain");
-      if (transactionId === null) return request.state;
       setRequestState(
         database,
         { state: "binding_pending", now },
@@ -436,10 +439,9 @@ export function abandonGrocery(
 ) {
   return decide(
     database,
-    { ...input, stepNumber: null, kind: "abandon", input: null },
+    { ...input, stepNumber: null, kind: "abandon", fields: [] },
     clock,
     (database, request, now) => {
-      requireOwner(input.ownerId, input.userId);
       if (!abandonRequest(database, { now }, { id: request.id }).length)
         throw new OperationError(409, "grocery_not_abandonable");
       abandonSteps(database, { now }, { request_id: request.id });
@@ -475,11 +477,18 @@ export function bindGrocery(
       ...input,
       stepNumber: null,
       kind: "bind",
-      input: [input.expected, input.binding],
+      fields: [
+        input.expected?.change_token ?? null,
+        input.expected?.status ?? null,
+        input.binding.product_id,
+        input.binding.stock_unit_id,
+        input.binding.quantity_per_serving,
+      ],
     },
     clock,
     (database, request, now) => {
-      requireOwner(input.ownerId, input.userId, request);
+      if (request.user_id !== input.userId)
+        throw new OperationError(403, "forbidden");
       if (request.state !== "binding_pending")
         throw new OperationError(409, "grocery_not_binding");
       if (!live(database, request, input.restoreNonce))
@@ -500,7 +509,13 @@ export function bindGrocery(
         generation: request.generation,
         reference_id: request.food_id,
       };
-      const values = { ...key, ...input.binding, change_token: randomUUID() };
+      const values = {
+        ...key,
+        product_id: input.binding.product_id,
+        stock_unit_id: input.binding.stock_unit_id,
+        quantity_per_serving: input.binding.quantity_per_serving,
+        change_token: randomUUID(),
+      };
       const saved = input.expected
         ? replaceBinding(database, values, {
             ...key,

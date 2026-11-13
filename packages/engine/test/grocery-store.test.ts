@@ -234,8 +234,15 @@ test("a purchase transaction credits one request and binding is compare-and-set"
   assert.throws(() => bind(5, null), { code: "grocery_binding_changed" });
   const current = store.groceryBinding(database, request);
   assert.ok(current);
+  assert.throws(() => bind(7, { ...current, change_token: "stale" }), {
+    code: "grocery_binding_changed",
+  });
   assert.deepEqual(bind(6, current), { state: "completed", replayed: false });
-  assert.deepEqual(bind(6, current), { state: "completed", replayed: true });
+  const reordered = {
+    status: current.status,
+    change_token: current.change_token,
+  };
+  assert.deepEqual(bind(6, reordered), { state: "completed", replayed: true });
   assert.throws(() => bind(6, null), { code: "decision_conflict" });
   assert.equal(store.groceryBinding(database, request)?.product_id, 9);
 });
@@ -278,7 +285,12 @@ test("restart and restore make unfinished steps uncertain and rotate the nonce",
       ["uncertain", "restored_backup"],
     ],
   );
-  const adopt = (digit: number, restoreNonce: string) =>
+  const adopt = (
+    digit: number,
+    number: number,
+    proof: Parameters<typeof store.adoptGroceryStep>[1]["proof"],
+    restoreNonce = nonce,
+  ) =>
     store.adoptGroceryStep(
       restored.database,
       {
@@ -286,14 +298,36 @@ test("restart and restore make unfinished steps uncertain and rotate the nonce",
         userId: owner,
         mutationId: mutation(digit),
         requestId: request.id,
-        number: 1,
+        number,
         restoreNonce,
-        proof: { object_id: 9 },
+        proof,
       },
       clock,
     );
-  assert.throws(() => adopt(2, before), { code: "grocery_connection_changed" });
-  assert.equal(adopt(3, nonce).state, "open");
+  assert.throws(() => adopt(2, 1, { object_id: 9 }, before), {
+    code: "grocery_connection_changed",
+  });
+  assert.equal(adopt(3, 1, { object_id: 9 }).state, "open");
+  assert.throws(() => adopt(5, 2, { object_id: 9 }), {
+    code: "grocery_step_not_adoptable",
+  });
+  // The add was never claimed before the backup, so only the proof names its product.
+  const purchase = { transaction_id: "tx9", product_id: 9 };
+  assert.equal(adopt(6, 2, purchase).state, "binding_pending");
+  const bound = store.bindGrocery(
+    restored.database,
+    {
+      ownerId: owner,
+      userId: owner,
+      mutationId: mutation(7),
+      requestId: request.id,
+      restoreNonce: nonce,
+      expected: null,
+      binding: { product_id: 9, stock_unit_id: 2, quantity_per_serving: 1 },
+    },
+    clock,
+  );
+  assert.equal(bound.state, "completed");
   assert.throws(
     () =>
       writeTransaction(restored.database, (scope) =>
@@ -316,34 +350,44 @@ test("restart and restore make unfinished steps uncertain and rotate the nonce",
 });
 
 test("unfinished groceries block reset until the owner abandons them; reservations outlive it", (context) => {
-  const { database, owner, member, service, create, purchase, count } =
+  const { database, owner, member, service, create, claim, purchase, count } =
     setup(context);
   const { request } = create(1);
   purchase(request.id, "tx1");
+  const sending = claim(create(2).request.id, 1);
+  assert.ok(sending);
   database.prepare("UPDATE pantry_connection SET reset_required = 1").run();
   assert.throws(() => service.reset(owner), {
     code: "pantry_requests_unresolved",
   });
   assert.deepEqual(
     store.openGroceries(database).map((row) => [row.mutation_id, row.state]),
-    [[request.mutation_id, "binding_pending"]],
+    [
+      [request.mutation_id, "binding_pending"],
+      [mutation(2), "open"],
+    ],
   );
-  const abandon = (userId: number, digit: number) =>
+  const abandon = (userId: number, digit: number, requestId = request.id) =>
     store.abandonGrocery(
       database,
-      {
-        ownerId: owner,
-        userId,
-        mutationId: mutation(digit),
-        requestId: request.id,
-      },
+      { ownerId: owner, userId, mutationId: mutation(digit), requestId },
       clock,
     );
+  assert.throws(() => abandon(owner, 4, sending.request_id), {
+    code: "grocery_not_abandonable",
+  });
+  store.finalizeGroceryStep(
+    database,
+    sending,
+    { status: "not_sent", reason: "transport" },
+    clock,
+  );
+  assert.equal(abandon(owner, 5, sending.request_id).state, "abandoned");
   assert.throws(() => abandon(member, 2), { code: "forbidden" });
   assert.equal(abandon(owner, 3).state, "abandoned");
   assert.equal(service.reset(owner).generation, 2);
   assert.deepEqual(
     [count("grocery_requests"), count("grocery_transactions")],
-    [1, 1],
+    [2, 1],
   );
 });
