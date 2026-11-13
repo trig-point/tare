@@ -578,7 +578,7 @@ test("a lost purchase response is never resent and is adopted only with a matchi
 });
 
 test("one plan runs at a time, stops on drift or an unsupported version, and shutdown drains a send", async (context) => {
-  const { propose, execute, tables, posts, fake, grocyState, wired } =
+  const { propose, execute, database, tables, posts, fake, grocyState, wired } =
     await runner(context);
   const { plan } = (await propose(rice)).body;
   const run = () => execute({ mutation_id: mutation(1), plan });
@@ -607,6 +607,10 @@ test("one plan runs at a time, stops on drift or an unsupported version, and shu
   const drained = (wired.grocery as { stop(): Promise<void> }).stop();
   held.release();
   await drained;
+  const stored = database
+    .prepare("SELECT state FROM grocery_requests WHERE mutation_id = ?")
+    .get(mutation(1));
+  assert.deepEqual(stored, { state: "completed" });
   assert.equal((await last).body.request.state, "completed");
   assert.equal(posts(), 5);
   assert.equal((await propose(rice)).body.error.code, "pantry_stopping");
