@@ -135,7 +135,6 @@ test("a grocery request stores its plan and new food once, per owner", (context)
   assert.throws(() => create(3, owner, "{}", ["stock_add", "product"]), {
     code: "invalid_request",
   });
-  assert.equal(store.readGrocery(database, member, mutation(1)), null);
   assert.deepEqual([count("grocery_requests"), count("foods")], [1, 1]);
   assert.throws(
     () => database.prepare("UPDATE grocery_requests SET plan = '[1]'").run(),

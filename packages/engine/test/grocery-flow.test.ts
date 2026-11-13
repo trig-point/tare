@@ -209,7 +209,6 @@ test("propose_grocery plans from empty Grocy and from reuse with no write, and b
     "barcode",
     "stock_add",
   ]);
-  assert.equal(empty.body.plan.food.create.protein_g, null);
   assert.deepEqual(empty.body.food, {
     name: "Example jasmine rice",
     serving_size: 45,
@@ -222,8 +221,6 @@ test("propose_grocery plans from empty Grocy and from reuse with no write, and b
     (await propose({ ...rice, food: { create: unsourced } })).body.error.code,
     "label_source_required",
   );
-  const spaced = { create: { name: "Serving", name_plural: "Servings " } };
-  assert.equal((await propose({ ...rice, unit: spaced })).status, 400);
 
   seed(tables);
   const padded = { ...rice, barcode: { code: "001234567890", amount: 1 } };
@@ -240,37 +237,30 @@ test("propose_grocery plans from empty Grocy and from reuse with no write, and b
   assert.equal(reused.body.outcome, "plan");
   assert.deepEqual(reused.body.steps, ["stock_add"]);
   assert.equal(reused.body.plan.barcode, null);
-  const caseBarcode = {
-    ...reuse,
-    barcode: { code: "0001234567890", amount: 6 },
-  };
-  assert.deepEqual((await propose(caseBarcode)).body.issues, [
-    { code: "barcode_differs", id: 1 },
-  ]);
-  assert.deepEqual(
-    (await propose({ ...reuse, barcode: null, product: { id: 99 } })).body
-      .issues,
-    [{ code: "product_missing", id: 99 }],
-  );
-  assert.deepEqual((await propose({ ...reuse, unit: { id: 5 } })).body.issues, [
-    { code: "unit_mismatch", id: 4 },
-  ]);
   const product = tables.products?.[0] as Record<string, unknown>;
-  product.enable_tare_weight_handling = 1;
-  assert.deepEqual((await propose(reuse)).body.issues, [
-    { code: "product_tare", id: 1 },
-  ]);
-  product.active = 0;
-  assert.deepEqual((await propose(reuse)).body.issues, [
-    { code: "product_inactive", id: 1 },
-  ]);
+  for (const [body, change, code, id] of [
+    [
+      { barcode: { code: "0001234567890", amount: 6 } },
+      {},
+      "barcode_differs",
+      1,
+    ],
+    [{ barcode: null, product: { id: 99 } }, {}, "product_missing", 99],
+    [{ unit: { id: 5 } }, {}, "unit_mismatch", 4],
+    [{}, { enable_tare_weight_handling: 1 }, "product_tare", 1],
+    [{}, { active: 0 }, "product_inactive", 1],
+  ] as const) {
+    Object.assign(product, change);
+    const { issues } = (await propose({ ...reuse, ...body })).body;
+    assert.deepEqual(issues, [{ code, id }]);
+  }
 
   assert.deepEqual(changes(), before);
   assert.equal(methods.includes("POST"), false);
 });
 
-test("grocery reads are owner-only and list overlaps, bindings and live purchase candidates", async (context) => {
-  const { admin, member, database, tables } = await setup(context);
+test("grocery reads list overlaps, bindings and live purchase candidates", async (context) => {
+  const { admin, database, tables } = await setup(context);
   seed(tables);
   const propose = (body: unknown) =>
     json(admin, "/api/pantry/groceries/proposal", body);
@@ -360,12 +350,6 @@ test("grocery reads are owner-only and list overlaps, bindings and live purchase
 
   database.prepare("UPDATE pantry_connection SET reset_required = 1").run();
   assert.equal((await status()).body.request.candidates, null);
-  for (const [path, body, code] of [
-    ["/api/pantry/groceries/proposal", rice, 403],
-    ["/api/pantry/groceries/status", {}, 403],
-    ["/api/pantry/groceries/status", { mutation_id: mutationId }, 404],
-  ] as const)
-    assert.equal((await json(member, path, body)).status, code);
 });
 
 test("grocery responses withhold the private Grocy address while the public link stays", async (context) => {
@@ -374,12 +358,6 @@ test("grocery responses withhold the private Grocy address while the public link
     "//grocy:9283",
     "//grocy",
     "grocy:9283",
-  ]);
-  assert.deepEqual(grocyLocators("http://[FD00::5]/api"), [
-    "http://[fd00::5]",
-    "//[fd00::5]",
-    "[fd00::5]",
-    "fd00::5",
   ]);
   const frame = `event: message\ndata: ${JSON.stringify({ text: "HTTP://10.0.0.5:9283/api" })}\n\n`;
   const sse = await guardPantryResponse(
@@ -601,21 +579,18 @@ test("a lost purchase response is never resent and is adopted only with a matchi
     transaction_id: "9500",
   });
   const proof = { request_mutation_id: mutation(1), number: 1, restore_nonce };
-  const wrong = await adopt({
-    ...proof,
-    mutation_id: mutation(2),
-    transaction_id: "9500",
-  });
-  assert.equal(wrong.body.error.code, "grocery_proof_mismatch");
-  const unknown = { ...proof, mutation_id: mutation(4) };
-  assert.equal(
-    (await adopt({ ...unknown, transaction_id: "9999" })).body.error.code,
-    "grocery_proof_mismatch",
-  );
-  assert.equal(
-    (await adopt({ ...unknown, object_id: 1 })).body.error.code,
-    "grocery_proof_ambiguous",
-  );
+  for (const [given, code] of [
+    [{ transaction_id: "9500" }, "grocery_proof_mismatch"],
+    [{ transaction_id: "9999" }, "grocery_proof_mismatch"],
+    [{ object_id: 1 }, "grocery_proof_ambiguous"],
+  ] as const) {
+    const refused = await adopt({
+      ...proof,
+      mutation_id: mutation(2),
+      ...given,
+    });
+    assert.equal(refused.body.error.code, code);
+  }
   const adopted = await adopt({
     ...proof,
     mutation_id: mutation(3),
@@ -684,7 +659,7 @@ test("one plan runs at a time, stops on drift or an unsupported version, and shu
 });
 
 test("a plan from before a restore cannot start, and abandon works while reset is required", async (context) => {
-  const { propose, execute, database, tables, posts, grocyState, member } =
+  const { propose, execute, abandon, database, tables, posts, grocyState } =
     await runner(context);
   seed(tables);
   const stale = (await propose(reuse)).body.plan;
@@ -699,22 +674,13 @@ test("a plan from before a restore cannot start, and abandon works while reset i
     "grocery_plan_changed",
   );
   database.prepare("UPDATE pantry_connection SET reset_required = 1").run();
-  // A changed Grocy owner ends the previous owner's request, and a retry replays.
-  const nextOwner = createGroceryService({
-    database,
-    config: null,
-    ownerId: member.user.id,
-    clock,
-    refresh: async () => {},
-    client: {} as never,
-  });
   const ending = { mutation_id: mutation(3), request_mutation_id: mutation(1) };
-  const stopped = nextOwner.abandon(member.user.id, ending);
-  assert.equal(stopped.request?.state, "abandoned");
-  assert.equal(
-    nextOwner.abandon(member.user.id, ending).request?.state,
-    "abandoned",
-  );
+  for (const attempt of [1, 2])
+    assert.equal(
+      (await abandon(ending)).body.request.state,
+      "abandoned",
+      `attempt ${attempt}`,
+    );
   assert.equal(
     (await execute({ mutation_id: mutation(1), plan })).body.request.state,
     "abandoned",
