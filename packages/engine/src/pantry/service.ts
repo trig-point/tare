@@ -14,6 +14,7 @@ import { countUnresolvedRequests } from "../queries/pantry/count-unresolved-requ
 import { deleteBinding } from "../queries/pantry/delete-binding.ts";
 import { deleteRecipeLink } from "../queries/pantry/delete-recipe-link.ts";
 import { insertProduct } from "../queries/pantry/insert-product.ts";
+import { listBindingNames } from "../queries/pantry/list-binding-names.ts";
 import { listBindings } from "../queries/pantry/list-bindings.ts";
 import { listProducts } from "../queries/pantry/list-products.ts";
 import { listRecipeLinks } from "../queries/pantry/list-recipe-links.ts";
@@ -65,6 +66,7 @@ export const pantryBindingInput = pantryReference.extend({
   expected_generation: identifier,
 });
 const pantryBinding = pantryReference.extend({
+  name: z.string().nullable(),
   product_id: identifier,
   stock_unit_id: identifier,
   quantity_per_serving: z.number().positive().finite(),
@@ -249,6 +251,13 @@ export function createPantryService({
         state: "reset_required",
         generation: row.generation,
       });
+    const scope = { user_id: userId, generation: row.generation };
+    const names = new Map(
+      listBindingNames(database, scope).map((entry) => [
+        `${entry.reference_kind}-${entry.reference_id}`,
+        entry.name,
+      ]),
+    );
     return pantryOutput.parse({
       state: row.last_success_at === null ? "never_refreshed" : "ready",
       generation: row.generation,
@@ -262,10 +271,14 @@ export function createPantryService({
         user_id: userId,
         generation: row.generation,
       }).map((row) => JSON.parse(row.product)),
-      bindings: listBindings(database, {
-        user_id: userId,
-        generation: row.generation,
-      }).map(({ change_token: _token, ...binding }) => binding),
+      bindings: listBindings(database, scope).map(
+        ({ change_token: _token, ...binding }) => ({
+          ...binding,
+          name:
+            names.get(`${binding.reference_kind}-${binding.reference_id}`) ??
+            null,
+        }),
+      ),
       requested: requestTotals(database, {
         user_id: userId,
         generation: row.generation,

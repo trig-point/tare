@@ -15,7 +15,7 @@ import {
 import { test } from "./support.mts";
 import "./tsx.mts";
 
-const { PantryView } = await import("../src/pantry.tsx");
+const { FoodResults, PantryView } = await import("../src/pantry.tsx");
 
 const ready: Pantry = {
   state: "ready",
@@ -162,4 +162,59 @@ test("abandoning a pending request moves it to history and keeps its error code"
     readLink(),
     (error) => error instanceof ApiError && error.status === 403,
   );
+});
+
+test("a binding row names its food", () => {
+  const binding = {
+    reference_kind: "food" as "food" | "source_food",
+    product_id: 7,
+    quantity_per_serving: 0.5,
+    status: "valid",
+  };
+  const markup = render({
+    ...ready,
+    bindings: [
+      { ...binding, reference_id: 1, name: "Jasmine rice (Example), dry" },
+      {
+        ...binding,
+        reference_kind: "source_food",
+        reference_id: 2,
+        name: null,
+      },
+    ],
+  });
+  assert.match(markup, /0.5 per serving of Jasmine rice \(Example\), dry/);
+  assert.match(markup, /0.5 per serving of source food 2/);
+});
+
+const results = (foods: Parameters<typeof FoodResults>[0]["foods"]) =>
+  renderToStaticMarkup(createElement(FoodResults, { foods, choose: () => {} }));
+
+test("food search results offer each match by name", () => {
+  const markup = results([
+    {
+      reference: { kind: "food", id: 1 },
+      source: null,
+      name: "Jasmine rice (Example), dry",
+      brand: null,
+      serving: "45 g",
+    },
+    {
+      reference: { kind: "source_food", id: 1 },
+      source: "off",
+      name: "Example rice",
+      brand: "Example brand",
+      serving: null,
+    },
+  ]);
+  assert.match(markup, /Jasmine rice \(Example\), dry<\/strong><span>45 g</);
+  assert.match(
+    markup,
+    /Example rice<\/strong><span>Example brand<\/span><span>Open Food Facts</,
+  );
+  assert.match(markup, /aria-label="Choose Jasmine rice \(Example\), dry"/);
+});
+
+test("a food search with no matches says so", () => {
+  assert.equal(results([]), "<p>No foods found</p>");
 });

@@ -221,3 +221,42 @@ for (const mode of ["fallback", "access"] as const)
       ["2026-01-01", [], 0],
     );
   });
+
+test("food search matches part of a name in the person's own foods and cached foods", async (context) => {
+  const { database, admin, member } = await twoUsers(context, "fallback");
+  const food = database.prepare(
+    "INSERT INTO foods (user_id, name, serving_size, serving_unit, provenance) VALUES (?, ?, ?, ?, 'label')",
+  );
+  food.run(admin.user.id, "Jasmine rice (Example), dry", 45, "g");
+  food.run(admin.user.id, "Example soup", null, null);
+  food.run(member.user.id, "Example brown rice", 1, "cup");
+  const cache = database.prepare(
+    "INSERT INTO source_foods (source, source_key, name, brand, provenance, fetched_at) VALUES ('off', ?, ?, 'Example brand', 'label', '2026-01-01T00:00:00.000Z')",
+  );
+  cache.run("example-rice", "Example rice");
+  cache.run("example-oats", "Example oats");
+  const match = (kind: string, id: number, name: string, serving: unknown) => ({
+    reference: { kind, id },
+    source: kind === "food" ? null : "off",
+    name,
+    brand: kind === "food" ? null : "Example brand",
+    serving,
+  });
+  const cached = match("source_food", 1, "Example rice", null);
+  const search = async (person: typeof admin, name: string) => {
+    const response = await person.request("/api/foods/search", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
+    assert.equal(response.status, 200);
+    return (await response.json()).foods;
+  };
+  assert.deepEqual(await search(admin, "RICE"), [
+    match("food", 1, "Jasmine rice (Example), dry", "45 g"),
+    cached,
+  ]);
+  assert.deepEqual(await search(member, "rice"), [
+    match("food", 3, "Example brown rice", "1 cup"),
+    cached,
+  ]);
+});

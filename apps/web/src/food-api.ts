@@ -72,6 +72,37 @@ export function catalogQuery(person: number, name: string) {
   };
 }
 
+const foodMatchesSchema = z.object({
+  foods: z.array(
+    z.object({
+      reference: z.object({
+        kind: z.enum(["food", "source_food"]),
+        id: z.number().int().positive(),
+      }),
+      source: z.enum(["usda", "off"]).nullable(),
+      name: z.string(),
+      brand: z.string().nullable(),
+      serving: z.string().nullable(),
+    }),
+  ),
+});
+export type FoodMatch = z.infer<typeof foodMatchesSchema>["foods"][number];
+
+export function foodMatchesQuery(person: number, name: string) {
+  const term = name.trim();
+  return {
+    queryKey: ["search_foods", person, term] as const,
+    queryFn: async ({ signal }: { signal: AbortSignal }) =>
+      foodMatchesSchema.parse(
+        await api("/api/foods/search", {
+          method: "POST",
+          body: JSON.stringify({ name: term }),
+          signal,
+        }),
+      ).foods,
+  };
+}
+
 export async function findFood(
   name: string,
   signal?: AbortSignal,
