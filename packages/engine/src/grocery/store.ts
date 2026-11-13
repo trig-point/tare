@@ -125,6 +125,7 @@ export function insertGroceryRequest(
       throw new OperationError(409, "grocery_conflict");
     return { ...prior, created: false };
   }
+  if (input.ownerId === null) throw new OperationError(503, "pantry_disabled");
   if (input.userId !== input.ownerId)
     throw new OperationError(403, "forbidden");
   const row = readConnection(database);
@@ -135,7 +136,7 @@ export function insertGroceryRequest(
   const ranks = input.steps.map((kind) => stepOrder.indexOf(kind));
   if (
     ranks.at(-1) !== stepOrder.indexOf("stock_add") ||
-    ranks.some((rank, index) => index > 0 && rank <= (ranks[index - 1] ?? -1))
+    ranks.some((rank, index) => rank <= (index ? (ranks[index - 1] ?? -1) : -1))
   )
     throw new OperationError(400, "invalid_request");
   const food =
@@ -217,7 +218,7 @@ const outcome = (
 });
 
 function settle(kind: StepKind, result: StepResult) {
-  if (result?.status === "ok" || result?.status === "confirmed") {
+  if (result?.status === "confirmed") {
     const { value } = result;
     if (kind === "stock_add" && typeof value === "object")
       return outcome("confirmed", null, {

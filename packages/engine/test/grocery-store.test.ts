@@ -164,7 +164,13 @@ test("steps claim in order, once, and settle only under their own token", (conte
   );
   const retried = claim(request.id, 1);
   assert.ok(retried);
-  store.finalizeGroceryStep(database, retried, undefined, clock);
+  // A read result is not a write receipt.
+  store.finalizeGroceryStep(
+    database,
+    retried,
+    { status: "ok", value: 41 },
+    clock,
+  );
   assert.deepEqual(
     store
       .readGrocery(database, request.user_id, request.mutation_id)
@@ -175,6 +181,11 @@ test("steps claim in order, once, and settle only under their own token", (conte
     ],
   );
   assert.equal(claim(request.id, 2, true), null);
+  const later = create(2).request;
+  database
+    .prepare("UPDATE pantry_connection SET url = 'http://other/api'")
+    .run();
+  assert.equal(claim(later.id, 1), null);
 });
 
 test("a purchase transaction credits one request and leaves only the binding", (context) => {
@@ -196,6 +207,9 @@ test("a purchase transaction credits one request and leaves only the binding", (
     ],
     ["binding_pending", "transaction_reserved"],
   );
+  const added = store.readGrocery(database, owner, request.mutation_id)
+    ?.steps[1];
+  assert.deepEqual([added?.product_id, added?.stock_log_max], [9, 41]);
 });
 
 test("restart and restore make unfinished steps uncertain and rotate the nonce", async (context) => {
@@ -258,18 +272,22 @@ test("restart and restore make unfinished steps uncertain and rotate the nonce",
   );
 });
 
-test("open groceries block reset; finished ones and their reservations stay", (context) => {
-  const { database, owner, service, create, count } = setup(context);
+test("unfinished groceries block reset; reservations outlive it", (context) => {
+  const { database, owner, service, create, purchase, count } = setup(context);
   const { request } = create(1);
+  purchase(request.id, "tx1");
   database.prepare("UPDATE pantry_connection SET reset_required = 1").run();
   assert.throws(() => service.reset(owner), {
     code: "pantry_requests_unresolved",
   });
   assert.deepEqual(
-    store.openGroceries(database).map((row) => row.mutation_id),
-    [request.mutation_id],
+    store.openGroceries(database).map((row) => [row.mutation_id, row.state]),
+    [[request.mutation_id, "binding_pending"]],
   );
-  database.prepare("UPDATE grocery_requests SET state = 'abandoned'").run();
+  database.prepare("UPDATE grocery_requests SET state = 'completed'").run();
   assert.equal(service.reset(owner).generation, 2);
-  assert.equal(count("grocery_requests"), 1);
+  assert.deepEqual(
+    [count("grocery_requests"), count("grocery_transactions")],
+    [1, 1],
+  );
 });
