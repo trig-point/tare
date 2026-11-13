@@ -207,13 +207,22 @@ test("propose_grocery plans from empty Grocy and from reuse with no write, and b
   assert.equal(reused.body.outcome, "plan");
   assert.deepEqual(reused.body.steps, ["stock_add"]);
   assert.equal(reused.body.plan.barcode, null);
+  assert.deepEqual(
+    (await propose({ ...reuse, barcode: null, product: { id: 99 } })).body
+      .issues,
+    [{ code: "product_missing", id: 99 }],
+  );
   assert.deepEqual((await propose({ ...reuse, unit: { id: 5 } })).body.issues, [
     { code: "unit_mismatch", id: 4 },
   ]);
-  const tare = { ...tables.products?.[0], enable_tare_weight_handling: 1 };
-  tables.products?.splice(0, 1, tare);
+  const product = tables.products?.[0] as Record<string, unknown>;
+  product.enable_tare_weight_handling = 1;
   assert.deepEqual((await propose(reuse)).body.issues, [
     { code: "product_tare", id: 1 },
+  ]);
+  product.active = 0;
+  assert.deepEqual((await propose(reuse)).body.issues, [
+    { code: "product_inactive", id: 1 },
   ]);
 
   assert.deepEqual(changes(), before);
@@ -225,23 +234,26 @@ test("grocery reads are owner-only and list overlaps, bindings and live purchase
   seed(tables);
   const propose = (body: unknown) =>
     json(admin, "/api/pantry/groceries/proposal", body);
-  const { plan, steps } = (await propose(reuse)).body;
+  const open = async (body: unknown, mutationId: string) => {
+    const { plan, steps } = (await propose(body)).body;
+    return writeTransaction(database, (scope) =>
+      store.insertGroceryRequest(
+        scope,
+        {
+          ownerId: admin.user.id,
+          userId: admin.user.id,
+          mutationId,
+          plan: JSON.stringify(plan),
+          restoreNonce: plan.restore_nonce,
+          steps,
+          food: { values: ownedFoodValues(plan.food.create) },
+        },
+        clock,
+      ),
+    ).request;
+  };
   const mutationId = "00000000-0000-4000-8000-000000000001";
-  const { request } = writeTransaction(database, (scope) =>
-    store.insertGroceryRequest(
-      scope,
-      {
-        ownerId: admin.user.id,
-        userId: admin.user.id,
-        mutationId,
-        plan: JSON.stringify(plan),
-        restoreNonce: plan.restore_nonce,
-        steps,
-        food: { values: ownedFoodValues(plan.food.create) },
-      },
-      clock,
-    ),
-  );
+  const request = await open(reuse, mutationId);
   const claim = store.claimGroceryStep(
     database,
     { request_id: request.id, number: 1 },
@@ -281,6 +293,17 @@ test("grocery reads are owner-only and list overlaps, bindings and live purchase
     { mutation_id: mutationId, state: "open" },
   ]);
   assert.deepEqual((await propose(reuse)).body.plan.overlaps, [mutationId]);
+  const brown = (name: string, code: string) => ({
+    ...reuse,
+    product: { create: { name } },
+    barcode: { code, amount: 1 },
+  });
+  const padded = "00000000-0000-4000-8000-000000000002";
+  await open(brown("Brown rice", "0098765432109"), padded);
+  assert.deepEqual(
+    (await propose(brown("Wild rice", "098765432109"))).body.plan.overlaps,
+    [padded],
+  );
 
   const bind = database.prepare(
     "INSERT OR REPLACE INTO pantry_bindings VALUES (?, 1, 'food', ?, ?, 4, 1, 'valid', ?)",
