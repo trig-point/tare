@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 import { ApiError, liveRefresh } from "./api.ts";
-import { type OwnFood, ownFoodsQuery } from "./food-api.ts";
+import { type FoodMatch, foodMatchesQuery } from "./food-api.ts";
 import { clientId } from "./outbox-store.ts";
 import {
   type Decision,
@@ -180,7 +180,8 @@ export function PantryView({
                     `Product ${binding.product_id}`}
                 </strong>{" "}
                 {binding.quantity_per_serving} per serving of{" "}
-                {binding.name ?? `food ${binding.reference_id}`}
+                {binding.name ??
+                  `${binding.reference_kind === "food" ? "food" : "source food"} ${binding.reference_id}`}
                 {binding.status !== "valid" && (
                   <span> ({binding.status.replaceAll("_", " ")})</span>
                 )}{" "}
@@ -232,11 +233,11 @@ function BindingForm({
   save: (run: () => Promise<Pantry>) => void;
 }) {
   const [name, setName] = useState("");
-  const [food, setFood] = useState<OwnFood | null>(null);
+  const [food, setFood] = useState<FoodMatch | null>(null);
   const [productId, setProductId] = useState("");
   const [quantity, setQuantity] = useState("");
   const search = useQuery({
-    ...ownFoodsQuery(person, name),
+    ...foodMatchesQuery(person, name),
     enabled: !disabled && name.trim().length >= 2 && food === null,
   });
   const product = pantry.products.find(
@@ -249,8 +250,8 @@ function BindingForm({
       return;
     save(() =>
       saveBinding({
-        reference_kind: "food",
-        reference_id: food.id,
+        reference_kind: food.reference.kind,
+        reference_id: food.reference.id,
         product_id: product.product_id,
         stock_unit_id: product.stock_unit.id,
         quantity_per_serving: amount,
@@ -315,15 +316,16 @@ export function FoodResults({
   foods,
   choose,
 }: {
-  foods: OwnFood[];
-  choose: (food: OwnFood) => void;
+  foods: FoodMatch[];
+  choose: (food: FoodMatch) => void;
 }) {
   if (foods.length === 0) return <p>No foods found</p>;
   return (
     <ul className="entries" aria-label="Foods">
       {foods.map((food) => (
-        <li key={food.id}>
+        <li key={`${food.reference.kind}-${food.reference.id}`}>
           <strong>{food.name}</strong>
+          {food.brand && <span>{food.brand}</span>}
           {food.serving && <span>{food.serving}</span>}
           <button
             type="button"

@@ -72,23 +72,27 @@ export function catalogQuery(person: number, name: string) {
   };
 }
 
-const ownFoodsSchema = z.object({
+const foodMatchesSchema = z.object({
   foods: z.array(
     z.object({
-      id: z.number().int().positive(),
+      reference: z.object({
+        kind: z.enum(["food", "source_food"]),
+        id: z.number().int().positive(),
+      }),
       name: z.string(),
+      brand: z.string().nullable(),
       serving: z.string().nullable(),
     }),
   ),
 });
-export type OwnFood = z.infer<typeof ownFoodsSchema>["foods"][number];
+export type FoodMatch = z.infer<typeof foodMatchesSchema>["foods"][number];
 
-export function ownFoodsQuery(person: number, name: string) {
+export function foodMatchesQuery(person: number, name: string) {
   const term = name.trim();
   return {
     queryKey: ["search_foods", person, term] as const,
     queryFn: async ({ signal }: { signal: AbortSignal }) =>
-      ownFoodsSchema.parse(
+      foodMatchesSchema.parse(
         await api("/api/foods/search", {
           method: "POST",
           body: JSON.stringify({ name: term }),

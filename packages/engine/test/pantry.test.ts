@@ -282,7 +282,10 @@ test("bindings validate, replace, track refresh status and clear on reset", asyn
   const ids = addFoods(database, admin.id);
   const generation = Number(service.read(admin.id).generation);
   const food = { reference_kind: "food", reference_id: ids.food } as const;
-  const source = { reference_kind: "source_food", reference_id: ids.source };
+  const source = {
+    reference_kind: "source_food",
+    reference_id: ids.source,
+  } as const;
   const save = (change: object) =>
     service.save(admin.id, {
       ...food,
@@ -376,6 +379,12 @@ test("bindings validate, replace, track refresh status and clear on reset", asyn
   assert.equal((await stale.started).error, null);
   const recreated = { ...saved[0], quantity_per_serving: 2 };
   assert.deepEqual(service.read(admin.id).bindings, [recreated]);
+  const cached = await save({ ...source, product_id: 1 });
+  assert.deepEqual(
+    cached.bindings.map((binding) => binding.name),
+    ["Synthetic soup", "Synthetic cereal"],
+  );
+  service.remove(admin.id, source);
 
   const overtaken = await held(() => save(source));
   service.reset(admin.id, true);

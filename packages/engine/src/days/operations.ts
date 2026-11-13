@@ -3,6 +3,7 @@ import { localDay } from "../logging/day.ts";
 import { weightRow } from "../logging/schemas.ts";
 import { defineOperation, operationPerson } from "../operations/registry.ts";
 import { searchOwnFoods } from "../queries/search-own-foods.ts";
+import { searchSourceFoods } from "../queries/search-source-foods.ts";
 import { selectTargetNotice } from "../queries/select-target-notice.ts";
 import { selectTodayWeights } from "../queries/select-today-weights.ts";
 import { targetNoticeSchema } from "../target/operations.ts";
@@ -89,30 +90,38 @@ export const dayReadOperations = [
     output: zod.strictObject({
       foods: zod.array(
         zod.strictObject({
-          id: zod.number().int().positive(),
+          reference: zod.strictObject({
+            kind: zod.enum(["food", "source_food"]),
+            id: zod.number().int().positive(),
+          }),
           name: zod.string(),
+          brand: zod.string().nullable(),
           serving: zod.string().nullable(),
         }),
       ),
     }),
     handler(input, context) {
-      const foods = searchOwnFoods(context.database, {
+      const pattern = input.name.replace(/[!%_]/g, "!$&");
+      const serving = (size: number | null, unit: string | null) =>
+        size === null ? null : `${size} ${unit ?? ""}`.trim();
+      const own = searchOwnFoods(context.database, {
         user_id: operationPerson(context).id,
-        pattern: input.name.replace(/[!%_]/g, "!$&"),
-      });
-      return {
-        status: 200,
-        body: {
-          foods: foods.map((food) => ({
-            id: food.id,
-            name: food.name,
-            serving:
-              food.serving_size === null
-                ? null
-                : `${food.serving_size} ${food.serving_unit ?? ""}`.trim(),
-          })),
-        },
-      };
+        pattern,
+      }).map((food) => ({
+        reference: { kind: "food" as const, id: food.id },
+        name: food.name,
+        brand: null,
+        serving: serving(food.serving_size, food.serving_unit),
+      }));
+      const cached = searchSourceFoods(context.database, { pattern }).map(
+        (food) => ({
+          reference: { kind: "source_food" as const, id: food.id },
+          name: food.name,
+          brand: food.brand,
+          serving: serving(food.serving_size, food.serving_unit),
+        }),
+      );
+      return { status: 200, body: { foods: [...own, ...cached] } };
     },
   }),
 ];

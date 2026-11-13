@@ -222,7 +222,7 @@ for (const mode of ["fallback", "access"] as const)
     );
   });
 
-test("food search matches part of a name and lists only the person's own foods", async (context) => {
+test("food search matches part of a name in the person's own foods and cached foods", async (context) => {
   const { database, admin, member } = await twoUsers(context, "fallback");
   const food = database.prepare(
     "INSERT INTO foods (user_id, name, serving_size, serving_unit, provenance) VALUES (?, ?, ?, ?, 'label')",
@@ -230,6 +230,17 @@ test("food search matches part of a name and lists only the person's own foods",
   food.run(admin.user.id, "Jasmine rice (Example), dry", 45, "g");
   food.run(admin.user.id, "Example soup", null, null);
   food.run(member.user.id, "Example brown rice", 1, "cup");
+  database
+    .prepare(
+      "INSERT INTO source_foods (source, source_key, name, brand, provenance, fetched_at) VALUES ('off', 'example-rice', 'Example rice', 'Example brand', 'label', '2026-01-01T00:00:00.000Z')",
+    )
+    .run();
+  const cached = {
+    reference: { kind: "source_food", id: 1 },
+    name: "Example rice",
+    brand: "Example brand",
+    serving: null,
+  };
   const search = async (person: typeof admin, name: string) => {
     const response = await person.request("/api/foods/search", {
       method: "POST",
@@ -239,9 +250,25 @@ test("food search matches part of a name and lists only the person's own foods",
     return response.json();
   };
   assert.deepEqual(await search(admin, "RICE"), {
-    foods: [{ id: 1, name: "Jasmine rice (Example), dry", serving: "45 g" }],
+    foods: [
+      {
+        reference: { kind: "food", id: 1 },
+        name: "Jasmine rice (Example), dry",
+        brand: null,
+        serving: "45 g",
+      },
+      cached,
+    ],
   });
   assert.deepEqual(await search(member, "rice"), {
-    foods: [{ id: 3, name: "Example brown rice", serving: "1 cup" }],
+    foods: [
+      {
+        reference: { kind: "food", id: 3 },
+        name: "Example brown rice",
+        brand: null,
+        serving: "1 cup",
+      },
+      cached,
+    ],
   });
 });
