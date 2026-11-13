@@ -162,6 +162,7 @@ dd {
   gap: 0.75rem;
   border-bottom: 1px solid #ccd3c8;
   padding: 1rem 0;
+  overflow-wrap: anywhere;
 }
 .entries strong {
   flex-basis: 100%;
