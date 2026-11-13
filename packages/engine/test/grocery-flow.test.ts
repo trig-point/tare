@@ -216,6 +216,7 @@ test("propose_grocery plans from empty Grocy and from reuse with no write, and b
     kcal: 160,
   });
   assert.deepEqual(empty.body.plan.overlaps, []);
+  assert.equal(empty.body.plan.food.create.protein_g, null);
   const unsourced = { ...rice.food.create, source: undefined };
   assert.equal(
     (await propose({ ...rice, food: { create: unsourced } })).body.error.code,
