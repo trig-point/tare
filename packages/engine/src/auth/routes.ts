@@ -3,6 +3,7 @@ import type { JWTVerifyGetKey } from "jose";
 import { z as zod } from "zod";
 import type { CalendarRefresher } from "../calendar/refresh.ts";
 import { type Config, validateTimezone } from "../config.ts";
+import type { GroceryService } from "../grocery/flow.ts";
 import type { LookupAdapters } from "../lookup/index.ts";
 import {
   defineOperation,
@@ -28,6 +29,7 @@ import { createSession, hashToken } from "./sessions.ts";
 
 export interface AppOptions {
   pantry?: PantryService;
+  grocery?: GroceryService;
   stock?: PantryStock;
   database: Database;
   config: Config;
