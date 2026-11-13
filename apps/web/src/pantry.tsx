@@ -334,7 +334,7 @@ function BindingForm({
           value={quantity}
           onChange={(event) => setQuantity(event.target.value)}
         />
-        <button type="submit" disabled={!food || !(amount > 0)}>
+        <button type="submit" disabled={!food || !product || !(amount > 0)}>
           Bind
         </button>
       </fieldset>
