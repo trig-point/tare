@@ -38,7 +38,7 @@ const operations: {
     name: "execute_grocery",
     path: "/api/pantry/groceries",
     description:
-      "Run a confirmed grocery plan exactly as proposed, with a new mutation_id. Each Grocy write is sent at most once; replaying the mutation_id resumes or returns the same request. A step left uncertain stops the request until it is adopted or abandoned.",
+      "Run a confirmed grocery plan exactly as proposed, with a new mutation_id. Each Grocy write is sent at most once; replaying the mutation_id resumes or returns the same request once the first call has finished. A step left uncertain stops the request until it is adopted or abandoned.",
     input: z.strictObject({ mutation_id: z.uuid(), plan: groceryPlan }),
     output: groceryStatus,
     run: (service, userId, input: { mutation_id: string; plan: never }) =>
@@ -54,7 +54,10 @@ const operations: {
       number: id,
       restore_nonce: z.string().max(64),
       object_id: id.optional(),
-      transaction_id: z.string().max(64).optional(),
+      transaction_id: z
+        .string()
+        .regex(/^[A-Za-z0-9]{1,64}$/)
+        .optional(),
     }),
     output: groceryStatus,
     run: (service, userId, input: never) => service.adopt(userId, input),

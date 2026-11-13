@@ -357,7 +357,7 @@ Grocy and restore the prior Compose configuration while retaining both services'
 
 An agent can add a grocery for the pantry owner over MCP or HTTP. `propose_grocery` reads Grocy and returns a plan: the food, the unit, location and product to reuse or create, an optional barcode, the purchase amount in the product's stock unit and its dates. It writes nothing. Show the plan to the owner; after they confirm, `execute_grocery` runs it unchanged with a new `mutation_id`. Each Grocy write is sent once. If an answer is lost, the step is marked uncertain and nothing is resent: `read_grocery` lists candidate purchases, `adopt_grocery_step` accepts an object or purchase only after checking every planned field, and `abandon_grocery` stops the request. Nothing already added is deleted or subtracted.
 
-Run one engine process per database. Grocery execution keeps its owner lock in that process, so a second engine on the same database could start a second plan at the same time. Reset refuses while a grocery request is unfinished; abandon it first. Only the user who started a request can abandon it, so finish or abandon open requests before changing `TARE_GROCY_USERNAME`; if one is left, switch the owner back, abandon it, then switch again.
+Run one engine process per database. Grocery execution keeps its owner lock in that process, so a second engine on the same database could start a second plan at the same time. Reset refuses while a grocery request is unfinished; abandon it first. The configured owner can read and abandon any open request, including one a previous owner started.
 
 ### Grocy provisioning smoke
 

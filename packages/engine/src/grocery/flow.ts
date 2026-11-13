@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Database } from "better-sqlite3";
 import { z } from "zod";
-import { writeTransaction } from "../db.ts";
+import { scopeDatabase, writeTransaction } from "../db.ts";
 import {
   checkOwnedFood,
   ownedFoodInput,
@@ -369,13 +369,27 @@ export function createGroceryService({
     });
   }
 
+  /** The caller's own request; the configured owner also reaches any listed open request. */
+  function lookup(userId: number, mutationId: string) {
+    const own = store.readGrocery(database, userId, mutationId);
+    if (own || userId !== ownerId) return own;
+    const open = store
+      .openGroceries(database, 100)
+      .find((row) => row.mutation_id === mutationId.toLowerCase());
+    return open ? store.readGrocery(database, open.user_id, mutationId) : null;
+  }
+
   function view(
     userId: number,
     mutationId: string,
     stopped: string | null = null,
     candidates: z.output<typeof request>["candidates"] = null,
+    readAs = userId,
   ) {
-    const found = store.readGrocery(database, userId, mutationId);
+    const found =
+      readAs === userId
+        ? lookup(userId, mutationId)
+        : store.readGrocery(database, readAs, mutationId);
     return groceryStatus.parse({
       request: found && {
         mutation_id: found.request.mutation_id,
@@ -422,6 +436,23 @@ export function createGroceryService({
   });
   const defaultDays = (plan: Plan) =>
     plan.best_before_date === "never" ? neverExpires.defaultDays : 0;
+  /** The generation, a reused food's serving and nutrients, and the binding are still what the plan froze. */
+  function frozen(reader: Database, plan: Plan, stored: store.GroceryRequest) {
+    const food = selectFood(reader, {
+      user_id: stored.user_id,
+      id: stored.food_id,
+    });
+    const binding = store.groceryBinding(reader, stored);
+    return (
+      stored.generation === plan.generation &&
+      !!food &&
+      store.foodFingerprint(food) === stored.food_fingerprint &&
+      (plan.food_seen === null || plan.food_seen === stored.food_fingerprint) &&
+      (binding?.change_token ?? null) ===
+        (plan.binding_seen?.change_token ?? null) &&
+      (binding?.status ?? null) === (plan.binding_seen?.status ?? null)
+    );
+  }
   // Runs only after the purchase is committed; a failed refresh stays visible on the pantry read.
   const queueRefresh = () =>
     void refresh().catch(() => report("pantry_refresh_failed"));
@@ -503,6 +534,10 @@ export function createGroceryService({
           owner,
           resolved(plan, found.steps, "location"),
         );
+        const gone = (read: typeof product | typeof location) =>
+          read?.status !== "ok" &&
+          !(read && "reason" in read && read.reason === "not_found");
+        if (gone(product) || gone(location)) return "pantry_read_failed";
         // Grocy 4.7.1 adds to a missing location, and a tare or unit change alters what the amount means.
         if (
           product?.status !== "ok" ||
@@ -517,6 +552,9 @@ export function createGroceryService({
         if (max?.status !== "ok") return "pantry_read_failed";
         add = { product_id: productId, stock_log_max: max.value };
       }
+      // The reads above can outlast a shutdown or a local edit; neither may lead to a send.
+      if (stopping) return "pantry_stopping";
+      if (!frozen(database, plan, found.request)) return "grocery_plan_changed";
       const claim = store.claimGroceryStep(
         database,
         { request_id: found.request.id, number: next.number },
@@ -567,8 +605,9 @@ export function createGroceryService({
         const fresh = await propose(userId, rest);
         if (!fresh.plan || canonical(fresh.plan) !== text)
           throw new OperationError(409, "grocery_plan_changed");
-        writeTransaction(database, (scope) =>
-          store.insertGroceryRequest(
+        if (stopping) throw new OperationError(503, "pantry_stopping");
+        writeTransaction(database, (scope) => {
+          const stored = store.insertGroceryRequest(
             scope,
             {
               ownerId,
@@ -583,8 +622,11 @@ export function createGroceryService({
                   : { values: ownedFoodValues(input.plan.food.create) },
             },
             clock,
-          ),
-        );
+          );
+          // A reset or food edit during the re-proposal's Grocy reads rolls the insert back.
+          if (!frozen(scopeDatabase(scope), input.plan, stored.request))
+            throw new OperationError(409, "grocery_plan_changed");
+        });
       }
       return view(userId, mutationId, await run(mutationId, input.plan));
     })().finally(() => {
@@ -603,15 +645,22 @@ export function createGroceryService({
     const target = steps.find((step) => step.number === number);
     if (target?.state !== "uncertain")
       throw new OperationError(409, "grocery_step_not_adoptable");
+    if ((target.kind === "stock_add") !== (proof.transaction_id !== undefined))
+      throw new OperationError(400, "grocery_proof_ambiguous");
     const unitId = resolved(plan, steps, "unit");
     const locationId = resolved(plan, steps, "location");
     const productId = resolved(plan, steps, "product");
     const objectId = proof.object_id ?? 0;
     let matches = false;
     if (target.kind === "stock_add") {
-      const rows = await maybe(
-        client.transaction(owner, proof.transaction_id ?? ""),
-      );
+      const read = await client.transaction(owner, proof.transaction_id ?? "");
+      // Any definite Grocy answer that is not this purchase is a mismatch, not an outage.
+      if (
+        read?.status !== "ok" &&
+        !(read && "httpStatus" in read && (read.httpStatus ?? 500) < 500)
+      )
+        throw new OperationError(503, "pantry_read_failed");
+      const rows = read?.status === "ok" ? read.value : null;
       matches =
         !!rows &&
         target.product_id === productId &&
@@ -620,15 +669,18 @@ export function createGroceryService({
     } else if (target.kind === "unit" && "create" in plan.unit) {
       const unit = await maybe(client.unit(owner, objectId));
       matches =
-        unit?.name === plan.unit.create.name &&
+        unit?.active === 1 &&
+        unit.name === plan.unit.create.name &&
         unit.name_plural === plan.unit.create.name_plural;
     } else if (target.kind === "location" && "create" in plan.location) {
       const location = await maybe(client.location(owner, objectId));
-      matches = location?.name === plan.location.create.name;
+      matches =
+        location?.active === 1 && location.name === plan.location.create.name;
     } else if (target.kind === "product" && "create" in plan.product) {
       const product = await maybe(client.product(owner, objectId));
       matches =
-        product?.name === plan.product.create.name &&
+        product?.active === 1 &&
+        product.name === plan.product.create.name &&
         product.location_id === locationId &&
         [
           product.qu_id_stock,
@@ -716,12 +768,13 @@ export function createGroceryService({
     userId: number,
     input: { mutation_id: string; request_mutation_id: string },
   ) {
-    const found = store.readGrocery(
-      database,
-      userId,
-      input.request_mutation_id,
-    );
+    const found = lookup(userId, input.request_mutation_id);
     if (!found) throw new OperationError(404, "grocery_not_found");
+    const decided = readDecision(database, {
+      user_id: userId,
+      mutation_id: input.mutation_id.toLowerCase(),
+    });
+    if (!decided && stopping) throw new OperationError(503, "pantry_stopping");
     store.abandonGrocery(
       database,
       {
@@ -732,7 +785,13 @@ export function createGroceryService({
       },
       clock,
     );
-    return view(userId, input.request_mutation_id);
+    return view(
+      userId,
+      input.request_mutation_id,
+      null,
+      null,
+      found.request.user_id,
+    );
   }
 
   /** Candidates come only from the request's own live connection; a failed read lists none and is incomplete. */
@@ -741,7 +800,7 @@ export function createGroceryService({
       admit(userId);
       return view(userId, "");
     }
-    const found = store.readGrocery(database, userId, mutationId);
+    const found = lookup(userId, mutationId);
     if (!found) throw new OperationError(404, "grocery_not_found");
     const add = found.steps.find(
       (step) => step.kind === "stock_add" && step.state === "uncertain",
