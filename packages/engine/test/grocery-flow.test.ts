@@ -684,7 +684,7 @@ test("one plan runs at a time, stops on drift or an unsupported version, and shu
 });
 
 test("a plan from before a restore cannot start, and abandon works while reset is required", async (context) => {
-  const { propose, execute, abandon, database, tables, posts, grocyState } =
+  const { propose, execute, database, tables, posts, grocyState, member } =
     await runner(context);
   seed(tables);
   const stale = (await propose(reuse)).body.plan;
@@ -699,11 +699,22 @@ test("a plan from before a restore cannot start, and abandon works while reset i
     "grocery_plan_changed",
   );
   database.prepare("UPDATE pantry_connection SET reset_required = 1").run();
-  const stopped = await abandon({
-    mutation_id: mutation(3),
-    request_mutation_id: mutation(1),
+  // A changed Grocy owner ends the previous owner's request, and a retry replays.
+  const nextOwner = createGroceryService({
+    database,
+    config: null,
+    ownerId: member.user.id,
+    clock,
+    refresh: async () => {},
+    client: {} as never,
   });
-  assert.equal(stopped.body.request.state, "abandoned");
+  const ending = { mutation_id: mutation(3), request_mutation_id: mutation(1) };
+  const stopped = nextOwner.abandon(member.user.id, ending);
+  assert.equal(stopped.request?.state, "abandoned");
+  assert.equal(
+    nextOwner.abandon(member.user.id, ending).request?.state,
+    "abandoned",
+  );
   assert.equal(
     (await execute({ mutation_id: mutation(1), plan })).body.request.state,
     "abandoned",
