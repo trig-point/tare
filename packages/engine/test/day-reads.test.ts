@@ -235,40 +235,27 @@ test("food search matches part of a name in the person's own foods and cached fo
       "INSERT INTO source_foods (source, source_key, name, brand, provenance, fetched_at) VALUES ('off', 'example-rice', 'Example rice', 'Example brand', 'label', '2026-01-01T00:00:00.000Z')",
     )
     .run();
-  const cached = {
-    reference: { kind: "source_food", id: 1 },
-    name: "Example rice",
-    brand: "Example brand",
-    serving: null,
-  };
+  const match = (kind: string, id: number, name: string, serving: unknown) => ({
+    reference: { kind, id },
+    name,
+    brand: kind === "food" ? null : "Example brand",
+    serving,
+  });
+  const cached = match("source_food", 1, "Example rice", null);
   const search = async (person: typeof admin, name: string) => {
     const response = await person.request("/api/foods/search", {
       method: "POST",
       body: JSON.stringify({ name }),
     });
     assert.equal(response.status, 200);
-    return response.json();
+    return (await response.json()).foods;
   };
-  assert.deepEqual(await search(admin, "RICE"), {
-    foods: [
-      {
-        reference: { kind: "food", id: 1 },
-        name: "Jasmine rice (Example), dry",
-        brand: null,
-        serving: "45 g",
-      },
-      cached,
-    ],
-  });
-  assert.deepEqual(await search(member, "rice"), {
-    foods: [
-      {
-        reference: { kind: "food", id: 3 },
-        name: "Example brown rice",
-        brand: null,
-        serving: "1 cup",
-      },
-      cached,
-    ],
-  });
+  assert.deepEqual(await search(admin, "RICE"), [
+    match("food", 1, "Jasmine rice (Example), dry", "45 g"),
+    cached,
+  ]);
+  assert.deepEqual(await search(member, "rice"), [
+    match("food", 3, "Example brown rice", "1 cup"),
+    cached,
+  ]);
 });
