@@ -41,6 +41,18 @@ export const pantrySchema = z.object({
   ),
 });
 export type Pantry = z.infer<typeof pantrySchema>;
+const productsSchema = z.object({
+  state: z.enum(["disabled", "reset_required", "unavailable", "ready"]),
+  products: z.array(
+    z.object({
+      product_id: z.number(),
+      name: z.string(),
+      amount: z.number(),
+      stock_unit: unit,
+    }),
+  ),
+});
+export type PantryProducts = z.infer<typeof productsSchema>;
 
 const stockRequest = z.object({
   request_id: z.string(),
@@ -82,11 +94,15 @@ export const pantryKey = (person: number) => ["pantry", person] as const;
 export const requestsKey = (person: number) =>
   ["pantry_requests", person] as const;
 export const linkKey = (person: number) => ["pantry_link", person] as const;
+export const productsKey = (person: number) =>
+  ["pantry_products", person] as const;
 
 export const readPantry = async (signal?: AbortSignal) =>
   pantrySchema.parse(await api("/api/pantry", { signal }));
 export const readRequests = async (signal?: AbortSignal) =>
   requestsSchema.parse(await api("/api/pantry/requests", { signal }));
+export const readProducts = async (signal?: AbortSignal) =>
+  productsSchema.parse(await api("/api/pantry/products", { signal }));
 export const readLink = async (signal?: AbortSignal) =>
   z
     .object({ url: z.string().nullable() })

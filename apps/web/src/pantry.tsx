@@ -9,9 +9,12 @@ import {
   failureText,
   linkKey,
   type Pantry,
+  type PantryProducts,
   pantryKey,
+  productsKey,
   readLink,
   readPantry,
+  readProducts,
   readRequests,
   reconcile,
   refreshPantry,
@@ -48,6 +51,11 @@ export function PantrySection({ person, online }: Props) {
     queryKey: linkKey(person),
     queryFn: ({ signal }) => readLink(signal),
   });
+  const catalog = useQuery({
+    ...owner,
+    queryKey: productsKey(person),
+    queryFn: ({ signal }) => readProducts(signal),
+  });
   if (forbidden(pantry.error)) return null;
   return (
     <PantryView
@@ -58,6 +66,7 @@ export function PantrySection({ person, online }: Props) {
       requests={requests.data}
       requestsFailed={requests.isError}
       link={link.data ?? null}
+      catalog={catalog.data}
     />
   );
 }
@@ -84,18 +93,21 @@ export function PantryView({
   requests,
   requestsFailed,
   link,
+  catalog,
 }: Props & {
   pantry: Pantry | undefined;
   failed: boolean;
   requests: StockRequests | undefined;
   requestsFailed: boolean;
   link: string | null;
+  catalog?: PantryProducts;
 }) {
   const client = useQueryClient();
   const reload = () =>
     Promise.all([
       client.invalidateQueries({ queryKey: pantryKey(person) }),
       client.invalidateQueries({ queryKey: requestsKey(person) }),
+      client.invalidateQueries({ queryKey: productsKey(person) }),
     ]);
   const change = useMutation({
     mutationFn: (run: () => Promise<Pantry>) => run(),
@@ -206,6 +218,7 @@ export function PantryView({
           <BindingForm
             person={person}
             pantry={pantry}
+            catalog={catalog}
             disabled={!online || change.isPending}
             save={(run) => change.mutate(run)}
           />
@@ -225,11 +238,13 @@ export function PantryView({
 function BindingForm({
   person,
   pantry,
+  catalog,
   disabled,
   save,
 }: {
   person: number;
   pantry: Pantry;
+  catalog: PantryProducts | undefined;
   disabled: boolean;
   save: (run: () => Promise<Pantry>) => void;
 }) {
@@ -241,7 +256,9 @@ function BindingForm({
     ...foodMatchesQuery(person, name),
     enabled: !disabled && name.trim().length >= 2 && food === null,
   });
-  const product = pantry.products.find(
+  const choices =
+    catalog?.state === "ready" ? catalog.products : pantry.products;
+  const product = choices.find(
     (entry) => String(entry.product_id) === productId,
   );
   const amount = Number(quantity);
@@ -286,12 +303,15 @@ function BindingForm({
           onChange={(event) => setProductId(event.target.value)}
         >
           <option value="">Choose a product</option>
-          {pantry.products.map((entry) => (
+          {choices.map((entry) => (
             <option key={entry.product_id} value={entry.product_id}>
-              {entry.name}
+              {entry.name} ({entry.amount} {entry.stock_unit.name})
             </option>
           ))}
         </select>
+        {catalog?.state === "unavailable" && (
+          <p role="alert">Grocy unavailable</p>
+        )}
         <label htmlFor="pantry-quantity">
           Per serving{product ? ` (${product.stock_unit.name})` : ""}
         </label>
