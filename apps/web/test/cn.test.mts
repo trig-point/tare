@@ -8,5 +8,9 @@ test("cn lets a later Tailwind class replace a conflicting one", () => {
     cn("bg-primary", false, undefined, "bg-destructive"),
     "bg-destructive",
   );
+  assert.equal(
+    cn("text-sm text-muted-foreground", "text-step-1"),
+    "text-muted-foreground text-step-1",
+  );
   assert.equal(cn(), "");
 });

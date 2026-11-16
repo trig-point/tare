@@ -5,7 +5,7 @@ const PortalContainerContext = createContext<HTMLElement | undefined>(
 );
 
 /**
- * Sets where the portaled components below it (tooltip, popover, dialog, context menu) mount.
+ * Sets where the portaled components below it (tooltip, popover, dialog) mount.
  * Without a provider they mount under document.body and theme from the app-wide variables.
  */
 export function PortalContainerProvider({

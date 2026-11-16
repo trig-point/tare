@@ -3,7 +3,6 @@
 @import "@fontsource/inter/400.css";
 @import "@fontsource/inter/500.css";
 @import "@fontsource/inter/600.css";
-@import "@fontsource/inter/700.css";
 @import "@fontsource/ibm-plex-mono/400.css";
 @import "@fontsource/ibm-plex-mono/500.css";
 @import "@fontsource/ibm-plex-mono/600.css";
@@ -168,7 +167,8 @@
   /* Preflight removes the browser's flow spacing, which the current screens still lay out with. */
   p,
   dl,
-  details {
+  details,
+  pre {
     margin: 1em 0;
   }
   ul,
@@ -227,7 +227,7 @@
 
 /* The current screens; utilities and the components in shared/ui take precedence. */
 @layer components {
-  :where(input, select):not([data-slot]) {
+  :where(input, select, textarea):not([data-slot]) {
     width: 100%;
     margin-bottom: var(--spacing-2);
     border: 1px solid var(--color-border-strong);
@@ -237,12 +237,12 @@
     color: inherit;
     font-size: 1rem;
   }
-  :where(input[type="number"]) {
+  :where(input[type="number"]):not([data-slot]) {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
   }
   @media (min-width: 48rem) {
-    :where(input, select):not([data-slot]) {
+    :where(input, select, textarea):not([data-slot]) {
       font-size: 0.875rem;
     }
   }
@@ -269,6 +269,11 @@
   }
   :where(button:not([data-slot]), .button):hover {
     background: color-mix(in srgb, var(--color-accent) 90%, var(--color-bg));
+  }
+  @media (pointer: coarse) {
+    :where(button:not([data-slot]), .button) {
+      min-height: 44px;
+    }
   }
   :where(button:not([data-slot])):disabled {
     opacity: 0.5;
@@ -351,6 +356,10 @@
     grid-template-columns: minmax(5rem, 1fr) 2fr;
     gap: 0.75rem;
     padding: 0.25rem 0;
+  }
+  :where(table:not(.u-legend)) :is(th, td) {
+    padding: var(--spacing-1) var(--spacing-3) var(--spacing-1) 0;
+    text-align: left;
   }
   dt {
     color: var(--color-ink-2);

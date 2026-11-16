@@ -30,6 +30,7 @@
   --accent: var(--color-accent);
   --accent-foreground: var(--color-surface);
   --destructive: var(--color-needs-human);
+  --destructive-foreground: var(--color-surface);
   --border: var(--color-border);
   --input: var(--color-border-strong);
   --ring: var(--color-accent);
@@ -51,6 +52,7 @@
   --color-muted-foreground: var(--muted-foreground);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
   --color-input: var(--input);
   --color-ring: var(--ring);
   --radius-sm: max(0px, calc(var(--radius) - 4px));

@@ -2,19 +2,19 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import type { Legend, Series } from "uplot";
 import { bodyFatChart, bodyFatKey, readBodyFat } from "./body-fat-api.ts";
-import { Plot } from "./profile.tsx";
+import { Plot, themeColor } from "./profile.tsx";
 
 const points = (label: string, color: string): Series => ({
   label,
-  stroke: color,
+  stroke: themeColor(color),
   paths: () => null,
-  points: { show: true, size: 7, fill: color },
+  points: { show: true, size: 7, fill: themeColor(color) },
 });
 const bodyFatSeries: Series[] = [
   {},
-  points("Reading", "#234b40"),
-  points("After a workout", "#b5651d"),
-  points("Later weigh-in", "#b8bcb4"),
+  points("Reading", "--color-accent"),
+  points("After a workout", "--color-caution"),
+  points("Later weigh-in", "--color-ink-3"),
 ];
 const keyOnly: Legend = { show: true, live: false };
 
