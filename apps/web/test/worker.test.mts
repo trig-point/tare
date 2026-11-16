@@ -40,6 +40,14 @@ test("built worker verifies its HTML and only caches built assets", async () => 
     url: string;
     integrity?: string;
   }[];
+  const fonts = entries
+    .map((entry) => entry.url)
+    .filter((url) => url.endsWith(".woff2"));
+  for (const family of ["inter-latin-400", "ibm-plex-mono-latin-400"])
+    assert.ok(
+      fonts.some((url) => url.includes(family)),
+      family,
+    );
   const html = entries.filter((entry) => entry.url.endsWith(".html"));
   assert.ok(html.length > 0);
   for (const entry of html)

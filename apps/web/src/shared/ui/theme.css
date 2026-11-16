@@ -1,0 +1,67 @@
+/*
+ * The shadcn theme, mapped onto the app tokens in style.css so the components in this folder
+ * render the same on any page, in light and dark.
+ */
+
+@custom-variant dark {
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme="light"]) *) {
+      @slot;
+    }
+  }
+  &:where([data-theme="dark"] *, .dark *) {
+    @slot;
+  }
+}
+
+:root {
+  --background: var(--color-bg);
+  --foreground: var(--color-ink);
+  --card: var(--color-surface);
+  --card-foreground: var(--color-ink);
+  --popover: var(--color-surface);
+  --popover-foreground: var(--color-ink);
+  --primary: var(--color-accent);
+  --primary-foreground: var(--color-surface);
+  --secondary: var(--color-bg-sunk);
+  --secondary-foreground: var(--color-ink);
+  --muted: var(--color-bg-sunk);
+  --muted-foreground: var(--color-ink-2);
+  --accent: var(--color-accent);
+  --accent-foreground: var(--color-surface);
+  --destructive: var(--color-needs-human);
+  --border: var(--color-border);
+  --input: var(--color-border-strong);
+  --ring: var(--color-accent);
+}
+
+/* `accent` and `border` are already app theme colors with the same meaning. */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: max(0px, calc(var(--radius) - 4px));
+  --radius-md: max(0px, calc(var(--radius) - 2px));
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  :where([data-slot]),
+  :where([data-slot]) * {
+    border-color: var(--border);
+  }
+}
