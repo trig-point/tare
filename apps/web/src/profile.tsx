@@ -229,15 +229,49 @@ export function WeightChart({
   );
 }
 
+/** Reads a color token when uPlot draws, so the canvas follows light and dark. */
+export const themeColor = (name: string) => () =>
+  getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+/** Calls onChange when the system color scheme or the root data-theme changes; returns a stop function. */
+export function watchColorScheme(
+  view: typeof globalThis,
+  onChange: () => void,
+) {
+  const media = view.matchMedia("(prefers-color-scheme: dark)");
+  media.addEventListener("change", onChange);
+  const observer = new view.MutationObserver(onChange);
+  observer.observe(view.document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-theme"],
+  });
+  return () => {
+    media.removeEventListener("change", onChange);
+    observer.disconnect();
+  };
+}
+
+const axis = {
+  stroke: themeColor("--color-ink-2"),
+  font: '11px "IBM Plex Mono", ui-monospace, monospace',
+  grid: { stroke: themeColor("--color-border") },
+  ticks: { stroke: themeColor("--color-border") },
+};
+
 const weightSeries: Series[] = [
   {},
   {
     label: "Reading",
-    stroke: "#8a8f86",
+    stroke: themeColor("--color-ink-3"),
     paths: () => null,
-    points: { show: true, size: 6, fill: "#8a8f86" },
+    points: { show: true, size: 6, fill: themeColor("--color-ink-3") },
   },
-  { label: "Trend", stroke: "#234b40", width: 2, spanGaps: true },
+  {
+    label: "Trend",
+    stroke: themeColor("--color-accent"),
+    width: 2,
+    spanGaps: true,
+  },
 ];
 
 const noLegend: Legend = { show: false };
@@ -258,6 +292,7 @@ export function Plot({
     if (!element) return;
     let plot: import("uplot") | undefined;
     let active = true;
+    let stopWatching: (() => void) | undefined;
     const resize = new ResizeObserver(() =>
       plot?.setSize({ width: element.clientWidth, height: 240 }),
     );
@@ -266,16 +301,24 @@ export function Plot({
     void Promise.all([import("uplot"), import("uplot/dist/uPlot.min.css")])
       .then(([{ default: UPlot }]) => {
         if (!active) return;
-        plot = new UPlot(
-          {
-            width: element.clientWidth,
-            height: 240,
-            legend,
-            series,
-          },
-          data,
-          element,
-        );
+        const draw = () =>
+          new UPlot(
+            {
+              width: element.clientWidth,
+              height: 240,
+              legend,
+              series,
+              axes: [axis, axis],
+            },
+            data,
+            element,
+          );
+        plot = draw();
+        // uPlot fixes its colors when it builds, so a scheme change rebuilds the chart.
+        stopWatching = watchColorScheme(globalThis, () => {
+          plot?.destroy();
+          plot = draw();
+        });
       })
       .catch(() => {
         if (active) setFailed(true);
@@ -283,6 +326,7 @@ export function Plot({
     return () => {
       active = false;
       resize.disconnect();
+      stopWatching?.();
       plot?.destroy();
     };
   }, [data, series, legend]);

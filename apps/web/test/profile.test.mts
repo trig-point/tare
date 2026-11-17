@@ -15,7 +15,7 @@ import { readToday } from "../src/today-api.ts";
 import { test } from "./support.mts";
 import "./tsx.mts";
 
-const { ProfileForm, TargetCard, WeightChart } = await import(
+const { ProfileForm, TargetCard, WeightChart, watchColorScheme } = await import(
   "../src/profile.tsx"
 );
 const signal = new AbortController().signal;
@@ -160,4 +160,36 @@ test("weight chart shows an empty state with no weigh-ins", async (context) => {
   ]);
   assert.match(chart, /No weigh-ins yet/);
   assert.doesNotMatch(chart, /weight-chart/);
+});
+
+test("charts rebuild when the color scheme or data-theme changes, until stopped", () => {
+  const media = new EventTarget();
+  const observers: { notify: () => void; disconnected: boolean }[] = [];
+  class FakeObserver {
+    entry: { notify: () => void; disconnected: boolean };
+    constructor(callback: () => void) {
+      this.entry = { notify: callback, disconnected: false };
+      observers.push(this.entry);
+    }
+    observe(_target: unknown, options: { attributeFilter: string[] }) {
+      assert.deepEqual(options.attributeFilter, ["data-theme"]);
+    }
+    disconnect() {
+      this.entry.disconnected = true;
+    }
+  }
+  const view = {
+    matchMedia: () => media,
+    MutationObserver: FakeObserver,
+    document: { documentElement: {} },
+  } as unknown as typeof globalThis;
+  let rebuilds = 0;
+  const stop = watchColorScheme(view, () => rebuilds++);
+  media.dispatchEvent(new Event("change"));
+  observers[0]?.notify();
+  assert.equal(rebuilds, 2);
+  stop();
+  media.dispatchEvent(new Event("change"));
+  assert.equal(rebuilds, 2);
+  assert.equal(observers[0]?.disconnected, true);
 });
