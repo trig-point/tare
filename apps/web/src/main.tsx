@@ -5,12 +5,12 @@ import {
   useQuery,
 } from "@tanstack/react-query";
 import {
-  createRootRoute,
-  createRoute,
-  createRouter,
+  Link,
   Outlet,
   RouterProvider,
+  useRouterState,
 } from "@tanstack/react-router";
+import { ChevronLeft, MessageCircle, Settings } from "lucide-react";
 import {
   createContext,
   type FormEvent,
@@ -19,16 +19,28 @@ import {
   useState,
 } from "react";
 import { createRoot } from "react-dom/client";
-import { ApiError } from "./api.ts";
+import { AddFood } from "./add-food.tsx";
+import { ApiError, type Session } from "./api.ts";
+import { BodyFatCard } from "./body-fat.tsx";
+import { BottomNav, createAppRouter } from "./nav.tsx";
 import { RejectedEntries } from "./outbox-editor.tsx";
 import { browserOnline } from "./outbox-http.ts";
 import { OutboxReplay, type QueueSnapshot } from "./outbox-replay.ts";
 import { OutboxSession } from "./outbox-session.ts";
-import { openOutboxStore } from "./outbox-store.ts";
+import { openOutboxStore, type QueueEntry } from "./outbox-store.ts";
 import { outboxView } from "./outbox-view.ts";
 import { PantrySection } from "./pantry.tsx";
+import { ProfileSection, WeightChart } from "./profile.tsx";
+import { Questions } from "./questions.tsx";
+import { questionsKey, readQuestions } from "./questions-api.ts";
 import { AccountSettings } from "./settings.tsx";
-import { Today } from "./today.tsx";
+import {
+  Button,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "./shared/ui/index.ts";
+import { Today, WeightForm } from "./today.tsx";
 import { UpdateNotice } from "./update-notice.tsx";
 import "./style.css";
 
@@ -49,16 +61,40 @@ async function openRuntime() {
   return { store, sessions, queue };
 }
 type Runtime = Awaited<ReturnType<typeof openRuntime>>;
-const runtimeContext = createContext<Runtime | null>(null);
+type App = {
+  runtime: Runtime;
+  session: Session;
+  records: QueueEntry[];
+  online: boolean;
+};
+const appContext = createContext<App | null>(null);
+function useApp() {
+  const app = useContext(appContext);
+  if (!app) throw new Error("Session missing");
+  return app;
+}
 function App() {
   const [attempt, setAttempt] = useState(0);
   return (
     <main>
-      <header className="brand">
-        <span className="mark" aria-hidden="true">
-          t
+      <header className="topbar">
+        <span className="brand">
+          <span className="mark" aria-hidden="true">
+            t
+          </span>
+          Tare
         </span>
-        Tare
+        <Tooltip>
+          <TooltipTrigger asChild>
+            {/* A disabled button gets no pointer events, so the wrapper carries the tooltip. */}
+            <span className="chat-entry">
+              <Button variant="ghost" size="icon" disabled aria-label="Chat">
+                <MessageCircle />
+              </Button>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>Chat is coming</TooltipContent>
+        </Tooltip>
       </header>
       <UpdateNotice />
       <RuntimeShell key={attempt} retry={() => setAttempt(attempt + 1)} />
@@ -108,29 +144,19 @@ function RuntimeShell({ retry }: { retry: () => void }) {
           </button>
         </section>
       ) : runtime ? (
-        <runtimeContext.Provider value={runtime}>
-          <Outlet />
-        </runtimeContext.Provider>
+        <SessionHome runtime={runtime} />
       ) : (
         <output>Loading...</output>
       )}
     </>
   );
 }
-function Home() {
-  const runtime = useContext(runtimeContext);
-  if (!runtime) throw new Error("Outbox unavailable");
-  return <SessionHome runtime={runtime} />;
-}
 function SessionHome({ runtime }: { runtime: Runtime }) {
   const session = useQuery(runtime.sessions.query());
   const [queue, setQueue] = useState<QueueSnapshot | null>(null);
   const [online, setOnline] = useState(browserOnline);
-  const signOut = useMutation({
-    mutationFn: () => {
-      if (!view.session) throw new Error("Session missing");
-      return runtime.sessions.signOut(view.session);
-    },
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
   });
   useEffect(() => {
     const unsubscribe = runtime.queue.subscribe(setQueue);
@@ -169,36 +195,98 @@ function SessionHome({ runtime }: { runtime: Runtime }) {
       )}
       {view.screen === "signed_out" && <SignIn sessions={runtime.sessions} />}
       {view.screen === "app" && view.session && (
-        <>
-          <Today
-            key={view.session.user.id}
-            person={view.session.user}
-            replay={runtime.queue}
-            records={view.records}
-            online={online}
-          />
-          <PantrySection
-            key={`pantry-${view.session.user.id}`}
-            person={view.session.user.id}
-            online={online}
-          />
-          <AccountSettings
-            key={`settings-${view.session.user.id}`}
-            session={view.session}
-            online={online}
-          />
-          <button
-            type="button"
-            disabled={signOut.isPending}
-            onClick={() => signOut.mutate()}
-          >
-            {signOut.isPending ? "Signing out..." : "Sign out"}
-          </button>
-          {signOut.isError && <p role="alert">Couldn’t sign out. Try again.</p>}
-        </>
+        <appContext.Provider
+          value={{
+            runtime,
+            session: view.session,
+            records: view.records,
+            online,
+          }}
+        >
+          <div className="screen" key={`${view.session.user.id}${pathname}`}>
+            <Outlet />
+          </div>
+          <Navigation person={view.session.user.id} online={online} />
+        </appContext.Provider>
       )}
       <RejectedEntries entries={view.records} replay={runtime.queue} />
     </section>
+  );
+}
+
+function Navigation({ person, online }: { person: number; online: boolean }) {
+  const questions = useQuery({
+    queryKey: questionsKey(person),
+    queryFn: ({ signal }) => readQuestions(signal),
+    enabled: online,
+  });
+  return <BottomNav questions={questions.data?.length} />;
+}
+
+function TodayScreen() {
+  const { runtime, session, records, online } = useApp();
+  return (
+    <Today
+      person={session.user}
+      replay={runtime.queue}
+      records={records}
+      online={online}
+    />
+  );
+}
+function QuestionsScreen() {
+  const { session, online } = useApp();
+  return <Questions person={session.user.id} online={online} />;
+}
+function AddFoodScreen() {
+  const { runtime, session, online } = useApp();
+  return (
+    <AddFood person={session.user} replay={runtime.queue} online={online} />
+  );
+}
+function PantryScreen() {
+  const { session, online } = useApp();
+  return <PantrySection person={session.user.id} online={online} />;
+}
+function YouScreen() {
+  const { runtime, session, online } = useApp();
+  return (
+    <section aria-label="You">
+      <div className="page-head">
+        <h1>You</h1>
+        <Link to="/settings" className="button">
+          <Settings aria-hidden="true" size={16} />
+          Settings
+        </Link>
+      </div>
+      <WeightForm person={session.user} replay={runtime.queue} />
+      <WeightChart person={session.user.id} online={online} />
+      <BodyFatCard person={session.user.id} online={online} />
+      <ProfileSection person={session.user.id} online={online} />
+    </section>
+  );
+}
+function SettingsScreen() {
+  const { runtime, session, online } = useApp();
+  const signOut = useMutation({
+    mutationFn: () => runtime.sessions.signOut(session),
+  });
+  return (
+    <>
+      <Link to="/you" className="back-link">
+        <ChevronLeft aria-hidden="true" size={18} />
+        You
+      </Link>
+      <AccountSettings session={session} online={online} />
+      <button
+        type="button"
+        disabled={signOut.isPending}
+        onClick={() => signOut.mutate()}
+      >
+        {signOut.isPending ? "Signing out..." : "Sign out"}
+      </button>
+      {signOut.isError && <p role="alert">Couldn’t sign out. Try again.</p>}
+    </>
   );
 }
 
@@ -255,19 +343,13 @@ function SignIn({ sessions }: { sessions: OutboxSession }) {
   );
 }
 
-const rootRoute = createRootRoute({ component: App });
-const homeRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/",
-  component: Home,
-});
-const deepRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "$",
-  component: Home,
-});
-const router = createRouter({
-  routeTree: rootRoute.addChildren([homeRoute, deepRoute]),
+const router = createAppRouter(App, {
+  "/": TodayScreen,
+  "/questions": QuestionsScreen,
+  "/add": AddFoodScreen,
+  "/pantry": PantryScreen,
+  "/you": YouScreen,
+  "/settings": SettingsScreen,
 });
 const container = document.getElementById("root");
 if (!container) throw new Error("App root missing");
