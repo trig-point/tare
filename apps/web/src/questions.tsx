@@ -294,12 +294,16 @@ function useAnswer(person: number, question: Question, onAnswered: () => void) {
   return useMutation({
     mutationFn: (answer: unknown) => answerQuestion(question.id, answer),
     onSuccess: async () => {
-      await refreshAnswered(client, person);
+      // Drop it now so a failed refetch cannot leave it waiting.
+      client.setQueryData<Question[]>(questionsKey(person), (list) =>
+        list?.filter(({ id }) => id !== question.id),
+      );
       onAnswered();
+      await refreshAnswered(client, person);
     },
-    // Someone else answered first; reload so the list drops it.
+    // Someone else may have answered, or the save landed and its reply was lost.
     onError: (error) => {
-      if (error instanceof ApiError && [404, 409].includes(error.status))
+      if (!(error instanceof ApiError && error.status === 400))
         void refreshAnswered(client, person);
     },
   });
