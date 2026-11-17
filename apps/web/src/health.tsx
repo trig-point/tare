@@ -799,7 +799,7 @@ const blankWorkout = (): WorkoutDraft => ({
 function LogWorkout({ day, ...entry }: EntryProps & { day: string }) {
   const [open, setOpen] = useState(false);
   const [workout, setWorkout] = useState(blankWorkout);
-  const [send] = useState(() => withClientId(logActivity));
+  const [send, setSend] = useState(() => withClientId(logActivity));
   const logWorkout = useEntryMutation(
     entry,
     (draft: WorkoutDraft) =>
@@ -823,7 +823,9 @@ function LogWorkout({ day, ...entry }: EntryProps & { day: string }) {
       <LogButton
         disabled={!entry.online}
         open={() => {
+          // A fresh draft is a new workout, so it must not replay an earlier client id.
           setWorkout(blankWorkout());
+          setSend(() => withClientId(logActivity));
           logWorkout.reset();
           setOpen(true);
         }}
