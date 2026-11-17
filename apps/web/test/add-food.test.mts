@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { upsertSourceFood } from "../../../packages/engine/src/queries/upsert-source-food.ts";
@@ -13,11 +14,14 @@ import {
 } from "../src/food-api.ts";
 import { OutboxReplay } from "../src/outbox-replay.ts";
 import { openOutboxStore } from "../src/outbox-store.ts";
+import { type Intake, readToday, todayKey } from "../src/today-api.ts";
 import "fake-indexeddb/auto";
 import { test } from "./support.mts";
 import "./tsx.mts";
 
-const { CatalogMiss, OnlineMiss } = await import("../src/add-food.tsx");
+const { AddFood, CatalogMiss, OnlineMiss, usualFoods } = await import(
+  "../src/add-food.tsx"
+);
 const onlineFood = {
   source_food_id: 7,
   source: "usda" as const,
@@ -141,15 +145,21 @@ test("quick add stores an estimated entry", async (context) => {
   });
   const owner = setup.admin.user;
   await store.cacheSession(0, { user: owner, mode: "fallback" });
-  for (const values of [{ kcal: "", protein_g: "" }, { kcal: "-1" }] as Record<
-    string,
-    string
-  >[])
-    await assert.rejects(enqueueNumbers(replay, owner, "Quick add", values));
-  await enqueueNumbers(replay, owner, "Quick add", {
-    kcal: "320",
-    protein_g: "",
-  });
+  for (const values of [
+    { kcal: "", protein_g: "" },
+    { kcal: "-1" },
+    { kcal: " ", protein_g: "30" },
+  ] as Record<string, string>[])
+    await assert.rejects(
+      enqueueNumbers(replay, owner, "Quick add", values, ["kcal"]),
+    );
+  await enqueueNumbers(
+    replay,
+    owner,
+    "Quick add",
+    { kcal: "320", protein_g: "" },
+    ["kcal"],
+  );
   const [entry] = await store.entries(owner.id);
   assert.ok(entry);
   const response = await setup.admin.request("/api/intake", {
@@ -202,4 +212,71 @@ test("a matched food logs by reference with servings", async (context) => {
   assert.equal(response.status, 201);
   const { entry: stored } = await response.json();
   assert.deepEqual([stored.source_food_id, stored.servings], [seeded.id, 0.5]);
+});
+
+function entry(id: number, fields: Partial<Intake>): Intake {
+  return {
+    id,
+    client_id: `entry-${id}`,
+    name: `Example food ${id}`,
+    food_id: null,
+    source_food_id: null,
+    servings: 1,
+    eaten_at: `2026-11-01T0${id}:00:00.000Z`,
+    provenance: "label",
+    source: null,
+    kcal_low: null,
+    kcal_high: null,
+    kcal: 200,
+    protein_g: 10,
+    carbs_g: null,
+    fat_g: null,
+    fiber_g: null,
+    ...fields,
+  };
+}
+
+test("usual foods list each food once, newest first, per serving", () => {
+  const foods = usualFoods([
+    entry(1, { food_id: 5, servings: 1 }),
+    entry(2, { name: "Quick add", servings: null }),
+    entry(3, { source_food_id: 9, servings: 2, kcal: 300, protein_g: null }),
+    entry(4, { food_id: 5, name: "Example oats", servings: 0.5, kcal: 90 }),
+  ]);
+  assert.deepEqual(
+    foods.map((food) => [food.reference, food.name, food.kcal, food.protein_g]),
+    [
+      [{ kind: "food", id: 5 }, "Example oats", 180, 20],
+      [{ kind: "source_food", id: 9 }, "Example food 3", 150, null],
+    ],
+  );
+  assert.deepEqual(usualFoods([]), []);
+});
+
+test("add food opens on Search with usual foods before typing", async (context) => {
+  const { admin } = await twoUsers(context, "fallback");
+  context.mock.method(globalThis, "fetch", (path: string, init: RequestInit) =>
+    admin.request(path, init),
+  );
+  const client = new QueryClient();
+  const today = await readToday(new AbortController().signal);
+  client.setQueryData(todayKey(admin.user.id), {
+    ...today,
+    entries: [entry(1, { food_id: 5, name: "Example oats" })],
+  });
+  const replay = {} as OutboxReplay;
+  const html = renderToStaticMarkup(
+    createElement(
+      QueryClientProvider,
+      { client },
+      createElement(AddFood, { person: admin.user, replay, online: true }),
+    ),
+  );
+  const tabs = [...html.matchAll(/role="tab"[^>]*>([^<]+)</g)].map(
+    (match) => match[1],
+  );
+  assert.deepEqual(tabs, ["Search", "Scan", "Quick add"]);
+  assert.match(html, /Log again/);
+  assert.match(html, /id="servings-food-5"[^>]*value="1"/);
+  assert.match(html, /aria-label="Log Example oats"/);
 });
