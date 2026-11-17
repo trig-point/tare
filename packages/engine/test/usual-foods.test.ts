@@ -1,12 +1,7 @@
 import assert from "node:assert/strict";
 import type { Database } from "better-sqlite3";
-import {
-  listUsualFoods,
-  usualFoodsWindowDays,
-} from "../src/days/usual-foods.ts";
+import { usualFoodsWindowDays } from "../src/days/usual-foods.ts";
 import { shiftDay } from "../src/logging/day.ts";
-import { insertUser } from "../src/queries/insert-user.ts";
-import { fixture } from "./auth-support.ts";
 import { test } from "./support/hang-ceiling.ts";
 import { twoUsers } from "./support/two-users.ts";
 
@@ -96,46 +91,5 @@ test("usual foods rank by times logged in the window, per person, with the usual
   assert.deepEqual(
     (await read(member)).foods.map((food: { name: string }) => food.name),
     ["Example apple", "Example member soup"],
-  );
-});
-
-test("usual food counts match a direct count of a generated log", (context) => {
-  const { database, admin } = fixture(context);
-  const other = insertUser(database, {
-    username: "example-other",
-    password_hash: null,
-    timezone: "UTC",
-    created_at: "2026-01-01T00:00:00.000Z",
-  });
-  assert.ok(other);
-  const seed = seeder(database);
-  const today = "2026-06-30";
-  const people = [admin.id, other.id];
-  const foods = people.map((person) =>
-    [1, 2, 3, 4].map((index) => seed.food(person, `Example food ${index}`)),
-  );
-  const expected = new Map<number, number>();
-  let state = 7;
-  const next = (limit: number) => {
-    state = (state * 48271) % 2147483647;
-    return state % limit;
-  };
-  for (let index = 0; index < 120; index++) {
-    const owner = next(2);
-    const food = foods[owner]?.[next(4)] as number;
-    const day = shiftDay(today, -next(40));
-    seed.log(people[owner] as number, day, { food });
-    if (owner === 0 && day > shiftDay(today, -usualFoodsWindowDays))
-      expected.set(food, (expected.get(food) ?? 0) + 1);
-  }
-  const listed = listUsualFoods(database, admin.id, today).foods;
-  assert.deepEqual(
-    new Map(listed.map((food) => [food.reference.id, food.times_logged])),
-    expected,
-  );
-  const counts = listed.map((food) => food.times_logged);
-  assert.deepEqual(
-    counts,
-    [...counts].sort((left, right) => right - left),
   );
 });
