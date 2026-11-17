@@ -1,4 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
+import { ChevronRight, Pencil, Trash2, X } from "lucide-react";
+import { Tabs } from "radix-ui";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import type { Session } from "./api.ts";
 import { refreshDays } from "./days-api.ts";
@@ -6,8 +9,10 @@ import { BodyCard } from "./health.tsx";
 import type { OutboxReplay } from "./outbox-replay.ts";
 import type { QueueEntry } from "./outbox-store.ts";
 import { TargetCard } from "./profile.tsx";
+import { questionsKey, readQuestions } from "./questions-api.ts";
+import { Button, cn, TabsList, TabsTrigger } from "./shared/ui/index.ts";
 import { DaySignOff } from "./sign-off.tsx";
-import { Slots } from "./slots.tsx";
+import { Disclosure, press, Slots } from "./slots.tsx";
 import {
   changeIntake,
   changeWeight,
@@ -38,6 +43,11 @@ export function Today({
 }) {
   const client = useQueryClient();
   const today = useQuery({ ...todayQuery(person.id), enabled: online });
+  const questions = useQuery({
+    queryKey: questionsKey(person.id),
+    queryFn: ({ signal }) => readQuestions(signal),
+    enabled: online,
+  });
   const saved = new Set(
     [...(today.data?.entries ?? []), ...(today.data?.weights ?? [])].map(
       (entry) => entry.client_id,
@@ -46,91 +56,294 @@ export function Today({
   const pending = records.filter(
     (entry) => entry.state === "pending" && !saved.has(entry.client_id),
   );
+  const open = questions.data?.length ?? 0;
+  const status = today.isError ? (
+    <p role="alert">Couldn’t load today</p>
+  ) : (
+    !today.data &&
+    !online && <p className="m-0 text-ink-2">Today unavailable offline</p>
+  );
   return (
-    <section aria-label="Today">
-      <h1>Today</h1>
-      {today.isError && <p role="alert">Couldn’t load today</p>}
-      {!today.data && !today.isError && (
-        <p>{online ? "Loading..." : "Today unavailable offline"}</p>
-      )}
-      {today.data && (
-        <>
-          <p>{today.data.day}</p>
-          {today.data.target_notice && (
-            <TargetNotice
-              notice={today.data.target_notice}
-              online={online}
-              refresh={() => refreshToday(client, person.id)}
-            />
-          )}
-          <TargetCard today={today.data} />
-          <div className="day-summary">
-            <dl className="totals">
-              {nutrients.map((key) => (
-                <div key={key}>
-                  <dt>{nutrientLabels[key]}</dt>
-                  <dd>{totalText(today.data.totals[key])}</dd>
-                </div>
-              ))}
-            </dl>
+    <section aria-label="Today" className="today-screen pt-2 pb-6">
+      <div className="page-head items-start">
+        <div>
+          <h1 className="mb-1">Today</h1>
+          <p className="m-0 min-h-[1.45em] text-ink-2">
+            {today.data && dayLabel(today.data.day)}
+          </p>
+        </div>
+        {open > 0 && (
+          <Link
+            to="/questions"
+            className={cn(
+              "mt-4 inline-flex min-h-11 items-center gap-1 font-medium text-accent no-underline",
+              press,
+            )}
+          >
+            {open} {open === 1 ? "question" : "questions"}
+            <ChevronRight aria-hidden="true" className="size-4" />
+          </Link>
+        )}
+      </div>
+      {/* The bare Radix root and panels carry no data-slot, so Body keeps its base styles. */}
+      <Tabs.Root
+        defaultValue="food"
+        className="group/tabs mt-3 flex flex-col gap-5"
+      >
+        <TabsList
+          variant="line"
+          aria-label="Today view"
+          className="w-full border-b border-border p-0 group-data-[orientation=horizontal]/tabs:h-11 md:w-88"
+        >
+          <TabsTrigger value="food" className={tab}>
+            Food
+          </TabsTrigger>
+          <TabsTrigger value="body" className={tab}>
+            Body
+          </TabsTrigger>
+        </TabsList>
+        <Tabs.Content value="food" forceMount className={enter}>
+          {status}
+          <div className="grid gap-5 md:grid-cols-2 md:grid-rows-[auto_auto_auto_1fr] md:gap-x-8">
+            {(today.data || (online && !today.isError)) && (
+              <div className="order-1 md:col-start-1">
+                <Remaining today={today.data} />
+              </div>
+            )}
+            <Slots person={person.id} online={online} />
+            {today.data?.target_notice && (
+              <div className="order-3 md:col-start-1">
+                <TargetNotice
+                  notice={today.data.target_notice}
+                  online={online}
+                  refresh={() => refreshToday(client, person.id)}
+                />
+              </div>
+            )}
+            {today.data && (
+              <div className="order-5 md:col-start-1">
+                <Disclosure summary="All nutrients">
+                  <dl className="m-0 [&_dd]:numeric">
+                    {nutrients.map((key) => (
+                      <div key={key}>
+                        <dt>{nutrientLabels[key]}</dt>
+                        <dd>{totalText(today.data.totals[key])}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </Disclosure>
+                <Disclosure summary="How your target is set">
+                  <div className="[&_p]:my-2 [&_section]:p-0">
+                    <TargetCard today={today.data} />
+                  </div>
+                </Disclosure>
+              </div>
+            )}
+            <div className="order-6 md:col-start-1">
+              <FoodLog
+                person={person.id}
+                today={today.data}
+                pending={pending}
+                online={online}
+              />
+            </div>
+          </div>
+        </Tabs.Content>
+        <Tabs.Content value="body" forceMount className={enter}>
+          {status}
+          {today.data && (
             <BodyCard
               person={person.id}
               day={today.data.day}
               timezone={today.data.timezone}
               online={online}
             />
+          )}
+        </Tabs.Content>
+      </Tabs.Root>
+    </section>
+  );
+}
+
+// Both panels stay mounted so Body's queries load with Today and Food keeps an open edit form.
+const enter =
+  "data-[state=active]:animate-[screen-enter_var(--motion-tab)_var(--motion-ease-enter)] data-[state=inactive]:hidden";
+const tab =
+  "h-full duration-(--motion-tab) ease-move after:duration-(--motion-tab) group-data-[orientation=horizontal]/tabs:after:bottom-[-1px]";
+
+function dayLabel(day: string) {
+  return new Date(`${day}T12:00:00Z`).toLocaleDateString([], {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+/** Calories and protein left, or a placeholder of the same size while Today loads. */
+function Remaining({ today }: { today: TodayData | undefined }) {
+  const metrics = [
+    ["Calories left", "kcal", "", " kcal"],
+    ["Protein left", "protein_g", " g", " g"],
+  ] as const;
+  return (
+    <div
+      aria-busy={!today}
+      className="grid grid-cols-2 rounded-(--radius) border border-border bg-surface"
+    >
+      {metrics.map(([label, key, suffix, unit]) => {
+        const left = today?.remaining[key] ?? null;
+        const total = today?.totals[key];
+        const target = today?.target.status === "ready" && today.target[key];
+        return (
+          <div
+            key={key}
+            className="min-w-0 p-4 [&+&]:border-l [&+&]:border-border"
+          >
+            <p className="m-0 text-ink-2">{label}</p>
+            {!today ? (
+              <div className="mt-1 mb-1 h-10 w-24 animate-pulse rounded-(--radius) bg-bg-sunk" />
+            ) : (
+              <p
+                className={cn(
+                  "numeric m-0 mt-1 leading-tight [overflow-wrap:anywhere]",
+                  left === null ? "text-[26px]" : "text-[32px]",
+                  left !== null && left < 0 && "text-caution",
+                )}
+              >
+                {left === null
+                  ? "Unknown"
+                  : `${displayNumber(Math.abs(left))}${suffix}${left < 0 ? " over" : ""}`}
+              </p>
+            )}
+            <p className="m-0 mt-2 min-h-[1.45em] text-step--1 text-ink-2">
+              {total &&
+                (total.complete && total.total !== null ? (
+                  <>
+                    <span className="numeric">
+                      {displayNumber(total.total)}
+                      {suffix}
+                    </span>{" "}
+                    eaten
+                  </>
+                ) : (
+                  <>
+                    <span className="numeric">
+                      {displayNumber(total.known_subtotal)}
+                      {suffix}
+                    </span>{" "}
+                    + incomplete eaten
+                  </>
+                ))}
+            </p>
+            <p className="m-0 min-h-[1.45em] text-step--1 text-ink-2">
+              {today &&
+                (target === false ? (
+                  "No target yet"
+                ) : (
+                  <>
+                    <span className="numeric text-ink">
+                      {displayNumber(target)}
+                    </span>
+                    {unit} target
+                  </>
+                ))}
+            </p>
           </div>
-          <Slots person={person.id} online={online} />
-          <ul className="entries">
-            {today.data.entries.map((entry) => (
+        );
+      })}
+    </div>
+  );
+}
+
+function FoodLog({
+  person,
+  today,
+  pending,
+  online,
+}: {
+  person: number;
+  today: TodayData | undefined;
+  pending: QueueEntry[];
+  online: boolean;
+}) {
+  const client = useQueryClient();
+  return (
+    <section aria-label="Food log" className="p-0">
+      <h2 className="mt-2 mb-1">Food log</h2>
+      <ul className={list} aria-label="Pending entries">
+        {pending.map((entry) => (
+          <li key={entry.client_id} className={row}>
+            <strong>
+              {entry.kind === "weight"
+                ? `${displayNumber(Number(entry.body.weight_kg))} kg`
+                : String(entry.body.name ?? "Food")}
+            </strong>
+            <span className="col-span-2 justify-self-end rounded-(--radius) bg-bg-sunk px-2 py-0.5 text-step--1 text-ink-2">
+              Pending
+            </span>
+          </li>
+        ))}
+      </ul>
+      {today && (
+        <>
+          <ul className={list}>
+            {today.entries.map((entry) => (
               <IntakeEntry
                 key={entry.id}
                 entry={entry}
+                timezone={today.timezone}
                 online={online}
                 refresh={async () => {
                   await Promise.all([
-                    refreshToday(client, person.id),
-                    refreshDays(client, person.id),
+                    refreshToday(client, person),
+                    refreshDays(client, person),
                   ]);
                 }}
               />
             ))}
           </ul>
-          <ul className="entries" aria-label="Weights">
-            {today.data.weights.map((entry) => (
-              <WeightEntry
-                key={entry.id}
-                entry={entry}
-                timezone={today.data.timezone}
-                online={online}
-                refresh={() => refreshToday(client, person.id)}
-              />
-            ))}
-          </ul>
-          {today.data.entries.length === 0 && <p>No food entries</p>}
-          <DaySignOff
-            person={person.id}
-            today={today.data.day}
-            timezone={today.data.timezone}
-            online={online}
-          />
+          {today.entries.length === 0 && (
+            <p className="my-3 text-ink-2">No food entries</p>
+          )}
+          {today.weights.length > 0 && (
+            <ul className={list} aria-label="Weights">
+              {today.weights.map((entry) => (
+                <WeightEntry
+                  key={entry.id}
+                  entry={entry}
+                  timezone={today.timezone}
+                  online={online}
+                  refresh={() => refreshToday(client, person)}
+                />
+              ))}
+            </ul>
+          )}
+          <div className="[&_section]:pt-4 [&_section]:pb-0">
+            <DaySignOff
+              person={person}
+              today={today.day}
+              timezone={today.timezone}
+              online={online}
+            />
+          </div>
         </>
       )}
-      <ul className="entries" aria-label="Pending entries">
-        {pending.map((entry) => (
-          <li key={entry.client_id}>
-            <strong>
-              {entry.kind === "weight"
-                ? `${displayNumber(Number(entry.body.weight_kg))} kg`
-                : String(entry.body.name ?? "Food")}
-            </strong>{" "}
-            <span>Pending</span>
-          </li>
-        ))}
-      </ul>
     </section>
   );
 }
+
+const list = "m-0 list-none p-0";
+const row =
+  "grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-2 border-b border-border py-3 [overflow-wrap:anywhere]";
+const meta = "block text-step--1 text-ink-2";
+const timeOf = (stamp: string, timezone: string) =>
+  new Date(stamp).toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: timezone,
+    timeZoneName: "short",
+  });
 
 /** Refreshes Today and the day history when queued entries settle, on every tab. */
 export function useSettledRefresh(
@@ -182,30 +395,41 @@ function TargetNotice({
     onSuccess: refresh,
   });
   return (
-    <section className="target-notice" aria-label="Target changed">
-      <p>
-        Target changed:{" "}
-        {(
-          [
-            [notice.old_kcal, notice.new_kcal, "kcal"],
-            [notice.old_protein_g, notice.new_protein_g, "g protein"],
-          ] as const
-        )
-          .filter(([before, after]) => before !== after)
-          .map(
-            ([before, after, unit]) =>
-              `${displayNumber(before)} to ${displayNumber(after)} ${unit}`,
+    <section
+      aria-label="Target changed"
+      className="flex items-start gap-3 rounded-(--radius) bg-bg-sunk py-3 pr-2 pl-4"
+    >
+      <div className="grow">
+        <p className="m-0 font-semibold">Target changed</p>
+        <p className="m-0 mt-1 text-step--1 text-ink-2">
+          {(
+            [
+              [notice.old_kcal, notice.new_kcal, "kcal"],
+              [notice.old_protein_g, notice.new_protein_g, "g protein"],
+            ] as const
           )
-          .join(", ")}
-      </p>
-      <button
-        type="button"
+            .filter(([before, after]) => before !== after)
+            .map(([before, after, unit]) => (
+              <span key={unit} className="mr-3 inline-block">
+                <span className="numeric">
+                  {displayNumber(before)} → {displayNumber(after)}
+                </span>{" "}
+                {unit}
+              </span>
+            ))}
+        </p>
+        {dismiss.isError && <p role="alert">Couldn’t dismiss</p>}
+      </div>
+      <Button
+        variant="ghost"
+        size="icon"
+        aria-label="Dismiss"
+        className={press}
         disabled={!online || dismiss.isPending}
         onClick={() => dismiss.mutate()}
       >
-        Dismiss
-      </button>
-      {dismiss.isError && <p role="alert">Couldn’t dismiss</p>}
+        <X />
+      </Button>
     </section>
   );
 }
@@ -252,10 +476,12 @@ export function WeightForm({
 }
 function IntakeEntry({
   entry,
+  timezone,
   online,
   refresh,
 }: {
   entry: Intake;
+  timezone: string;
   online: boolean;
   refresh: () => Promise<void>;
 }) {
@@ -271,46 +497,86 @@ function IntakeEntry({
       await refresh();
     },
   });
+  const name = entry.name ?? "Food";
   return (
-    <li>
-      <strong>{entry.name ?? "Food"}</strong>
-      <span>
-        {entry.provenance}
-        {entry.source && ` · ${sourceName(entry.source)}`}
-      </span>
-      <span>
-        {entry.kcal === null
-          ? "Incomplete"
-          : `${displayNumber(entry.kcal)} kcal`}
-      </span>
-      <button
-        type="button"
-        aria-label={`Edit ${entry.name ?? "food"}`}
+    <li className={row}>
+      <div>
+        <strong>{name}</strong>
+        <span className={meta}>
+          {timeOf(entry.eaten_at, timezone)} · {entry.provenance}
+          {entry.source && ` · ${sourceName(entry.source)}`}
+        </span>
+      </div>
+      <div className="numeric text-right whitespace-nowrap">
+        {entry.kcal === null ? "Unknown" : `${displayNumber(entry.kcal)} kcal`}
+        <span className={meta}>
+          {entry.protein_g === null
+            ? "Protein unknown"
+            : `${displayNumber(entry.protein_g)} g protein`}
+        </span>
+      </div>
+      <RowActions
+        label={entry.name ?? "food"}
         disabled={!online || mutation.isPending}
-        onClick={() => setEditing(true)}
-      >
-        Edit
-      </button>
-      <button
-        type="button"
-        aria-label={`Delete ${entry.name ?? "food"}`}
-        disabled={!online || mutation.isPending}
-        onClick={() => mutation.mutate(undefined)}
-      >
-        Delete
-      </button>
-      {mutation.isError && <p role="alert">Couldn’t update entry</p>}
+        edit={() => setEditing(true)}
+        remove={() => mutation.mutate(undefined)}
+      />
+      {mutation.isError && (
+        <p role="alert" className="col-span-full m-0">
+          Couldn’t update entry
+        </p>
+      )}
       {editing && (
-        <IntakeForm
-          entry={entry}
-          disabled={!online || mutation.isPending}
-          save={(changes) => mutation.mutate(changes)}
-          cancel={() => setEditing(false)}
-        />
+        <div className="col-span-full">
+          <IntakeForm
+            entry={entry}
+            disabled={!online || mutation.isPending}
+            save={(changes) => mutation.mutate(changes)}
+            cancel={() => setEditing(false)}
+          />
+        </div>
       )}
     </li>
   );
 }
+
+function RowActions({
+  label,
+  disabled,
+  edit,
+  remove,
+}: {
+  label: string;
+  disabled: boolean;
+  edit: () => void;
+  remove: () => void;
+}) {
+  return (
+    <div className="flex">
+      <Button
+        variant="ghost"
+        size="icon"
+        aria-label={`Edit ${label}`}
+        className={press}
+        disabled={disabled}
+        onClick={edit}
+      >
+        <Pencil />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        aria-label={`Delete ${label}`}
+        className={press}
+        disabled={disabled}
+        onClick={remove}
+      >
+        <Trash2 />
+      </Button>
+    </div>
+  );
+}
+
 function IntakeForm({
   entry,
   disabled,
@@ -377,11 +643,20 @@ function IntakeForm({
             </label>
           ))
         )}
-        <button type="submit">Save</button>
       </fieldset>
-      <button type="button" onClick={cancel}>
-        Cancel
-      </button>
+      <div className="flex gap-2">
+        <Button type="submit" className={press} disabled={disabled}>
+          Save
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          className={press}
+          onClick={cancel}
+        >
+          Cancel
+        </Button>
+      </div>
     </form>
   );
 }
@@ -410,40 +685,36 @@ function WeightEntry({
       await refresh();
     },
   });
+  const label = `${displayNumber(entry.weight_kg)} kg`;
   return (
-    <li>
-      <strong>{displayNumber(entry.weight_kg)} kg</strong>
-      {entry.source && <span>{sourceName(entry.source)}</span>}
-      <time dateTime={entry.measured_at}>
-        {new Date(entry.measured_at).toLocaleTimeString([], {
-          hour: "numeric",
-          minute: "2-digit",
-          timeZone: timezone,
-          timeZoneName: "short",
-        })}
-      </time>
-      <button
-        type="button"
-        aria-label={`Edit ${displayNumber(entry.weight_kg)} kg`}
+    <li className={row}>
+      <div>
+        <strong>{label}</strong>
+        <span className={meta}>
+          <time dateTime={entry.measured_at}>
+            {timeOf(entry.measured_at, timezone)}
+          </time>
+          {entry.source && ` · ${sourceName(entry.source)}`}
+        </span>
+      </div>
+      <span />
+      <RowActions
+        label={label}
         disabled={!online || mutation.isPending}
-        onClick={() => {
+        edit={() => {
           setWeight(String(entry.weight_kg));
           setEditing(true);
         }}
-      >
-        Edit
-      </button>
-      <button
-        type="button"
-        aria-label={`Delete ${displayNumber(entry.weight_kg)} kg`}
-        disabled={!online || mutation.isPending}
-        onClick={() => mutation.mutate(undefined)}
-      >
-        Delete
-      </button>
-      {mutation.isError && <p role="alert">Couldn’t update entry</p>}
+        remove={() => mutation.mutate(undefined)}
+      />
+      {mutation.isError && (
+        <p role="alert" className="col-span-full m-0">
+          Couldn’t update entry
+        </p>
+      )}
       {editing && (
         <form
+          className="col-span-full"
           onSubmit={(event) => {
             event.preventDefault();
             mutation.mutate({ weight_kg: Number(weight) });
@@ -461,12 +732,23 @@ function WeightEntry({
               onChange={(event) => setWeight(event.target.value)}
             />
           </label>
-          <button type="submit" disabled={!online || mutation.isPending}>
-            Save
-          </button>
-          <button type="button" onClick={() => setEditing(false)}>
-            Cancel
-          </button>
+          <div className="flex gap-2">
+            <Button
+              type="submit"
+              className={press}
+              disabled={!online || mutation.isPending}
+            >
+              Save
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              className={press}
+              onClick={() => setEditing(false)}
+            >
+              Cancel
+            </Button>
+          </div>
         </form>
       )}
     </li>

@@ -12,7 +12,6 @@ import { readToday, refreshToday, todayKey } from "../src/today-api.ts";
 import { test } from "./support.mts";
 import "./tsx.mts";
 
-const { Today } = await import("../src/today.tsx");
 const { BodyCard, ConnectedSources } = await import("../src/health.tsx");
 const { AccountSettings } = await import("../src/settings.tsx");
 function withData(data: [readonly unknown[], unknown][], node: ReactElement) {
@@ -41,7 +40,7 @@ const renderOura = (
     }),
   );
 
-test("today renders the Body card beside intake and no Oura card", async (context) => {
+test("the Body card renders signals and no Oura card", async (context) => {
   const { admin } = await twoUsers(context, "fallback");
   context.mock.method(globalThis, "fetch", admin.request);
   for (const [path, body] of [
@@ -66,16 +65,14 @@ test("today renders the Body card beside intake and no Oura card", async (contex
         [health.signalsKey(admin.user.id, today.day), day],
         [health.ouraKey(admin.user.id), oura(connection)],
       ],
-      createElement(Today, {
-        person: admin.user,
-        records: [],
+      createElement(BodyCard, {
+        person: admin.user.id,
+        day: today.day,
+        timezone: today.timezone,
         online: false,
       }),
     );
-  assert.match(
-    renderDay(signals),
-    /class="day-summary".*Calories<\/dt><dd>200<.*Active calories<\/dt><dd>420 kcal</s,
-  );
+  assert.match(renderDay(signals), /Active calories<\/dt><dd>420 kcal</);
   const empty = renderDay({ ...signals, signals: [] });
   assert.match(empty, /<a href="\/settings">Connect a source in Settings</);
   assert.doesNotMatch(empty, /Connect Oura|Connected sources/);
