@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2, XIcon } from "lucide-react";
-import { type ReactNode, useEffect, useId, useState } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import {
   blankSet,
   bodyRows,
@@ -165,7 +165,10 @@ export function BodyCard({
 }
 
 const skeletonTiles = ["first", "second", "third", "fourth"];
-/** Placeholder tiles the size of the real ones, so the tab does not jump when signals arrive. */
+const skeletonSections = ["Workouts", "Habits"];
+const pulse =
+  "inline-block animate-pulse rounded-sm bg-bg-sunk motion-reduce:animate-none";
+/** Placeholder tiles and sections laid out like the real ones, so the tab does not jump when signals arrive. */
 function BodySkeleton() {
   return (
     <div className="body-tab" aria-busy="true">
@@ -173,14 +176,40 @@ function BodySkeleton() {
         <div className="body-head">
           <h2>Signals</h2>
         </div>
-        <div className="signal-tiles">
+        <dl className="signal-tiles">
           {skeletonTiles.map((name) => (
             <div key={name} className="signal-tile">
-              <div className="h-4 w-20 animate-pulse rounded-sm bg-bg-sunk" />
-              <div className="mt-2 h-7 w-16 animate-pulse rounded-sm bg-bg-sunk" />
+              <dt>
+                <span className={cn(pulse, "h-[1em] w-20 align-middle")} />
+              </dt>
+              <dd>
+                <span className={cn(pulse, "h-[1em] w-16 align-middle")} />
+              </dd>
+              <dd className="source">
+                <span className={cn(pulse, "h-[1em] w-10 align-middle")} />
+              </dd>
             </div>
           ))}
+        </dl>
+      </div>
+      <div className="body-column">
+        <div className="body-section">
+          <div className="body-head">
+            <h2>Recovery</h2>
+          </div>
+          <div className="body-quick">
+            <span className={cn(pulse, "h-10 pointer-coarse:h-11")} />
+            <span className={cn(pulse, "h-10 pointer-coarse:h-11")} />
+          </div>
         </div>
+        {skeletonSections.map((name) => (
+          <div key={name} className="body-section">
+            <div className="body-head">
+              <h2>{name}</h2>
+            </div>
+            <span className={cn(pulse, "h-[1em] w-28")} />
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -197,11 +226,23 @@ function Sheet({
   title: string;
   children: ReactNode;
 }) {
+  // Controlled sheets have no Radix trigger, so focus goes back to the opener by hand.
+  const opener = useRef<HTMLElement | null>(null);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
         aria-describedby={undefined}
+        onOpenAutoFocus={() => {
+          opener.current =
+            document.activeElement instanceof HTMLElement
+              ? document.activeElement
+              : null;
+        }}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          opener.current?.focus();
+        }}
         className="body-sheet top-auto bottom-0 left-1/2 w-full max-w-[40rem] translate-y-0 -translate-x-1/2 gap-0 rounded-b-none rounded-t-xl border-x-0 border-b-0 bg-card p-0 sm:max-w-[40rem] sm:border-x"
       >
         <div className="body-sheet-head">
