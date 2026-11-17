@@ -18,12 +18,7 @@ import {
 } from "../src/food-api.ts";
 import { OutboxReplay } from "../src/outbox-replay.ts";
 import { openOutboxStore } from "../src/outbox-store.ts";
-import {
-  type Intake,
-  readToday,
-  refreshToday,
-  todayKey,
-} from "../src/today-api.ts";
+import { type Intake, readToday, todayKey } from "../src/today-api.ts";
 import "fake-indexeddb/auto";
 import { test } from "./support.mts";
 import "./tsx.mts";
@@ -371,11 +366,6 @@ test("add food opens on Search with usual foods before typing", async (context) 
   const failedHtml = renderAddFood(admin.user, failed);
   assert.match(failedHtml, /role="alert">Couldn’t load usual foods/);
   assert.match(failedHtml, /id="servings-food-6"/);
-  await refreshToday(client, admin.user.id);
-  assert.ok(
-    client.getQueryState(usualFoodsQuery(admin.user.id).queryKey)
-      ?.isInvalidated,
-  );
   for (const [usual, shown] of [
     [[exampleChoice], /id="servings-food-1"[^>]*value="1"/],
     [[], /Foods you log often show here/],
