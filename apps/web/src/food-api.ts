@@ -47,6 +47,7 @@ export type FoodChoice = {
   serving: string | null;
   kcal: number | null;
   protein_g: number | null;
+  servings?: number;
 };
 export type CatalogResult = {
   result: "match" | "ambiguous" | "no_match";
@@ -61,6 +62,88 @@ export function mergeChoices(...lists: FoodChoice[][]) {
     seen.add(key);
     return true;
   });
+}
+
+const usualSchema = z.object({
+  foods: z.array(
+    z.object({
+      reference: z.object({
+        kind: z.enum(["food", "source_food"]),
+        id: z.number().int().positive(),
+      }),
+      name: z.string(),
+      brand: z.string().nullable(),
+      usual_servings: z.number().positive(),
+      serving: z.object({ amount: z.number(), unit: z.string() }).nullable(),
+      kcal: z.number().nonnegative().nullable(),
+      protein_g: z.number().nonnegative().nullable(),
+    }),
+  ),
+});
+const savedUsualSchema = z.array(
+  z.object({
+    reference: z.object({
+      kind: z.enum(["food", "source_food"]),
+      id: z.number().int().positive(),
+    }),
+    name: z.string(),
+    brand: z.string().nullable(),
+    serving: z.string().nullable(),
+    kcal: z.number().nullable(),
+    protein_g: z.number().nullable(),
+    servings: z.number().positive().optional(),
+  }),
+);
+const usualStorageKey = (person: number) => `tare:usual-foods:${person}`;
+
+/** Most-logged foods; each successful load is kept on the device for offline use. */
+export function usualFoodsQuery(person: number) {
+  return {
+    queryKey: ["list_usual_foods", person] as const,
+    queryFn: async ({ signal }: { signal: AbortSignal }) => {
+      const foods = usualSchema
+        .parse(await api("/api/foods/usual", { signal }))
+        .foods.map(
+          (food): FoodChoice => ({
+            reference: food.reference,
+            name: food.name,
+            brand: food.brand,
+            serving:
+              food.serving === null
+                ? null
+                : `${food.serving.amount} ${food.serving.unit}`.trim(),
+            kcal: food.kcal,
+            protein_g: food.protein_g,
+            servings: food.usual_servings,
+          }),
+        );
+      try {
+        localStorage.setItem(usualStorageKey(person), JSON.stringify(foods));
+      } catch {
+        // Blocked storage only loses the offline copy.
+      }
+      return foods;
+    },
+  };
+}
+
+/** The last loaded list, or null when none was kept or storage is unavailable. */
+export function savedUsualFoods(person: number): FoodChoice[] | null {
+  try {
+    const saved = localStorage.getItem(usualStorageKey(person));
+    if (saved === null) return null;
+    const parsed = savedUsualSchema.safeParse(JSON.parse(saved));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Foods whose name contains the term, keeping their order. */
+export function matchingFoods(foods: FoodChoice[], term: string) {
+  const needle = term.trim().toLocaleLowerCase();
+  if (needle === "") return [];
+  return foods.filter((food) => food.name.toLocaleLowerCase().includes(needle));
 }
 
 export function catalogQuery(person: number, name: string) {

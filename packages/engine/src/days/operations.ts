@@ -10,6 +10,7 @@ import { targetNoticeSchema } from "../target/operations.ts";
 import { readTarget, targetSchema } from "../target/reader.ts";
 import { findFood, findFoodInput, findFoodOutput } from "./find-food.ts";
 import { ledgerSchema, readLedger, remainingFor } from "./ledger.ts";
+import { listUsualFoods, usualFoodsOutput } from "./usual-foods.ts";
 
 const shared = {
   modes: ["access", "fallback"] as ("access" | "fallback")[],
@@ -76,6 +77,28 @@ export const dayReadOperations = [
       return {
         status: 200,
         body: findFood(context.database, operationPerson(context).id, input),
+      };
+    },
+  }),
+  defineOperation({
+    ...shared,
+    name: "list_usual_foods",
+    description:
+      "List the foods you logged most in the last 30 days, with the servings you usually log.",
+    method: "GET",
+    path: "/api/foods/usual",
+    input: zod.strictObject({}),
+    output: usualFoodsOutput,
+    handler(_input, context) {
+      const person = operationPerson(context);
+      const day = localDay(
+        context.clock.now().toISOString(),
+        person.timezone,
+        person.day_start_hour,
+      );
+      return {
+        status: 200,
+        body: listUsualFoods(context.database, person.id, day),
       };
     },
   }),

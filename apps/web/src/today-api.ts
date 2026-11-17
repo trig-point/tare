@@ -2,6 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import type { Session } from "./api.ts";
 import { api, liveRefresh } from "./api.ts";
+import { usualFoodsQuery } from "./food-api.ts";
 import type { OutboxReplay, QueueSnapshot } from "./outbox-replay.ts";
 import { planKey } from "./plan-api.ts";
 
@@ -255,5 +256,6 @@ export async function refreshToday(client: QueryClient, personId: number) {
     client.invalidateQueries({ queryKey }),
     client.invalidateQueries({ queryKey: planKey(personId) }),
     client.invalidateQueries({ queryKey: ["signals", personId] }),
+    client.invalidateQueries({ queryKey: usualFoodsQuery(personId).queryKey }),
   ]);
 }
