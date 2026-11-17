@@ -293,6 +293,10 @@ test("add food opens on Search with usual foods before typing", async (context) 
   assert.match(html, /id="servings-food-5"[^>]*value="1"/);
   assert.match(html, /aria-label="Log Example oats"/);
   assert.match(html, /Unknown kcal/);
+  assert.match(
+    html,
+    /data-state="inactive"[^>]*data-\[state=inactive\]:hidden[^>]*><form aria-label="Quick add"/,
+  );
   const failed = new QueryClient({
     defaultOptions: { queries: { retryOnMount: false } },
   });

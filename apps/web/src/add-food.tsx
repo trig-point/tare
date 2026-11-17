@@ -191,7 +191,11 @@ export function AddFood({ person, replay, online }: Props) {
             barcode.data.length > 0 &&
             rows(barcode.data, "Barcode match")}
         </TabsContent>
-        <TabsContent value="quick-add" className={panel}>
+        <TabsContent
+          value="quick-add"
+          forceMount
+          className={cn(panel, "data-[state=inactive]:hidden")}
+        >
           <QuickAdd
             person={person}
             replay={replay}
