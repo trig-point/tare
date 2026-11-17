@@ -82,7 +82,8 @@ export function SlotList({
           <p className="m-0 text-ink-2">Unavailable offline</p>
         )}
         {!plan && !failed && online && (
-          <div aria-busy="true" className="h-64 animate-pulse bg-bg-sunk" />
+          // Sized like a next meal with one planned item.
+          <div aria-busy="true" className="h-54 animate-pulse bg-bg-sunk" />
         )}
         {status && status !== "ready" && (
           <p className="m-0 mb-3 text-ink-2">{statusText[status]}</p>

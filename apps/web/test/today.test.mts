@@ -93,7 +93,10 @@ test("today renders engine totals and provenance", async (context) => {
   assert.match(html, /Example meal.*estimated/s);
   assert.match(html, /Calories left.*Unknown.*Protein left.*Unknown/s);
   assert.match(html, /role="tab"[^>]*>Food<.*role="tab"[^>]*>Body</s);
-  assert.doesNotMatch(html, /questions/);
+  assert.doesNotMatch(
+    await render(setupData.person, await setupData.read(), [], []),
+    /questions/,
+  );
   for (const [questions, label] of [
     [[{}], "1 question"],
     [[{}, {}], "2 questions"],
