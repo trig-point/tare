@@ -354,6 +354,7 @@ test("add food opens on Search with usual foods before typing", async (context) 
   assert.match(html, /Usual foods/);
   assert.match(html, /id="servings-food-5"[^>]*value="1.5"/);
   assert.match(html, /id="servings-food-6"[^>]*value="1"/);
+  assert.equal(html.match(/id="servings-food-5"/g)?.length, 1);
   assert.match(html, /aria-label="Log Example oats"/);
   assert.match(html, /Unknown kcal/);
   assert.match(

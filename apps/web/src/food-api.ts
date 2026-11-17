@@ -84,7 +84,7 @@ const savedUsualSchema = z.array(
   z.object({
     reference: z.object({
       kind: z.enum(["food", "source_food"]),
-      id: z.number(),
+      id: z.number().int().positive(),
     }),
     name: z.string(),
     brand: z.string().nullable(),
