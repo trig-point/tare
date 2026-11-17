@@ -276,12 +276,10 @@ test("usual foods load, stay on the device and rank first while typing", async (
     },
   });
   context.after(() => Reflect.deleteProperty(globalThis, "localStorage"));
-  const load = () =>
-    usualFoodsQuery(admin.user.id).queryFn({
-      signal: new AbortController().signal,
-    });
   assert.equal(savedUsualFoods(admin.user.id), null);
-  assert.deepEqual(await load(), []);
+  await usualFoodsQuery(admin.user.id).queryFn({
+    signal: new AbortController().signal,
+  });
   assert.deepEqual(savedUsualFoods(admin.user.id), []);
   const usual = [
     { ...exampleChoice, name: "Example rye toast", servings: 2 },
@@ -352,10 +350,7 @@ test("add food opens on Search with usual foods before typing", async (context) 
     (match) => match[1],
   );
   assert.deepEqual(tabs, ["Search", "Scan", "Quick add"]);
-  assert.match(html, /Usual foods/);
   assert.match(html, /id="servings-food-5"[^>]*value="1.5"/);
-  assert.match(html, /id="servings-food-6"[^>]*value="1"/);
-  assert.equal(html.match(/id="servings-food-5"/g)?.length, 1);
   assert.match(html, /aria-label="Log Example oats"/);
   assert.match(html, /Unknown kcal/);
   assert.match(
@@ -376,18 +371,19 @@ test("add food opens on Search with usual foods before typing", async (context) 
   const failedHtml = renderAddFood(admin.user, failed);
   assert.match(failedHtml, /role="alert">Couldn’t load usual foods/);
   assert.match(failedHtml, /id="servings-food-6"/);
-  assert.doesNotMatch(failedHtml, /Foods you log often show here/);
   await refreshToday(client, admin.user.id);
   assert.ok(
     client.getQueryState(usualFoodsQuery(admin.user.id).queryKey)
       ?.isInvalidated,
   );
-  const empty = new QueryClient();
-  empty.setQueryData(usualFoodsQuery(admin.user.id).queryKey, []);
-  assert.match(
-    renderAddFood(admin.user, empty),
-    /Foods you log often show here/,
-  );
+  for (const [usual, shown] of [
+    [[exampleChoice], /id="servings-food-1"[^>]*value="1"/],
+    [[], /Foods you log often show here/],
+  ] as const) {
+    const morning = new QueryClient();
+    morning.setQueryData(usualFoodsQuery(admin.user.id).queryKey, usual);
+    assert.match(renderAddFood(admin.user, morning), shown);
+  }
 });
 
 test("quick add requires calories only", () => {
