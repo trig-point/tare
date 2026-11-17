@@ -17,18 +17,26 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 
-const tabs: { path: string; label: string; icon: LucideIcon }[] = [
+const screenPaths = [
+  "/",
+  "/questions",
+  "/add",
+  "/pantry",
+  "/you",
+  "/settings",
+] as const;
+type ScreenPath = (typeof screenPaths)[number];
+const tabs: { path: ScreenPath; label: string; icon: LucideIcon }[] = [
   { path: "/", label: "Today", icon: Sun },
   { path: "/questions", label: "Questions", icon: CircleHelp },
   { path: "/add", label: "Add food", icon: Plus },
   { path: "/pantry", label: "Pantry", icon: Package },
   { path: "/you", label: "You", icon: User },
 ];
-const screenPaths = [...tabs.map((tab) => tab.path), "/settings"];
 
 export function createAppRouter(
   layout: () => ReactNode,
-  screens: Record<string, () => ReactNode>,
+  screens: Record<ScreenPath, () => ReactNode>,
   history?: RouterHistory,
 ) {
   const root = createRootRoute({ component: layout });

@@ -24,11 +24,15 @@ const { createMemoryHistory, Outlet, RouterProvider } = await import(
 const { BottomNav, createAppRouter } = await import("../src/nav.tsx");
 
 async function open(path: string, questions?: number) {
-  const screens = Object.fromEntries(
-    ["/", "/questions", "/add", "/pantry", "/you", "/settings"].map(
-      (screen) => [screen, () => `screen ${screen}`],
-    ),
-  );
+  const screen = (name: string) => () => `screen ${name}`;
+  const screens = {
+    "/": screen("/"),
+    "/questions": screen("/questions"),
+    "/add": screen("/add"),
+    "/pantry": screen("/pantry"),
+    "/you": screen("/you"),
+    "/settings": screen("/settings"),
+  };
   const layout = () =>
     createElement(
       "div",
