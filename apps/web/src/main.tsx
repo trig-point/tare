@@ -275,11 +275,15 @@ function SettingsScreen() {
   const navigate = useNavigate();
   const signOut = useMutation({
     mutationFn: () => runtime.sessions.signOut(session),
-    onSuccess: () => navigate({ to: "/", replace: true }),
+    // Access sign-out leaves the page for the logout URL; a router replace could cancel that.
+    onSuccess: () => {
+      if (session.mode === "fallback")
+        void navigate({ to: "/", replace: true });
+    },
   });
   return (
     <>
-      <Link to="/you" className="back-link">
+      <Link to="/you" className="back-link" aria-label="Back to You">
         <ChevronLeft aria-hidden="true" size={18} />
         You
       </Link>

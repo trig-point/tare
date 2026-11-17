@@ -21,13 +21,13 @@ Object.assign(globalThis, listeners, {
 const { createMemoryHistory, Outlet, RouterProvider } = await import(
   "@tanstack/react-router"
 );
-const { BottomNav, createAppRouter, screenPaths } = await import(
-  "../src/nav.tsx"
-);
+const { BottomNav, createAppRouter } = await import("../src/nav.tsx");
 
 async function open(path: string, questions?: number) {
   const screens = Object.fromEntries(
-    screenPaths.map((screen) => [screen, () => `screen ${screen}`]),
+    ["/", "/questions", "/add", "/pantry", "/you", "/settings"].map(
+      (screen) => [screen, () => `screen ${screen}`],
+    ),
   );
   const layout = () =>
     createElement(

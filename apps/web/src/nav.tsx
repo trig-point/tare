@@ -24,7 +24,7 @@ const tabs: { path: string; label: string; icon: LucideIcon }[] = [
   { path: "/pantry", label: "Pantry", icon: Package },
   { path: "/you", label: "You", icon: User },
 ];
-export const screenPaths = [...tabs.map((tab) => tab.path), "/settings"];
+const screenPaths = [...tabs.map((tab) => tab.path), "/settings"];
 
 export function createAppRouter(
   layout: () => ReactNode,
