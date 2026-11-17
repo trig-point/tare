@@ -14,7 +14,7 @@ import {
 } from "../auth-support.ts";
 
 export async function twoUsers(
-  context: TestContext,
+  context: Pick<TestContext, "after">,
   mode: "access" | "fallback",
   overrides: Partial<AppOptions> = {},
 ) {
