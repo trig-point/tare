@@ -17,7 +17,12 @@ import {
 } from "../src/food-api.ts";
 import { OutboxReplay } from "../src/outbox-replay.ts";
 import { openOutboxStore } from "../src/outbox-store.ts";
-import { type Intake, readToday, todayKey } from "../src/today-api.ts";
+import {
+  type Intake,
+  readToday,
+  refreshToday,
+  todayKey,
+} from "../src/today-api.ts";
 import "fake-indexeddb/auto";
 import { test } from "./support.mts";
 import "./tsx.mts";
@@ -362,9 +367,19 @@ test("add food opens on Search with usual foods before typing", async (context) 
     .getQueryCache()
     .build(failed, { queryKey: usualFoodsQuery(admin.user.id).queryKey })
     .setState({ status: "error", error: new Error("Unavailable") });
+  failed.setQueryData(
+    todayKey(admin.user.id),
+    client.getQueryData(todayKey(admin.user.id)),
+  );
   const failedHtml = renderAddFood(admin.user, failed);
   assert.match(failedHtml, /role="alert">Couldn’t load usual foods/);
+  assert.match(failedHtml, /id="servings-food-6"/);
   assert.doesNotMatch(failedHtml, /Foods you log often show here/);
+  await refreshToday(client, admin.user.id);
+  assert.ok(
+    client.getQueryState(usualFoodsQuery(admin.user.id).queryKey)
+      ?.isInvalidated,
+  );
   const empty = new QueryClient();
   empty.setQueryData(usualFoodsQuery(admin.user.id).queryKey, []);
   assert.match(

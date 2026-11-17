@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Fragment, type ReactNode, useMemo, useState } from "react";
 import type { Session } from "./api.ts";
 import { BarcodeScanner } from "./barcode-scan.tsx";
@@ -51,12 +51,11 @@ export function AddFood({ person, replay, online }: Props) {
   const [manual, setManual] = useState<string | null>(null);
   const [logged, setLogged] = useState("");
   const term = name.trim();
-  const client = useQueryClient();
   const today = useQuery({ ...todayQuery(person.id), enabled: online });
   const usual = useQuery({ ...usualFoodsQuery(person.id), enabled: online });
   const saved = useMemo(
-    () => (online ? null : savedUsualFoods(person.id)),
-    [online, person.id],
+    () => (online && !usual.isError ? null : savedUsualFoods(person.id)),
+    [online, usual.isError, person.id],
   );
   const usualList = usual.data ?? saved;
   const catalog = useQuery({
@@ -80,9 +79,6 @@ export function AddFood({ person, replay, online }: Props) {
     setName("");
     lookup.reset();
     barcode.reset();
-    void client.invalidateQueries({
-      queryKey: usualFoodsQuery(person.id).queryKey,
-    });
   };
   const rows = (foods: FoodChoice[], label: string) => (
     <FoodRows
@@ -144,12 +140,12 @@ export function AddFood({ person, replay, online }: Props) {
           {term === "" ? (
             <UsualFoods
               state={
-                usualList
-                  ? "ready"
-                  : !online
-                    ? "offline"
-                    : usual.isError
-                      ? "failed"
+                online && usual.isError
+                  ? "failed"
+                  : usualList
+                    ? "ready"
+                    : !online
+                      ? "offline"
                       : "loading"
               }
               foods={mergeChoices(
@@ -282,16 +278,17 @@ function UsualFoods({
   return (
     <div className="grid gap-1 pt-2">
       <h2 className="m-0 text-(length:--step-1) font-semibold">Usual foods</h2>
-      {state === "loading" ? (
+      {state === "failed" && <p role="alert">Couldn’t load usual foods</p>}
+      {foods.length > 0 ? (
+        rows(foods, "Usual foods")
+      ) : state === "loading" ? (
         <RowSkeleton />
-      ) : state === "failed" ? (
-        <p role="alert">Couldn’t load usual foods</p>
       ) : state === "offline" ? (
         <p className={hint}>Unavailable offline</p>
-      ) : foods.length === 0 ? (
-        <p className={hint}>Foods you log often show here</p>
       ) : (
-        rows(foods, "Usual foods")
+        state === "ready" && (
+          <p className={hint}>Foods you log often show here</p>
+        )
       )}
     </div>
   );
@@ -321,7 +318,7 @@ function FoodRows({
     <ul aria-label={label} className="m-0 grid list-none p-0">
       {foods.map((food) => (
         <FoodRow
-          key={`${food.reference.kind}-${food.reference.id}`}
+          key={`${food.reference.kind}-${food.reference.id}-${food.servings ?? 1}`}
           food={food}
           {...row}
         />

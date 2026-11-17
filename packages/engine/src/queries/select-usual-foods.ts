@@ -40,7 +40,7 @@ export function selectUsualFoods(
 	  SELECT food_id, source_food_id, servings,
 	    row_number() OVER (
 	      PARTITION BY food_id, source_food_id
-	      ORDER BY count(*) DESC, max(eaten_at) DESC
+	      ORDER BY count(*) DESC, max(eaten_at) DESC, servings DESC
 	    ) AS position
 	  FROM recent
 	  GROUP BY food_id, source_food_id, servings
