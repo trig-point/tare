@@ -20,7 +20,7 @@ import {
 import { test } from "./support.mts";
 import "./tsx.mts";
 
-const { AccountRow, AccountSettings, DayBoundaryForm, hourLabel, MappingList } =
+const { AccountRow, AccountSettings, DayBoundaryForm, MappingList } =
   await import("../src/settings.tsx");
 const signal = new AbortController().signal;
 const render = (
@@ -165,9 +165,22 @@ test("timezone choices always include UTC once", () => {
 });
 
 test("day start reads as a 12-hour clock", () => {
-  assert.deepEqual([0, 4, 12, 23].map(hourLabel), [
+  const account = {
+    id: 3,
+    username: "example-sam",
+    timezone: "UTC",
+    day_start_hour: 0,
+    is_admin: false,
+  };
+  const selected = (day_start_hour: number) =>
+    render(
+      createElement(DayBoundaryForm, {
+        account: { ...account, day_start_hour },
+        online: true,
+      }),
+    ).match(/<option value="\d+" selected="">([^<]+)</)?.[1];
+  assert.deepEqual([0, 12, 23].map(selected), [
     "12:00 AM",
-    "4:00 AM",
     "12:00 PM",
     "11:00 PM",
   ]);
