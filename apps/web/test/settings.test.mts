@@ -20,9 +20,8 @@ import {
 import { test } from "./support.mts";
 import "./tsx.mts";
 
-const { AccountSettings, DayBoundaryForm, MappingList } = await import(
-  "../src/settings.tsx"
-);
+const { AccountRow, AccountSettings, DayBoundaryForm, hourLabel, MappingList } =
+  await import("../src/settings.tsx");
 const signal = new AbortController().signal;
 const render = (
   node: ReactElement,
@@ -54,7 +53,7 @@ test("day settings form saves timezone and day start", async (context) => {
     createElement(DayBoundaryForm, { account: saved, online: true }),
   );
   assert.match(form, /<option value="America\/New_York" selected="">/);
-  assert.match(form, /<option value="6" selected="">06:00/);
+  assert.match(form, /<option value="6" selected="">6:00 AM/);
 });
 
 test("mappings list, remove and admin map a Client ID", async (context) => {
@@ -151,8 +150,8 @@ test("mapping screens hide in fallback mode and admin forms hide for members", (
       [[accountKey(2), { ...account, is_admin }]],
     );
   const accessAdmin = screen("access", true);
-  assert.match(accessAdmin, /Day boundary.*Agents.*Map a Client ID/s);
-  assert.doesNotMatch(accessAdmin, /Add a person/);
+  assert.match(accessAdmin, /Day boundary.*Agents/s);
+  assert.doesNotMatch(accessAdmin, /Map a Client ID|Add a person/);
   const fallbackAdmin = screen("fallback", true);
   assert.match(fallbackAdmin, /Day boundary/);
   assert.doesNotMatch(fallbackAdmin, /Agents|Map a Client ID|Add a person/);
@@ -163,4 +162,32 @@ test("timezone choices always include UTC once", () => {
   const choices = timezones("America/New_York");
   assert.ok(choices.includes("UTC"));
   assert.equal(new Set(choices).size, choices.length);
+});
+
+test("day start reads as a 12-hour clock", () => {
+  assert.deepEqual([0, 4, 12, 23].map(hourLabel), [
+    "12:00 AM",
+    "4:00 AM",
+    "12:00 PM",
+    "11:00 PM",
+  ]);
+});
+
+test("sign out shows while settings load or offline", () => {
+  const user = { id: 3, username: "example-sam" };
+  const session = { mode: "fallback" as const, user };
+  const slot = createElement(AccountRow, {
+    session,
+    pending: false,
+    onSignOut: () => {},
+  });
+  const screen = (online: boolean) =>
+    render(createElement(AccountSettings, { session, online, signOut: slot }));
+  const loading = screen(true);
+  assert.match(loading, /aria-busy="true".*Loading settings/s);
+  assert.match(loading, /example-sam.*Password sign-in.*Sign out/s);
+  const offline = screen(false);
+  assert.match(offline, /Settings unavailable offline/);
+  assert.match(offline, /Sign out/);
+  assert.doesNotMatch(offline, /aria-busy/);
 });
