@@ -68,7 +68,9 @@ test("sign-off from the screen records the time and shows the complete marker", 
   const before = await review(person, "2025-12-30", null);
   assert.match(before, /Example soup/);
   assert.match(before, /Not signed off/);
-  assert.match(before, /<button type="submit">Sign off<\/button>/);
+  assert.match(before, /Tuesday, December 30/);
+  assert.match(before, /type="submit"[^>]*>Sign off<\/button>/);
+  assert.equal(before.match(/name="sign-off-hunger"/g)?.length, 5);
   const values = signOffValues(await readDay("2025-12-30", signal));
   await signOffDay("2025-12-30", values, {
     ...values,
@@ -93,7 +95,7 @@ test("sign-off from the screen records the time and shows the complete marker", 
       `Complete <time dateTime="2026-01-01T00:00:00.000Z">${shown}</time>`,
     ),
   );
-  assert.doesNotMatch(after, /Sign off<\/button>/);
+  assert.doesNotMatch(after, />Sign off<\/button>/);
 });
 
 test("unsigned days are listed and reviewed in turn", async (context) => {
@@ -187,4 +189,63 @@ test("sign-off keeps a note added after the form opened", async (context) => {
     (await readDay("2025-12-30", signal)).notes ?? "",
     /Example agent note/,
   );
+});
+
+test("a day with an unknown entry reads Unknown and keeps stored ratings", async () => {
+  const client = new QueryClient();
+  const unknown = { total: null, complete: false, known_subtotal: 0 };
+  client.setQueryData(dayKey(1, "2025-12-30"), {
+    day: "2025-12-30",
+    signed_off_at: null,
+    hunger: 2,
+    fullness: null,
+    notes: "Example note",
+    entries: [
+      {
+        id: 1,
+        client_id: "example-cake",
+        name: "Example cake",
+        food_id: null,
+        source_food_id: null,
+        servings: 1,
+        eaten_at: "2025-12-30T10:00:00.000Z",
+        provenance: "estimated",
+        source: null,
+        kcal_low: null,
+        kcal_high: null,
+        kcal: null,
+        protein_g: null,
+        carbs_g: null,
+        fat_g: null,
+        fiber_g: null,
+      },
+    ],
+    totals: {
+      kcal: unknown,
+      protein_g: unknown,
+      carbs_g: unknown,
+      fat_g: unknown,
+      fiber_g: unknown,
+    },
+  });
+  const html = renderToStaticMarkup(
+    createElement(
+      QueryClientProvider,
+      { client },
+      createElement(DayReview, {
+        person: 1,
+        day: "2025-12-30",
+        timezone: fixtureTimezone,
+        online: false,
+        next: null,
+        open: () => {},
+        close: () => {},
+      }),
+    ),
+  );
+  assert.match(html, />Unknown</);
+  assert.match(html, />Incomplete</);
+  assert.match(html, /name="sign-off-hunger" checked="" value="2"/);
+  assert.doesNotMatch(html, /name="sign-off-fullness" checked/);
+  assert.match(html, /aria-expanded="true"[^>]*>Note</);
 });
