@@ -285,6 +285,10 @@
     width: min(100% - 3rem, 38rem);
     margin: auto;
   }
+  /* Today's two columns need more than the reading width. */
+  main:has(.today-screen) {
+    width: min(100% - 3rem, 56rem);
+  }
   main:has(.bottom-nav) {
     padding-bottom: calc(80px + env(safe-area-inset-bottom));
   }

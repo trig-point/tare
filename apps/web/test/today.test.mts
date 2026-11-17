@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { twoUsers } from "../../../packages/engine/test/support/two-users.ts";
 import { OutboxReplay } from "../src/outbox-replay.ts";
 import { openOutboxStore } from "../src/outbox-store.ts";
+import { questionsKey } from "../src/questions-api.ts";
 import {
   changeIntake,
   changeWeight,
@@ -20,6 +21,8 @@ import { test } from "./support.mts";
 import "./tsx.mts";
 
 const { Today } = await import("../src/today.tsx");
+const { createMemoryHistory, createRootRoute, createRouter, RouterProvider } =
+  await import("@tanstack/react-router");
 async function setup(context: Parameters<typeof twoUsers>[0]) {
   const { admin } = await twoUsers(context, "fallback");
   context.mock.method(globalThis, "fetch", (path: string, init: RequestInit) =>
@@ -45,10 +48,11 @@ async function setup(context: Parameters<typeof twoUsers>[0]) {
     read: () => readToday(new AbortController().signal),
   };
 }
-function render(
+async function render(
   person: { id: number; username: string },
   data: Awaited<ReturnType<typeof readToday>> | undefined,
   records: Parameters<typeof Today>[0]["records"] = [],
+  questions?: unknown[],
 ) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: Infinity } },
@@ -59,21 +63,25 @@ function render(
       .getQueryCache()
       .build(client, { queryKey: todayKey(person.id) })
       .setState({ status: "error", error: new Error("Unavailable") });
+  if (questions) client.setQueryData(questionsKey(person.id), questions);
+  const router = createRouter({
+    routeTree: createRootRoute({
+      component: () => createElement(Today, { person, records, online: false }),
+    }),
+    history: createMemoryHistory(),
+  });
+  await router.load();
   return renderToStaticMarkup(
     createElement(
       QueryClientProvider,
       { client },
-      createElement(Today, {
-        person,
-        records,
-        online: false,
-      }),
+      createElement(RouterProvider, { router }),
     ),
   );
 }
 test("today renders engine totals and provenance", async (context) => {
   const setupData = await setup(context);
-  const html = render(setupData.person, await setupData.read());
+  const html = await render(setupData.person, await setupData.read());
   for (const pair of [
     /Calories<\/dt><dd>200</,
     /Protein \(g\)<\/dt><dd>10</,
@@ -83,13 +91,29 @@ test("today renders engine totals and provenance", async (context) => {
   ])
     assert.match(html, pair);
   assert.match(html, /Example meal.*estimated/s);
+  assert.match(html, /Calories left.*Unknown.*Protein left.*Unknown/s);
+  assert.match(html, /role="tab"[^>]*>Food<.*role="tab"[^>]*>Body</s);
+  assert.doesNotMatch(html, /questions/);
+  for (const [questions, label] of [
+    [[{}], "1 question"],
+    [[{}, {}], "2 questions"],
+  ] as const)
+    assert.match(
+      await render(
+        setupData.person,
+        await setupData.read(),
+        [],
+        [...questions],
+      ),
+      new RegExp(`href="/questions"[^>]*>${label}<`),
+    );
   const rounded = await setupData.read();
   rounded.totals.kcal.total = 220.00000000000003;
   const meal = rounded.entries[0];
   assert.ok(meal);
   meal.kcal = 220.00000000000003;
   meal.source = "off";
-  const roundedHtml = render(setupData.person, rounded);
+  const roundedHtml = await render(setupData.person, rounded);
   assert.match(roundedHtml, /Calories<\/dt><dd>220</);
   assert.match(roundedHtml, /220 kcal/);
   assert.match(roundedHtml, /Open Food Facts/);
@@ -102,18 +126,18 @@ test("today renders engine totals and provenance", async (context) => {
     new_protein_g: 140,
   };
   assert.match(
-    render(setupData.person, rounded),
-    /Target changed: 2,100 to 1,820 kcal, 112 to 140 g protein/,
+    await render(setupData.person, rounded),
+    /Target changed.*>2,100 → 1,820<\/span> kcal.*>112 → 140<\/span> g protein/s,
   );
 });
 test("unknown totals are incomplete; missing and malformed responses fail", async (context) => {
   const setupData = await setup(context);
   await changeIntake(setupData.entry.id, { kcal: null });
   assert.match(
-    render(setupData.person, await setupData.read()),
+    await render(setupData.person, await setupData.read()),
     /0 \+ Incomplete/,
   );
-  const error = render(setupData.person, undefined);
+  const error = await render(setupData.person, undefined);
   assert.match(error, /Couldn’t load today/);
   assert.doesNotMatch(error, /Loading\.\.\.|Today unavailable offline/);
   for (const body of [{}]) {
@@ -178,7 +202,10 @@ test("pending markers are shown without duplicate synced entries", async (contex
     state: "pending" as const,
     revision: 0,
   };
-  assert.match(render(setupData.person, data, [pending]), /70 kg.*Pending/s);
+  assert.match(
+    await render(setupData.person, data, [pending]),
+    /70 kg.*Pending/s,
+  );
   data.weights.push({
     id: 1,
     client_id: pending.client_id,
@@ -187,7 +214,7 @@ test("pending markers are shown without duplicate synced entries", async (contex
     measured_at: "2026-01-02T12:00:00.000Z",
     source: null,
   });
-  const synced = render(setupData.person, data, [pending]);
+  const synced = await render(setupData.person, data, [pending]);
   assert.doesNotMatch(synced, /Manual/);
   assert.match(synced, /<strong>70 kg<\/strong>/);
   assert.ok(
@@ -200,7 +227,7 @@ test("pending markers are shown without duplicate synced entries", async (contex
       }),
     ),
   );
-  assert.doesNotMatch(synced, /<span>Pending<\/span>/);
+  assert.doesNotMatch(synced, />Pending</);
 });
 test("edit updates totals and weight values", async (context) => {
   const setupData = await setup(context);
@@ -226,7 +253,7 @@ test("delete updates totals and removes weights; empty days render", async (cont
   const data = await setupData.read();
   assert.equal(data.totals.kcal.total, 0);
   assert.deepEqual(data.weights, []);
-  assert.match(render(setupData.person, data), /No food entries/);
+  assert.match(await render(setupData.person, data), /No food entries/);
 });
 
 test("intake changes preserve label claims and clear only exceeded calorie bounds", async (context) => {

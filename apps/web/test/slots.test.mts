@@ -75,9 +75,11 @@ test("the slot view renders each slot's remaining budget and planned item", asyn
   const person = (await withPlan(context)).admin.user.id;
   const plan = await readPlan(signal);
   const markup = render(person, plan);
-  assert.deepEqual(markup.match(/(?<=<strong>)\w+/g), slotNames);
-  assert.deepEqual(markup.match(/Example \w+(?=<\/span>)/g), itemNames);
-  assert.equal(markup.match(/kcal left, [\d,.]+ g protein left/g)?.length, 3);
+  const names = (pattern: RegExp) => [...new Set(markup.match(pattern))].sort();
+  assert.deepEqual(names(/(?<=<h2[^>]*>)\w+/g), slotNames.toSorted());
+  assert.deepEqual(names(/(?<=<h3[^>]*>)Example \w+/g), itemNames);
+  assert.equal(markup.match(/>kcal left</g)?.length, 3);
+  assert.equal(markup.match(/>protein left</g)?.length, 3);
   assert.equal(markup.match(/>Ate 3\/4</g)?.length, 3);
   assert.match(render(person, undefined, false), /Unavailable offline/);
   const empty = {
@@ -98,7 +100,21 @@ test("the slot view renders each slot's remaining budget and planned item", asyn
     ...plan,
     budgets: { ...plan.budgets, slots: [{ ...first, kcal }, ...rest] },
   };
-  assert.match(render(person, partial), /400 kcal left, incomplete/);
+  assert.match(
+    render(person, partial),
+    />400<\/strong><span[^>]*>kcal left, incomplete</,
+  );
+  const ended = plan.budgets.slots.map((slot) => ({
+    ...slot,
+    ended: slot.position === 0,
+  }));
+  const lunchNext = render(person, {
+    ...plan,
+    budgets: { ...plan.budgets, slots: ended },
+  });
+  assert.equal(lunchNext.match(/>Next meal</g)?.length, 1);
+  assert.match(lunchNext, />Lunch<\/h2><span[^>]*>Next meal</);
+  assert.match(lunchNext, /<summary[^>]*>Breakfast · Ended</);
 });
 
 test("ate, 3/4 and skip update today's totals and the slot view", async (context) => {
@@ -123,9 +139,7 @@ test("ate, 3/4 and skip update today's totals and the slot view", async (context
   const markup = render(person, plan);
   assert.match(
     markup,
-    new RegExp(
-      `>Breakfast</strong><span>${breakfast.kcal.remaining} kcal left`,
-    ),
+    new RegExp(`>${breakfast.kcal.remaining}</strong><span[^>]*>kcal left<`),
   );
   assert.equal(markup.match(/>Eaten</g)?.length, 2);
   assert.match(markup, />Skipped</);
@@ -157,7 +171,7 @@ test("accepting suggested shares saves them to the template", async (context) =>
   const plan = await readPlan(signal);
   assert.match(
     render(admin.user.id, plan),
-    /Suggested shares: Breakfast 1%, Lunch 98%, Dinner 1%/,
+    /Suggested meal shares.*>Breakfast 1%, Lunch 98%, Dinner 1%</s,
   );
   await acceptShares(plan, plan.suggested_shares ?? []);
   const saved = await readPlan(signal);
@@ -165,6 +179,6 @@ test("accepting suggested shares saves them to the template", async (context) =>
     saved.slots.map((slot) => slot.share_bp),
     [100, 9800, 100],
   );
-  assert.doesNotMatch(render(admin.user.id, saved), /Suggested shares/);
+  assert.doesNotMatch(render(admin.user.id, saved), /Suggested meal shares/);
   assert.equal(saved.planned_items.length, 3);
 });
