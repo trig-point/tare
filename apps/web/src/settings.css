@@ -5,7 +5,6 @@ main:has(.settings-screen) {
   display: grid;
   gap: var(--spacing-5);
   padding: var(--spacing-2) 0 var(--spacing-6);
-  animation: screen-enter var(--motion-tab) var(--motion-ease-enter);
 }
 .settings-head h1 {
   margin: 0 0 var(--spacing-1);
@@ -13,6 +12,9 @@ main:has(.settings-screen) {
 .settings-grid {
   display: grid;
   gap: var(--spacing-6);
+}
+.settings-column:empty {
+  display: none;
 }
 .settings-column {
   display: grid;
@@ -59,10 +61,10 @@ main:has(.settings-screen) {
   color: var(--color-ink);
   background: var(--color-bg-sunk);
 }
-.settings-screen .oura button:hover {
+.settings-screen .oura button:enabled:hover {
   background: var(--color-border);
 }
-.settings-screen .oura button:active {
+.settings-screen .oura button:enabled:active {
   transform: scale(0.97);
 }
 .settings-screen .oura output {

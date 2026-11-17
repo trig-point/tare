@@ -22,7 +22,7 @@ import { refreshToday } from "./today-api.ts";
 import "./settings.css";
 
 const hours = Array.from({ length: 24 }, (_unused, hour) => hour);
-export const hourLabel = (hour: number) =>
+const hourLabel = (hour: number) =>
   `${hour % 12 === 0 ? 12 : hour % 12}:00 ${hour < 12 ? "AM" : "PM"}`;
 const failure = (error: unknown) =>
   error instanceof ApiError && error.status === 409
@@ -77,7 +77,12 @@ export function AccountSettings({
         </div>
         {(loading || account.data) && (
           <div className="settings-column">
-            {loading && <Skeleton label="Loading sources" className="h-40" />}
+            {loading && (
+              <>
+                <Skeleton label="Loading sources" className="h-20" />
+                {session.mode === "access" && <AgentsPlaceholder />}
+              </>
+            )}
             {account.data && (
               <>
                 <Sources account={account.data} online={online} />
@@ -94,23 +99,35 @@ export function AccountSettings({
 }
 
 function Sources({ account, online }: { account: Account; online: boolean }) {
-  // Same key as ConnectedSources, so this shares its request; it only reserves space while it loads.
+  // Shares ConnectedSources' query; both stay mounted so a failed read cannot remount and refetch.
   const oura = useQuery({
     queryKey: ouraKey(account.id),
     queryFn: ({ signal }) => readOura(signal),
     enabled: online,
   });
-  if (oura.isPending && online)
-    return <Skeleton label="Loading sources" className="h-32" />;
   return (
-    <ConnectedSources
-      person={account.id}
-      timezone={account.timezone}
-      online={online}
-      callbackResult={new URLSearchParams(globalThis.location?.search).get(
-        "oura",
+    <>
+      {oura.isPending && online && (
+        <Skeleton label="Loading sources" className="h-20" />
       )}
-    />
+      <ConnectedSources
+        person={account.id}
+        timezone={account.timezone}
+        online={online}
+        callbackResult={new URLSearchParams(globalThis.location?.search).get(
+          "oura",
+        )}
+      />
+    </>
+  );
+}
+
+function AgentsPlaceholder() {
+  return (
+    <div className="grid gap-1">
+      <h2 className={heading}>Agents</h2>
+      <Skeleton label="Loading agents" className="h-32" />
+    </div>
   );
 }
 
