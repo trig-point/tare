@@ -68,6 +68,19 @@ const empty = {
   products: [],
 };
 
+const request = (unit: number) => ({
+  request_id: `request-${unit}`,
+  state: "uncertain" as const,
+  current_number: 1,
+  created_at: "2026-01-01T00:00:00.000Z",
+  resolved_at: null,
+  frozen: { product_id: 7, stock_unit_id: unit, quantity: 2 },
+  reference: { kind: "food", id: 1 },
+  intake: { name: `Example meal ${unit}` },
+  edit_notice: null,
+  retry: { eligible: false, not_before: null },
+});
+
 test("a disabled pantry says so instead of showing empty stock", () => {
   const markup = render({ ...empty, state: "disabled", stale: true });
   assert.match(markup, /Pantry not set up/);
@@ -75,9 +88,13 @@ test("a disabled pantry says so instead of showing empty stock", () => {
 });
 
 test("a reset-required pantry offers a reset and no bindings", () => {
-  const markup = render({ ...empty, state: "reset_required", generation: 1 });
+  const markup = render(
+    { ...empty, state: "reset_required", generation: 1 },
+    { state: "reset_required", unresolved: [request(2)], history: [] },
+  );
   assert.match(markup, /Pantry connection needs a reset/);
   assert.match(markup, />Reset connection</);
+  assert.match(text(markup), / Requests 1 /);
   assert.doesNotMatch(markup, /Bind food/);
 });
 
@@ -113,25 +130,19 @@ test("a failed refresh keeps the last stock and shows the failure", () => {
 });
 
 test("a request frozen in another unit keeps its own unit", () => {
-  const request = (unit: number) => ({
-    request_id: `request-${unit}`,
-    state: "uncertain" as const,
-    current_number: 1,
-    created_at: "2026-01-01T00:00:00.000Z",
-    resolved_at: null,
-    frozen: { product_id: 7, stock_unit_id: unit, quantity: 2 },
-    reference: { kind: "food", id: 1 },
-    intake: { name: `Example meal ${unit}` },
-    edit_notice: null,
-    retry: { eligible: false, not_before: null },
-  });
   const markup = render(ready, {
     state: "ready",
     unresolved: [request(2), request(3)],
-    history: [],
+    history: [
+      { ...request(4), state: "delivered", edit_notice: { servings: 2 } },
+    ],
   });
   assert.match(text(markup), /Example meal 2 Uncertain 2 can /);
   assert.match(text(markup), /Example meal 3 Uncertain 2 unit 3 /);
+  assert.match(
+    text(markup),
+    /Recent requests Example meal 4 2 unit 4 \/ Delivered Edited to 2 servings/,
+  );
 });
 
 test("abandoning a pending request moves it to history and keeps its error code", async (context) => {
@@ -219,6 +230,12 @@ test("a binding row names its food", () => {
         reference_id: 2,
         name: null,
       },
+      {
+        ...binding,
+        reference_id: 3,
+        name: "Example soup",
+        status: "unit_mismatch",
+      },
     ],
   });
   assert.match(
@@ -226,6 +243,7 @@ test("a binding row names its food", () => {
     /0.5 can per serving of Jasmine rice \(Example\), dry/,
   );
   assert.match(text(markup), /0.5 can per serving of source food 2/);
+  assert.match(text(markup), / 0.5 per serving of Example soup Unit mismatch/);
 });
 
 const results = (foods: Parameters<typeof FoodResults>[0]["foods"]) =>

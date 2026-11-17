@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, RefreshCw } from "lucide-react";
-import { type FormEvent, type ReactNode, useState } from "react";
+import { type FormEvent, type ReactNode, useRef, useState } from "react";
 import { ApiError, liveRefresh } from "./api.ts";
 import { type FoodMatch, foodMatchesQuery } from "./food-api.ts";
 import { clientId } from "./outbox-store.ts";
@@ -99,11 +99,15 @@ const hint = "text-sm text-ink-2";
 const row =
   "flex items-start justify-between gap-3 border-b border-border py-3 last:border-b-0";
 const notice = "m-0 rounded-(--radius) bg-bg-sunk px-3 py-2.5 text-sm";
-const quiet = cn(press, "text-destructive hover:text-destructive");
+const ghost = cn(press, "hover:bg-bg-sunk hover:text-ink");
+const quiet = cn(
+  press,
+  "text-destructive hover:bg-bg-sunk hover:text-destructive",
+);
 
 type Product = Pantry["products"][number];
 const unitText = (amount: number, unit: Product["stock_unit"]) =>
-  (amount > 0 && amount <= 1) || unit.name_plural === null
+  (amount > 0 && amount <= 1) || !unit.name_plural
     ? unit.name
     : unit.name_plural;
 const words = (value: string) => {
@@ -178,10 +182,18 @@ export function PantryView({
   const units = new Map(
     pantry?.products.map((product) => [product.product_id, product]),
   );
-  const open = requests?.state === "ready" ? requests.unresolved.length : 0;
+  const bindingsTab = useRef<HTMLButtonElement>(null);
+  // A pantry awaiting reset still lists its open requests, and they block the reset.
+  const open =
+    requests && requests.state !== "disabled" && !requestsFailed
+      ? requests.unresolved.length
+      : null;
   const shown = tab === "bindings" && !ready ? "stock" : tab;
   return (
-    <section aria-label="Pantry" className="grid gap-4 pt-6 pb-6">
+    <section
+      aria-label="Pantry"
+      className="grid grid-cols-[minmax(0,1fr)] gap-4 pt-6 pb-6"
+    >
       <div className="page-head">
         <div>
           <h1 className="m-0 text-(length:--step-3) font-semibold tracking-tight">
@@ -205,7 +217,7 @@ export function PantryView({
           <Button
             type="button"
             variant="ghost"
-            className={cn(press, !ready && quiet)}
+            className={ready ? ghost : quiet}
             disabled={!online || change.isPending}
             onClick={() => change.mutate(ready ? refreshPantry : resetPantry)}
           >
@@ -257,13 +269,19 @@ export function PantryView({
               Stock
             </TabsTrigger>
             {ready && (
-              <TabsTrigger value="bindings" className={trigger}>
+              <TabsTrigger
+                ref={bindingsTab}
+                value="bindings"
+                className={trigger}
+              >
                 Bindings <Badge>{pantry.bindings.length}</Badge>
               </TabsTrigger>
             )}
             <TabsTrigger value="requests" className={trigger}>
               Requests{" "}
-              <Badge tone={open > 0 ? "caution" : "plain"}>{open}</Badge>
+              {open !== null && (
+                <Badge tone={open > 0 ? "caution" : "plain"}>{open}</Badge>
+              )}
             </TabsTrigger>
           </TabsList>
           <TabsContent value="stock" forceMount className={panel}>
@@ -271,7 +289,10 @@ export function PantryView({
               pantry={pantry}
               ready={ready}
               link={link}
-              view={() => setTab("bindings")}
+              view={() => {
+                setTab("bindings");
+                bindingsTab.current?.focus();
+              }}
             />
           </TabsContent>
           {ready && (
@@ -328,7 +349,7 @@ function Stock({
     ? pantry.bindings.filter((binding) => binding.status !== "valid")
     : [];
   return (
-    <div className="grid gap-4">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
       {pantry.state === "ready" &&
         pantry.products.length === 0 &&
         !pantry.error && <p className={cn(hint, "m-0")}>No stock</p>}
@@ -417,7 +438,7 @@ function Stock({
           <Button
             type="button"
             variant="ghost"
-            className={press}
+            className={ghost}
             onClick={view}
           >
             View
@@ -468,6 +489,7 @@ function Bindings({
                   <span className="numeric">
                     {binding.quantity_per_serving}
                     {product &&
+                      binding.status === "valid" &&
                       ` ${unitText(binding.quantity_per_serving, product.stock_unit)}`}
                   </span>{" "}
                   per serving of {bindingFood(binding)}
@@ -540,7 +562,7 @@ function BindingForm({
       }),
     );
   }
-  const field = "grid gap-1.5 text-sm font-medium";
+  const field = "grid min-w-0 gap-1.5 text-sm font-medium";
   return (
     <form
       aria-label="Bind food"
@@ -719,7 +741,7 @@ function Requests({
   const amount = (request: StockRequest) =>
     `${request.frozen.quantity} ${unitName(products, request.frozen)}`;
   return (
-    <div className="grid gap-3">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-3">
       <h2 className="m-0 text-(length:--step-2) font-semibold">
         Stock requests
       </h2>
@@ -740,7 +762,9 @@ function Requests({
                 {words(request.state)}
               </Badge>
             </div>
-            <p className="numeric m-0 mt-2">{amount(request)}</p>
+            <p className="numeric m-0 mt-2 [overflow-wrap:anywhere]">
+              {amount(request)}
+            </p>
             {request.edit_notice && (
               <p className={cn(hint, "m-0 mt-1")}>
                 Edited to {request.edit_notice.servings} servings
@@ -777,6 +801,11 @@ function Requests({
                       {words(request.state)}
                     </span>
                   </p>
+                  {request.edit_notice && (
+                    <p className={cn(hint, "m-0 mt-1")}>
+                      Edited to {request.edit_notice.servings} servings
+                    </p>
+                  )}
                   <p className={cn(hint, "m-0 mt-1 text-xs")}>
                     {time(request.created_at)}
                   </p>
