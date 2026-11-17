@@ -9,6 +9,8 @@ registerHooks({
         url: "data:text/javascript,export const useRegisterSW = (options) => globalThis.registerStub(options)",
         shortCircuit: true,
       };
+    if (specifier.endsWith(".css"))
+      return { url: "data:text/javascript,", shortCircuit: true };
     if (specifier.endsWith("?url"))
       return {
         url: `data:text/javascript,export default ${JSON.stringify(specifier)}`,
