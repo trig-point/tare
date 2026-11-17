@@ -250,12 +250,17 @@ export function sourceName(source: string) {
 }
 
 export async function refreshToday(client: QueryClient, personId: number) {
-  const queryKey = todayKey(personId);
-  await client.cancelQueries({ queryKey });
-  await Promise.all([
-    client.invalidateQueries({ queryKey }),
-    client.invalidateQueries({ queryKey: planKey(personId) }),
-    client.invalidateQueries({ queryKey: ["signals", personId] }),
-    client.invalidateQueries({ queryKey: usualFoodsQuery(personId).queryKey }),
-  ]);
+  const queryKeys = [
+    todayKey(personId),
+    planKey(personId),
+    ["signals", personId],
+    usualFoodsQuery(personId).queryKey,
+  ];
+  // An in-flight first read is reused by invalidation, so cancel it first.
+  await Promise.all(
+    queryKeys.map((queryKey) => client.cancelQueries({ queryKey })),
+  );
+  await Promise.all(
+    queryKeys.map((queryKey) => client.invalidateQueries({ queryKey })),
+  );
 }
