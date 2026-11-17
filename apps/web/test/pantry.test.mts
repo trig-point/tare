@@ -193,7 +193,13 @@ test("an empty product and a broken binding are flagged on the stock tab", () =>
   const markup = text(
     render({
       ...ready,
-      products: [{ ...ready.products[0], amount: 0 }] as Pantry["products"],
+      products: [
+        {
+          ...ready.products[0],
+          amount: 0,
+          stock_unit: { id: 2, name: "can", name_plural: "cans" },
+        },
+      ] as Pantry["products"],
       bindings: [
         {
           reference_kind: "food",
@@ -206,7 +212,7 @@ test("an empty product and a broken binding are flagged on the stock tab", () =>
       ],
     }),
   );
-  assert.match(markup, /Synthetic beans 0 can Out of stock/);
+  assert.match(markup, /Synthetic beans 0 cans Out of stock/);
   assert.match(
     markup,
     /1 binding needs attention Example stew \/ Product missing View/,

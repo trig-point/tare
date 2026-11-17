@@ -202,7 +202,12 @@ export function PantryView({
           <p className={cn(hint, "m-0 mt-1")}>Stock from Grocy</p>
         </div>
       </div>
-      <div className="flex min-h-11 items-center justify-between gap-3">
+      <div
+        className={cn(
+          "flex min-h-11 items-center justify-between gap-3",
+          pantry?.state === "disabled" && "hidden",
+        )}
+      >
         <p className={cn(hint, "m-0 text-xs")}>
           {pantry?.last_success_at && (
             <>
