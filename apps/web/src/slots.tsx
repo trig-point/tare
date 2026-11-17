@@ -68,7 +68,7 @@ export function SlotList({
         timeOrder.indexOf(left.slot.position) -
         timeOrder.indexOf(right.slot.position),
     );
-  const next = slots.find((entry) => !entry.budget?.ended);
+  const next = slots.find((entry) => entry.budget && !entry.budget.ended);
   const later = slots.filter((entry) => entry !== next && !entry.budget?.ended);
   const ended = slots.filter((entry) => entry.budget?.ended);
   return (
@@ -123,7 +123,7 @@ export function Disclosure({
   children: ReactNode;
 }) {
   return (
-    <details className="group mt-0 border-b border-border first:border-t">
+    <details className="group mt-0 border-b border-border first-of-type:border-t">
       <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 py-3 font-medium [&::-webkit-details-marker]:hidden">
         {summary}
         <Plus

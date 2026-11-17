@@ -125,6 +125,12 @@ test("the slot view renders each slot's remaining budget and planned item", asyn
     },
   });
   assert.match(dinnerFirst, />Dinner<\/h2><span[^>]*>Next meal</);
+  const noBudgets = render(person, {
+    ...plan,
+    budgets: { status: "needs_profile", target: null, slots: [] },
+  });
+  assert.match(noBudgets, /Set up your profile to see budgets/);
+  assert.doesNotMatch(noBudgets, /Next meal/);
 });
 
 test("ate, 3/4 and skip update today's totals and the slot view", async (context) => {
