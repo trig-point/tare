@@ -34,7 +34,7 @@ import { PantrySection } from "./pantry.tsx";
 import { ProfileSection, WeightChart } from "./profile.tsx";
 import { Questions } from "./questions.tsx";
 import { questionsKey, readQuestions } from "./questions-api.ts";
-import { AccountSettings } from "./settings.tsx";
+import { AccountRow, AccountSettings } from "./settings.tsx";
 import {
   Button,
   Tooltip,
@@ -287,15 +287,22 @@ function SettingsScreen() {
         <ChevronLeft aria-hidden="true" size={18} />
         You
       </Link>
-      <AccountSettings session={session} online={online} />
-      <button
-        type="button"
-        disabled={signOut.isPending}
-        onClick={() => signOut.mutate()}
-      >
-        {signOut.isPending ? "Signing out..." : "Sign out"}
-      </button>
-      {signOut.isError && <p role="alert">Couldn’t sign out. Try again.</p>}
+      <AccountSettings
+        session={session}
+        online={online}
+        signOut={
+          <div>
+            <AccountRow
+              session={session}
+              pending={signOut.isPending}
+              onSignOut={() => signOut.mutate()}
+            />
+            {signOut.isError && (
+              <p role="alert">Couldn’t sign out. Try again.</p>
+            )}
+          </div>
+        }
+      />
     </>
   );
 }
