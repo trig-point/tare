@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useState } from "react";
+import { ChevronRight, XIcon } from "lucide-react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { ApiError } from "./api.ts";
 import {
   advisory,
@@ -13,6 +14,15 @@ import {
   readQuestions,
   refreshAnswered,
 } from "./questions-api.ts";
+import {
+  Button,
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogTitle,
+  Input,
+} from "./shared/ui/index.ts";
+import "./questions.css";
 
 export function Questions({
   person,
@@ -36,6 +46,17 @@ export function Questions({
   );
 }
 
+const kindLabels: Record<string, string> = {
+  meal_nutrition: "Meal label",
+  held_order_email: "Order email",
+  order_late_list: "Late order",
+  order_delivery_date: "Delivery date",
+  order_review: "Order review",
+  order_manual_entry: "Order entry",
+};
+const kindLabel = (question: Question) =>
+  kindLabels[question.kind] ?? "Question";
+
 export function QuestionList({
   person,
   questions,
@@ -47,38 +68,205 @@ export function QuestionList({
   failed: boolean;
   online: boolean;
 }) {
+  const [sheet, setSheet] = useState<{ start: number } | null>(null);
+  const autoOpened = useRef(false);
+  const first = questions?.[0];
+  useEffect(() => {
+    if (first && !autoOpened.current) {
+      autoOpened.current = true;
+      setSheet({ start: first.id });
+    }
+  }, [first]);
   const count = questions?.length ?? 0;
   return (
-    <section aria-label="Questions">
-      <h2>Questions {count > 0 && <span className="badge">{count}</span>}</h2>
+    <section aria-label="Questions" className="questions-page">
+      <div className="questions-head">
+        <h1>Questions</h1>
+        <p>
+          {questions
+            ? count > 0
+              ? `${count} waiting`
+              : "No open questions"
+            : online
+              ? "Loading..."
+              : "Unavailable offline"}
+        </p>
+      </div>
       {failed && <p role="alert">Couldn’t load questions</p>}
-      {!questions && !failed && (
-        <p>{online ? "Loading..." : "Unavailable offline"}</p>
-      )}
-      {questions?.length === 0 && <p>No open questions</p>}
       {questions && questions.length > 0 && (
-        <ul className="questions">
-          {questions.map((question) => (
-            <li key={question.id}>
-              <p>{question.prompt}</p>
-              <QuestionForm
-                person={person}
-                question={question}
-                online={online}
-              />
-            </li>
-          ))}
-        </ul>
+        <>
+          <Button
+            className="questions-open w-full active:scale-[0.98]"
+            size="lg"
+            onClick={() => setSheet({ start: questions[0]?.id ?? 0 })}
+          >
+            Answer questions
+          </Button>
+          <ul className="questions-waiting" data-slot="list">
+            {questions.map((question) => (
+              <li key={question.id}>
+                <button
+                  type="button"
+                  data-slot="row"
+                  onClick={() => setSheet({ start: question.id })}
+                >
+                  <span className="questions-kind">{kindLabel(question)}</span>
+                  <span className="questions-prompt">{question.prompt}</span>
+                  <ChevronRight aria-hidden="true" size={18} />
+                </button>
+              </li>
+            ))}
+          </ul>
+          <p className="questions-note">Skipped questions stay here.</p>
+        </>
       )}
+      <Dialog
+        open={sheet !== null && questions !== undefined}
+        onOpenChange={(open) => {
+          if (!open) setSheet(null);
+        }}
+      >
+        <DialogContent
+          showCloseButton={false}
+          aria-describedby={undefined}
+          // Focusing the first field would raise the phone keyboard over the question.
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            (event.currentTarget as HTMLElement).focus();
+          }}
+          className="question-sheet top-auto bottom-0 left-1/2 w-full max-w-[40rem] translate-y-0 -translate-x-1/2 gap-0 rounded-b-none rounded-t-xl border-x-0 border-b-0 bg-card p-0 sm:max-w-[40rem] sm:border-x"
+        >
+          <div className="question-sheet-head">
+            <DialogTitle>Questions</DialogTitle>
+            <DialogClose asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Close"
+                className="quiet-button"
+              >
+                <XIcon />
+              </Button>
+            </DialogClose>
+          </div>
+          {sheet && questions && (
+            <QuestionDeck
+              person={person}
+              questions={questions}
+              online={online}
+              start={sheet.start}
+              onClose={() => setSheet(null)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }
 
-function useAnswer(person: number, question: Question) {
+/** The index of the first question at or after the cursor that is still open, or the order's length when none is. */
+export function deckPosition(
+  order: number[],
+  open: ReadonlySet<number>,
+  cursor: number,
+) {
+  for (let index = Math.max(0, cursor); index < order.length; index++) {
+    const id = order[index];
+    if (id !== undefined && open.has(id)) return index;
+  }
+  return order.length;
+}
+
+export function QuestionDeck({
+  person,
+  questions,
+  online,
+  start,
+  onClose,
+}: {
+  person: number;
+  questions: Question[];
+  online: boolean;
+  start: number;
+  onClose: () => void;
+}) {
+  const [seen, setSeen] = useState(() => questions.map(({ id }) => id));
+  const [cursor, setCursor] = useState(() => Math.max(0, seen.indexOf(start)));
+  const openIds = new Set(questions.map(({ id }) => id));
+  // Questions that arrive while the sheet is open join the end of the round.
+  const order = [...seen, ...[...openIds].filter((id) => !seen.includes(id))];
+  const position = deckPosition(order, openIds, cursor);
+  const question = questions.find(({ id }) => id === order[position]);
+  const next = () => setCursor(position + 1);
+
+  if (!question) {
+    const left = questions.length;
+    return (
+      <div className="question-done">
+        <p>{left > 0 ? `${left} skipped` : "All caught up"}</p>
+        <div className="question-done-actions">
+          {left > 0 && (
+            <Button
+              variant="outline"
+              className="active:scale-[0.98]"
+              onClick={() => {
+                setSeen(questions.map(({ id }) => id));
+                setCursor(0);
+              }}
+            >
+              Review skipped
+            </Button>
+          )}
+          <Button className="active:scale-[0.98]" onClick={onClose}>
+            Done
+          </Button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="question-deck">
+      <div className="question-progress">
+        <span className="numeric" aria-live="polite">
+          {position + 1} of {order.length}
+        </span>
+        <span className="question-progress-track" aria-hidden="true">
+          <span
+            style={{ width: `${((position + 1) / order.length) * 100}%` }}
+          />
+        </span>
+      </div>
+      <article className="question-card" key={question.id}>
+        <p className="question-kind">{kindLabel(question)}</p>
+        <h2>{question.prompt}</h2>
+        <QuestionForm
+          person={person}
+          question={question}
+          online={online}
+          onAnswered={() => setCursor((value) => Math.max(value, position + 1))}
+        />
+      </article>
+      <div className="question-footer">
+        <Button
+          variant="ghost"
+          className="quiet-button active:scale-[0.98]"
+          onClick={next}
+        >
+          Skip for now
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function useAnswer(person: number, question: Question, onAnswered: () => void) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (answer: unknown) => answerQuestion(question.id, answer),
-    onSuccess: () => refreshAnswered(client, person),
+    onSuccess: async () => {
+      await refreshAnswered(client, person);
+      onAnswered();
+    },
     // Someone else answered first; reload so the list drops it.
     onError: (error) => {
       if (error instanceof ApiError && [404, 409].includes(error.status))
@@ -92,12 +280,14 @@ function QuestionForm({
   person,
   question,
   online,
+  onAnswered,
 }: {
   person: number;
   question: Question;
   online: boolean;
+  onAnswered: () => void;
 }) {
-  const answer = useAnswer(person, question);
+  const answer = useAnswer(person, question, onAnswered);
   const disabled = !online || answer.isPending;
   return (
     <>
@@ -125,18 +315,16 @@ function QuestionForm({
         />
       ) : question.kind === "order_delivery_date" ? (
         <DateForm question={question} answer={answer} disabled={disabled} />
+      ) : advisory(question) ? (
+        <Choices
+          disabled={disabled}
+          choices={[["Looks right", { confirm: true }]]}
+          answer={answer}
+        />
       ) : (
-        <>
-          {advisory(question) && (
-            <Choices
-              disabled={disabled}
-              choices={[["Looks right", { confirm: true }]]}
-              answer={answer}
-            />
-          )}
-          <JsonForm question={question} answer={answer} disabled={disabled} />
-        </>
+        <p className="question-hint">Answer this one with your agent.</p>
       )}
+      {!online && <p className="question-hint">Answers need a connection.</p>}
       {answer.isError && (
         <p role="alert">
           {answer.error instanceof ApiError && answer.error.status === 400
@@ -158,27 +346,29 @@ function Choices({
   disabled: boolean;
 }) {
   return (
-    <p>
-      {choices.map(([label, value]) => (
-        <button
+    <div className="question-choices">
+      {choices.map(([label, value], index) => (
+        <Button
           key={label}
-          type="button"
+          size="lg"
+          variant={index === 0 ? "default" : "outline"}
+          className="w-full active:scale-[0.98]"
           disabled={disabled}
           onClick={() => answer.mutate(value)}
         >
           {label}
-        </button>
+        </Button>
       ))}
-    </p>
+    </div>
   );
 }
 
-const labelFields: [keyof LabelValues, string][] = [
-  ["kcal", "Calories (kcal)"],
-  ["protein_g", "Protein (g)"],
-  ["carbs_g", "Carbs (g)"],
-  ["fat_g", "Fat (g)"],
-  ["fiber_g", "Fiber (g, optional)"],
+const labelFields: [keyof LabelValues, string, string][] = [
+  ["kcal", "Calories", "kcal"],
+  ["protein_g", "Protein", "g"],
+  ["carbs_g", "Carbs", "g"],
+  ["fat_g", "Fat", "g"],
+  ["fiber_g", "Fiber", "g, optional"],
 ];
 
 function LabelForm({
@@ -197,17 +387,20 @@ function LabelForm({
     answer.mutate(labelAnswer(values));
   }
   return (
-    <form onSubmit={submit}>
-      <fieldset disabled={disabled}>
-        {labelFields.map(([name, label]) => (
-          <div key={name}>
-            <label htmlFor={id(name)}>{label}</label>
-            <input
+    <form onSubmit={submit} className="question-form" data-slot="form">
+      <fieldset disabled={disabled} className="question-fields">
+        {labelFields.map(([name, label, unit]) => (
+          <div key={name} className={name === "kcal" ? "span" : undefined}>
+            <label htmlFor={id(name)}>
+              {label} <span>({unit})</span>
+            </label>
+            <Input
               id={id(name)}
               type="number"
               inputMode="decimal"
               min="0"
               step="any"
+              className="numeric"
               required={name !== "fiber_g"}
               value={values[name]}
               onChange={(event) =>
@@ -216,18 +409,26 @@ function LabelForm({
             />
           </div>
         ))}
-        <label htmlFor={id("source")}>Source</label>
-        <input
-          id={id("source")}
-          required
-          maxLength={200}
-          placeholder="Package label"
-          value={values.source}
-          onChange={(event) =>
-            setValues({ ...values, source: event.target.value })
-          }
-        />
-        <button type="submit">Save</button>
+        <div className="span">
+          <label htmlFor={id("source")}>Source</label>
+          <Input
+            id={id("source")}
+            required
+            maxLength={200}
+            placeholder="Package label"
+            value={values.source}
+            onChange={(event) =>
+              setValues({ ...values, source: event.target.value })
+            }
+          />
+        </div>
+        <Button
+          type="submit"
+          size="lg"
+          className="span w-full active:scale-[0.98]"
+        >
+          Save and next
+        </Button>
       </fieldset>
     </form>
   );
@@ -246,67 +447,31 @@ function DateForm({
   const id = `question-${question.id}-date`;
   return (
     <form
+      className="question-form"
+      data-slot="form"
       onSubmit={(event) => {
         event.preventDefault();
         answer.mutate({ delivery_date: date });
       }}
     >
-      <fieldset disabled={disabled}>
-        <label htmlFor={id}>Delivery date</label>
-        <input
-          id={id}
-          type="date"
-          required
-          value={date}
-          onChange={(event) => setDate(event.target.value)}
-        />
-        <button type="submit">Save</button>
-      </fieldset>
-    </form>
-  );
-}
-
-// Order entry and corrections have nested meal lists; JSON keeps them answerable here.
-function JsonForm({
-  question,
-  answer,
-  disabled,
-}: {
-  question: Question;
-  answer: Answer;
-  disabled: boolean;
-}) {
-  const [text, setText] = useState("");
-  const [invalid, setInvalid] = useState(false);
-  const id = `question-${question.id}-json`;
-  return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault();
-        try {
-          const value: unknown = JSON.parse(text);
-          setInvalid(false);
-          answer.mutate(value);
-        } catch {
-          setInvalid(true);
-        }
-      }}
-    >
-      <fieldset disabled={disabled}>
-        <label htmlFor={id}>Answer (JSON)</label>
-        <textarea
-          id={id}
-          required
-          maxLength={8000}
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-        />
-        {invalid && <p role="alert">Not valid JSON</p>}
-        <details>
-          <summary>Answer format</summary>
-          <pre>{JSON.stringify(question.answer_schema, null, 2)}</pre>
-        </details>
-        <button type="submit">Save</button>
+      <fieldset disabled={disabled} className="question-fields">
+        <div className="span">
+          <label htmlFor={id}>Delivery date</label>
+          <Input
+            id={id}
+            type="date"
+            required
+            value={date}
+            onChange={(event) => setDate(event.target.value)}
+          />
+        </div>
+        <Button
+          type="submit"
+          size="lg"
+          className="span w-full active:scale-[0.98]"
+        >
+          Save and next
+        </Button>
       </fieldset>
     </form>
   );

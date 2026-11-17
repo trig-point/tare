@@ -16,7 +16,9 @@ import {
 import { test } from "./support.mts";
 import "./tsx.mts";
 
-const { QuestionList } = await import("../src/questions.tsx");
+const { QuestionList, QuestionDeck, deckPosition } = await import(
+  "../src/questions.tsx"
+);
 const signal = new AbortController().signal;
 
 async function withMeals(context: Parameters<typeof twoUsers>[0]) {
@@ -42,28 +44,49 @@ async function withMeals(context: Parameters<typeof twoUsers>[0]) {
   return setup.admin.user.id;
 }
 
-const render = (person: number, questions: unknown) =>
+const withClient = (element: ReturnType<typeof createElement>) =>
   renderToStaticMarkup(
-    createElement(
-      QueryClientProvider,
-      { client: new QueryClient() },
-      createElement(QuestionList, {
-        person,
-        questions: questions as never,
-        failed: false,
-        online: true,
-      }),
-    ),
+    createElement(QueryClientProvider, { client: new QueryClient() }, element),
+  );
+const render = (person: number, questions: unknown) =>
+  withClient(
+    createElement(QuestionList, {
+      person,
+      questions: questions as never,
+      failed: false,
+      online: true,
+    }),
+  );
+const question = (
+  id: number,
+  kind: string,
+  answer_schema: Record<string, unknown> = {},
+) => ({
+  id,
+  kind,
+  subject_ref: String(id),
+  prompt: `Example ${kind}`,
+  answer_schema,
+  created_at: "2026-01-01T00:00:00.000Z",
+});
+const deck = (questions: ReturnType<typeof question>[], start: number) =>
+  withClient(
+    createElement(QuestionDeck, {
+      person: 1,
+      questions,
+      online: true,
+      start,
+      onClose: () => {},
+    }),
   );
 
-test("the questions list renders a badge count and a label form", async (context) => {
+test("the questions page shows the waiting count or an empty state", async (context) => {
   const person = await withMeals(context);
   const markup = render(person, await readQuestions(signal));
-  assert.match(markup, /Questions <span class="badge">2<\/span>/);
+  assert.match(markup, />2 waiting</);
   assert.match(markup, /Enter label values for Example bowl/);
-  assert.equal(markup.match(/Calories \(kcal\)/g)?.length, 2);
   assert.match(render(person, []), /No open questions/);
-  assert.doesNotMatch(render(person, []), /badge/);
+  assert.doesNotMatch(render(person, []), /waiting/);
 });
 
 test("the nutrition form submits, closes the question and adds the food", async (context) => {
@@ -88,7 +111,7 @@ test("the nutrition form submits, closes the question and adds the food", async 
     remaining.map((question) => question.prompt),
     ["Enter label values for Example curry (1 whole meal)."],
   );
-  assert.match(render(person, remaining), /class="badge">1</);
+  assert.match(render(person, remaining), />1 waiting</);
   const found = await findFood("Example bowl", signal);
   assert.deepEqual(
     found.foods.map((food) => [food.name, food.kcal, food.protein_g]),
@@ -96,20 +119,45 @@ test("the nutrition form submits, closes the question and adds the food", async 
   );
 });
 
-test("a late list offers Accept only for a new order", () => {
-  const late = (target: unknown) => ({
-    id: 1,
-    kind: "order_late_list",
-    subject_ref: "1",
-    prompt: "Example late list",
-    answer_schema: { target },
-    created_at: "2026-01-01T00:00:00.000Z",
-  });
-  const buttons = (target: unknown) =>
-    render(1, [late(target)]).match(/>(Accept|Ignore)<\/button>/g);
-  assert.deepEqual(buttons({ type: "existing", id: 1 }), [">Ignore</button>"]);
-  assert.deepEqual(
-    buttons({ type: "new", service: "example", delivery_date: "2026-02-10" }),
-    [">Accept</button>", ">Ignore</button>"],
-  );
+test("the sheet shows one question at a time with its answer controls and Skip", () => {
+  const questions = [
+    question(1, "meal_nutrition"),
+    question(2, "held_order_email"),
+    question(3, "order_late_list", { target: { type: "existing", id: 1 } }),
+    question(4, "order_late_list", { target: { type: "new" } }),
+    question(5, "order_delivery_date"),
+    question(6, "order_review", { mode: "advisory" }),
+    question(7, "order_review", { mode: "blocking" }),
+  ];
+  const controls = (start: number) =>
+    deck(questions, start).match(
+      /type="(date|number)"|>(Save and next|Process email|Discard|Accept|Ignore|Looks right|Answer this one with your agent\.)</g,
+    );
+  const cases: [number, string[]][] = [
+    [1, [...Array(5).fill('type="number"'), ">Save and next<"]],
+    [2, [">Process email<", ">Discard<"]],
+    [3, [">Ignore<"]],
+    [4, [">Accept<", ">Ignore<"]],
+    [5, ['type="date"', ">Save and next<"]],
+    [6, [">Looks right<"]],
+    [7, [">Answer this one with your agent.<"]],
+  ];
+  for (const [start, expected] of cases) {
+    assert.deepEqual(controls(start), expected, `question ${start}`);
+    const markup = deck(questions, start);
+    assert.match(markup, new RegExp(`>${start} of 7<`));
+    assert.equal(markup.match(/<article/g)?.length, 1);
+    assert.match(markup, />Skip for now</);
+    assert.doesNotMatch(markup, /textarea|JSON/);
+  }
+});
+
+test("the deck moves past answered questions and ends after the last", () => {
+  const order = [10, 11, 12];
+  assert.equal(deckPosition(order, new Set([10, 11, 12]), 0), 0);
+  assert.equal(deckPosition(order, new Set([12]), 0), 2);
+  assert.equal(deckPosition(order, new Set([10, 11]), 2), 3);
+  assert.equal(deckPosition(order, new Set(), -1), 3);
+  assert.equal(deckPosition([], new Set([1]), 0), 0);
+  assert.match(deck([], 0), />All caught up</);
 });
