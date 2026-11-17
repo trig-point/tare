@@ -64,7 +64,7 @@ export function BodyCard({
       )}
       {rows.length === 0 && canConnect && (
         <p>
-          <a href="#settings">Connect a source in Settings</a>
+          <a href="/settings">Connect a source in Settings</a>
         </p>
       )}
       {rows.length > 0 && (

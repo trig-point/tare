@@ -67,7 +67,6 @@ function render(
         person,
         records,
         online: false,
-        replay: {} as OutboxReplay,
       }),
     ),
   );

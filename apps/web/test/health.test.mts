@@ -6,7 +6,6 @@ import { loadConfig } from "../../../packages/engine/src/config.ts";
 import { cookie, fixture } from "../../../packages/engine/test/auth-support.ts";
 import { twoUsers } from "../../../packages/engine/test/support/two-users.ts";
 import * as health from "../src/health-api.ts";
-import type { OutboxReplay } from "../src/outbox-replay.ts";
 import { planKey } from "../src/plan-api.ts";
 import { accountKey } from "../src/settings-api.ts";
 import { readToday, refreshToday, todayKey } from "../src/today-api.ts";
@@ -71,7 +70,6 @@ test("today renders the Body card beside intake and no Oura card", async (contex
         person: admin.user,
         records: [],
         online: false,
-        replay: {} as OutboxReplay,
       }),
     );
   assert.match(
@@ -79,14 +77,14 @@ test("today renders the Body card beside intake and no Oura card", async (contex
     /class="day-summary".*Calories<\/dt><dd>200<.*Active calories<\/dt><dd>420 kcal</s,
   );
   const empty = renderDay({ ...signals, signals: [] });
-  assert.match(empty, /<a href="#settings">Connect a source in Settings</);
+  assert.match(empty, /<a href="\/settings">Connect a source in Settings</);
   assert.doesNotMatch(empty, /Connect Oura|Connected sources/);
   const blocked = renderDay(
     { ...signals, signals: [] },
     { status: "membership_required" },
   );
   assert.match(blocked, /Nothing logged/);
-  assert.doesNotMatch(blocked, /#settings/);
+  assert.doesNotMatch(blocked, /href="\/settings"/);
 });
 
 test("connect starts the Oura flow at the authorization URL", async (context) => {

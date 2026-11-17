@@ -1,14 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import { AddFood } from "./add-food.tsx";
 import type { Session } from "./api.ts";
-import { BodyFatCard } from "./body-fat.tsx";
 import { refreshDays } from "./days-api.ts";
 import { BodyCard } from "./health.tsx";
 import type { OutboxReplay } from "./outbox-replay.ts";
 import type { QueueEntry } from "./outbox-store.ts";
-import { ProfileSection, TargetCard, WeightChart } from "./profile.tsx";
-import { Questions } from "./questions.tsx";
+import { TargetCard } from "./profile.tsx";
 import { DaySignOff } from "./sign-off.tsx";
 import { Slots } from "./slots.tsx";
 import {
@@ -32,40 +29,15 @@ import {
 
 export function Today({
   person,
-  replay,
   records,
   online,
 }: {
   person: Session["user"];
-  replay: OutboxReplay;
   records: QueueEntry[];
   online: boolean;
 }) {
   const client = useQueryClient();
   const today = useQuery({ ...todayQuery(person.id), enabled: online });
-  const currentRecords = useRef(records);
-  currentRecords.current = records;
-  useEffect(() => {
-    let previousPending = new Set(
-      currentRecords.current
-        .filter(
-          (entry) => entry.person_id === person.id && entry.state === "pending",
-        )
-        .map((entry) => entry.client_id),
-    );
-    const unsubscribe = replay.subscribe((snapshot) => {
-      const changes = settledSince(previousPending, snapshot, person.id);
-      previousPending = changes.pending;
-      if (changes.settled)
-        void Promise.all([
-          refreshToday(client, person.id),
-          refreshDays(client, person.id),
-        ]);
-    });
-    return () => {
-      unsubscribe();
-    };
-  }, [client, replay, person.id]);
   const saved = new Set(
     [...(today.data?.entries ?? []), ...(today.data?.weights ?? [])].map(
       (entry) => entry.client_id,
@@ -77,7 +49,6 @@ export function Today({
   return (
     <section aria-label="Today">
       <h1>Today</h1>
-      <Questions person={person.id} online={online} />
       {today.isError && <p role="alert">Couldn’t load today</p>}
       {!today.data && !today.isError && (
         <p>{online ? "Loading..." : "Today unavailable offline"}</p>
@@ -157,14 +128,42 @@ export function Today({
           </li>
         ))}
       </ul>
-      <AddFood person={person} replay={replay} online={online} />
-      <WeightForm person={person} replay={replay} />
-      <WeightChart person={person.id} online={online} />
-      <BodyFatCard person={person.id} online={online} />
-      <ProfileSection person={person.id} online={online} />
     </section>
   );
 }
+
+/** Refreshes Today and the day history when queued entries settle, on every tab. */
+export function useSettledRefresh(
+  person: number,
+  replay: OutboxReplay,
+  records: QueueEntry[],
+) {
+  const client = useQueryClient();
+  const currentRecords = useRef(records);
+  currentRecords.current = records;
+  useEffect(() => {
+    let previousPending = new Set(
+      currentRecords.current
+        .filter(
+          (entry) => entry.person_id === person && entry.state === "pending",
+        )
+        .map((entry) => entry.client_id),
+    );
+    const unsubscribe = replay.subscribe((snapshot) => {
+      const changes = settledSince(previousPending, snapshot, person);
+      previousPending = changes.pending;
+      if (changes.settled)
+        void Promise.all([
+          refreshToday(client, person),
+          refreshDays(client, person),
+        ]);
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, [client, replay, person]);
+}
+
 function TargetNotice({
   notice,
   online,
@@ -210,7 +209,7 @@ function TargetNotice({
     </section>
   );
 }
-function WeightForm({
+export function WeightForm({
   person,
   replay,
 }: {
