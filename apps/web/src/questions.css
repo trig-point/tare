@@ -39,6 +39,9 @@
   cursor: pointer;
   transition: background-color var(--motion-press) var(--motion-ease-move);
 }
+.questions-waiting button:focus-visible {
+  outline-offset: -3px;
+}
 .questions-waiting button:active {
   background: var(--color-bg-sunk);
 }
@@ -184,6 +187,7 @@
   gap: var(--spacing-2);
 }
 .question-hint {
+  margin-top: var(--spacing-3);
   color: var(--color-ink-2);
 }
 .question-card [role="alert"] {

@@ -216,11 +216,17 @@ export function QuestionDeck({
   const ids = questions.map(({ id }) => id);
   const [round, setRound] = useState(() => startRound(ids, start));
   const [cursor, setCursor] = useState(0);
+  // A save that finishes after Review skipped belongs to the earlier pass and must not move this one.
+  const pass = useRef(0);
   const order = extendRound(round, ids);
   if (order !== round) setRound(order);
   const position = deckPosition(order, new Set(ids), cursor);
   const question = questions.find(({ id }) => id === order[position]);
   const next = () => setCursor(position + 1);
+  const answeredIn = (answeredPass: number, answeredAt: number) => () => {
+    if (pass.current === answeredPass)
+      setCursor((value) => Math.max(value, answeredAt + 1));
+  };
 
   if (!question) {
     const left = questions.length;
@@ -233,6 +239,7 @@ export function QuestionDeck({
               variant="outline"
               className="active:scale-[0.98]"
               onClick={() => {
+                pass.current += 1;
                 setRound(ids);
                 setCursor(0);
               }}
@@ -266,7 +273,7 @@ export function QuestionDeck({
           person={person}
           question={question}
           online={online}
-          onAnswered={() => setCursor((value) => Math.max(value, position + 1))}
+          onAnswered={answeredIn(pass.current, position)}
         />
       </article>
       <div className="question-footer">
