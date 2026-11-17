@@ -361,7 +361,7 @@ function EntryRow({ entry, timezone }: { entry: Intake; timezone: string }) {
 function DayTotals({ data }: { data: DayData }) {
   const complete = nutrients.every((key) => data.totals[key].complete);
   return (
-    <details className="group py-2">
+    <details className="group mt-0 py-2">
       <summary
         className={cn(
           press,
@@ -424,7 +424,7 @@ function SignOffForm({
     setValues({ ...values, [name]: value });
   return (
     <form
-      className="rounded-(--radius) border border-border bg-surface p-4"
+      className="max-w-none rounded-(--radius) border border-border bg-surface p-4"
       onSubmit={(event) => {
         event.preventDefault();
         save.mutate();
@@ -523,13 +523,17 @@ function RatingScale({
               value={rating}
               checked={value === rating}
               onChange={() => change(rating)}
-              onClick={() => {
-                if (value === rating) change("");
+              onClick={() => change(toggledRating(value, rating))}
+              onKeyDown={(event) => {
+                // A checked radio ignores Space natively, so Space toggles here.
+                if (event.key !== " ") return;
+                event.preventDefault();
+                change(toggledRating(value, rating));
               }}
             />
             <span
               className={cn(
-                "numeric flex min-h-11 cursor-pointer items-center justify-center rounded-md border border-border-strong bg-transparent transition-[transform,background-color,border-color,color] duration-(--motion-press) ease-move hover:bg-bg-sunk active:scale-[0.97] peer-checked:border-accent peer-checked:bg-accent peer-checked:text-surface peer-focus-visible:ring-[3px] peer-focus-visible:ring-ring/50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50",
+                "numeric flex min-h-11 cursor-pointer items-center justify-center rounded-md border border-border-strong bg-transparent transition-[transform,background-color,border-color,color] duration-(--motion-press) ease-move hover:bg-bg-sunk active:scale-[0.97] peer-checked:border-accent peer-checked:bg-accent peer-checked:text-surface peer-checked:hover:bg-accent peer-focus-visible:ring-[3px] peer-focus-visible:ring-ring/50 peer-disabled:pointer-events-none peer-disabled:cursor-not-allowed peer-disabled:opacity-50",
               )}
             >
               {rating}
@@ -539,6 +543,11 @@ function RatingScale({
       </div>
     </div>
   );
+}
+
+/** Picking the selected rating again clears it. */
+export function toggledRating(current: string, rating: string) {
+  return current === rating ? "" : rating;
 }
 
 function Skeleton({ label, className }: { label: string; className: string }) {

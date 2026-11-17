@@ -18,7 +18,9 @@ import {
 import { test } from "./support.mts";
 import "./tsx.mts";
 
-const { DayReview, UnsignedDays } = await import("../src/sign-off.tsx");
+const { DayReview, toggledRating, UnsignedDays } = await import(
+  "../src/sign-off.tsx"
+);
 const signal = new AbortController().signal;
 const fixtureTimezone = "Asia/Kolkata";
 const blank = { hunger: "", fullness: "", notes: "" };
@@ -248,4 +250,10 @@ test("a day with an unknown entry reads Unknown and keeps stored ratings", async
   assert.match(html, /name="sign-off-hunger" checked="" value="2"/);
   assert.doesNotMatch(html, /name="sign-off-fullness" checked/);
   assert.match(html, /aria-expanded="true"[^>]*>Note</);
+});
+
+test("picking the selected rating again clears it", () => {
+  assert.equal(toggledRating("", "3"), "3");
+  assert.equal(toggledRating("2", "3"), "3");
+  assert.equal(toggledRating("3", "3"), "");
 });
