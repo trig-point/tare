@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import type { TestContext } from "node:test";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -20,7 +21,7 @@ const { QuestionList, QuestionDeck, deckPosition, extendRound, startRound } =
   await import("../src/questions.tsx");
 const signal = new AbortController().signal;
 
-async function withMeals(context: Parameters<typeof twoUsers>[0]) {
+async function withMeals(context: TestContext) {
   const setup = await twoUsers(context, "fallback");
   context.mock.method(globalThis, "fetch", setup.admin.request);
   writeTransaction(setup.database, (scope) =>

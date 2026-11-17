@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { TestContext } from "node:test";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -27,7 +28,7 @@ const blank = { hunger: "", fullness: "", notes: "" };
 const unsigned = async () =>
   (await readUnsignedDays(signal)).map((entry) => entry.day);
 
-async function engine(context: Parameters<typeof twoUsers>[0]) {
+async function engine(context: TestContext) {
   const setup = await twoUsers(context, "fallback");
   context.mock.method(globalThis, "fetch", setup.admin.request);
   const eat = async (day: string, name: string) => {

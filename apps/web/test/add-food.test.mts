@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import type { TestContext } from "node:test";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -40,7 +41,7 @@ const onlineFood = {
   fetched_at: "2026-11-01T12:00:00.000Z",
 };
 function stubSearch(
-  context: Parameters<typeof twoUsers>[0],
+  context: TestContext,
   result: "match" | "ambiguous" | "no_match",
 ) {
   const paths: string[] = [];

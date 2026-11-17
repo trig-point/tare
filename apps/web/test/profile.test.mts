@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import type { TestContext } from "node:test";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -37,7 +38,7 @@ const profile = {
   goal_rate_kg_week: "-0.5",
   protein_factor: "1.6",
 } as const;
-async function engine(context: Parameters<typeof twoUsers>[0]) {
+async function engine(context: TestContext) {
   const { admin } = await twoUsers(context, "fallback");
   context.mock.method(globalThis, "fetch", admin.request);
   const post = async (path: string, body: object) =>
