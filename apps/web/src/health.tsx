@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { Plus, Trash2, XIcon } from "lucide-react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import {
   blankSet,
   bodyRows,
@@ -29,7 +30,18 @@ import {
   type Workout,
   withClientId,
 } from "./health-api.ts";
+import {
+  Button,
+  cn,
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogTitle,
+  Input,
+} from "./shared/ui/index.ts";
+import { press } from "./slots.tsx";
 import { displayNumber, refreshToday } from "./today-api.ts";
+import "./health.css";
 
 export function BodyCard({
   person,
@@ -50,61 +62,206 @@ export function BodyCard({
     enabled: online,
   });
   if (signals.isError) return <p role="alert">Couldn’t load signals</p>;
-  if (!signals.data) return null;
+  if (!signals.data) return online ? <BodySkeleton /> : null;
   const rows = bodyRows(signals.data.signals);
   const { activities, habits } = signals.data;
-  const canConnect =
-    connection.data !== undefined && canConnectOura(ouraView(connection.data));
+  const view = connection.data && ouraView(connection.data);
+  const canConnect = view !== undefined && canConnectOura(view);
+  const synced = view?.state === "connected" ? view.lastSynced : null;
   const entry = { online, refresh: () => refreshToday(client, person) };
   return (
-    <section className="signals" aria-label="Body">
-      <h2>Body</h2>
-      {rows.length === 0 && activities.length === 0 && habits.length === 0 && (
-        <p>Nothing logged</p>
-      )}
-      {rows.length === 0 && canConnect && (
-        <p>
-          <a href="/settings">Connect a source in Settings</a>
-        </p>
-      )}
-      {rows.length > 0 && (
-        <dl className="totals">
-          {rows.map((entry) => (
-            <div key={`${entry.metric}-${entry.source}`}>
-              <dt>{metricLabels[entry.metric]}</dt>
-              <dd>{signalText(entry)}</dd>
-              <dd className="source">{sourceLabel(entry.source)}</dd>
-              {entry.why.map((line) => (
-                <dd key={line} className="why">
-                  {line}
-                </dd>
+    <section className="body-tab" aria-label="Body">
+      <section className="body-section" aria-labelledby="body-signals">
+        <div className="body-head">
+          <h2 id="body-signals">Signals</h2>
+          {synced && (
+            <span className="body-note">
+              Synced{" "}
+              <time dateTime={synced}>
+                {new Date(synced).toLocaleString([], {
+                  month: "short",
+                  day: "numeric",
+                  hour: "numeric",
+                  minute: "2-digit",
+                  timeZone: timezone,
+                })}
+              </time>
+            </span>
+          )}
+        </div>
+        {rows.length === 0 &&
+          (activities.length === 0 && habits.length === 0 ? (
+            <p className="body-note">Nothing logged</p>
+          ) : (
+            <p className="body-note">No signals today</p>
+          ))}
+        {rows.length === 0 && canConnect && (
+          <p>
+            <a href="/settings">Connect a source in Settings</a>
+          </p>
+        )}
+        {rows.length > 0 && (
+          <dl className="signal-tiles">
+            {rows.map((row) => (
+              <div key={`${row.metric}-${row.source}`} className="signal-tile">
+                <dt>{metricLabels[row.metric]}</dt>
+                <dd>{signalText(row)}</dd>
+                <dd className="source">{sourceLabel(row.source)}</dd>
+                {row.why.map((line) => (
+                  <dd key={line} className="why">
+                    {line}
+                  </dd>
+                ))}
+              </div>
+            ))}
+          </dl>
+        )}
+      </section>
+      <div className="body-column">
+        <Recovery {...entry} />
+        <section className="body-section" aria-labelledby="body-workouts">
+          <div className="body-head">
+            <h2 id="body-workouts">Workouts</h2>
+            <LogWorkout day={day} {...entry} />
+          </div>
+          {activities.length === 0 ? (
+            <p className="body-note">No workouts today</p>
+          ) : (
+            <ul className="body-list" aria-label="Workouts">
+              {activities.map((workout) => (
+                <WorkoutEntry
+                  key={workout.id}
+                  workout={workout}
+                  timezone={timezone}
+                  {...entry}
+                />
               ))}
+            </ul>
+          )}
+        </section>
+        <section className="body-section" aria-labelledby="body-habits">
+          <div className="body-head">
+            <h2 id="body-habits">Habits</h2>
+            <LogHabit day={day} {...entry} />
+          </div>
+          {habits.length === 0 ? (
+            <p className="body-note">No habits today</p>
+          ) : (
+            <ul className="body-list" aria-label="Habits">
+              {habits.map((habit) => (
+                <HabitEntry
+                  key={habit.habit_key}
+                  habit={habit}
+                  day={day}
+                  {...entry}
+                />
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+    </section>
+  );
+}
+
+const skeletonTiles = ["first", "second", "third", "fourth"];
+const skeletonSections = ["Workouts", "Habits"];
+const pulse =
+  "inline-block animate-pulse rounded-sm bg-bg-sunk motion-reduce:animate-none";
+/** Placeholder tiles and sections laid out like the real ones, so the tab does not jump when signals arrive. */
+function BodySkeleton() {
+  return (
+    <div className="body-tab" aria-busy="true">
+      <div className="body-section">
+        <div className="body-head">
+          <h2>Signals</h2>
+        </div>
+        <dl className="signal-tiles">
+          {skeletonTiles.map((name) => (
+            <div key={name} className="signal-tile">
+              <dt>
+                <span className={cn(pulse, "h-[1em] w-20 align-middle")} />
+              </dt>
+              <dd>
+                <span className={cn(pulse, "h-[1em] w-16 align-middle")} />
+              </dd>
+              <dd className="source">
+                <span className={cn(pulse, "h-[1em] w-10 align-middle")} />
+              </dd>
             </div>
           ))}
         </dl>
-      )}
-      {activities.length + habits.length > 0 && (
-        <ul className="entries" aria-label="Activity">
-          {activities.map((workout) => (
-            <WorkoutEntry
-              key={workout.id}
-              workout={workout}
-              timezone={timezone}
-              {...entry}
-            />
-          ))}
-          {habits.map((habit) => (
-            <HabitEntry
-              key={habit.habit_key}
-              habit={habit}
-              day={day}
-              {...entry}
-            />
-          ))}
-        </ul>
-      )}
-      <LogControls day={day} {...entry} />
-    </section>
+      </div>
+      <div className="body-column">
+        <div className="body-section">
+          <div className="body-head">
+            <h2>Recovery</h2>
+          </div>
+          <div className="body-quick">
+            <span className={cn(pulse, "h-10 pointer-coarse:h-11")} />
+            <span className={cn(pulse, "h-10 pointer-coarse:h-11")} />
+          </div>
+        </div>
+        {skeletonSections.map((name) => (
+          <div key={name} className="body-section">
+            <div className="body-head">
+              <h2>{name}</h2>
+            </div>
+            <span className={cn(pulse, "h-[1em] w-28")} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Sheet({
+  open,
+  onOpenChange,
+  title,
+  children,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  title: string;
+  children: ReactNode;
+}) {
+  // Controlled sheets have no Radix trigger, so focus goes back to the opener by hand.
+  // Openers stay enabled while a save is pending so the sheet can close onto them.
+  const opener = useRef<HTMLElement | null>(null);
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        showCloseButton={false}
+        aria-describedby={undefined}
+        onOpenAutoFocus={() => {
+          opener.current =
+            document.activeElement instanceof HTMLElement
+              ? document.activeElement
+              : null;
+        }}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          opener.current?.focus();
+        }}
+        className="body-sheet top-auto bottom-0 left-1/2 w-full max-w-[40rem] translate-y-0 -translate-x-1/2 gap-0 rounded-b-none rounded-t-xl border-x-0 border-b-0 bg-card p-0 sm:max-w-[40rem] sm:border-x"
+      >
+        <div className="body-sheet-head">
+          <DialogTitle>{title}</DialogTitle>
+          <DialogClose asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Close"
+              className={press}
+            >
+              <XIcon />
+            </Button>
+          </DialogClose>
+        </div>
+        <div className="body-sheet-body">{children}</div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -165,61 +322,67 @@ function WorkoutEntry({
       .flatMap((source) => (source ? sourceLabel(source) : []))
       .join(" + "),
   ];
+  const editLabel = logged ? "Edit sets" : "Add sets";
   return (
-    <li>
-      <strong>{workout.kind}</strong>
-      <span>{details.filter(Boolean).join(" · ")}</span>
-      {workout.notes && <span>{workout.notes}</span>}
-      {workout.sets.length > 0 && (
-        <ol aria-label={`${workout.kind} sets`}>
-          {workout.sets.map((set) => (
-            <li key={set.set_index}>{setText(set)}</li>
-          ))}
-        </ol>
-      )}
-      {(logged || workout.category !== "other") && (
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => {
-            setRows(
-              workout.sets.length > 0 ? workout.sets.map(setRow) : [blankSet()],
-            );
-            setEditing(true);
-          }}
-        >
-          {logged ? "Edit sets" : "Add sets"}
-        </button>
-      )}
-      {logged && (
-        <button
-          type="button"
-          aria-label={`Delete ${workout.kind}`}
-          disabled={busy}
-          onClick={() => remove.mutate(undefined)}
-        >
-          Delete
-        </button>
-      )}
-      {(save.isError || remove.isError) && (
-        <p role="alert">Couldn’t update workout</p>
-      )}
-      {editing && (
+    <li className="body-row">
+      <div className="body-row-text">
+        <strong>{workout.kind}</strong>
+        <span>{details.filter(Boolean).join(" · ")}</span>
+        {workout.notes && <span>{workout.notes}</span>}
+        {workout.sets.length > 0 && (
+          <ol aria-label={`${workout.kind} sets`}>
+            {workout.sets.map((set) => (
+              <li key={set.set_index}>{setText(set)}</li>
+            ))}
+          </ol>
+        )}
+      </div>
+      <div className="body-row-actions">
+        {(logged || workout.category !== "other") && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className={press}
+            disabled={!entry.online || remove.isPending}
+            onClick={() => {
+              setRows(
+                workout.sets.length > 0
+                  ? workout.sets.map(setRow)
+                  : [blankSet()],
+              );
+              save.reset();
+              setEditing(true);
+            }}
+          >
+            {editLabel}
+          </Button>
+        )}
+        {logged && (
+          <DeleteButton
+            label={workout.kind}
+            disabled={busy}
+            remove={() => remove.mutate(undefined)}
+          />
+        )}
+      </div>
+      {remove.isError && <p role="alert">Couldn’t delete workout</p>}
+      <Sheet
+        open={editing}
+        onOpenChange={setEditing}
+        title={`${editLabel}: ${workout.kind}`}
+      >
         <form
+          className="body-form"
           onSubmit={(event) => {
             event.preventDefault();
             save.mutate(rows.map(setInput));
           }}
         >
           <SetFields rows={rows} setRows={setRows} disabled={busy} />
-          <button type="submit" disabled={busy}>
-            Save
-          </button>
-          <button type="button" onClick={() => setEditing(false)}>
-            Cancel
-          </button>
+          {save.isError && <p role="alert">Couldn’t update workout</p>}
+          <SubmitButton disabled={busy}>Save sets</SubmitButton>
         </form>
-      )}
+      </Sheet>
     </li>
   );
 }
@@ -234,27 +397,88 @@ function HabitEntry({
     deleteHabit(day, habit.habit_key),
   );
   return (
-    <li>
-      <strong>{label}</strong>
-      <span>
-        {[
-          habit.amount !== null && displayNumber(habit.amount),
-          habit.note,
-          sourceLabel(habit.source),
-        ]
-          .filter(Boolean)
-          .join(" · ")}
-      </span>
-      <button
-        type="button"
-        aria-label={`Delete ${label}`}
-        disabled={!entry.online || remove.isPending}
-        onClick={() => remove.mutate(undefined)}
-      >
-        Delete
-      </button>
+    <li className="body-row">
+      <div className="body-row-text">
+        <strong>{label}</strong>
+        <span>
+          {[
+            habit.amount !== null && displayNumber(habit.amount),
+            habit.note,
+            sourceLabel(habit.source),
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        </span>
+      </div>
+      <div className="body-row-actions">
+        <DeleteButton
+          label={label}
+          disabled={!entry.online || remove.isPending}
+          remove={() => remove.mutate(undefined)}
+        />
+      </div>
       {remove.isError && <p role="alert">Couldn’t delete habit</p>}
     </li>
+  );
+}
+
+function DeleteButton({
+  label,
+  disabled,
+  remove,
+}: {
+  label: string;
+  disabled: boolean;
+  remove: () => void;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      aria-label={`Delete ${label}`}
+      className={press}
+      disabled={disabled}
+      onClick={remove}
+    >
+      <Trash2 />
+    </Button>
+  );
+}
+
+function Field({
+  label,
+  className,
+  children,
+}: {
+  label: string;
+  className?: string;
+  children: (id: string) => ReactNode;
+}) {
+  const id = useId();
+  return (
+    <div className={cn("body-field", className)}>
+      <label htmlFor={id}>{label}</label>
+      {children(id)}
+    </div>
+  );
+}
+
+function SubmitButton({
+  disabled,
+  children,
+}: {
+  disabled: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <Button
+      type="submit"
+      size="lg"
+      className={cn("w-full", press)}
+      disabled={disabled}
+    >
+      {children}
+    </Button>
   );
 }
 
@@ -274,76 +498,101 @@ function SetFields({
       ),
     );
   return (
-    <fieldset className="sets">
+    <fieldset className="body-sets">
       <legend>Sets</legend>
       {rows.map((row, index) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: rows have no identity until saved
-        <div key={index}>
-          <label>
-            Exercise
-            <input
-              required
-              maxLength={80}
-              value={row.exercise}
-              disabled={disabled}
-              onChange={(event) =>
-                change(index, { exercise: event.target.value })
-              }
-            />
-          </label>
-          <label>
-            Reps
-            <input
-              type="number"
-              min="0"
-              step="1"
-              value={row.reps}
-              disabled={disabled}
-              onChange={(event) => change(index, { reps: event.target.value })}
-            />
-          </label>
-          <label>
-            Load
-            <input
-              type="number"
-              min="0"
-              step="any"
-              value={row.load}
-              disabled={disabled}
-              onChange={(event) => change(index, { load: event.target.value })}
-            />
-          </label>
-          <select
-            aria-label="Unit"
-            value={row.load_unit}
-            disabled={disabled}
-            onChange={(event) =>
-              change(index, {
-                load_unit: event.target.value === "lb" ? "lb" : "kg",
-              })
-            }
-          >
-            <option value="kg">kg</option>
-            <option value="lb">lb</option>
-          </select>
-          <button
+        <div key={index} className="body-set">
+          <Field label="Exercise" className="exercise">
+            {(id) => (
+              <Input
+                id={id}
+                required
+                maxLength={80}
+                value={row.exercise}
+                disabled={disabled}
+                onChange={(event) =>
+                  change(index, { exercise: event.target.value })
+                }
+              />
+            )}
+          </Field>
+          <Field label="Reps">
+            {(id) => (
+              <Input
+                id={id}
+                type="number"
+                inputMode="numeric"
+                min="0"
+                step="1"
+                className="numeric"
+                value={row.reps}
+                disabled={disabled}
+                onChange={(event) =>
+                  change(index, { reps: event.target.value })
+                }
+              />
+            )}
+          </Field>
+          <Field label="Load">
+            {(id) => (
+              <Input
+                id={id}
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="any"
+                className="numeric"
+                value={row.load}
+                disabled={disabled}
+                onChange={(event) =>
+                  change(index, { load: event.target.value })
+                }
+              />
+            )}
+          </Field>
+          <Field label="Unit">
+            {(id) => (
+              <select
+                id={id}
+                value={row.load_unit}
+                disabled={disabled}
+                onChange={(event) =>
+                  change(index, {
+                    load_unit: event.target.value === "lb" ? "lb" : "kg",
+                  })
+                }
+              >
+                <option value="kg">kg</option>
+                <option value="lb">lb</option>
+              </select>
+            )}
+          </Field>
+          <Button
             type="button"
+            variant="ghost"
+            size="icon"
+            aria-label={`Remove set ${index + 1}`}
+            className={cn("self-end", press)}
             disabled={disabled}
             onClick={() =>
               setRows(rows.filter((_row, position) => position !== index))
             }
           >
-            Remove set
-          </button>
+            <Trash2 />
+          </Button>
         </div>
       ))}
-      <button
+      <Button
         type="button"
+        variant="outline"
+        className={press}
         disabled={disabled || rows.length >= maxSets}
         onClick={() => setRows([...rows, blankSet()])}
       >
+        <Plus />
         Add set
-      </button>
+      </Button>
     </fieldset>
   );
 }
@@ -353,16 +602,21 @@ const quickKinds = [
   ["sauna", "Sauna"],
   ["cold_plunge", "Cold plunge"],
 ] as const;
-function LogControls({ day, ...entry }: EntryProps & { day: string }) {
+type QuickKind = (typeof quickKinds)[number][0];
+
+function Recovery(entry: EntryProps) {
+  const [sheet, setSheet] = useState<{ open: boolean; kind: QuickKind }>({
+    open: false,
+    kind: "sauna",
+  });
   const [minutes, setMinutes] = useState("");
   const [senders] = useState(() => ({
     sauna: withClientId(logActivity),
     cold_plunge: withClientId(logActivity),
-    workout: withClientId(logActivity),
   }));
   const quick = useEntryMutation(
     entry,
-    (kind: (typeof quickKinds)[number][0]) =>
+    (kind: QuickKind) =>
       senders[kind]({
         kind,
         started_at: new Date(
@@ -370,8 +624,97 @@ function LogControls({ day, ...entry }: EntryProps & { day: string }) {
         ).toISOString(),
         duration_minutes: Number(minutes),
       }),
-    () => setMinutes(""),
+    () => {
+      setMinutes("");
+      setSheet((current) => ({ ...current, open: false }));
+    },
   );
+  const busy = !entry.online || quick.isPending;
+  const title = quickKinds.find(([kind]) => kind === sheet.kind)?.[1] ?? "";
+  return (
+    <section className="body-section" aria-labelledby="body-recovery">
+      <div className="body-head">
+        <h2 id="body-recovery">Recovery</h2>
+      </div>
+      <div className="body-quick">
+        {quickKinds.map(([kind, label]) => (
+          <Button
+            key={kind}
+            variant="secondary"
+            size="lg"
+            className={press}
+            disabled={!entry.online}
+            onClick={() => {
+              quick.reset();
+              setSheet({ open: true, kind });
+            }}
+          >
+            {label}
+          </Button>
+        ))}
+      </div>
+      <Sheet
+        open={sheet.open}
+        onOpenChange={(open) => setSheet({ ...sheet, open })}
+        title={title}
+      >
+        <form
+          className="body-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            quick.mutate(sheet.kind);
+          }}
+        >
+          <Field label="Minutes">
+            {(id) => (
+              <Input
+                id={id}
+                type="number"
+                inputMode="numeric"
+                required
+                min="1"
+                max="1440"
+                step="1"
+                className="numeric"
+                value={minutes}
+                disabled={busy}
+                onChange={(event) => setMinutes(event.target.value)}
+              />
+            )}
+          </Field>
+          {quick.isError && <p role="alert">Couldn’t save</p>}
+          <SubmitButton disabled={busy}>Log {title.toLowerCase()}</SubmitButton>
+        </form>
+      </Sheet>
+    </section>
+  );
+}
+
+function LogButton({
+  disabled,
+  open,
+  children,
+}: {
+  disabled: boolean;
+  open: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className={cn("text-accent", press)}
+      disabled={disabled}
+      onClick={open}
+    >
+      <Plus />
+      {children}
+    </Button>
+  );
+}
+
+function LogHabit({ day, ...entry }: EntryProps & { day: string }) {
+  const [open, setOpen] = useState(false);
   const [habitKey, setHabitKey] = useState("evening_alcohol");
   const [amount, setAmount] = useState("");
   const habit = useEntryMutation(
@@ -382,17 +725,85 @@ function LogControls({ day, ...entry }: EntryProps & { day: string }) {
         day,
         ...(amount.trim() === "" ? {} : { amount: Number(amount) }),
       }),
-    () => setAmount(""),
+    () => {
+      setAmount("");
+      setOpen(false);
+    },
   );
-  const [workout, setWorkout] = useState<{
-    kind: string;
-    minutes: string;
-    rows: SetRow[];
-  } | null>(null);
+  const busy = !entry.online || habit.isPending;
+  return (
+    <>
+      <LogButton
+        disabled={!entry.online}
+        open={() => {
+          habit.reset();
+          setOpen(true);
+        }}
+      >
+        Log habit
+      </LogButton>
+      <Sheet open={open} onOpenChange={setOpen} title="Log habit">
+        <form
+          className="body-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            habit.mutate(undefined);
+          }}
+        >
+          <Field label="Habit">
+            {(id) => (
+              <select
+                id={id}
+                value={habitKey}
+                disabled={busy}
+                onChange={(event) => setHabitKey(event.target.value)}
+              >
+                {Object.entries(habitLabels).map(([key, label]) => (
+                  <option key={key} value={key}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            )}
+          </Field>
+          <Field label="Amount">
+            {(id) => (
+              <Input
+                id={id}
+                type="number"
+                inputMode="decimal"
+                min="0.01"
+                step="any"
+                className="numeric"
+                value={amount}
+                disabled={busy}
+                onChange={(event) => setAmount(event.target.value)}
+              />
+            )}
+          </Field>
+          {habit.isError && <p role="alert">Couldn’t save</p>}
+          <SubmitButton disabled={busy}>Log habit</SubmitButton>
+        </form>
+      </Sheet>
+    </>
+  );
+}
+
+type WorkoutDraft = { kind: string; minutes: string; rows: SetRow[] };
+const blankWorkout = (): WorkoutDraft => ({
+  kind: "strength",
+  minutes: "",
+  rows: [blankSet()],
+});
+
+function LogWorkout({ day, ...entry }: EntryProps & { day: string }) {
+  const [open, setOpen] = useState(false);
+  const [workout, setWorkout] = useState(blankWorkout);
+  const [send, setSend] = useState(() => withClientId(logActivity));
   const logWorkout = useEntryMutation(
     entry,
-    (draft: NonNullable<typeof workout>) =>
-      senders.workout({
+    (draft: WorkoutDraft) =>
+      send({
         kind: draft.kind.trim(),
         sets: draft.rows.map(setInput),
         ...(draft.minutes.trim() === ""
@@ -404,131 +815,75 @@ function LogControls({ day, ...entry }: EntryProps & { day: string }) {
               duration_minutes: Number(draft.minutes),
             }),
       }),
-    () => setWorkout(null),
+    () => setOpen(false),
   );
-  const busy =
-    !entry.online || quick.isPending || habit.isPending || logWorkout.isPending;
+  const busy = !entry.online || logWorkout.isPending;
   return (
-    <div className="log-controls">
-      <form aria-label="Quick log" onSubmit={(event) => event.preventDefault()}>
-        <label>
-          Minutes
-          <input
-            type="number"
-            min="1"
-            max="1440"
-            step="1"
-            value={minutes}
-            disabled={busy}
-            onChange={(event) => setMinutes(event.target.value)}
-          />
-        </label>
-        {quickKinds.map(([kind, label]) => (
-          <button
-            key={kind}
-            type="button"
-            disabled={busy || !(Number(minutes) >= 1)}
-            onClick={() => quick.mutate(kind)}
-          >
-            {label}
-          </button>
-        ))}
-      </form>
-      <form
-        aria-label="Log habit"
-        onSubmit={(event) => {
-          event.preventDefault();
-          habit.mutate(undefined);
+    <>
+      <LogButton
+        disabled={!entry.online}
+        open={() => {
+          // A fresh draft is a new workout, so it must not replay an earlier client id.
+          setWorkout(blankWorkout());
+          setSend(() => withClientId(logActivity));
+          logWorkout.reset();
+          setOpen(true);
         }}
       >
-        <select
-          aria-label="Habit"
-          value={habitKey}
-          disabled={busy}
-          onChange={(event) => setHabitKey(event.target.value)}
-        >
-          {Object.entries(habitLabels).map(([key, label]) => (
-            <option key={key} value={key}>
-              {label}
-            </option>
-          ))}
-        </select>
-        <label>
-          Amount
-          <input
-            type="number"
-            min="0.01"
-            step="any"
-            value={amount}
-            disabled={busy}
-            onChange={(event) => setAmount(event.target.value)}
-          />
-        </label>
-        <button type="submit" disabled={busy}>
-          Log habit
-        </button>
-      </form>
-      {workout === null ? (
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() =>
-            setWorkout({ kind: "strength", minutes: "", rows: [blankSet()] })
-          }
-        >
-          Log workout
-        </button>
-      ) : (
+        Log workout
+      </LogButton>
+      <Sheet open={open} onOpenChange={setOpen} title="Log workout">
         <form
-          aria-label="Log workout"
+          className="body-form"
           onSubmit={(event) => {
             event.preventDefault();
             logWorkout.mutate(workout);
           }}
         >
-          <label>
-            Kind
-            <input
-              required
-              maxLength={60}
-              value={workout.kind}
-              disabled={busy}
-              onChange={(event) =>
-                setWorkout({ ...workout, kind: event.target.value })
-              }
-            />
-          </label>
-          <label>
-            Minutes, blank if unknown
-            <input
-              type="number"
-              min="1"
-              max="1440"
-              step="1"
-              value={workout.minutes}
-              disabled={busy}
-              onChange={(event) =>
-                setWorkout({ ...workout, minutes: event.target.value })
-              }
-            />
-          </label>
+          <div className="body-pair">
+            <Field label="Kind">
+              {(id) => (
+                <Input
+                  id={id}
+                  required
+                  maxLength={60}
+                  value={workout.kind}
+                  disabled={busy}
+                  onChange={(event) =>
+                    setWorkout({ ...workout, kind: event.target.value })
+                  }
+                />
+              )}
+            </Field>
+            <Field label="Minutes, blank if unknown">
+              {(id) => (
+                <Input
+                  id={id}
+                  type="number"
+                  inputMode="numeric"
+                  min="1"
+                  max="1440"
+                  step="1"
+                  className="numeric"
+                  value={workout.minutes}
+                  disabled={busy}
+                  onChange={(event) =>
+                    setWorkout({ ...workout, minutes: event.target.value })
+                  }
+                />
+              )}
+            </Field>
+          </div>
           <SetFields
             rows={workout.rows}
             setRows={(rows) => setWorkout({ ...workout, rows })}
             disabled={busy}
           />
-          <button type="submit" disabled={busy}>
-            Save
-          </button>
-          <button type="button" onClick={() => setWorkout(null)}>
-            Cancel
-          </button>
+          {logWorkout.isError && <p role="alert">Couldn’t save</p>}
+          <SubmitButton disabled={busy}>Log workout</SubmitButton>
         </form>
-      )}
-      {(quick.isError || habit.isError || logWorkout.isError) && (
-        <p role="alert">Couldn’t save</p>
-      )}
-    </div>
+      </Sheet>
+    </>
   );
 }
 
