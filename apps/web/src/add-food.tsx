@@ -91,6 +91,7 @@ export function AddFood({ person, replay, online }: Props) {
         onValueChange={(next) => {
           setTab(next);
           setManual(null);
+          setLogged("");
         }}
         className="gap-0"
       >
@@ -102,7 +103,7 @@ export function AddFood({ person, replay, online }: Props) {
             <TabsTrigger
               key={title}
               value={title.toLowerCase().replace(" ", "-")}
-              className="min-h-11 py-2.5 group-data-[orientation=horizontal]/tabs:after:bottom-[-1px]"
+              className="min-h-11 py-2.5 duration-(--motion-tab) group-data-[orientation=horizontal]/tabs:after:bottom-[-1px] after:duration-(--motion-tab)"
             >
               {title}
             </TabsTrigger>
@@ -281,7 +282,7 @@ function RowSkeleton() {
   return (
     <div
       aria-hidden="true"
-      className="h-[116px] animate-pulse rounded-(--radius) bg-bg-sunk"
+      className="h-[116px] motion-safe:animate-pulse rounded-(--radius) bg-bg-sunk"
     />
   );
 }
