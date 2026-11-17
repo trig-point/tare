@@ -53,6 +53,8 @@ const kindLabels: Record<string, string> = {
   order_delivery_date: "Delivery date",
   order_review: "Order review",
   order_manual_entry: "Order entry",
+  scale_implausible: "Scale reading",
+  scale_unmapped: "Scale user",
 };
 const kindLabel = (question: Question) =>
   kindLabels[question.kind] ?? "Question";
@@ -68,13 +70,21 @@ export function QuestionList({
   failed: boolean;
   online: boolean;
 }) {
-  const [sheet, setSheet] = useState<{ start: number } | null>(null);
+  // The deck stays mounted while closed so the sheet keeps its content as it slides out.
+  const [sheet, setSheet] = useState({ open: false, start: 0, round: 0 });
+  const openSheet = (start: number) =>
+    setSheet((current) => ({ open: true, start, round: current.round + 1 }));
+  const closeSheet = () => setSheet((current) => ({ ...current, open: false }));
   const autoOpened = useRef(false);
   const first = questions?.[0];
   useEffect(() => {
     if (first && !autoOpened.current) {
       autoOpened.current = true;
-      setSheet({ start: first.id });
+      setSheet((current) => ({
+        open: true,
+        start: first.id,
+        round: current.round + 1,
+      }));
     }
   }, [first]);
   const count = questions?.length ?? 0;
@@ -82,7 +92,7 @@ export function QuestionList({
     <section aria-label="Questions" className="questions-page">
       <div className="questions-head">
         <h1>Questions</h1>
-        <p>
+        <p hidden={!questions && failed}>
           {questions
             ? count > 0
               ? `${count} waiting`
@@ -98,7 +108,7 @@ export function QuestionList({
           <Button
             className="questions-open w-full active:scale-[0.98]"
             size="lg"
-            onClick={() => setSheet({ start: questions[0]?.id ?? 0 })}
+            onClick={() => openSheet(questions[0]?.id ?? 0)}
           >
             Answer questions
           </Button>
@@ -108,7 +118,7 @@ export function QuestionList({
                 <button
                   type="button"
                   data-slot="row"
-                  onClick={() => setSheet({ start: question.id })}
+                  onClick={() => openSheet(question.id)}
                 >
                   <span className="questions-kind">{kindLabel(question)}</span>
                   <span className="questions-prompt">{question.prompt}</span>
@@ -121,9 +131,9 @@ export function QuestionList({
         </>
       )}
       <Dialog
-        open={sheet !== null && questions !== undefined}
+        open={sheet.open && questions !== undefined}
         onOpenChange={(open) => {
-          if (!open) setSheet(null);
+          if (!open) closeSheet();
         }}
       >
         <DialogContent
@@ -149,13 +159,14 @@ export function QuestionList({
               </Button>
             </DialogClose>
           </div>
-          {sheet && questions && (
+          {sheet.round > 0 && questions && (
             <QuestionDeck
+              key={sheet.round}
               person={person}
               questions={questions}
               online={online}
               start={sheet.start}
-              onClose={() => setSheet(null)}
+              onClose={closeSheet}
             />
           )}
         </DialogContent>
@@ -170,11 +181,23 @@ export function deckPosition(
   open: ReadonlySet<number>,
   cursor: number,
 ) {
-  for (let index = Math.max(0, cursor); index < order.length; index++) {
+  for (let index = cursor; index < order.length; index++) {
     const id = order[index];
     if (id !== undefined && open.has(id)) return index;
   }
   return order.length;
+}
+
+/** The round so far plus any newly open questions; answered ones stay so positions never shift. */
+export function extendRound(round: number[], open: number[]) {
+  const arrived = open.filter((id) => !round.includes(id));
+  return arrived.length > 0 ? [...round, ...arrived] : round;
+}
+
+/** Open question ids starting at the chosen one, so earlier ones come last instead of counting as skipped. */
+export function startRound(open: number[], start: number) {
+  const index = Math.max(0, open.indexOf(start));
+  return [...open.slice(index), ...open.slice(0, index)];
 }
 
 export function QuestionDeck({
@@ -190,12 +213,12 @@ export function QuestionDeck({
   start: number;
   onClose: () => void;
 }) {
-  const [seen, setSeen] = useState(() => questions.map(({ id }) => id));
-  const [cursor, setCursor] = useState(() => Math.max(0, seen.indexOf(start)));
-  const openIds = new Set(questions.map(({ id }) => id));
-  // Questions that arrive while the sheet is open join the end of the round.
-  const order = [...seen, ...[...openIds].filter((id) => !seen.includes(id))];
-  const position = deckPosition(order, openIds, cursor);
+  const ids = questions.map(({ id }) => id);
+  const [round, setRound] = useState(() => startRound(ids, start));
+  const [cursor, setCursor] = useState(0);
+  const order = extendRound(round, ids);
+  if (order !== round) setRound(order);
+  const position = deckPosition(order, new Set(ids), cursor);
   const question = questions.find(({ id }) => id === order[position]);
   const next = () => setCursor(position + 1);
 
@@ -210,7 +233,7 @@ export function QuestionDeck({
               variant="outline"
               className="active:scale-[0.98]"
               onClick={() => {
-                setSeen(questions.map(({ id }) => id));
+                setRound(ids);
                 setCursor(0);
               }}
             >
@@ -315,6 +338,21 @@ function QuestionForm({
         />
       ) : question.kind === "order_delivery_date" ? (
         <DateForm question={question} answer={answer} disabled={disabled} />
+      ) : question.kind === "scale_implausible" ? (
+        <Choices
+          disabled={disabled}
+          choices={[
+            ["Keep", { keep: true }],
+            ["Discard", { keep: false }],
+          ]}
+          answer={answer}
+        />
+      ) : question.kind === "scale_unmapped" ? (
+        <Choices
+          disabled={disabled}
+          choices={[["Got it", { acknowledged: true }]]}
+          answer={answer}
+        />
       ) : advisory(question) ? (
         <Choices
           disabled={disabled}

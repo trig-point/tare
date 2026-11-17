@@ -16,9 +16,8 @@ import {
 import { test } from "./support.mts";
 import "./tsx.mts";
 
-const { QuestionList, QuestionDeck, deckPosition } = await import(
-  "../src/questions.tsx"
-);
+const { QuestionList, QuestionDeck, deckPosition, extendRound, startRound } =
+  await import("../src/questions.tsx");
 const signal = new AbortController().signal;
 
 async function withMeals(context: Parameters<typeof twoUsers>[0]) {
@@ -87,6 +86,16 @@ test("the questions page shows the waiting count or an empty state", async (cont
   assert.match(markup, /Enter label values for Example bowl/);
   assert.match(render(person, []), /No open questions/);
   assert.doesNotMatch(render(person, []), /waiting/);
+  const failed = withClient(
+    createElement(QuestionList, {
+      person,
+      questions: undefined,
+      failed: true,
+      online: true,
+    }),
+  );
+  assert.match(failed, /Couldn’t load questions/);
+  assert.match(failed, /<p hidden="">Loading\.\.\.<\/p>/);
 });
 
 test("the nutrition form submits, closes the question and adds the food", async (context) => {
@@ -128,10 +137,12 @@ test("the sheet shows one question at a time with its answer controls and Skip",
     question(5, "order_delivery_date"),
     question(6, "order_review", { mode: "advisory" }),
     question(7, "order_review", { mode: "blocking" }),
+    question(8, "scale_implausible"),
+    question(9, "scale_unmapped"),
   ];
   const controls = (start: number) =>
     deck(questions, start).match(
-      /type="(date|number)"|>(Save and next|Process email|Discard|Accept|Ignore|Looks right|Answer this one with your agent\.)</g,
+      /type="(date|number)"|>(Save and next|Process email|Discard|Accept|Ignore|Looks right|Keep|Got it|Answer this one with your agent\.)</g,
     );
   const cases: [number, string[]][] = [
     [1, [...Array(5).fill('type="number"'), ">Save and next<"]],
@@ -141,23 +152,27 @@ test("the sheet shows one question at a time with its answer controls and Skip",
     [5, ['type="date"', ">Save and next<"]],
     [6, [">Looks right<"]],
     [7, [">Answer this one with your agent.<"]],
+    [8, [">Keep<", ">Discard<"]],
+    [9, [">Got it<"]],
   ];
   for (const [start, expected] of cases) {
     assert.deepEqual(controls(start), expected, `question ${start}`);
     const markup = deck(questions, start);
-    assert.match(markup, new RegExp(`>${start} of 7<`));
+    assert.match(markup, />1 of 9</);
     assert.equal(markup.match(/<article/g)?.length, 1);
     assert.match(markup, />Skip for now</);
     assert.doesNotMatch(markup, /textarea|JSON/);
   }
 });
 
-test("the deck moves past answered questions and ends after the last", () => {
-  const order = [10, 11, 12];
-  assert.equal(deckPosition(order, new Set([10, 11, 12]), 0), 0);
-  assert.equal(deckPosition(order, new Set([12]), 0), 2);
-  assert.equal(deckPosition(order, new Set([10, 11]), 2), 3);
-  assert.equal(deckPosition(order, new Set(), -1), 3);
-  assert.equal(deckPosition([], new Set([1]), 0), 0);
+test("a round starts at the chosen question and keeps answered ones in place", () => {
+  assert.deepEqual(startRound([10, 11, 12], 11), [11, 12, 10]);
+  assert.deepEqual(startRound([10, 11, 12], 99), [10, 11, 12]);
+  // Answering 10 opened 11 and 12; answering 11 must still lead to 12.
+  const round = extendRound([10], [11, 12]);
+  assert.deepEqual(round, [10, 11, 12]);
+  assert.equal(extendRound(round, [12]), round);
+  assert.equal(deckPosition(round, new Set([12]), 2), 2);
+  assert.equal(deckPosition(round, new Set([10, 11]), 2), 3);
   assert.match(deck([], 0), />All caught up</);
 });
