@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import type { TestContext } from "node:test";
+import { after, type TestContext } from "node:test";
 import type { Config } from "../src/config.ts";
 import { writeTransaction } from "../src/db.ts";
 import { createOrderEmailParseJob } from "../src/inbound/job.ts";
@@ -53,7 +53,7 @@ const emailServices = {
   kit: { senders: ["orders@kit.example.com"], dkim_domains: [] },
 };
 async function setup(
-  context: TestContext,
+  context: Pick<TestContext, "after">,
   services: Config["orderEmailServices"] = emailServices,
 ) {
   const fixture = await twoUsers(context, "fallback");
@@ -158,6 +158,12 @@ async function setup(
     now = value;
     fixture.setNow(value);
   };
+  const reset = () => {
+    database.exec(
+      "DELETE FROM questions; DELETE FROM order_meals; DELETE FROM orders; DELETE FROM inbound_emails",
+    );
+    setNow("2026-01-01T00:00:00.000Z");
+  };
   return {
     ...fixture,
     clock,
@@ -172,8 +178,19 @@ async function setup(
     answerOk,
     release,
     setNow,
+    reset,
   };
 }
+// Each fixture costs four scrypt derivations, so the many-case tests share one and reset between cases.
+const closers: (() => void)[] = [];
+after(() => {
+  for (const close of closers) close();
+});
+let shared: ReturnType<typeof setup> | undefined;
+const sharedSetup = () => {
+  shared ??= setup({ after: (close: () => void) => void closers.push(close) });
+  return shared;
+};
 
 test("chef carry-over, merged identities and ownership", async (context) => {
   const { database, member, seed, run, meals, setNow, question } =
@@ -443,10 +460,11 @@ test("day-start changes and late lists preserve eaten stock; zero meals are hidd
   );
 });
 
-test("late acceptance creates once or commits a superseded answer after a collision", async (context) => {
+test("late acceptance creates once or commits a superseded answer after a collision", async () => {
   for (const collision of ["none", "due", "future"]) {
-    const fixture = await setup(context);
+    const fixture = await sharedSetup();
     const { database, seed, run, question, answer } = fixture;
+    fixture.reset();
     fixture.setNow("2026-01-03T00:00:00.000Z");
     const lateList = parse(4, "processed");
     lateList.meals[0].chef = field(null);
@@ -473,89 +491,120 @@ test("late acceptance creates once or commits a superseded answer after a collis
   }
 });
 
-test("all sequences of up to three emails, including released and manually entered lists, match precedence while not due", async (context) => {
-  const fixture = await setup(context);
-  const { answerOk, database, seed, run, admin, setNow, order, question } =
-    fixture;
-  const reset = () =>
-    database.exec(
-      "DELETE FROM questions; DELETE FROM order_meals; DELETE FROM orders; DELETE FROM inbound_emails",
-    );
+const sequences: number[][] = [[]];
+for (let length = 1; length <= 3; length++)
+  for (const prefix of sequences.filter(
+    (sequence) => sequence.length === length - 1,
+  ))
+    for (const variant of [0, 1, 2, 3, 4, 5])
+      sequences.push([...prefix, variant]);
+const firstVariants = [
+  "a scheduling list",
+  "a processed list",
+  "a dateless list",
+  "a list without a quantity",
+  "a held list that is released",
+  "a manually entered list",
+];
+const sequenceFixture = async () => {
+  const fixture = await sharedSetup();
   const onHand = () =>
-    listMealsOnHand(database, admin.user, "2026-01-02T00:00:00.000Z").map(
-      (meal) => meal.quantity,
+    listMealsOnHand(
+      fixture.database,
+      fixture.admin.user,
+      "2026-01-02T00:00:00.000Z",
+    ).map((meal) => meal.quantity);
+  return { ...fixture, onHand };
+};
+for (const [firstVariant, firstName] of firstVariants.entries())
+  test(`sequences of up to three emails starting with ${firstName} match precedence while not due`, async () => {
+    const fixture = await sequenceFixture();
+    const {
+      answerOk,
+      database,
+      seed,
+      run,
+      admin,
+      setNow,
+      order,
+      question,
+      reset,
+      onHand,
+    } = fixture;
+    const group = sequences.filter(
+      (sequence) => (sequence[0] ?? 0) === firstVariant,
     );
-  const sequences: number[][] = [[]];
-  for (let length = 1; length <= 3; length++)
-    for (const prefix of sequences.filter(
-      (sequence) => sequence.length === length - 1,
-    ))
-      for (const variant of [0, 1, 2, 3, 4, 5])
-        sequences.push([...prefix, variant]);
-  for (const sequence of sequences)
-    for (let dueAfter = 0; dueAfter <= sequence.length; dueAfter++) {
-      reset();
-      const emails: { processed: boolean; quantity: number; id: number }[] = [];
-      for (const [index, variant] of sequence.entries()) {
-        setNow(
-          index >= dueAfter
-            ? "2026-01-02T00:00:00.000Z"
-            : "2026-01-01T00:00:00.000Z",
-        );
-        const processed = variant > 0,
-          quantity = variant + 1 + 3 * index;
-        const result = parse(
-          variant === 3 ? null : quantity,
-          processed ? "processed" : "scheduling",
-          variant === 2 ? null : "2026-01-02",
-        );
-        const email = seed(
-          variant === 5 ? { status: "no_model" } : result,
-          admin,
-          variant === 4 ? "held" : variant === 5 ? "no_model" : "parsed",
-        );
-        if (variant === 4) {
-          await fixture.release(email);
-          database
-            .prepare(
-              "UPDATE inbound_emails SET parse_state = 'parsed' WHERE id = ?",
-            )
-            .run(email.id);
+    assert.equal(sequences.length, 259);
+    assert.equal(group.length, firstVariant === 0 ? 44 : 43);
+    for (const sequence of group)
+      for (let dueAfter = 0; dueAfter <= sequence.length; dueAfter++) {
+        reset();
+        const emails: { processed: boolean; quantity: number; id: number }[] =
+          [];
+        for (const [index, variant] of sequence.entries()) {
+          setNow(
+            index >= dueAfter
+              ? "2026-01-02T00:00:00.000Z"
+              : "2026-01-01T00:00:00.000Z",
+          );
+          const processed = variant > 0,
+            quantity = variant + 1 + 3 * index;
+          const result = parse(
+            variant === 3 ? null : quantity,
+            processed ? "processed" : "scheduling",
+            variant === 2 ? null : "2026-01-02",
+          );
+          const email = seed(
+            variant === 5 ? { status: "no_model" } : result,
+            admin,
+            variant === 4 ? "held" : variant === 5 ? "no_model" : "parsed",
+          );
+          if (variant === 4) {
+            await fixture.release(email);
+            database
+              .prepare(
+                "UPDATE inbound_emails SET parse_state = 'parsed' WHERE id = ?",
+              )
+              .run(email.id);
+          }
+          run(email);
+          if (variant === 5)
+            await answerOk(question(email, "order_manual_entry").id, {
+              service: "kit",
+              kind: "processed",
+              delivery_date: "2026-01-02",
+              meals: [{ name: "Garden Bowl", chef: "Example chef", quantity }],
+            });
+          if (variant === 2 && (index === 0 || index >= dueAfter))
+            await answerOk(question(email, "order_delivery_date").id, {
+              delivery_date: "2026-01-02",
+            });
+          if (variant === 3 && (index < dueAfter || dueAfter === 0))
+            await answerOk(question(email, "order_review").id, {
+              meals: [{ source_index: 0, quantity }],
+            });
+          emails.push({ processed, quantity, id: email.id });
         }
-        run(email);
-        if (variant === 5)
-          await answerOk(question(email, "order_manual_entry").id, {
-            service: "kit",
-            kind: "processed",
-            delivery_date: "2026-01-02",
-            meals: [{ name: "Garden Bowl", chef: "Example chef", quantity }],
-          });
-        if (variant === 2 && (index === 0 || index >= dueAfter))
-          await answerOk(question(email, "order_delivery_date").id, {
-            delivery_date: "2026-01-02",
-          });
-        if (variant === 3 && (index < dueAfter || dueAfter === 0))
-          await answerOk(question(email, "order_review").id, {
-            meals: [{ source_index: 0, quantity }],
-          });
-        emails.push({ processed, quantity, id: email.id });
-      }
-      const candidates = emails.slice(0, dueAfter);
-      const winner =
-        candidates.filter((email) => email.processed).at(-1) ??
-        candidates.at(-1);
-      assert.deepEqual(onHand(), winner ? [winner.quantity] : []);
-      assert.equal(
-        database.prepare("SELECT id FROM orders").all().length,
-        winner ? 1 : 0,
-      );
-      if (winner)
-        assert.deepEqual(
-          [order().status, order().applied_email_id],
-          [winner.processed ? "processed" : "scheduled", winner.id],
+        const candidates = emails.slice(0, dueAfter);
+        const winner =
+          candidates.filter((email) => email.processed).at(-1) ??
+          candidates.at(-1);
+        assert.deepEqual(onHand(), winner ? [winner.quantity] : []);
+        assert.equal(
+          database.prepare("SELECT id FROM orders").all().length,
+          winner ? 1 : 0,
         );
-    }
-  assert.equal(sequences.length, 259);
+        if (winner)
+          assert.deepEqual(
+            [order().status, order().applied_email_id],
+            [winner.processed ? "processed" : "scheduled", winner.id],
+          );
+      }
+  });
+
+test("a review answer on an older email keeps the newer list", async () => {
+  const { answerOk, seed, run, setNow, question, reset, onHand } =
+    await sequenceFixture();
   reset();
   setNow("2026-01-01T00:00:00.000Z");
   const older = seed(parse(null));
@@ -639,10 +688,11 @@ test("blocking reviews accept full meal names and original-index fixes", async (
   }
 });
 
-test("advisory answers confirm, correct names, preserve revisions and commit supersession", async (context) => {
+test("advisory answers confirm, correct names, preserve revisions and commit supersession", async () => {
   for (const mode of ["confirm", "same", "name", "superseded", "due"]) {
-    const { answerOk, seed, run, question, answer, meals, setNow } =
-      await setup(context);
+    const { answerOk, seed, run, question, answer, meals, setNow, reset } =
+      await sharedSetup();
+    reset();
     const result = parse(2, "processed");
     result.dropped = ["meals[1]"];
     if (mode === "same") {
