@@ -202,7 +202,7 @@ test("two sources for one metric render only the preferred one, except burn, wit
     ],
     createElement(BodyCard, { person: 1, day, online: false }),
   );
-  assert.match(html, /<h2>Body<\/h2>/);
+  assert.match(html, /aria-label="Body"/);
   assert.match(
     html,
     /<dt>HRV<\/dt><dd>45 ms<\/dd><dd class="source">Oura<.*<dt>Steps<\/dt><dd>750<\/dd><dd class="source">Manual</s,
@@ -351,11 +351,22 @@ test("a paired workout shows once with its sets, and a date-only session shows t
   assert.match(html, /<strong>Evening alcohol<\/strong><span>2 · Manual/);
 });
 
-test("an empty day says nothing is logged and shows the log controls", () => {
+test("an empty day says nothing is logged and its log forms stay closed until tapped", () => {
   const html = renderBody({ ...dayResponse, activities: [], habits: [] });
   assert.match(html, /Nothing logged/);
   for (const control of ["Sauna", "Cold plunge", "Log habit", "Log workout"])
-    assert.match(html, new RegExp(`<button[^>]*>${control}<`));
+    assert.match(html, new RegExp(`<button[^>]*>(<svg.*?</svg>)?${control}<`));
+  assert.doesNotMatch(html, /<form|<input|Minutes/);
+});
+
+test("signals still loading show placeholder tiles online and nothing offline", () => {
+  const render = (online: boolean) =>
+    withData(
+      [],
+      createElement(BodyCard, { person: 1, day: activityDay, online }),
+    );
+  assert.match(render(true), /aria-busy="true"/);
+  assert.equal(render(false), "");
 });
 
 test("a quick-logged sauna appears in the day and today, plan and signals refresh", async (context) => {
