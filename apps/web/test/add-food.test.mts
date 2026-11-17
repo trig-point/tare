@@ -19,7 +19,7 @@ import "fake-indexeddb/auto";
 import { test } from "./support.mts";
 import "./tsx.mts";
 
-const { AddFood, CatalogMiss, OnlineMiss, usualFoods } = await import(
+const { AddFood, CatalogMiss, OnlineMiss, QuickAdd, usualFoods } = await import(
   "../src/add-food.tsx"
 );
 const onlineFood = {
@@ -253,6 +253,23 @@ test("usual foods list each food once, newest first, per serving", () => {
   assert.deepEqual(usualFoods([]), []);
 });
 
+function renderAddFood(
+  person: { id: number; username: string },
+  client: QueryClient,
+) {
+  return renderToStaticMarkup(
+    createElement(
+      QueryClientProvider,
+      { client },
+      createElement(AddFood, {
+        person,
+        replay: {} as OutboxReplay,
+        online: true,
+      }),
+    ),
+  );
+}
+
 test("add food opens on Search with usual foods before typing", async (context) => {
   const { admin } = await twoUsers(context, "fallback");
   context.mock.method(globalThis, "fetch", (path: string, init: RequestInit) =>
@@ -262,16 +279,12 @@ test("add food opens on Search with usual foods before typing", async (context) 
   const today = await readToday(new AbortController().signal);
   client.setQueryData(todayKey(admin.user.id), {
     ...today,
-    entries: [entry(1, { food_id: 5, name: "Example oats" })],
+    entries: [
+      entry(1, { food_id: 5, name: "Example oats" }),
+      entry(2, { food_id: 6, kcal: null }),
+    ],
   });
-  const replay = {} as OutboxReplay;
-  const html = renderToStaticMarkup(
-    createElement(
-      QueryClientProvider,
-      { client },
-      createElement(AddFood, { person: admin.user, replay, online: true }),
-    ),
-  );
+  const html = renderAddFood(admin.user, client);
   const tabs = [...html.matchAll(/role="tab"[^>]*>([^<]+)</g)].map(
     (match) => match[1],
   );
@@ -279,4 +292,36 @@ test("add food opens on Search with usual foods before typing", async (context) 
   assert.match(html, /Log again/);
   assert.match(html, /id="servings-food-5"[^>]*value="1"/);
   assert.match(html, /aria-label="Log Example oats"/);
+  assert.match(html, /Unknown kcal/);
+  const failed = new QueryClient({
+    defaultOptions: { queries: { retryOnMount: false } },
+  });
+  failed
+    .getQueryCache()
+    .build(failed, { queryKey: todayKey(admin.user.id) })
+    .setState({ status: "error", error: new Error("Unavailable") });
+  const failedHtml = renderAddFood(admin.user, failed);
+  assert.match(failedHtml, /role="alert">Couldn’t load today’s foods/);
+  assert.doesNotMatch(failedHtml, /Foods you log today show here/);
+});
+
+test("quick add requires calories only", () => {
+  const html = renderToStaticMarkup(
+    createElement(
+      QueryClientProvider,
+      { client: new QueryClient() },
+      createElement(QuickAdd, {
+        person: { id: 1, username: "example" },
+        replay: {} as OutboxReplay,
+        done: () => {},
+      }),
+    ),
+  );
+  const requiredFields = [
+    ...html.matchAll(/<input[^>]*id="quick-add-(\w+)"[^>]*>/g),
+  ]
+    .filter((match) => / required=""/.test(match[0]))
+    .map((match) => match[1]);
+  assert.deepEqual(requiredFields, ["kcal"]);
+  assert.match(html, /Fiber.*\(g, optional\)/);
 });

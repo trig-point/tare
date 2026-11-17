@@ -86,13 +86,23 @@ export function AddFood({ person, replay, online }: Props) {
           Add food
         </h1>
       </div>
-      <Tabs value={tab} onValueChange={setTab} className="gap-0">
-        <TabsList variant="line" className="w-full border-b border-border">
+      <Tabs
+        value={tab}
+        onValueChange={(next) => {
+          setTab(next);
+          setManual(null);
+        }}
+        className="gap-0"
+      >
+        <TabsList
+          variant="line"
+          className="w-full border-b border-border p-0 group-data-[orientation=horizontal]/tabs:h-auto"
+        >
           {["Search", "Scan", "Quick add"].map((title) => (
             <TabsTrigger
               key={title}
               value={title.toLowerCase().replace(" ", "-")}
-              className="pb-3"
+              className="min-h-11 py-2.5 group-data-[orientation=horizontal]/tabs:after:bottom-[-1px]"
             >
               {title}
             </TabsTrigger>
@@ -118,7 +128,15 @@ export function AddFood({ person, replay, online }: Props) {
           />
           {term === "" ? (
             <UsualFoods
-              loading={online && today.isPending}
+              state={
+                today.data
+                  ? "ready"
+                  : !online
+                    ? "offline"
+                    : today.isError
+                      ? "failed"
+                      : "loading"
+              }
               foods={usualFoods(today.data?.entries ?? [])}
               rows={rows}
             />
@@ -174,9 +192,7 @@ export function AddFood({ person, replay, online }: Props) {
             rows(barcode.data, "Barcode match")}
         </TabsContent>
         <TabsContent value="quick-add" className={panel}>
-          <NumbersForm
-            title="Quick add"
-            required={["kcal"]}
+          <QuickAdd
             person={person}
             replay={replay}
             done={() => setLogged("Logged Quick add")}
@@ -190,9 +206,9 @@ export function AddFood({ person, replay, online }: Props) {
           initialName={manual}
           person={person}
           replay={replay}
-          done={() => {
+          done={(saved) => {
             setManual(null);
-            onLogged(manual.trim() || "food");
+            onLogged(saved);
           }}
         />
       )}
@@ -231,19 +247,23 @@ export function usualFoods(entries: Intake[]): FoodChoice[] {
 }
 
 function UsualFoods({
-  loading,
+  state,
   foods,
   rows,
 }: {
-  loading: boolean;
+  state: "loading" | "failed" | "offline" | "ready";
   foods: FoodChoice[];
   rows: (foods: FoodChoice[], label: string) => ReactNode;
 }) {
   return (
     <div className="grid gap-1 pt-2">
       <h2 className="m-0 text-(length:--step-1) font-semibold">Log again</h2>
-      {loading ? (
+      {state === "loading" ? (
         <RowSkeleton />
+      ) : state === "failed" ? (
+        <p role="alert">Couldn’t load today’s foods</p>
+      ) : state === "offline" ? (
+        <p className={hint}>Unavailable offline</p>
       ) : foods.length === 0 ? (
         <p className={hint}>Foods you log today show here</p>
       ) : (
@@ -301,34 +321,45 @@ function FoodRow({
   const log = useMutation({
     networkMode: "always",
     mutationFn: () => enqueueFood(replay, person, food, servings),
-    onSuccess: () => onLogged(food.name),
+    onSuccess: () => {
+      setServings("1");
+      onLogged(food.name);
+    },
   });
   const id = `servings-${food.reference.kind}-${food.reference.id}`;
-  const amount = (value: number | null, unit: string) =>
-    value === null ? null : (
-      <span className="numeric">{`${displayNumber(value)} ${unit}`}</span>
-    );
   const details = [
     food.brand,
     food.serving,
-    amount(food.kcal, "kcal"),
-    food.protein_g === null ? null : <>{amount(food.protein_g, "g")} protein</>,
+    food.kcal === null ? (
+      "Unknown kcal"
+    ) : (
+      <span
+        key="kcal"
+        className="numeric"
+      >{`${displayNumber(food.kcal)} kcal`}</span>
+    ),
+    food.protein_g === null ? (
+      "Unknown protein"
+    ) : (
+      <Fragment key="protein">
+        <span className="numeric">{`${displayNumber(food.protein_g)} g`}</span>{" "}
+        protein
+      </Fragment>
+    ),
   ].filter((part) => part !== null);
   return (
     <li className="grid gap-2 border-b border-border py-3 last:border-b-0">
       <div className="min-w-0 [overflow-wrap:anywhere]">
         <strong className="block font-medium">{food.name}</strong>
-        {details.length > 0 && (
-          <p className={cn(hint, "m-0 mt-1")}>
-            {details.map((part, index) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: parts are fixed in order
-              <Fragment key={index}>
-                {index > 0 && " / "}
-                {part}
-              </Fragment>
-            ))}
-          </p>
-        )}
+        <p className={cn(hint, "m-0 mt-1")}>
+          {details.map((part, index) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: parts are fixed in order
+            <Fragment key={index}>
+              {index > 0 && " / "}
+              {part}
+            </Fragment>
+          ))}
+        </p>
       </div>
       <div className="flex items-center gap-2">
         <label htmlFor={id} className={hint}>
@@ -408,6 +439,14 @@ const fieldNames: Record<Nutrient, [string, string]> = {
   fiber_g: ["Fiber", "g"],
 };
 
+export function QuickAdd(props: {
+  person: Session["user"];
+  replay: OutboxReplay;
+  done: () => void;
+}) {
+  return <NumbersForm title="Quick add" required={["kcal"]} {...props} />;
+}
+
 function NumbersForm({
   title,
   initialName,
@@ -421,24 +460,18 @@ function NumbersForm({
   required?: Nutrient[];
   person: Session["user"];
   replay: OutboxReplay;
-  done: () => void;
+  done: (saved: string) => void;
 }) {
   const empty = () => Object.fromEntries(nutrients.map((key) => [key, ""]));
   const [name, setName] = useState(initialName ?? "");
   const [values, setValues] = useState<Record<string, string>>(empty);
+  const saved = initialName === undefined ? title : name;
   const save = useMutation({
     networkMode: "always",
-    mutationFn: () =>
-      enqueueNumbers(
-        replay,
-        person,
-        initialName === undefined ? title : name,
-        values,
-        required,
-      ),
+    mutationFn: () => enqueueNumbers(replay, person, saved, values, required),
     onSuccess: () => {
       setValues(empty());
-      done();
+      done(saved.trim());
     },
   });
   const prefix = title.toLowerCase().replace(" ", "-");
