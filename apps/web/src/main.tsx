@@ -31,7 +31,7 @@ import { OutboxSession } from "./outbox-session.ts";
 import { openOutboxStore, type QueueEntry } from "./outbox-store.ts";
 import { outboxView } from "./outbox-view.ts";
 import { PantrySection } from "./pantry.tsx";
-import { ProfileSection, WeightChart } from "./profile.tsx";
+import { ProfileSection, WeightChart, WeightForm } from "./profile.tsx";
 import { Questions } from "./questions.tsx";
 import { questionsKey, readQuestions } from "./questions-api.ts";
 import { AccountRow, AccountSettings } from "./settings.tsx";
@@ -41,7 +41,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "./shared/ui/index.ts";
-import { Today, useSettledRefresh, WeightForm } from "./today.tsx";
+import { Today, useSettledRefresh } from "./today.tsx";
 import { UpdateNotice } from "./update-notice.tsx";
 import "./style.css";
 
@@ -255,7 +255,7 @@ function PantryScreen() {
 function YouScreen() {
   const { runtime, session, online } = useApp();
   return (
-    <section aria-label="You">
+    <section aria-label="You" className="you-screen p-0">
       <div className="page-head">
         <h1>You</h1>
         <Link to="/settings" className="button">
@@ -263,10 +263,21 @@ function YouScreen() {
           Settings
         </Link>
       </div>
-      <WeightForm person={session.user} replay={runtime.queue} />
-      <WeightChart person={session.user.id} online={online} />
-      <BodyFatCard person={session.user.id} online={online} />
-      <ProfileSection person={session.user.id} online={online} />
+      <div className="you-grid">
+        <div className="you-weight">
+          <WeightChart
+            person={session.user.id}
+            online={online}
+            entry={<WeightForm person={session.user} replay={runtime.queue} />}
+          />
+        </div>
+        <div className="you-body-fat">
+          <BodyFatCard person={session.user.id} online={online} />
+        </div>
+        <div className="you-profile">
+          <ProfileSection person={session.user.id} online={online} />
+        </div>
+      </div>
     </section>
   );
 }

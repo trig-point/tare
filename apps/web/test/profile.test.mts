@@ -7,6 +7,7 @@ import { twoUsers } from "../../../packages/engine/test/support/two-users.ts";
 import {
   chartData,
   historyKey,
+  profileKey,
   profileValues,
   readHistory,
   readProfile,
@@ -16,9 +17,13 @@ import { readToday } from "../src/today-api.ts";
 import { test } from "./support.mts";
 import "./tsx.mts";
 
-const { ProfileForm, TargetCard, WeightChart, watchColorScheme } = await import(
-  "../src/profile.tsx"
-);
+const {
+  ProfileForm,
+  ProfileSection,
+  TargetCard,
+  WeightChart,
+  watchColorScheme,
+} = await import("../src/profile.tsx");
 const signal = new AbortController().signal;
 const render = (
   node: ReactElement,
@@ -161,6 +166,66 @@ test("weight chart shows an empty state with no weigh-ins", async (context) => {
   ]);
   assert.match(chart, /No weigh-ins yet/);
   assert.doesNotMatch(chart, /weight-chart/);
+});
+
+test("weight section shows the latest weigh-in, the trend and weigh-ins newest first", () => {
+  const days = [
+    { day: "2025-06-01", reading_kg: 82, trend_kg: 82 },
+    { day: "2025-11-29", reading_kg: 81.9, trend_kg: 81.9 },
+    { day: "2025-11-30", reading_kg: 81.5, trend_kg: 81.8 },
+    { day: "2025-12-01", reading_kg: null, trend_kg: 81.7 },
+  ];
+  const chart = render(
+    createElement(WeightChart, { person: 1, online: true }),
+    [[historyKey(1), { days }]],
+  );
+  assert.match(chart, /81\.5 <small[^>]*>kg.*Weigh-in, Nov 30, 2025/s);
+  assert.match(chart, /81\.7 <small[^>]*>kg.*Trend/s);
+  assert.match(chart, /aria-pressed="true"[^>]*>3M</);
+  const rows = [...chart.matchAll(/<li[^>]*><span[^>]*>([\d.]+) kg/g)];
+  assert.deepEqual(
+    rows.map((match) => match[1]),
+    ["81.5", "81.9"],
+  );
+  assert.doesNotMatch(chart, />82 kg/);
+});
+
+test("a failed refetch keeps the loaded weights beside the error", () => {
+  const client = new QueryClient();
+  const days = [{ day: "2025-11-30", reading_kg: 81.5, trend_kg: 81.8 }];
+  client.setQueryData(historyKey(1), { days });
+  client
+    .getQueryCache()
+    .find({ queryKey: historyKey(1) })
+    ?.setState({ status: "error", error: new Error("refetch failed") });
+  const chart = renderToStaticMarkup(
+    createElement(
+      QueryClientProvider,
+      { client },
+      createElement(WeightChart, { person: 1, online: true }),
+    ),
+  );
+  assert.match(chart, /Couldn’t load weights/);
+  assert.match(chart, /81\.5 <small/);
+});
+
+test("profile summary lists the saved fields, or asks for a profile", () => {
+  const section = (profile: unknown) =>
+    render(createElement(ProfileSection, { person: 1, online: true }), [
+      [profileKey(1), profile],
+    ]);
+  const summary = section({
+    height_cm: 170,
+    birth_date: "1990-05-01",
+    sex: "female",
+    activity_level: "moderate",
+    goal_rate_kg_week: -0.5,
+    protein_factor: 1.6,
+  });
+  assert.match(summary, /170 cm<\/span> \/ Female \/ Moderate activity/);
+  for (const value of ["May 1, 1990", "-0.5 kg/week", "1.6 g/kg"])
+    assert.ok(summary.includes(value), value);
+  assert.match(section(null), /Add your profile to get a target/);
 });
 
 test("charts rebuild when the color scheme or data-theme changes, until stopped", () => {
