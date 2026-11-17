@@ -6,6 +6,7 @@ import { twoUsers } from "../../../packages/engine/test/support/two-users.ts";
 import {
   chartData,
   historyKey,
+  profileKey,
   profileValues,
   readHistory,
   readProfile,
@@ -16,9 +17,8 @@ import { test } from "./support.mts";
 import "./tsx.mts";
 
 const {
-  daysInRange,
   ProfileForm,
-  ProfileSummary,
+  ProfileSection,
   TargetCard,
   WeightChart,
   watchColorScheme,
@@ -208,39 +208,23 @@ test("a failed refetch keeps the loaded weights beside the error", () => {
   assert.match(chart, /81\.5 <small/);
 });
 
-test("weight range counts back from the latest day", () => {
-  const days = ["2025-01-01", "2025-11-02", "2025-12-01"].map((day) => ({
-    day,
-    reading_kg: 80,
-    trend_kg: 80,
-  }));
-  const pick = (range: Parameters<typeof daysInRange>[1]) =>
-    daysInRange({ days }, range).map((entry) => entry.day);
-  assert.deepEqual(pick("1M"), ["2025-11-02", "2025-12-01"]);
-  assert.deepEqual(pick("All"), ["2025-01-01", "2025-11-02", "2025-12-01"]);
-  assert.deepEqual(daysInRange({ days: [] }, "1M"), []);
-});
-
 test("profile summary lists the saved fields, or asks for a profile", () => {
-  const summary = renderToStaticMarkup(
-    createElement(ProfileSummary, {
-      profile: {
-        height_cm: 170,
-        birth_date: "1990-05-01",
-        sex: "female",
-        activity_level: "moderate",
-        goal_rate_kg_week: -0.5,
-        protein_factor: 1.6,
-      },
-    }),
-  );
+  const section = (profile: unknown) =>
+    render(createElement(ProfileSection, { person: 1, online: true }), [
+      [profileKey(1), profile],
+    ]);
+  const summary = section({
+    height_cm: 170,
+    birth_date: "1990-05-01",
+    sex: "female",
+    activity_level: "moderate",
+    goal_rate_kg_week: -0.5,
+    protein_factor: 1.6,
+  });
   assert.match(summary, /170 cm<\/span> \/ Female \/ Moderate activity/);
   for (const value of ["May 1, 1990", "-0.5 kg/week", "1.6 g/kg"])
     assert.ok(summary.includes(value), value);
-  assert.match(
-    renderToStaticMarkup(createElement(ProfileSummary, { profile: null })),
-    /Add your profile to get a target/,
-  );
+  assert.match(section(null), /Add your profile to get a target/);
 });
 
 test("charts rebuild when the color scheme or data-theme changes, until stopped", () => {

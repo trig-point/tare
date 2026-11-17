@@ -173,7 +173,7 @@ export function ProfileSection({
   );
 }
 
-export function ProfileSummary({ profile }: { profile: Profile | null }) {
+function ProfileSummary({ profile }: { profile: Profile | null }) {
   if (profile === null)
     return <p className={cn(hint, "m-0")}>Add your profile to get a target</p>;
   const details = [
@@ -334,7 +334,7 @@ export const weightRanges = [
 export type WeightRange = (typeof weightRanges)[number][0];
 
 /** The days within the range, counted back from the latest day so a pause in weigh-ins still shows data. */
-export function daysInRange(history: WeightHistory, range: WeightRange) {
+function daysInRange(history: WeightHistory, range: WeightRange) {
   const length = weightRanges.find(([name]) => name === range)?.[1] ?? null;
   const last = history.days.at(-1);
   if (length === null || !last) return history.days;

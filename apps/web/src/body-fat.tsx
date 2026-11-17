@@ -34,7 +34,7 @@ const keyOnly: Legend = { show: true, live: false };
 const hint = "m-0 text-sm text-ink-2";
 
 /** An after-workout reading gets the workout label, as on the chart, even when it is in the trend. */
-export function readingKind(reading: BodyFat["readings"][number]) {
+function readingKind(reading: BodyFat["readings"][number]) {
   if (reading.after_workout) return "After a workout";
   return reading.in_trend ? "In trend" : "Later weigh-in";
 }
@@ -71,12 +71,13 @@ export function BodyFatCard({
         <h2 className={sectionHead}>Body fat</h2>
         <span className={hint}>%</span>
       </div>
-      {bodyFat.isError ? (
+      {bodyFat.isError && (
         <p role="alert" className="m-0">
           Couldn’t load body fat
         </p>
-      ) : !data || !chart ? (
-        online ? (
+      )}
+      {!data || !chart ? (
+        bodyFat.isError ? null : online ? (
           <Skeleton label="Loading body fat" className="h-[30rem]" />
         ) : (
           <p className={hint}>Unavailable offline</p>
