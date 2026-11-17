@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, type ReactNode, useState } from "react";
 import { ApiError, type Session } from "./api.ts";
 import { refreshDays } from "./days-api.ts";
 import { ConnectedSources } from "./health.tsx";
+import { ouraKey, readOura } from "./health-api.ts";
 import {
   type Account,
   accountKey,
@@ -16,9 +17,13 @@ import {
   saveDaySettings,
   timezones,
 } from "./settings-api.ts";
+import { Button, cn } from "./shared/ui/index.ts";
 import { refreshToday } from "./today-api.ts";
+import "./settings.css";
 
 const hours = Array.from({ length: 24 }, (_unused, hour) => hour);
+const hourLabel = (hour: number) =>
+  `${hour % 12 === 0 ? 12 : hour % 12}:00 ${hour < 12 ? "AM" : "PM"}`;
 const failure = (error: unknown) =>
   error instanceof ApiError && error.status === 409
     ? "Already in use"
@@ -26,45 +31,103 @@ const failure = (error: unknown) =>
       ? "Check the details"
       : "Couldn’t save. Try again.";
 
+const press =
+  "transition-transform duration-(--motion-press) ease-move active:scale-[0.97]";
+const hint = "m-0 text-sm text-ink-2";
+const heading = "m-0 text-(length:--step-2) font-semibold tracking-tight";
+const row =
+  "flex min-h-16 items-center gap-3 border-b border-border py-3 [overflow-wrap:anywhere]";
+const quietDanger = cn(
+  press,
+  "min-h-11 px-3 text-needs-human hover:bg-bg-sunk hover:text-needs-human",
+);
+
 export function AccountSettings({
   session,
   online,
+  signOut,
 }: {
   session: Session;
   online: boolean;
+  signOut?: ReactNode;
 }) {
   const account = useQuery({
     queryKey: accountKey(session.user.id),
     queryFn: ({ signal }) => readAccount(signal),
     enabled: online,
   });
+  const loading = !account.data && !account.isError && online;
   return (
-    <section id="settings" aria-label="Settings">
-      <h2>Settings</h2>
+    <section id="settings" aria-label="Settings" className="settings-screen">
+      <div className="settings-head">
+        <h1>Settings</h1>
+        <p className={hint}>Account and connections</p>
+      </div>
       {account.isError && <p role="alert">Couldn’t load settings</p>}
-      {!account.data && !account.isError && (
-        <p>{online ? "Loading..." : "Settings unavailable offline"}</p>
+      {!account.data && !account.isError && !online && (
+        <p className={hint}>Settings unavailable offline</p>
       )}
-      {account.data && (
-        <>
-          <DayBoundaryForm account={account.data} online={online} />
-          <ConnectedSources
-            person={account.data.id}
-            timezone={account.data.timezone}
-            online={online}
-            callbackResult={new URLSearchParams(
-              globalThis.location?.search,
-            ).get("oura")}
-          />
-          {session.mode === "access" && (
-            <AgentMappings account={account.data} online={online} />
+      <div className="settings-grid">
+        <div className="settings-column">
+          {loading && <Skeleton label="Loading settings" className="h-72" />}
+          {account.data && (
+            <DayBoundaryForm account={account.data} online={online} />
           )}
-          {account.data.is_admin && session.mode === "access" && (
-            <MapClientIdForm person={account.data.id} online={online} />
-          )}
-        </>
-      )}
+          {signOut}
+        </div>
+        {(loading || account.data) && (
+          <div className="settings-column">
+            {loading && (
+              <>
+                <Skeleton label="Loading sources" className="h-20" />
+                {session.mode === "access" && <AgentsPlaceholder />}
+              </>
+            )}
+            {account.data && (
+              <>
+                <Sources account={account.data} online={online} />
+                {session.mode === "access" && (
+                  <AgentMappings account={account.data} online={online} />
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </div>
     </section>
+  );
+}
+
+function Sources({ account, online }: { account: Account; online: boolean }) {
+  // Shares ConnectedSources' query; both stay mounted so a failed read cannot remount and refetch.
+  const oura = useQuery({
+    queryKey: ouraKey(account.id),
+    queryFn: ({ signal }) => readOura(signal),
+    enabled: online,
+  });
+  return (
+    <>
+      {oura.isPending && online && (
+        <Skeleton label="Loading sources" className="h-20" />
+      )}
+      <ConnectedSources
+        person={account.id}
+        timezone={account.timezone}
+        online={online}
+        callbackResult={new URLSearchParams(globalThis.location?.search).get(
+          "oura",
+        )}
+      />
+    </>
+  );
+}
+
+function AgentsPlaceholder() {
+  return (
+    <div className="grid gap-1">
+      <h2 className={heading}>Agents</h2>
+      <Skeleton label="Loading agents" className="h-32" />
+    </div>
   );
 }
 
@@ -93,44 +156,97 @@ export function DayBoundaryForm({
     save.mutate();
   }
   return (
-    <form aria-label="Day boundary" onSubmit={submit}>
-      <label htmlFor="settings-timezone">Timezone</label>
-      <select
-        id="settings-timezone"
-        value={timezone}
-        onChange={(event) => {
-          save.reset();
-          setTimezone(event.target.value);
-        }}
-      >
-        {timezones(account.timezone).map((name) => (
-          <option key={name} value={name}>
-            {name}
-          </option>
-        ))}
-      </select>
-      <label htmlFor="settings-day-start">Day starts at</label>
-      <select
-        id="settings-day-start"
-        value={hour}
-        onChange={(event) => {
-          save.reset();
-          setHour(event.target.value);
-        }}
-      >
-        {hours.map((value) => (
-          <option key={value} value={value}>
-            {`${String(value).padStart(2, "0")}:00`}
-          </option>
-        ))}
-      </select>
-      <p>Applies to new entries</p>
-      <button type="submit" disabled={!online || save.isPending}>
-        {save.isPending ? "Saving..." : "Save"}
-      </button>
-      {save.isSuccess && <output>Saved</output>}
-      {save.isError && <p role="alert">{failure(save.error)}</p>}
+    <form
+      aria-label="Day boundary"
+      onSubmit={submit}
+      className="settings-day grid max-w-none gap-4"
+    >
+      <h2 className={heading}>Your day</h2>
+      <div className="grid gap-1.5">
+        <label htmlFor="settings-timezone">Timezone</label>
+        <select
+          id="settings-timezone"
+          className="m-0 min-h-11"
+          value={timezone}
+          onChange={(event) => {
+            save.reset();
+            setTimezone(event.target.value);
+          }}
+        >
+          {timezones(account.timezone).map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="grid gap-1.5">
+        <label htmlFor="settings-day-start">Day starts at</label>
+        <select
+          id="settings-day-start"
+          className="m-0 min-h-11"
+          value={hour}
+          onChange={(event) => {
+            save.reset();
+            setHour(event.target.value);
+          }}
+        >
+          {hours.map((value) => (
+            <option key={value} value={value}>
+              {hourLabel(value)}
+            </option>
+          ))}
+        </select>
+        <p className={cn(hint, "text-(length:--step--1)")}>
+          Applies to new entries
+        </p>
+      </div>
+      <div className="flex min-h-11 flex-wrap items-center gap-3">
+        <Button
+          type="submit"
+          className={cn(press, "min-h-11 px-5")}
+          disabled={!online || save.isPending}
+        >
+          {save.isPending ? "Saving..." : "Save"}
+        </Button>
+        {save.isSuccess && <output className="text-sm text-ok">Saved</output>}
+        {save.isError && (
+          <p role="alert" className="m-0 text-sm">
+            {failure(save.error)}
+          </p>
+        )}
+      </div>
     </form>
+  );
+}
+
+export function AccountRow({
+  session,
+  pending,
+  onSignOut,
+}: {
+  session: Session;
+  pending: boolean;
+  onSignOut: () => void;
+}) {
+  return (
+    <div className="settings-account flex items-center gap-3 border-t border-border pt-5">
+      <div className="grid min-w-0 flex-1 gap-0.5 [overflow-wrap:anywhere]">
+        <strong className="font-medium">{session.user.username}</strong>
+        <span className={hint}>
+          {session.mode === "access" ? "Cloudflare Access" : "Password sign-in"}
+        </span>
+      </div>
+      <Button
+        type="button"
+        variant="ghost"
+        className={quietDanger}
+        disabled={pending}
+        onClick={onSignOut}
+      >
+        {pending ? "Signing out..." : "Sign out"}
+      </Button>
+    </div>
   );
 }
 
@@ -147,9 +263,22 @@ function AgentMappings({
     enabled: online,
   });
   return (
-    <section aria-label="Agents">
-      <h3>Agents</h3>
+    <section aria-label="Agents" className="grid gap-1 p-0">
+      <h2 className={cn(heading, "flex items-center justify-between gap-3")}>
+        Agents
+        {mappings.data && mappings.data.length > 0 && (
+          <span className="numeric rounded-(--radius) bg-bg-sunk px-1.5 text-sm font-normal text-ink-2">
+            {mappings.data.length}
+          </span>
+        )}
+      </h2>
       {mappings.isError && <p role="alert">Couldn’t load agents</p>}
+      {mappings.isPending && online && (
+        <Skeleton label="Loading agents" className="h-32" />
+      )}
+      {mappings.isPending && !online && (
+        <p className={hint}>Unavailable offline</p>
+      )}
       {mappings.data && (
         <MappingList
           person={account.id}
@@ -179,39 +308,60 @@ export function MappingList({
     onSettled: () =>
       client.invalidateQueries({ queryKey: mappingsKey(person) }),
   });
-  if (mappings.length === 0) return <p>No agents</p>;
+  if (mappings.length === 0)
+    return <p className={cn(hint, "py-3")}>No agents</p>;
   return (
     <>
-      <ul className="entries">
+      <ul className="m-0 list-none p-0">
         {mappings.map((mapping) => (
-          <li key={mapping.id}>
-            <strong>{mapping.name}</strong>{" "}
-            {mapping.last_used_at === null ? (
-              <span>Never used</span>
-            ) : (
-              <span>
-                Last used{" "}
-                <time dateTime={mapping.last_used_at}>
-                  {new Date(mapping.last_used_at).toLocaleString([], {
-                    dateStyle: "medium",
-                    timeStyle: "short",
-                    timeZone: timezone,
-                  })}
-                </time>
-              </span>
-            )}{" "}
-            <button
+          <li key={mapping.id} className={row}>
+            <div className="grid min-w-0 flex-1 gap-0.5">
+              <strong className="font-medium">{mapping.name}</strong>
+              {mapping.last_used_at === null ? (
+                <span className={hint}>Never used</span>
+              ) : (
+                <span className={hint}>
+                  Last used{" "}
+                  <time dateTime={mapping.last_used_at}>
+                    {new Date(mapping.last_used_at).toLocaleString([], {
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                      timeZone: timezone,
+                    })}
+                  </time>
+                </span>
+              )}
+            </div>
+            <Button
               type="button"
+              variant="ghost"
+              className={quietDanger}
+              aria-label={`Remove ${mapping.name}`}
               disabled={!online || remove.isPending}
               onClick={() => remove.mutate(mapping.id)}
             >
               Remove
-            </button>
+            </Button>
           </li>
         ))}
       </ul>
       {remove.isError && <p role="alert">Couldn’t remove. Try again.</p>}
     </>
+  );
+}
+
+function Skeleton({ label, className }: { label: string; className: string }) {
+  return (
+    <div aria-busy="true" className="grid">
+      <span className="sr-only">{label}</span>
+      <div
+        aria-hidden="true"
+        className={cn(
+          "motion-safe:animate-pulse rounded-(--radius) bg-bg-sunk",
+          className,
+        )}
+      />
+    </div>
   );
 }
 
@@ -277,6 +427,7 @@ export function AddUserForm({
   );
 }
 
+// Mapping Client IDs is cut from V1 (single person); kept for later, not rendered.
 export function MapClientIdForm({
   person,
   online,
