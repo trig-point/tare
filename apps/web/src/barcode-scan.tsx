@@ -1,3 +1,4 @@
+import { ScanBarcode } from "lucide-react";
 import { type RefObject, useEffect, useRef, useState } from "react";
 import wasmUrl from "zxing-wasm/reader/zxing_reader.wasm?url";
 import {
@@ -10,6 +11,10 @@ import {
   type ScanProblem,
   scanMessages,
 } from "./barcode.ts";
+import { Button, Input } from "./shared/ui/index.ts";
+
+const press =
+  "transition-transform duration-(--motion-press) ease-move active:scale-[0.97]";
 
 type Props = { online: boolean; onCode: (code: string) => void };
 
@@ -122,44 +127,73 @@ export function ScannerPanel(props: {
   submit: () => void;
 }) {
   return (
-    <div className="scanner">
-      {props.scanning ? (
-        <button type="button" onClick={props.stop}>
-          Stop scanning
-        </button>
-      ) : (
-        <button type="button" onClick={props.start}>
-          Scan barcode
-        </button>
-      )}
-      {props.scanning && props.torch && (
-        <button type="button" onClick={props.toggleTorch}>
-          {props.torchOn ? "Torch off" : "Torch on"}
-        </button>
-      )}
-      <video ref={props.video} hidden={!props.scanning} muted playsInline />
+    <div className="scanner grid gap-3">
+      <div className="flex flex-wrap gap-2">
+        {props.scanning ? (
+          <Button
+            type="button"
+            variant="secondary"
+            className={press}
+            onClick={props.stop}
+          >
+            Stop scanning
+          </Button>
+        ) : (
+          <Button type="button" className={press} onClick={props.start}>
+            <ScanBarcode aria-hidden="true" />
+            Scan barcode
+          </Button>
+        )}
+        {props.scanning && props.torch && (
+          <Button
+            type="button"
+            variant="outline"
+            className={press}
+            onClick={props.toggleTorch}
+          >
+            {props.torchOn ? "Torch off" : "Torch on"}
+          </Button>
+        )}
+      </div>
+      <video
+        ref={props.video}
+        hidden={!props.scanning}
+        muted
+        playsInline
+        className="rounded-(--radius) bg-bg-sunk"
+      />
       {props.problem && <p role="alert">{scanMessages[props.problem]}</p>}
       <form
+        className="grid max-w-none gap-1.5"
         onSubmit={(event) => {
           event.preventDefault();
           props.submit();
         }}
       >
-        <label htmlFor="barcode-code">Barcode</label>
-        <input
-          id="barcode-code"
-          inputMode="numeric"
-          autoComplete="off"
-          value={props.code}
-          onChange={(event) => props.setCode(event.target.value)}
-        />
-        <button
-          type="submit"
-          disabled={!props.online || !isBarcode(props.code.trim())}
-        >
-          Look up
-        </button>
-        {!props.online && <p>Lookup unavailable offline</p>}
+        <label htmlFor="barcode-code" className="text-sm font-medium">
+          Barcode number
+        </label>
+        <div className="flex gap-2">
+          <Input
+            id="barcode-code"
+            inputMode="numeric"
+            autoComplete="off"
+            className="numeric"
+            value={props.code}
+            onChange={(event) => props.setCode(event.target.value)}
+          />
+          <Button
+            type="submit"
+            variant="secondary"
+            className={press}
+            disabled={!props.online || !isBarcode(props.code.trim())}
+          >
+            Look up
+          </Button>
+        </div>
+        {!props.online && (
+          <p className="m-0 text-sm text-ink-2">Lookup unavailable offline</p>
+        )}
       </form>
     </div>
   );
