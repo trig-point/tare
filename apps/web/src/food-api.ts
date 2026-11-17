@@ -187,7 +187,10 @@ export async function enqueueNumbers(
   person: Session["user"],
   name: string,
   values: Record<string, string>,
+  required: readonly string[] = [],
 ) {
+  if (required.some((key) => !values[key]?.trim()))
+    throw new Error("Missing required number");
   const numbers: Record<string, number> = {};
   for (const [key, text] of Object.entries(values)) {
     if (!text.trim()) continue;
