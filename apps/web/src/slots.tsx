@@ -27,7 +27,7 @@ const actions: [ItemAction, string, "default" | "outline" | "ghost"][] = [
 ];
 /** Press feedback for buttons on the Today screen. */
 export const press =
-  "transition-[background-color,transform] duration-(--motion-press) ease-move active:scale-[0.97]";
+  "transition-[color,background-color,scale] duration-(--motion-press) ease-move active:scale-[0.97]";
 
 export function Slots({ person, online }: { person: number; online: boolean }) {
   const plan = useQuery({ ...planQuery(person), enabled: online });
@@ -53,13 +53,21 @@ export function SlotList({
   online: boolean;
 }) {
   const status = plan?.budgets.status;
-  const slots = (plan?.slots ?? []).map((slot) => ({
-    slot,
-    budget: plan?.budgets.slots.find((row) => row.position === slot.position),
-    items: (plan?.planned_items ?? []).filter(
-      (item) => item.position === slot.position,
-    ),
-  }));
+  // Budget rows come in time order; positions need not.
+  const timeOrder = (plan?.budgets.slots ?? []).map((row) => row.position);
+  const slots = (plan?.slots ?? [])
+    .map((slot) => ({
+      slot,
+      budget: plan?.budgets.slots.find((row) => row.position === slot.position),
+      items: (plan?.planned_items ?? []).filter(
+        (item) => item.position === slot.position,
+      ),
+    }))
+    .toSorted(
+      (left, right) =>
+        timeOrder.indexOf(left.slot.position) -
+        timeOrder.indexOf(right.slot.position),
+    );
   const next = slots.find((entry) => !entry.budget?.ended);
   const later = slots.filter((entry) => entry !== next && !entry.budget?.ended);
   const ended = slots.filter((entry) => entry.budget?.ended);
@@ -68,7 +76,7 @@ export function SlotList({
       aria-label="Meals"
       className="contents p-0 md:col-start-2 md:row-span-4 md:row-start-1 md:block"
     >
-      <div className="order-2 min-h-24">
+      <div className="order-2 empty:hidden">
         {failed && <p role="alert">Couldn’t load meals</p>}
         {!plan && !failed && !online && (
           <p className="m-0 text-ink-2">Unavailable offline</p>
@@ -82,7 +90,7 @@ export function SlotList({
         {next && <SlotBlock {...next} next person={person} online={online} />}
       </div>
       {plan && (
-        <div className="order-4 md:mt-5">
+        <div className="order-4 empty:hidden md:mt-5">
           {later.map((entry) => (
             <div
               key={entry.slot.position}

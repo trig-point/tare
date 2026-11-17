@@ -93,16 +93,16 @@ export function Today({
         <TabsList
           variant="line"
           aria-label="Today view"
-          className="h-11 w-full border-b border-border p-0 md:w-88"
+          className="w-full border-b border-border p-0 group-data-[orientation=horizontal]/tabs:h-11 md:w-88"
         >
-          <TabsTrigger value="food" className="h-full">
+          <TabsTrigger value="food" className={tab}>
             Food
           </TabsTrigger>
-          <TabsTrigger value="body" className="h-full">
+          <TabsTrigger value="body" className={tab}>
             Body
           </TabsTrigger>
         </TabsList>
-        <Tabs.Content value="food" className={enter}>
+        <Tabs.Content value="food" forceMount className={enter}>
           {status}
           <div className="grid gap-5 md:grid-cols-2 md:grid-rows-[auto_auto_auto_1fr] md:gap-x-8">
             {(today.data || (online && !today.isError)) && (
@@ -149,7 +149,7 @@ export function Today({
             </div>
           </div>
         </Tabs.Content>
-        <Tabs.Content value="body" className={enter}>
+        <Tabs.Content value="body" forceMount className={enter}>
           {status}
           {today.data && (
             <BodyCard
@@ -165,8 +165,11 @@ export function Today({
   );
 }
 
+// Both panels stay mounted so Body's queries load with Today and Food keeps an open edit form.
 const enter =
-  "data-[state=active]:animate-[screen-enter_var(--motion-tab)_var(--motion-ease-enter)]";
+  "data-[state=active]:animate-[screen-enter_var(--motion-tab)_var(--motion-ease-enter)] data-[state=inactive]:hidden";
+const tab =
+  "h-full duration-(--motion-tab) ease-move after:duration-(--motion-tab) group-data-[orientation=horizontal]/tabs:after:bottom-[-1px]";
 
 function dayLabel(day: string) {
   return new Date(`${day}T12:00:00Z`).toLocaleDateString([], {

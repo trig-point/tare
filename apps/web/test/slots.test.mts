@@ -115,6 +115,16 @@ test("the slot view renders each slot's remaining budget and planned item", asyn
   assert.equal(lunchNext.match(/>Next meal</g)?.length, 1);
   assert.match(lunchNext, />Lunch<\/h2><span[^>]*>Next meal</);
   assert.match(lunchNext, /<summary[^>]*>Breakfast · Ended</);
+  const dinnerFirst = render(person, {
+    ...plan,
+    budgets: {
+      ...plan.budgets,
+      slots: plan.budgets.slots
+        .map((slot) => ({ ...slot, ended: false }))
+        .reverse(),
+    },
+  });
+  assert.match(dinnerFirst, />Dinner<\/h2><span[^>]*>Next meal</);
 });
 
 test("ate, 3/4 and skip update today's totals and the slot view", async (context) => {
