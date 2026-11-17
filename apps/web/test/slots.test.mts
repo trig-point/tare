@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import type { TestContext } from "node:test";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -13,7 +14,7 @@ const signal = new AbortController().signal;
 const slotNames = ["Breakfast", "Lunch", "Dinner"];
 const itemNames = ["Example oats", "Example salad", "Example stew"];
 
-async function withPlan(context: Parameters<typeof twoUsers>[0]) {
+async function withPlan(context: TestContext) {
   const setup = await twoUsers(context, "fallback");
   context.mock.method(globalThis, "fetch", setup.admin.request);
   const send = async (path: string, body: unknown) => {

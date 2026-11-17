@@ -25,7 +25,7 @@ export const credentials = {
 export const requestedWith = { "X-Requested-With": "XMLHttpRequest" };
 export const dummyHash = await hashPassword("invented-dummy-password");
 export function fixture(
-  context: TestContext,
+  context: Pick<TestContext, "after">,
   overrides: Partial<AppOptions> = {},
 ) {
   const connection = openDatabase(":memory:");
@@ -143,7 +143,7 @@ export const assertionHeader = (token: string) => ({
 });
 
 export function accessFixture(
-  context: TestContext,
+  context: Pick<TestContext, "after">,
   accessKeySet: AppOptions["accessKeySet"] = keySet,
   overrides: Partial<AppOptions> = {},
 ) {
