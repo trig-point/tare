@@ -199,7 +199,9 @@ export function PantryView({
           <h1 className="m-0 text-(length:--step-3) font-semibold tracking-tight">
             Pantry
           </h1>
-          <p className={cn(hint, "m-0 mt-1")}>Stock from Grocy</p>
+          {pantry?.state !== "disabled" && (
+            <p className={cn(hint, "m-0 mt-1")}>Stock from Grocy</p>
+          )}
         </div>
       </div>
       <div
@@ -229,7 +231,11 @@ export function PantryView({
             {ready && (
               <RefreshCw
                 aria-hidden
-                className={cn(change.isPending && "motion-safe:animate-spin")}
+                className={cn(
+                  change.isPending &&
+                    change.variables === refreshPantry &&
+                    "motion-safe:animate-spin",
+                )}
               />
             )}
             {ready ? "Refresh" : "Reset connection"}

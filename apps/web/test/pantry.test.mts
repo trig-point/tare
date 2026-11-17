@@ -84,6 +84,7 @@ const request = (unit: number) => ({
 test("a disabled pantry says so instead of showing empty stock", () => {
   const markup = render({ ...empty, state: "disabled", stale: true });
   assert.match(markup, /Pantry not set up/);
+  assert.doesNotMatch(markup, /Stock from Grocy/);
   assert.doesNotMatch(markup, /No stock|>Refresh</);
 });
 
