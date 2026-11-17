@@ -12,5 +12,6 @@ test("cn lets a later Tailwind class replace a conflicting one", () => {
     cn("text-sm text-muted-foreground", "text-step-1"),
     "text-muted-foreground text-step-1",
   );
+  assert.equal(cn("rounded-md", "rounded-token"), "rounded-token");
   assert.equal(cn(), "");
 });

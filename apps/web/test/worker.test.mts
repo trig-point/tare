@@ -55,6 +55,7 @@ test("built worker verifies its HTML and only caches built assets", async () => 
       fonts.some((url) => url.includes(family)),
       family,
     );
+  assert.ok(fonts.every((url) => url.includes("-latin-")));
   const html = entries.filter((entry) => entry.url.endsWith(".html"));
   assert.ok(html.length > 0);
   for (const entry of html)
