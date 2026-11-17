@@ -168,7 +168,7 @@
    * Preflight removes the browser's flow spacing, which the current screens still lay out with.
    * Components in shared/ui carry data-slot and keep preflight's reset.
    */
-  :where(p, dl, details, pre):not([data-slot], [data-slot] *) {
+  :where(p, dl, pre):not([data-slot], [data-slot] *) {
     margin: 1em 0;
   }
   :where(ul, ol):not([data-slot], [data-slot] *) {
