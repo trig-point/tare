@@ -66,16 +66,15 @@ export function BottomNav({ questions }: { questions: number | undefined }) {
         <Link
           key={path}
           to={path}
-          activeOptions={{ exact: true }}
           data-selected={path === selected}
           className={path === "/add" ? "nav-add" : undefined}
         >
           <span className="nav-icon" aria-hidden="true">
             <Icon size={22} strokeWidth={1.75} />
           </span>
-          {path === "/questions" &&
-            questions !== undefined &&
-            questions > 0 && <span className="nav-badge">{questions}</span>}
+          {path === "/questions" && questions ? (
+            <span className="nav-badge">{questions}</span>
+          ) : null}
           <span>{label}</span>
         </Link>
       ))}
