@@ -248,7 +248,7 @@
     }
   }
 
-  :where(button:not([data-slot]), .button) {
+  :where(button, .button):not([data-slot]) {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -268,11 +268,11 @@
       background-color var(--motion-press) var(--motion-ease-move),
       transform var(--motion-press) var(--motion-ease-move);
   }
-  :where(button:not([data-slot]), .button):hover {
+  :where(button, .button):not([data-slot]):hover {
     background: color-mix(in srgb, var(--color-accent) 90%, var(--color-bg));
   }
   @media (pointer: coarse) {
-    :where(button:not([data-slot]), .button) {
+    :where(button, .button):not([data-slot]) {
       min-height: 44px;
     }
   }
@@ -306,7 +306,7 @@
   section {
     padding: clamp(2rem, 8vh, 5rem) 0;
   }
-  h1 {
+  :where(h1):not([data-slot], [data-slot] *) {
     font-size: var(--step-3);
     font-weight: 600;
     line-height: 1.2;
