@@ -272,9 +272,12 @@ test("usual foods load, stay on the device and rank first while typing", async (
   });
   context.after(() => Reflect.deleteProperty(globalThis, "localStorage"));
   assert.equal(savedUsualFoods(admin.user.id), null);
-  await usualFoodsQuery(admin.user.id).queryFn({
-    signal: new AbortController().signal,
-  });
+  assert.deepEqual(
+    await usualFoodsQuery(admin.user.id).queryFn({
+      signal: new AbortController().signal,
+    }),
+    [],
+  );
   assert.deepEqual(savedUsualFoods(admin.user.id), []);
   const usual = [
     { ...exampleChoice, name: "Example rye toast", servings: 2 },
@@ -346,6 +349,7 @@ test("add food opens on Search with usual foods before typing", async (context) 
   );
   assert.deepEqual(tabs, ["Search", "Scan", "Quick add"]);
   assert.match(html, /id="servings-food-5"[^>]*value="1.5"/);
+  assert.equal(html.match(/id="servings-food-5"/g)?.length, 1);
   assert.match(html, /aria-label="Log Example oats"/);
   assert.match(html, /Unknown kcal/);
   assert.match(
