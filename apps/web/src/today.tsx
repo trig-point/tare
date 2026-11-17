@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { ChevronRight, Pencil, Trash2, X } from "lucide-react";
 import { Tabs } from "radix-ui";
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Session } from "./api.ts";
 import { refreshDays } from "./days-api.ts";
 import { BodyCard } from "./health.tsx";
@@ -18,7 +18,6 @@ import {
   changeWeight,
   dismissTargetNotice,
   displayNumber,
-  enqueueWeight,
   type Intake,
   intakeChanges,
   nutrientLabels,
@@ -431,47 +430,6 @@ function TargetNotice({
         <X />
       </Button>
     </section>
-  );
-}
-export function WeightForm({
-  person,
-  replay,
-}: {
-  person: Session["user"];
-  replay: OutboxReplay;
-}) {
-  const [weight, setWeight] = useState("");
-  const save = useMutation({
-    networkMode: "always",
-    mutationFn: async () => {
-      await enqueueWeight(replay, person, weight);
-    },
-    onSuccess: () => setWeight(""),
-  });
-  return (
-    <form
-      onSubmit={(event: FormEvent) => {
-        event.preventDefault();
-        save.mutate();
-      }}
-    >
-      <h2>Log weight</h2>
-      <label htmlFor="weight">Weight (kg)</label>
-      <input
-        id="weight"
-        type="number"
-        min="0.01"
-        step="any"
-        required
-        value={weight}
-        onChange={(event) => setWeight(event.target.value)}
-        disabled={save.isPending}
-      />
-      <button type="submit" disabled={save.isPending}>
-        Log weight
-      </button>
-      {save.isError && <p role="alert">Couldn’t save weight</p>}
-    </form>
   );
 }
 function IntakeEntry({

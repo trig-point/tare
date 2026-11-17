@@ -15,9 +15,14 @@ import { readToday } from "../src/today-api.ts";
 import { test } from "./support.mts";
 import "./tsx.mts";
 
-const { ProfileForm, TargetCard, WeightChart, watchColorScheme } = await import(
-  "../src/profile.tsx"
-);
+const {
+  daysInRange,
+  ProfileForm,
+  ProfileSummary,
+  TargetCard,
+  WeightChart,
+  watchColorScheme,
+} = await import("../src/profile.tsx");
 const signal = new AbortController().signal;
 const render = (
   node: ReactElement,
@@ -160,6 +165,63 @@ test("weight chart shows an empty state with no weigh-ins", async (context) => {
   ]);
   assert.match(chart, /No weigh-ins yet/);
   assert.doesNotMatch(chart, /weight-chart/);
+});
+
+test("weight section shows the latest weigh-in, the trend and weigh-ins newest first", () => {
+  const days = [
+    { day: "2025-06-01", reading_kg: 82, trend_kg: 82 },
+    { day: "2025-11-29", reading_kg: 81.9, trend_kg: 81.9 },
+    { day: "2025-11-30", reading_kg: 81.5, trend_kg: 81.8 },
+    { day: "2025-12-01", reading_kg: null, trend_kg: 81.7 },
+  ];
+  const chart = render(
+    createElement(WeightChart, { person: 1, online: true }),
+    [[historyKey(1), { days }]],
+  );
+  assert.match(chart, /81\.5 <small[^>]*>kg.*Latest weigh-in, Nov 30, 2025/s);
+  assert.match(chart, /81\.7 <small[^>]*>kg.*Trend/s);
+  assert.match(chart, /aria-pressed="true"[^>]*>3M</);
+  const rows = [...chart.matchAll(/<li[^>]*><span[^>]*>([\d.]+) kg/g)];
+  assert.deepEqual(
+    rows.map((match) => match[1]),
+    ["81.5", "81.9"],
+  );
+  assert.doesNotMatch(chart, />82 kg/);
+});
+
+test("weight range counts back from the latest day", () => {
+  const days = ["2025-01-01", "2025-11-02", "2025-12-01"].map((day) => ({
+    day,
+    reading_kg: 80,
+    trend_kg: 80,
+  }));
+  const pick = (range: Parameters<typeof daysInRange>[1]) =>
+    daysInRange({ days }, range).map((entry) => entry.day);
+  assert.deepEqual(pick("1M"), ["2025-11-02", "2025-12-01"]);
+  assert.deepEqual(pick("All"), ["2025-01-01", "2025-11-02", "2025-12-01"]);
+  assert.deepEqual(daysInRange({ days: [] }, "1M"), []);
+});
+
+test("profile summary lists the saved fields, or asks for a profile", () => {
+  const summary = renderToStaticMarkup(
+    createElement(ProfileSummary, {
+      profile: {
+        height_cm: 170,
+        birth_date: "1990-05-01",
+        sex: "female",
+        activity_level: "moderate",
+        goal_rate_kg_week: -0.5,
+        protein_factor: 1.6,
+      },
+    }),
+  );
+  assert.match(summary, /170 cm<\/span> \/ Female \/ Moderate activity/);
+  for (const value of ["May 1, 1990", "-0.5 kg/week", "1.6 g/kg"])
+    assert.ok(summary.includes(value), value);
+  assert.match(
+    renderToStaticMarkup(createElement(ProfileSummary, { profile: null })),
+    /Add your profile to get a target/,
+  );
 });
 
 test("charts rebuild when the color scheme or data-theme changes, until stopped", () => {

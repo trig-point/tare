@@ -42,10 +42,12 @@ test("the client schemas keep body fat and the card marks a post-workout reading
       createElement(QueryClientProvider, { client }, node),
     );
   };
+  const notEnough = card(bodyFat);
   assert.match(
-    card(bodyFat),
-    /<p>Not enough readings for a trend<\/p><p>0 of 8.*21.5%.*After a workout/s,
+    notEnough,
+    /21\.5 <small[^>]*>%.*>Not enough readings for a trend<\/p><p[^>]*>0 of 8/s,
   );
+  assert.match(notEnough, /21\.5%<\/span>.*>After a workout</s);
   const lines = [
     "No strength sessions logged in 3 weeks.",
     "Weight down 1.2 kg.",
@@ -61,7 +63,10 @@ test("the client schemas keep body fat and the card marks a post-workout reading
     },
   });
   const title = "This scale&#x27;s error is about 2 points";
-  const expected = `<p><strong>23.3%</strong></p><p>${lines.join("</p><p>")}</p><p title="${title}">${change.replace("'", "&#x27;")}</p>`;
-  assert.ok(ready.includes(expected));
+  assert.match(ready, /23\.3 <small[^>]*>%.*Trend/s);
+  for (const line of lines) assert.ok(ready.includes(`>${line}</p>`), line);
+  assert.ok(
+    ready.includes(`title="${title}">${change.replace("'", "&#x27;")}</p>`),
+  );
   assert.equal(ready.split("Body fat reading").length, 2);
 });
