@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Fragment, type ReactNode, useState } from "react";
+import { Fragment, type ReactNode, useMemo, useState } from "react";
 import type { Session } from "./api.ts";
 import { BarcodeScanner } from "./barcode-scan.tsx";
 import {
@@ -9,8 +9,11 @@ import {
   enqueueNumbers,
   type FoodChoice,
   lookupBarcode,
+  matchingFoods,
   mergeChoices,
+  savedUsualFoods,
   searchOnline,
+  usualFoodsQuery,
 } from "./food-api.ts";
 import type { OutboxReplay } from "./outbox-replay.ts";
 import {
@@ -49,6 +52,12 @@ export function AddFood({ person, replay, online }: Props) {
   const [logged, setLogged] = useState("");
   const term = name.trim();
   const today = useQuery({ ...todayQuery(person.id), enabled: online });
+  const usual = useQuery({ ...usualFoodsQuery(person.id), enabled: online });
+  const saved = useMemo(
+    () => (online && !usual.isError ? null : savedUsualFoods(person.id)),
+    [online, usual.isError, person.id],
+  );
+  const usualList = usual.data ?? saved;
   const catalog = useQuery({
     ...catalogQuery(person.id, name),
     enabled: online && term !== "",
@@ -57,6 +66,7 @@ export function AddFood({ person, replay, online }: Props) {
   const barcode = useMutation({ mutationFn: lookupBarcode, retry: 0 });
   const searched = lookup.variables === term ? lookup : undefined;
   const choices = mergeChoices(
+    matchingFoods(usualList ?? [], term),
     catalog.data?.result === "match" ? catalog.data.foods : [],
     searched?.data ?? [],
   );
@@ -130,20 +140,25 @@ export function AddFood({ person, replay, online }: Props) {
           {term === "" ? (
             <UsualFoods
               state={
-                today.data
-                  ? "ready"
-                  : !online
-                    ? "offline"
-                    : today.isError
-                      ? "failed"
+                online && usual.isError
+                  ? "failed"
+                  : usualList
+                    ? "ready"
+                    : !online
+                      ? "offline"
                       : "loading"
               }
-              foods={usualFoods(today.data?.entries ?? [])}
+              foods={mergeChoices(
+                usualList ?? [],
+                todayFoods(today.data?.entries ?? []),
+              )}
               rows={rows}
             />
           ) : (
             <>
-              {!online && <p className={hint}>Search unavailable offline</p>}
+              {!online && (
+                <p className={hint}>Catalog search unavailable offline</p>
+              )}
               {catalog.isError && <p role="alert">Couldn’t search foods</p>}
               {catalog.isPending && online && <RowSkeleton />}
               {catalog.data && (
@@ -226,7 +241,7 @@ export function AddFood({ person, replay, online }: Props) {
 }
 
 /** Food-backed entries already loaded for today, newest first, one row per food. */
-export function usualFoods(entries: Intake[]): FoodChoice[] {
+export function todayFoods(entries: Intake[]): FoodChoice[] {
   const foods = [...entries]
     .sort((left, right) => right.eaten_at.localeCompare(left.eaten_at))
     .flatMap((entry): FoodChoice[] => {
@@ -262,17 +277,18 @@ function UsualFoods({
 }) {
   return (
     <div className="grid gap-1 pt-2">
-      <h2 className="m-0 text-(length:--step-1) font-semibold">Log again</h2>
-      {state === "loading" ? (
+      <h2 className="m-0 text-(length:--step-1) font-semibold">Usual foods</h2>
+      {state === "failed" && <p role="alert">Couldn’t load usual foods</p>}
+      {foods.length > 0 ? (
+        rows(foods, "Usual foods")
+      ) : state === "loading" ? (
         <RowSkeleton />
-      ) : state === "failed" ? (
-        <p role="alert">Couldn’t load today’s foods</p>
       ) : state === "offline" ? (
         <p className={hint}>Unavailable offline</p>
-      ) : foods.length === 0 ? (
-        <p className={hint}>Foods you log today show here</p>
       ) : (
-        rows(foods, "Log again")
+        state === "ready" && (
+          <p className={hint}>Foods you log often show here</p>
+        )
       )}
     </div>
   );
@@ -302,7 +318,7 @@ function FoodRows({
     <ul aria-label={label} className="m-0 grid list-none p-0">
       {foods.map((food) => (
         <FoodRow
-          key={`${food.reference.kind}-${food.reference.id}`}
+          key={`${food.reference.kind}-${food.reference.id}-${food.servings ?? 1}`}
           food={food}
           {...row}
         />
@@ -322,12 +338,13 @@ function FoodRow({
   replay: OutboxReplay;
   onLogged: (name: string) => void;
 }) {
-  const [servings, setServings] = useState("1");
+  const usualServings = String(food.servings ?? 1);
+  const [servings, setServings] = useState(usualServings);
   const log = useMutation({
     networkMode: "always",
     mutationFn: () => enqueueFood(replay, person, food, servings),
     onSuccess: () => {
-      setServings("1");
+      setServings(usualServings);
       onLogged(food.name);
     },
   });
