@@ -178,7 +178,7 @@ test("weight section shows the latest weigh-in, the trend and weigh-ins newest f
     createElement(WeightChart, { person: 1, online: true }),
     [[historyKey(1), { days }]],
   );
-  assert.match(chart, /81\.5 <small[^>]*>kg.*Latest weigh-in, Nov 30, 2025/s);
+  assert.match(chart, /81\.5 <small[^>]*>kg.*Weigh-in, Nov 30, 2025/s);
   assert.match(chart, /81\.7 <small[^>]*>kg.*Trend/s);
   assert.match(chart, /aria-pressed="true"[^>]*>3M</);
   const rows = [...chart.matchAll(/<li[^>]*><span[^>]*>([\d.]+) kg/g)];
@@ -187,6 +187,25 @@ test("weight section shows the latest weigh-in, the trend and weigh-ins newest f
     ["81.5", "81.9"],
   );
   assert.doesNotMatch(chart, />82 kg/);
+});
+
+test("a failed refetch keeps the loaded weights beside the error", () => {
+  const client = new QueryClient();
+  const days = [{ day: "2025-11-30", reading_kg: 81.5, trend_kg: 81.8 }];
+  client.setQueryData(historyKey(1), { days });
+  client
+    .getQueryCache()
+    .find({ queryKey: historyKey(1) })
+    ?.setState({ status: "error", error: new Error("refetch failed") });
+  const chart = renderToStaticMarkup(
+    createElement(
+      QueryClientProvider,
+      { client },
+      createElement(WeightChart, { person: 1, online: true }),
+    ),
+  );
+  assert.match(chart, /Couldn’t load weights/);
+  assert.match(chart, /81\.5 <small/);
 });
 
 test("weight range counts back from the latest day", () => {

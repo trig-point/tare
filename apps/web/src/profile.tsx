@@ -28,6 +28,7 @@ import {
   Dialog,
   DialogContent,
   DialogTitle,
+  DialogTrigger,
 } from "./shared/ui/index.ts";
 import { Disclosure, press } from "./slots.tsx";
 import {
@@ -127,46 +128,46 @@ export function ProfileSection({
       <div className="flex min-h-11 items-center justify-between gap-2">
         <h2 className={sectionHead}>Profile</h2>
         {profile.data !== undefined && (
-          <Button
-            variant="ghost"
-            className={cn(press, "text-ink-2")}
-            disabled={!online}
-            onClick={() => setEditing(true)}
-          >
-            {profile.data === null ? "Add profile" : "Edit profile"}
-          </Button>
+          <Dialog open={editing} onOpenChange={setEditing}>
+            <DialogTrigger asChild>
+              <Button
+                variant="ghost"
+                className={cn(press, "text-ink-2")}
+                disabled={!online}
+              >
+                {profile.data === null ? "Add profile" : "Edit profile"}
+              </Button>
+            </DialogTrigger>
+            <DialogContent
+              aria-describedby={undefined}
+              className="max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-(--radius) bg-surface"
+            >
+              <DialogTitle>
+                {profile.data === null ? "Add profile" : "Edit profile"}
+              </DialogTitle>
+              <ProfileForm
+                person={person}
+                profile={profile.data}
+                online={online}
+                onSaved={() => setEditing(false)}
+              />
+            </DialogContent>
+          </Dialog>
         )}
       </div>
-      {profile.isError ? (
+      {profile.isError && (
         <p role="alert" className="m-0">
           Couldn’t load profile
         </p>
-      ) : profile.data === undefined ? (
-        online ? (
+      )}
+      {profile.data === undefined ? (
+        profile.isError ? null : online ? (
           <Skeleton label="Loading profile" className="h-32" />
         ) : (
           <p className={cn(hint, "m-0")}>Unavailable offline</p>
         )
       ) : (
         <ProfileSummary profile={profile.data} />
-      )}
-      {profile.data !== undefined && (
-        <Dialog open={editing} onOpenChange={setEditing}>
-          <DialogContent
-            aria-describedby={undefined}
-            className="max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-(--radius) bg-surface"
-          >
-            <DialogTitle>
-              {profile.data === null ? "Add profile" : "Edit profile"}
-            </DialogTitle>
-            <ProfileForm
-              person={person}
-              profile={profile.data}
-              online={online}
-              onSaved={() => setEditing(false)}
-            />
-          </DialogContent>
-        </Dialog>
       )}
     </section>
   );
@@ -233,13 +234,13 @@ export function ProfileForm({
     },
   });
   const labelled = (key: keyof typeof values, label: string) => (
-    <label htmlFor={`profile-${key}`} className="text-ink">
+    <label htmlFor={`profile-${key}`} className="font-medium text-ink">
       {label}
     </label>
   );
   return (
     <form
-      className="max-w-none gap-4"
+      className="grid max-w-none gap-4"
       onSubmit={(event) => {
         event.preventDefault();
         save.mutate();
@@ -290,7 +291,6 @@ export function ProfileForm({
           {labelled("goal_rate_kg_week", "Goal rate (kg/week)")}
           <input
             type="number"
-            inputMode="decimal"
             min="-1.5"
             max="1"
             step="any"
@@ -370,18 +370,22 @@ export function WeightChart({
   const latest = history.data?.days.findLast(hasReading);
   const trend = history.data?.days.at(-1)?.trend_kg;
   return (
-    <section aria-label="Weight trend" className="grid gap-3 p-0">
+    <section
+      aria-label="Weight trend"
+      className="grid grid-cols-[minmax(0,1fr)] gap-3 p-0"
+    >
       <div className="flex min-h-11 items-center justify-between gap-2">
         <h2 className={sectionHead}>Weight</h2>
         <span className={hint}>kg</span>
       </div>
-      {history.isError ? (
+      {history.isError && (
         <p role="alert" className="m-0">
           Couldn’t load weights
         </p>
-      ) : !history.data ? (
-        online ? (
-          <Skeleton label="Loading weights" className="h-[19.5rem]" />
+      )}
+      {!history.data ? (
+        history.isError ? null : online ? (
+          <Skeleton label="Loading weights" className="h-[28.75rem]" />
         ) : (
           <p className={cn(hint, "m-0")}>Unavailable offline</p>
         )
@@ -393,7 +397,7 @@ export function WeightChart({
             <Metric
               value={displayNumber(latest.reading_kg)}
               unit="kg"
-              label={`Latest weigh-in, ${shortDate(latest.day)}`}
+              label={`Weigh-in, ${shortDate(latest.day)}`}
             />
             <Metric
               value={displayNumber(trend)}

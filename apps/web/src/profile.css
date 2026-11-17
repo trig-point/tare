@@ -3,6 +3,7 @@ main:has(.you-screen) {
 }
 .you-grid {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--spacing-6);
   padding-bottom: var(--spacing-6);
   grid-template-areas: "weight" "body-fat" "profile";
@@ -25,6 +26,6 @@ main:has(.you-screen) {
   }
   .you-body-fat {
     border-left: 1px solid var(--color-border);
-    padding-left: 28px;
+    padding-left: var(--spacing-7);
   }
 }

@@ -63,7 +63,10 @@ export function BodyFatCard({
   );
   const trend = data?.trend;
   return (
-    <section aria-label="Body fat" className="grid gap-3 p-0">
+    <section
+      aria-label="Body fat"
+      className="grid grid-cols-[minmax(0,1fr)] gap-3 p-0"
+    >
       <div className="flex min-h-11 items-center justify-between gap-2">
         <h2 className={sectionHead}>Body fat</h2>
         <span className={hint}>%</span>
@@ -74,7 +77,7 @@ export function BodyFatCard({
         </p>
       ) : !data || !chart ? (
         online ? (
-          <Skeleton label="Loading body fat" className="h-[17rem]" />
+          <Skeleton label="Loading body fat" className="h-[30rem]" />
         ) : (
           <p className={hint}>Unavailable offline</p>
         )
