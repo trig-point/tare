@@ -59,6 +59,8 @@ const render = (
       }),
     ),
   );
+const text = (markup: string) =>
+  markup.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
 const empty = {
   ...ready,
   generation: null,
@@ -94,7 +96,7 @@ test("a never-refreshed pantry is not shown as empty", () => {
 test("stale stock stays listed with its update time", () => {
   const markup = render({ ...ready, stale: true });
   assert.match(markup, /Stock may be out of date/);
-  assert.match(markup, /Synthetic beans<\/strong> 4 can/);
+  assert.match(text(markup), /Synthetic beans 4 can/);
   assert.match(markup, /Updated <time dateTime="2026-01-01T00:00:00.000Z">/);
   assert.match(markup, /href="https:\/\/grocy.example.com\/"/);
 });
@@ -128,8 +130,8 @@ test("a request frozen in another unit keeps its own unit", () => {
     unresolved: [request(2), request(3)],
     history: [],
   });
-  assert.match(markup, /Example meal 2: 2 can uncertain/);
-  assert.match(markup, /Example meal 3: 2 unit 3 uncertain/);
+  assert.match(text(markup), /Example meal 2 Uncertain 2 can /);
+  assert.match(text(markup), /Example meal 3 Uncertain 2 unit 3 /);
 });
 
 test("abandoning a pending request moves it to history and keeps its error code", async (context) => {
@@ -141,8 +143,8 @@ test("abandoning a pending request moves it to history and keeps its error code"
   const [request] = open.unresolved;
   assert.ok(request);
   assert.match(
-    render(await readPantry(), open),
-    /Food 1: 2 unit 2 pending · [^<]*<\/strong><p class="actions"><button type="button">Abandon</,
+    text(render(await readPantry(), open)),
+    /Food 1 Pending 2 unit 2 [\w ,:]+ Abandon /,
   );
   const decision = {
     request_id: request.request_id,
@@ -158,7 +160,10 @@ test("abandoning a pending request moves it to history and keeps its error code"
     after.history.map((entry) => entry.state),
     ["abandoned"],
   );
-  assert.match(render(await readPantry(), after), /Recent requests.*abandoned/);
+  assert.match(
+    text(render(await readPantry(), after)),
+    /Recent requests Food 1 2 unit 2 \/ Abandoned/,
+  );
   await assert.rejects(
     reconcile({ ...decision, mutation_id: "example-second" }),
     (error) =>
@@ -170,6 +175,30 @@ test("abandoning a pending request moves it to history and keeps its error code"
   await assert.rejects(
     readLink(),
     (error) => error instanceof ApiError && error.status === 403,
+  );
+});
+
+test("an empty product and a broken binding are flagged on the stock tab", () => {
+  const markup = text(
+    render({
+      ...ready,
+      products: [{ ...ready.products[0], amount: 0 }] as Pantry["products"],
+      bindings: [
+        {
+          reference_kind: "food",
+          reference_id: 1,
+          name: "Example stew",
+          product_id: 9,
+          quantity_per_serving: 1,
+          status: "product_missing",
+        },
+      ],
+    }),
+  );
+  assert.match(markup, /Synthetic beans 0 can Out of stock/);
+  assert.match(
+    markup,
+    /1 binding needs attention Example stew \/ Product missing View/,
   );
 });
 
@@ -192,8 +221,11 @@ test("a binding row names its food", () => {
       },
     ],
   });
-  assert.match(markup, /0.5 per serving of Jasmine rice \(Example\), dry/);
-  assert.match(markup, /0.5 per serving of source food 2/);
+  assert.match(
+    text(markup),
+    /0.5 can per serving of Jasmine rice \(Example\), dry/,
+  );
+  assert.match(text(markup), /0.5 can per serving of source food 2/);
 });
 
 const results = (foods: Parameters<typeof FoodResults>[0]["foods"]) =>
@@ -216,16 +248,13 @@ test("food search results offer each match by name", () => {
       serving: null,
     },
   ]);
-  assert.match(markup, /Jasmine rice \(Example\), dry<\/strong><span>45 g</);
-  assert.match(
-    markup,
-    /Example rice<\/strong><span>Example brand<\/span><span>Open Food Facts</,
-  );
+  assert.match(text(markup), /Jasmine rice \(Example\), dry 45 g Choose/);
+  assert.match(text(markup), /Example rice Example brand · Open Food Facts/);
   assert.match(markup, /aria-label="Choose Jasmine rice \(Example\), dry"/);
 });
 
 test("a food search with no matches says so", () => {
-  assert.equal(results([]), "<p>No foods found</p>");
+  assert.match(results([]), /^<p[^>]*>No foods found<\/p>$/);
 });
 
 test("the product picker lists an out-of-stock product and binds it", async (context) => {
