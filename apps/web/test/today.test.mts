@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import type { TestContext } from "node:test";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -23,7 +24,7 @@ import "./tsx.mts";
 const { Today } = await import("../src/today.tsx");
 const { createMemoryHistory, createRootRoute, createRouter, RouterProvider } =
   await import("@tanstack/react-router");
-async function setup(context: Parameters<typeof twoUsers>[0]) {
+async function setup(context: TestContext) {
   const { admin } = await twoUsers(context, "fallback");
   context.mock.method(globalThis, "fetch", (path: string, init: RequestInit) =>
     admin.request(path, init),

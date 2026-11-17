@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import type { TestContext } from "node:test";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -34,10 +35,8 @@ const render = (
   );
 };
 type Setup = Awaited<ReturnType<typeof twoUsers>>;
-const actAs = (
-  context: Parameters<typeof twoUsers>[0],
-  person: Setup["admin"],
-) => context.mock.method(globalThis, "fetch", person.request);
+const actAs = (context: TestContext, person: Setup["admin"]) =>
+  context.mock.method(globalThis, "fetch", person.request);
 
 test("day settings form saves timezone and day start", async (context) => {
   const { admin } = await twoUsers(context, "fallback");
