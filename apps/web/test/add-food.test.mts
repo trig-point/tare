@@ -9,8 +9,11 @@ import {
   enqueueFood,
   enqueueNumbers,
   type FoodChoice,
+  matchingFoods,
   mergeChoices,
+  savedUsualFoods,
   searchOnline,
+  usualFoodsQuery,
 } from "../src/food-api.ts";
 import { OutboxReplay } from "../src/outbox-replay.ts";
 import { openOutboxStore } from "../src/outbox-store.ts";
@@ -19,7 +22,7 @@ import "fake-indexeddb/auto";
 import { test } from "./support.mts";
 import "./tsx.mts";
 
-const { AddFood, CatalogMiss, OnlineMiss, QuickAdd, usualFoods } = await import(
+const { AddFood, CatalogMiss, OnlineMiss, QuickAdd, todayFoods } = await import(
   "../src/add-food.tsx"
 );
 const onlineFood = {
@@ -236,8 +239,8 @@ function entry(id: number, fields: Partial<Intake>): Intake {
   };
 }
 
-test("usual foods list each food once, newest first, per serving", () => {
-  const foods = usualFoods([
+test("today's foods list each food once, newest first, per serving", () => {
+  const foods = todayFoods([
     entry(1, { food_id: 5, servings: 1 }),
     entry(2, { name: "Quick add", servings: null }),
     entry(3, { source_food_id: 9, servings: 2, kcal: 300, protein_g: null }),
@@ -250,8 +253,59 @@ test("usual foods list each food once, newest first, per serving", () => {
       [{ kind: "source_food", id: 9 }, "Example food 3", 150, null],
     ],
   );
-  assert.deepEqual(usualFoods([]), []);
+  assert.deepEqual(todayFoods([]), []);
 });
+
+test("usual foods load, stay on the device and rank first while typing", async (context) => {
+  const { admin } = await twoUsers(context, "fallback");
+  context.mock.method(globalThis, "fetch", (path: string, init: RequestInit) =>
+    admin.request(path, init),
+  );
+  const stored = new Map<string, string>();
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: {
+      getItem: (key: string) => stored.get(key) ?? null,
+      setItem: (key: string, value: string) => stored.set(key, value),
+    },
+  });
+  context.after(() => Reflect.deleteProperty(globalThis, "localStorage"));
+  const load = () =>
+    usualFoodsQuery(admin.user.id).queryFn({
+      signal: new AbortController().signal,
+    });
+  assert.equal(savedUsualFoods(admin.user.id), null);
+  assert.deepEqual(await load(), []);
+  assert.deepEqual(savedUsualFoods(admin.user.id), []);
+  const usual = [
+    { ...exampleChoice, name: "Example rye toast", servings: 2 },
+    { ...exampleChoice, reference: { kind: "food" as const, id: 2 } },
+  ];
+  stored.set(`tare:usual-foods:${admin.user.id}`, JSON.stringify(usual));
+  assert.deepEqual(savedUsualFoods(admin.user.id), usual);
+  stored.set(`tare:usual-foods:${admin.user.id}`, "{");
+  assert.equal(savedUsualFoods(admin.user.id), null);
+  const catalog = {
+    ...exampleChoice,
+    reference: { kind: "source_food" as const, id: 3 },
+  };
+  assert.deepEqual(
+    mergeChoices(matchingFoods(usual, " RYE "), [catalog]).map(
+      (food) => food.name,
+    ),
+    ["Example rye toast", catalog.name],
+  );
+  assert.deepEqual(matchingFoods(usual, " "), []);
+});
+
+const exampleChoice: FoodChoice = {
+  reference: { kind: "food", id: 1 },
+  name: "Example oats",
+  brand: null,
+  serving: "40 g",
+  kcal: 150,
+  protein_g: 5,
+};
 
 function renderAddFood(
   person: { id: number; username: string },
@@ -284,13 +338,17 @@ test("add food opens on Search with usual foods before typing", async (context) 
       entry(2, { food_id: 6, kcal: null }),
     ],
   });
+  client.setQueryData(usualFoodsQuery(admin.user.id).queryKey, [
+    { ...exampleChoice, reference: { kind: "food", id: 5 }, servings: 1.5 },
+  ]);
   const html = renderAddFood(admin.user, client);
   const tabs = [...html.matchAll(/role="tab"[^>]*>([^<]+)</g)].map(
     (match) => match[1],
   );
   assert.deepEqual(tabs, ["Search", "Scan", "Quick add"]);
-  assert.match(html, /Log again/);
-  assert.match(html, /id="servings-food-5"[^>]*value="1"/);
+  assert.match(html, /Usual foods/);
+  assert.match(html, /id="servings-food-5"[^>]*value="1.5"/);
+  assert.match(html, /id="servings-food-6"[^>]*value="1"/);
   assert.match(html, /aria-label="Log Example oats"/);
   assert.match(html, /Unknown kcal/);
   assert.match(
@@ -302,11 +360,17 @@ test("add food opens on Search with usual foods before typing", async (context) 
   });
   failed
     .getQueryCache()
-    .build(failed, { queryKey: todayKey(admin.user.id) })
+    .build(failed, { queryKey: usualFoodsQuery(admin.user.id).queryKey })
     .setState({ status: "error", error: new Error("Unavailable") });
   const failedHtml = renderAddFood(admin.user, failed);
-  assert.match(failedHtml, /role="alert">Couldn’t load today’s foods/);
-  assert.doesNotMatch(failedHtml, /Foods you log today show here/);
+  assert.match(failedHtml, /role="alert">Couldn’t load usual foods/);
+  assert.doesNotMatch(failedHtml, /Foods you log often show here/);
+  const empty = new QueryClient();
+  empty.setQueryData(usualFoodsQuery(admin.user.id).queryKey, []);
+  assert.match(
+    renderAddFood(admin.user, empty),
+    /Foods you log often show here/,
+  );
 });
 
 test("quick add requires calories only", () => {
