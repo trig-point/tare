@@ -365,7 +365,10 @@ test("signals still loading show placeholder tiles online and nothing offline", 
       [],
       createElement(BodyCard, { person: 1, day: activityDay, online }),
     );
-  assert.match(render(true), /aria-busy="true"/);
+  const loading = render(true);
+  assert.match(loading, /aria-busy="true"/);
+  assert.equal(loading.match(/class="signal-tile"/g)?.length, 4);
+  assert.match(loading, /Recovery.*Workouts.*Habits/s);
   assert.equal(render(false), "");
 });
 

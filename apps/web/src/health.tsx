@@ -227,6 +227,7 @@ function Sheet({
   children: ReactNode;
 }) {
   // Controlled sheets have no Radix trigger, so focus goes back to the opener by hand.
+  // Openers stay enabled while a save is pending so the sheet can close onto them.
   const opener = useRef<HTMLElement | null>(null);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -342,7 +343,7 @@ function WorkoutEntry({
             variant="ghost"
             size="sm"
             className={press}
-            disabled={busy}
+            disabled={!entry.online || remove.isPending}
             onClick={() => {
               setRows(
                 workout.sets.length > 0
@@ -642,7 +643,7 @@ function Recovery(entry: EntryProps) {
             variant="secondary"
             size="lg"
             className={press}
-            disabled={busy}
+            disabled={!entry.online}
             onClick={() => {
               quick.reset();
               setSheet({ open: true, kind });
@@ -733,7 +734,7 @@ function LogHabit({ day, ...entry }: EntryProps & { day: string }) {
   return (
     <>
       <LogButton
-        disabled={busy}
+        disabled={!entry.online}
         open={() => {
           habit.reset();
           setOpen(true);
@@ -820,7 +821,7 @@ function LogWorkout({ day, ...entry }: EntryProps & { day: string }) {
   return (
     <>
       <LogButton
-        disabled={busy}
+        disabled={!entry.online}
         open={() => {
           setWorkout(blankWorkout());
           logWorkout.reset();
