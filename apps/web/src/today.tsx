@@ -29,40 +29,15 @@ import {
 
 export function Today({
   person,
-  replay,
   records,
   online,
 }: {
   person: Session["user"];
-  replay: OutboxReplay;
   records: QueueEntry[];
   online: boolean;
 }) {
   const client = useQueryClient();
   const today = useQuery({ ...todayQuery(person.id), enabled: online });
-  const currentRecords = useRef(records);
-  currentRecords.current = records;
-  useEffect(() => {
-    let previousPending = new Set(
-      currentRecords.current
-        .filter(
-          (entry) => entry.person_id === person.id && entry.state === "pending",
-        )
-        .map((entry) => entry.client_id),
-    );
-    const unsubscribe = replay.subscribe((snapshot) => {
-      const changes = settledSince(previousPending, snapshot, person.id);
-      previousPending = changes.pending;
-      if (changes.settled)
-        void Promise.all([
-          refreshToday(client, person.id),
-          refreshDays(client, person.id),
-        ]);
-    });
-    return () => {
-      unsubscribe();
-    };
-  }, [client, replay, person.id]);
   const saved = new Set(
     [...(today.data?.entries ?? []), ...(today.data?.weights ?? [])].map(
       (entry) => entry.client_id,
@@ -156,6 +131,39 @@ export function Today({
     </section>
   );
 }
+
+/** Refreshes Today and the day history when queued entries settle, on every tab. */
+export function useSettledRefresh(
+  person: number,
+  replay: OutboxReplay,
+  records: QueueEntry[],
+) {
+  const client = useQueryClient();
+  const currentRecords = useRef(records);
+  currentRecords.current = records;
+  useEffect(() => {
+    let previousPending = new Set(
+      currentRecords.current
+        .filter(
+          (entry) => entry.person_id === person && entry.state === "pending",
+        )
+        .map((entry) => entry.client_id),
+    );
+    const unsubscribe = replay.subscribe((snapshot) => {
+      const changes = settledSince(previousPending, snapshot, person);
+      previousPending = changes.pending;
+      if (changes.settled)
+        void Promise.all([
+          refreshToday(client, person),
+          refreshDays(client, person),
+        ]);
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, [client, replay, person]);
+}
+
 function TargetNotice({
   notice,
   online,

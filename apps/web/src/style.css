@@ -304,8 +304,12 @@
     letter-spacing: -0.5px;
   }
   .chat-entry {
-    display: inline-flex;
     color: var(--color-ink-3);
+    cursor: default;
+  }
+  /* Reserves the chart's height so a remounted tab does not jump while uPlot loads. */
+  .weight-chart {
+    min-height: 240px;
   }
   .screen {
     animation: screen-enter var(--motion-tab) var(--motion-ease-enter);

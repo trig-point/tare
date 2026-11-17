@@ -66,10 +66,12 @@ test("a tab URL opens that tab with only its tab marked current", async () => {
   }
 });
 
-test("settings keeps You selected and unknown paths open Today", async () => {
+test("Settings keeps You current, an Oura return opens Settings, and unknown paths open Today", async () => {
   const settings = await open("/settings");
   assert.match(settings.html(), /screen \/settings</);
-  assert.match(settings.html(), /<a [^>]*data-selected="true"[^>]*>.*?You</);
+  assert.deepEqual(current(settings.html()), ["You"]);
+  const oura = await open("/?oura=no_data");
+  assert.equal(oura.router.state.location.href, "/settings?oura=no_data");
   const unknown = await open("/nowhere/at-all");
   assert.equal(unknown.router.state.location.pathname, "/");
   assert.deepEqual(current(unknown.html()), ["Today"]);
@@ -87,7 +89,9 @@ test("back returns to the previous tab", async () => {
 test("the Questions tab shows the open count only when there is one", async () => {
   const badge = (html: string) =>
     /class="nav-badge"[^>]*>([^<]*)</.exec(html)?.[1];
-  assert.equal(badge((await open("/", 3)).html()), "3");
+  const counted = (await open("/", 3)).html();
+  assert.equal(badge(counted), "3");
+  assert.match(counted, /aria-label="Questions, 3 open"/);
   assert.equal(badge((await open("/", 0)).html()), undefined);
   assert.equal(badge((await open("/")).html()), undefined);
 });

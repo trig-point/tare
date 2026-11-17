@@ -8,6 +8,7 @@ import {
   Link,
   Outlet,
   RouterProvider,
+  useNavigate,
   useRouterState,
 } from "@tanstack/react-router";
 import { ChevronLeft, MessageCircle, Settings } from "lucide-react";
@@ -40,7 +41,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "./shared/ui/index.ts";
-import { Today, WeightForm } from "./today.tsx";
+import { Today, useSettledRefresh, WeightForm } from "./today.tsx";
 import { UpdateNotice } from "./update-notice.tsx";
 import "./style.css";
 
@@ -86,12 +87,16 @@ function App() {
         </span>
         <Tooltip>
           <TooltipTrigger asChild>
-            {/* A disabled button gets no pointer events, so the wrapper carries the tooltip. */}
-            <span className="chat-entry">
-              <Button variant="ghost" size="icon" disabled aria-label="Chat">
-                <MessageCircle />
-              </Button>
-            </span>
+            {/* aria-disabled rather than disabled keeps the button focusable, so its tooltip is reachable. */}
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-disabled="true"
+              aria-label="Chat"
+              className="chat-entry"
+            >
+              <MessageCircle />
+            </Button>
           </TooltipTrigger>
           <TooltipContent>Chat is coming</TooltipContent>
         </Tooltip>
@@ -155,9 +160,6 @@ function SessionHome({ runtime }: { runtime: Runtime }) {
   const session = useQuery(runtime.sessions.query());
   const [queue, setQueue] = useState<QueueSnapshot | null>(null);
   const [online, setOnline] = useState(browserOnline);
-  const pathname = useRouterState({
-    select: (state) => state.location.pathname,
-  });
   useEffect(() => {
     const unsubscribe = runtime.queue.subscribe(setQueue);
     const connection = () => setOnline(browserOnline());
@@ -203,10 +205,7 @@ function SessionHome({ runtime }: { runtime: Runtime }) {
             online,
           }}
         >
-          <div className="screen" key={`${view.session.user.id}${pathname}`}>
-            <Outlet />
-          </div>
-          <Navigation person={view.session.user.id} online={online} />
+          <TabShell />
         </appContext.Provider>
       )}
       <RejectedEntries entries={view.records} replay={runtime.queue} />
@@ -214,25 +213,30 @@ function SessionHome({ runtime }: { runtime: Runtime }) {
   );
 }
 
-function Navigation({ person, online }: { person: number; online: boolean }) {
+function TabShell() {
+  const { runtime, session, records, online } = useApp();
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  });
+  useSettledRefresh(session.user.id, runtime.queue, records);
   const questions = useQuery({
-    queryKey: questionsKey(person),
+    queryKey: questionsKey(session.user.id),
     queryFn: ({ signal }) => readQuestions(signal),
     enabled: online,
   });
-  return <BottomNav questions={questions.data?.length} />;
+  return (
+    <>
+      <div className="screen" key={`${session.user.id}${pathname}`}>
+        <Outlet />
+      </div>
+      <BottomNav questions={questions.data?.length} />
+    </>
+  );
 }
 
 function TodayScreen() {
-  const { runtime, session, records, online } = useApp();
-  return (
-    <Today
-      person={session.user}
-      replay={runtime.queue}
-      records={records}
-      online={online}
-    />
-  );
+  const { session, records, online } = useApp();
+  return <Today person={session.user} records={records} online={online} />;
 }
 function QuestionsScreen() {
   const { session, online } = useApp();
@@ -268,8 +272,10 @@ function YouScreen() {
 }
 function SettingsScreen() {
   const { runtime, session, online } = useApp();
+  const navigate = useNavigate();
   const signOut = useMutation({
     mutationFn: () => runtime.sessions.signOut(session),
+    onSuccess: () => navigate({ to: "/", replace: true }),
   });
   return (
     <>

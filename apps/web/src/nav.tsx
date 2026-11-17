@@ -37,6 +37,15 @@ export function createAppRouter(
       getParentRoute: () => root,
       path,
       component: screens[path],
+      // The Oura callback returns to /?oura=<result>, which only Settings reads.
+      beforeLoad: ({ location }) => {
+        if (path === "/" && "oura" in location.search)
+          throw redirect({
+            to: "/settings",
+            search: location.search,
+            replace: true,
+          });
+      },
     }),
   );
   const unknown = createRoute({
@@ -67,6 +76,12 @@ export function BottomNav({ questions }: { questions: number | undefined }) {
           key={path}
           to={path}
           data-selected={path === selected}
+          aria-current={path === selected ? "page" : undefined}
+          aria-label={
+            path === "/questions" && questions
+              ? `${label}, ${questions} open`
+              : undefined
+          }
           className={path === "/add" ? "nav-add" : undefined}
         >
           <span className="nav-icon" aria-hidden="true">
