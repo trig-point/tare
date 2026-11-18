@@ -19,6 +19,7 @@ export const signalVocabulary = {
     value: zod.number().int().min(0).max(2),
     labels: stressSummaries,
   },
+  water: { unit: "ml", value: zod.number().int().min(0).max(10000) },
 } as const;
 type Metric = keyof typeof signalVocabulary;
 export const metricName = zod.enum(

@@ -35,6 +35,7 @@ for (const mode of ["fallback", "access"] as const)
       ["stress_high", 90.5, "minutes"],
       ["recovery_high", 30, "minutes"],
       ["stress_summary", 2, "category"],
+      ["water", 0, "ml"],
     ] as const) {
       const logged = await send("/api/signals", { metric, value });
       assert.equal(logged.status, 200);
@@ -60,6 +61,9 @@ for (const mode of ["fallback", "access"] as const)
       { metric: "stress", value: "high" },
       { metric: "stress_summary", value: 3 },
       { metric: "stress_summary", value: 0.5 },
+      { metric: "water", value: 1.5 },
+      { metric: "water", value: -1 },
+      { metric: "water", value: 10001 },
       { metric: "sleep", value: 1, day: "2026-02-30" },
       { metric: "steps", value: 1, user_id: member.user.id },
       { metric: "steps", value: 1, source: "agent" },
@@ -77,6 +81,21 @@ for (const mode of ["fallback", "access"] as const)
       { status: 400, body: { error: { code: "day_in_future" } } },
     );
     await send("/api/signals", { metric: "steps", value: 3200, day });
+    await send("/api/signals", { metric: "water", value: 10000, day });
+    assert.deepEqual(
+      (await send(path)).body.signals.filter(
+        (row: { metric: string }) => row.metric === "water",
+      ),
+      [
+        {
+          metric: "water",
+          value: 10000,
+          unit: "ml",
+          source: "manual",
+          why: [],
+        },
+      ],
+    );
     assert.deepEqual(
       (await send(path)).body.signals.map(
         (row: { metric: string }) => row.metric,
@@ -93,6 +112,7 @@ for (const mode of ["fallback", "access"] as const)
         "stress",
         "stress_high",
         "stress_summary",
+        "water",
       ],
     );
     assert.deepEqual((await send(path, undefined, true)).body, {
@@ -187,6 +207,12 @@ test("MCP keeps different sources and records agent activity on its local day", 
     capabilities: {},
     clientInfo: { name: "example", version: "1.0.0" },
   });
+  const tools = (await rpc("tools/list", {})).tools;
+  assert.match(
+    tools.find((tool: { name: string }) => tool.name === "log_signal")
+      .description,
+    /from the same source replaces the value.*read the day's agent water with read_signals \(0 if none\)/s,
+  );
   const call = async (name: string, args: unknown) => {
     const result = await rpc("tools/call", { name, arguments: args });
     assert.notEqual(result.isError, true);
