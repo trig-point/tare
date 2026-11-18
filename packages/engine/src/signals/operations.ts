@@ -69,6 +69,8 @@ function knownHabit(key: string) {
 const logSignal = defineOperation({
   ...base,
   name: "log_signal",
+  description:
+    "Set the day's value for one metric. day defaults to today; pass it for a past day. Logging the same metric and day again replaces the value rather than adding. Water is the day's total in whole ml (convert oz and round), 0 to 10,000; to add a drink, read the day's water with read_signals and send the new total.",
   method: "POST",
   path: "/api/signals",
   input: zod

@@ -14,6 +14,7 @@ const metrics = [
   "stress_high",
   "recovery_high",
   "stress_summary",
+  "water",
 ] as const;
 export const metricLabels: Record<(typeof metrics)[number], string> = {
   steps: "Steps",
@@ -27,12 +28,14 @@ export const metricLabels: Record<(typeof metrics)[number], string> = {
   stress_high: "High stress",
   recovery_high: "High recovery",
   stress_summary: "Stress summary",
+  water: "Water",
 };
 const unitSuffix: Record<string, string> = {
   kcal: " kcal",
   minutes: " min",
   bpm: " bpm",
   ms: " ms",
+  ml: " ml",
 };
 export const signalsSchema = z.object({
   day: z.string(),

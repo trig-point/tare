@@ -254,6 +254,22 @@ test("Oura scores render in order, with whole minutes and the stress category as
   );
 });
 
+test("water renders as a whole-day total in ml", () => {
+  const day = "2026-01-02";
+  const water = { metric: "water", unit: "ml", value: 750, why: [] };
+  const response = {
+    day,
+    activities: [],
+    habits: [],
+    signals: [{ ...water, source: "agent" }],
+  };
+  const html = withData(
+    [[health.signalsKey(1, day), health.signalsSchema.parse(response)]],
+    createElement(BodyCard, { person: 1, day, online: false }),
+  );
+  assert.match(html, /<dt>Water<\/dt><dd>750 ml<\/dd>/);
+});
+
 test("settings renders the Oura connection states", () => {
   const account = {
     ...{ id: 1, username: "example-person", timezone: "UTC" },
