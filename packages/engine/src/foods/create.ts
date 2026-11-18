@@ -5,6 +5,7 @@ import { z as zod } from "zod";
 import { scopeDatabase, type WriteScope, writeTransaction } from "../db.ts";
 import { resolveProvenance } from "../logging/provenance.ts";
 import {
+  idInput,
   type Numbers,
   numbersFrom,
   nutrientFields,
@@ -17,9 +18,14 @@ import {
 } from "../operations/registry.ts";
 import { insertFood } from "../queries/insert-food.ts";
 import { insertFoodReceipt } from "../queries/insert-food-receipt.ts";
+import { readBinding } from "../queries/pantry/read-binding.ts";
+import { readConnection } from "../queries/pantry/read-connection.ts";
 import { selectFood } from "../queries/select-food.ts";
 import { selectFoodReceipt } from "../queries/select-food-receipt.ts";
+import { selectRegularMealFood } from "../queries/select-regular-meal-food.ts";
 import { selectSourceFood } from "../queries/select-source-food.ts";
+
+import { updateOwnedFood } from "../queries/update-owned-food.ts";
 
 export type OwnedFoodValues = Numbers & {
   name: string;
@@ -124,6 +130,20 @@ const foodView = zod.strictObject({
   source_food_id: zod.number().int().positive().nullable(),
 });
 
+const foodOutput = zod.strictObject({ food: foodView, created: zod.boolean() });
+
+function viewOfFood(food: NonNullable<ReturnType<typeof selectFood>>) {
+  const {
+    user_id: _owner,
+    service: _service,
+    meal_name: _mealName,
+    chef: _chef,
+    meal_key: _mealKey,
+    ...view
+  } = food;
+  return view;
+}
+
 const createFood = defineOperation({
   name: "create_food",
   description:
@@ -135,7 +155,7 @@ const createFood = defineOperation({
   path: "/api/foods",
   bodyLimit: 8192,
   input: ownedFoodInput.extend({ mutation_id: zod.uuid() }),
-  output: zod.strictObject({ food: foodView, created: zod.boolean() }),
+  output: foodOutput,
   handler(input, context) {
     const userId = operationPerson(context).id;
     const values = ownedFoodValues(input);
@@ -163,20 +183,75 @@ const createFood = defineOperation({
           food_id: food.id,
           created_at: context.clock.now().toISOString(),
         });
-      const {
-        user_id: _owner,
-        service: _service,
-        meal_name: _mealName,
-        chef: _chef,
-        meal_key: _mealKey,
-        ...view
-      } = food;
       return {
         status: prior ? 200 : 201,
-        body: { food: view, created: !prior },
+        body: { food: viewOfFood(food), created: !prior },
       };
     });
   },
 });
 
-export const foodOperations = [createFood];
+const regularMealEditIssue = "Use save_regular_meal to correct this food.";
+
+const editFood = defineOperation({
+  name: "edit_food",
+  description:
+    "Correct a saved food. Omitted fields keep their values. Past logs keep their nutrition, and new logs use the edit.",
+  modes: ["access", "fallback"],
+  callerClass: "browser_and_agent",
+  admin: false,
+  method: "PATCH",
+  path: "/api/foods/:id",
+  bodyLimit: 8192,
+  input: ownedFoodInput
+    .omit({ source_food_id: true })
+    .partial()
+    .extend(idInput.shape)
+    .refine((input) => Object.keys(input).length > 1),
+  output: foodOutput,
+  handler({ id, ...fields }, context) {
+    const owner = { id, user_id: operationPerson(context).id };
+    return writeTransaction(context.database, (scope) => {
+      const database = scopeDatabase(scope);
+      const food = selectFood(database, owner);
+      if (!food) throw new OperationError(404, "food_not_found");
+      if (selectRegularMealFood(database, owner))
+        throw new OperationError(409, "food_is_regular_meal", {}, [
+          regularMealEditIssue,
+        ]);
+      const { id: _id, ...stored } = viewOfFood(food);
+      const merged = { ...stored, ...fields };
+      if (
+        merged.serving_size !== stored.serving_size ||
+        merged.serving_unit !== stored.serving_unit
+      ) {
+        const connection = readConnection(database);
+        if (
+          connection?.user_id === owner.user_id &&
+          readBinding(database, {
+            user_id: owner.user_id,
+            generation: connection.generation,
+            reference_kind: "food",
+            reference_id: id,
+          })
+        )
+          throw new OperationError(409, "food_bound_serving_change");
+      }
+      const parsed = ownedFoodInput.safeParse(merged);
+      if (!parsed.success) throw new OperationError(400, "invalid_request");
+      const { name, source, numbers, row } = checkOwnedFood(
+        database,
+        ownedFoodValues(parsed.data),
+      );
+      const [updated] = updateOwnedFood(
+        database,
+        { ...numbers, ...row, name, source },
+        owner,
+      );
+      if (!updated) throw new Error("Food update returned no row");
+      return { status: 200, body: { food: updated, created: false } };
+    });
+  },
+});
+
+export const foodOperations = [createFood, editFood];

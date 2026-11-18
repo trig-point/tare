@@ -90,6 +90,7 @@ test("registry constrains public and administrator operations and inventories ev
       "save_regular_meal",
       "log_regular_meal",
       "create_food",
+      "edit_food",
       "save_day_template",
       "save_slot_shares",
       "save_day_type",
