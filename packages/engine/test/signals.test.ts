@@ -211,7 +211,7 @@ test("MCP keeps different sources and records agent activity on its local day", 
   assert.match(
     tools.find((tool: { name: string }) => tool.name === "log_signal")
       .description,
-    /replaces the value rather than adding.*Water is the day's total in whole ml/s,
+    /from the same source replaces the value.*read the day's agent water with read_signals \(0 if none\)/s,
   );
   const call = async (name: string, args: unknown) => {
     const result = await rpc("tools/call", { name, arguments: args });
