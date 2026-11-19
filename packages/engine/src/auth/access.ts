@@ -24,7 +24,8 @@ export function createAccessVerifier(options: {
         currentDate: options.now(),
       });
       if (
-        payload.sub === "" &&
+        (payload.sub === "" ||
+          (payload.sub === undefined && payload.email === undefined)) &&
         typeof payload.common_name === "string" &&
         payload.common_name !== ""
       )
