@@ -8,6 +8,7 @@ import {
 } from "jose";
 import { normalizeAccessEmail } from "../src/auth/access.ts";
 import { countUsers } from "../src/queries/count-users.ts";
+import { insertAgentToken } from "../src/queries/insert-agent-token.ts";
 import {
   accessFixture,
   accessPublicJwk,
@@ -15,6 +16,7 @@ import {
   issuedAt,
   publicUser,
   rejection,
+  signAccessToken,
 } from "./auth-support.ts";
 import { test } from "./support/hang-ceiling.ts";
 
@@ -29,16 +31,34 @@ const cases: [string, JWTPayload, number, string][] = [
     "unknown_agent",
   ],
   [
-    "absent sub is no service identity",
+    "absent sub is a service identity",
     { common_name: "agent" },
-    401,
-    "unauthenticated",
+    403,
+    "unknown_agent",
+  ],
+  [
+    "absent sub reaches mapped person",
+    { common_name: "example-agent" },
+    200,
+    "",
   ],
   [
     "absent sub permits browser",
     { common_name: "agent", email: "admin@example.com" },
     200,
     "",
+  ],
+  [
+    "nonempty sub without email rejects service",
+    { sub: "person", common_name: "agent" },
+    401,
+    "unauthenticated",
+  ],
+  [
+    "absent sub with empty email rejects service",
+    { common_name: "agent", email: "" },
+    401,
+    "unauthenticated",
   ],
   [
     "nonempty sub permits browser",
@@ -77,7 +97,20 @@ const cases: [string, JWTPayload, number, string][] = [
 for (const [name, payload, status, code] of cases) {
   test(`Access token: ${name}`, async (context) => {
     const setup = accessFixture(context);
-    const response = await setup.session(payload);
+    const mappedAgent = payload.common_name === "example-agent";
+    if (mappedAgent)
+      insertAgentToken(setup.database, {
+        client_id: "example-agent",
+        user_id: setup.admin.id,
+        name: "Example agent",
+        created_at: issuedAt.toISOString(),
+      });
+    const response = mappedAgent
+      ? await setup.app.request("/api/me", {
+          headers: assertionHeader(await signAccessToken(payload)),
+        })
+      : await setup.session(payload);
+    assert.equal(response.status, status);
     if (status === 200)
       assert.equal((await publicUser(response)).id, setup.admin.id);
     else await rejection(response, status, code);
