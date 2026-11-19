@@ -172,9 +172,9 @@ test("MCP advertises edit_food and its effect on past logs", async (context) => 
   const client = await mcpSession(context, setup, setup.admin.user.id);
   const { tools } = await client.listTools();
   const edit = tools.find((tool) => tool.name === "edit_food");
-  assert.ok(edit);
+  assert.ok(edit?.description);
   const inputSchema = edit.inputSchema;
-  assert.match(edit?.description, /Create a new food for a different serving/);
+  assert.match(edit.description, /Create a new food for a different serving/);
   assert.equal(inputSchema.minProperties, 2);
   assert.equal(inputSchema.additionalProperties, false);
   assert.equal(inputSchema.properties?.serving_size, undefined);
