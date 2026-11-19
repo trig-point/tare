@@ -75,7 +75,9 @@ export const logFoodInput = zod
     )
       context.addIssue({
         code: "custom",
-        message: "An estimated amount needs a food reference and no provenance",
+        message: input.amount_estimated
+          ? "An estimated amount needs a food reference and no provenance"
+          : "servings_low and servings_high need amount_estimated: true",
       });
     if (references === 0 && input.servings !== undefined)
       context.addIssue({

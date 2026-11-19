@@ -106,7 +106,7 @@ const editIntake = defineOperation({
   ...base,
   name: "edit_intake",
   description:
-    "For an estimated amount, edit servings, set both servings bounds, or set amount_measured: true to clear the estimate. A new range must bracket servings. Marking an amount measured takes no new bounds.",
+    "Edit an intake entry's eaten_at or portion_note, servings for a referenced food, or name and nutrition numbers for ad hoc food. For an estimated amount, set both serving bounds to bracket servings or use amount_measured: true to clear the estimate without sending bounds.",
   method: "PATCH",
   path: "/api/intake/:id",
   input: editIntakeInput,
