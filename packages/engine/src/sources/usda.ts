@@ -62,9 +62,9 @@ export type UsdaCandidates =
   | {
       status: "ok";
       foods: { record: NutritionRecord; dataType: UsdaDataType }[];
-      /** Entries that failed the food schema. */
+      /** Entries that failed the food schema or nutrition checks, or named another id. */
       malformed: number;
-      /** Supported foods dropped because their serving unit is not mass or volume. */
+      /** Supported foods dropped without a mass basis. */
       noBasis: number;
     };
 
@@ -204,15 +204,17 @@ export function createUsdaAdapter(
         malformed += 1;
         continue;
       }
+      if (query === undefined && path !== `food/${food.data.fdcId}`) {
+        malformed += 1;
+        continue;
+      }
       const record = recordFor(food.data, retrievedAt);
-      if (record && (query !== undefined || path === `food/${record.sourceId}`))
+      if (record)
         kept.push({ record, dataType: food.data.dataType as UsdaDataType });
-      else if (
-        !record &&
-        DATA_TYPES.some((dataType) => dataType === food.data.dataType) &&
-        basisFor(food.data) === null
-      )
-        noBasis += 1;
+      else if (!DATA_TYPES.some((dataType) => dataType === food.data.dataType))
+        continue;
+      else if (basisFor(food.data)?.dimension !== "mass") noBasis += 1;
+      else malformed += 1;
     }
     return {
       status: "ok",

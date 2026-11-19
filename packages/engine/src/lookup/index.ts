@@ -251,11 +251,13 @@ export async function searchFoodCandidates(
 ) {
   const result = await adapters.usda.searchCandidates(query);
   if (result.status !== "ok") throw new CandidateError(failure(result));
+  const mass = result.foods.filter(
+    ({ record }) => record.basis?.dimension === "mass",
+  );
   // Vendor shape drift must not read as a search with no hits.
-  if (result.foods.length === 0 && result.malformed > 0)
+  if (mass.length === 0 && result.malformed > 0)
     throw new CandidateError("lookup_invalid_response");
-  return result.foods
-    .filter(({ record }) => record.basis?.dimension === "mass")
+  return mass
     .map((food, index) => ({ ...food, index }))
     .sort(
       (left, right) =>

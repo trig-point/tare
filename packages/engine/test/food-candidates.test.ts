@@ -150,11 +150,21 @@ test("lookup failures answer explicit codes and write nothing", async (context) 
   };
   responses["food/3006"] = Response.json({}, { status: 429 });
   responses["food/3007"] = Response.json({ fdcId: "not a food" });
-  responses["foods/search"] = Response.json({ foods: [{ fdcId: "bad" }] });
+  responses["food/3011"] = Response.json({ ...drink, fdcId: 3011 });
+  responses["food/3012"] = Response.json(legacy);
+  responses["food/3013"] = Response.json(
+    usdaFood(3013, "SR Legacy", "Rice", -5),
+  );
+  responses["foods/search"] = Response.json({
+    foods: [drink, { fdcId: "bad" }],
+  });
   const cases = [
     ["source-food", { fdc_id: 3999 }, 404, "food_not_found"],
     ["source-food", { fdc_id: 3003 }, 400, "no_mass_basis"],
+    ["source-food", { fdc_id: 3011 }, 400, "no_mass_basis"],
     ["source-food", { fdc_id: 3008 }, 400, "no_mass_basis"],
+    ["source-food", { fdc_id: 3012 }, 503, "lookup_invalid_response"],
+    ["source-food", { fdc_id: 3013 }, 503, "lookup_invalid_response"],
     ["source-food", { fdc_id: 3009 }, 400, "unsupported_food"],
     ["source-food", { fdc_id: 3010 }, 503, "lookup_failed"],
     ["source-food", { fdc_id: 3006 }, 503, "lookup_rate_limited"],
