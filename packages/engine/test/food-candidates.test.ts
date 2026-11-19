@@ -64,7 +64,7 @@ async function setup(context: TestContext, key = true) {
   };
   const rows = () =>
     users.database.prepare("SELECT count(*) AS count FROM source_foods").get();
-  return { calls, responses, send, rows };
+  return { calls, responses, send, rows, database: users.database };
 }
 
 test("candidate search puts generic mass-basis hits before Branded and writes nothing", async (context) => {
@@ -114,19 +114,49 @@ test("add_source_food stores one row per id with the adapter's provenance", asyn
   assert.deepEqual(again, first);
   const label = await send("/api/lookup/source-food", { fdc_id: 3001 });
   assert.equal(label.provenance, "label");
-  assert.deepEqual(calls, ["food/3002", "food/3001"]);
-  assert.deepEqual(rows(), { count: 2 });
+  let kcal = 128;
+  responses["food/3004"] = () =>
+    Response.json({
+      ...foundation,
+      foodNutrients: [{ nutrientId: 1008, value: kcal++, unitName: "KCAL" }],
+    });
+  const [left, right] = await Promise.all(
+    [0, 1].map(() => send("/api/lookup/source-food", { fdc_id: 3004 })),
+  );
+  assert.deepEqual(right, left);
+  assert.deepEqual(calls, ["food/3002", "food/3001", "food/3004", "food/3004"]);
+  assert.deepEqual(rows(), { count: 3 });
 });
 
 test("lookup failures answer explicit codes and write nothing", async (context) => {
   const { responses, send, rows } = await setup(context);
-  responses["food/3003"] = Response.json(drink);
+  responses["foods/search"] = Response.json({ foods: [drink] });
+  const cachedDrink = await send("/api/lookup/search", {
+    name: drink.description,
+  });
+  assert.equal(cachedDrink.result, "match");
+  responses["food/3008"] = Response.json({
+    ...branded,
+    fdcId: 3008,
+    servingSizeUnit: "each",
+  });
+  responses["food/3009"] = Response.json({
+    ...legacy,
+    fdcId: 3009,
+    dataType: "Survey (FNDDS)",
+  });
+  responses["food/3010"] = () => {
+    throw new TypeError("fetch failed");
+  };
   responses["food/3006"] = Response.json({}, { status: 429 });
   responses["food/3007"] = Response.json({ fdcId: "not a food" });
-  responses["foods/search"] = Response.json({ results: [] });
+  responses["foods/search"] = Response.json({ foods: [{ fdcId: "bad" }] });
   const cases = [
     ["source-food", { fdc_id: 3999 }, 404, "food_not_found"],
     ["source-food", { fdc_id: 3003 }, 400, "no_mass_basis"],
+    ["source-food", { fdc_id: 3008 }, 400, "no_mass_basis"],
+    ["source-food", { fdc_id: 3009 }, 400, "unsupported_food"],
+    ["source-food", { fdc_id: 3010 }, 503, "lookup_failed"],
     ["source-food", { fdc_id: 3006 }, 503, "lookup_rate_limited"],
     ["source-food", { fdc_id: 3007 }, 503, "lookup_invalid_response"],
     ["candidates", { query: "rice" }, 503, "lookup_invalid_response"],
@@ -135,11 +165,16 @@ test("lookup failures answer explicit codes and write nothing", async (context) 
     const refused = await send(`/api/lookup/${path}`, body);
     assert.deepEqual([refused.status, refused.error?.code], [status, code]);
   }
-  assert.deepEqual(rows(), { count: 0 });
+  assert.deepEqual(rows(), { count: 1 });
 });
 
 test("both operations answer lookup_unavailable without a USDA key", async (context) => {
-  const { send, calls } = await setup(context, false);
+  const { send, calls, database } = await setup(context, false);
+  database
+    .prepare(
+      "INSERT INTO source_foods (source, source_key, name, serving_size, serving_unit, kcal, provenance, fetched_at) VALUES ('usda', '3002', 'Rice, white, cooked', 100, 'g', 130, 'verified', '2026-01-05T00:00:00.000Z')",
+    )
+    .run();
   for (const [path, body] of [
     ["candidates", { query: "rice" }],
     ["source-food", { fdc_id: 3002 }],

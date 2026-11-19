@@ -234,11 +234,12 @@ const DATA_TYPE_ORDER: Record<UsdaDataType, number> = {
 
 function failure(
   result: Exclude<UsdaResult, { status: "ok" }>,
+  detail = false,
 ): CandidateFailure {
   if (result.status === "skipped") return "lookup_unavailable";
   if (result.reason === "invalid_response") return "lookup_invalid_response";
   if (result.statusCode === 429) return "lookup_rate_limited";
-  if (result.statusCode === 404) return "food_not_found";
+  if (detail && result.statusCode === 404) return "food_not_found";
   return "lookup_failed";
 }
 
@@ -250,6 +251,9 @@ export async function searchFoodCandidates(
 ) {
   const result = await adapters.usda.searchCandidates(query);
   if (result.status !== "ok") throw new CandidateError(failure(result));
+  // Vendor shape drift must not read as a search with no hits.
+  if (result.foods.length === 0 && result.malformed > 0)
+    throw new CandidateError("lookup_invalid_response");
   return result.foods
     .filter(({ record }) => record.basis?.dimension === "mass")
     .map((food, index) => ({ ...food, index }))
@@ -268,24 +272,42 @@ export async function searchFoodCandidates(
     }));
 }
 
+function massRow(row: SourceRow): LookupFood {
+  if (cachedRecord(row).basis?.dimension !== "mass")
+    throw new CandidateError("no_mass_basis");
+  return publicFood(row);
+}
+
 /** Stores one chosen USDA food in the shared cache; a cached id is returned as is. */
 export async function addSourceFood(
   database: Database,
   adapters: LookupAdapters,
   fdcId: number,
 ): Promise<LookupFood> {
+  if (!adapters.usda.configured) throw new CandidateError("lookup_unavailable");
   const key = { source: "usda", source_key: String(fdcId) } as const;
   const cached = selectSourceFoodByKey(database, key);
-  if (cached) return publicFood(cached);
-  const result = await adapters.usda.fetchById(key.source_key);
-  if (result.status !== "ok") throw new CandidateError(failure(result));
-  const [record] = result.records.map(normalizedRecord);
-  if (!record) throw new CandidateError("unsupported_food");
+  if (cached) return massRow(cached);
+  const result = await adapters.usda.fetchCandidate(fdcId);
+  if (result.status !== "ok") throw new CandidateError(failure(result, true));
+  const record = result.foods[0]?.record;
+  if (!record)
+    throw new CandidateError(
+      result.noBasis > 0
+        ? "no_mass_basis"
+        : result.malformed > 0
+          ? "lookup_invalid_response"
+          : "unsupported_food",
+    );
   if (record.basis?.dimension !== "mass")
     throw new CandidateError("no_mass_basis");
-  return publicFood(
-    writeTransaction(database, (scope) =>
-      storeRecord(scopeDatabase(scope), record),
-    ),
-  );
+  const stored = normalizedRecord(record);
+  return writeTransaction(database, (scope) => {
+    const scoped = scopeDatabase(scope);
+    // An overlapping add may have stored this id while USDA was answering.
+    const existing = selectSourceFoodByKey(scoped, key);
+    return existing
+      ? massRow(existing)
+      : publicFood(storeRecord(scoped, stored));
+  });
 }

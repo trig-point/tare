@@ -62,6 +62,10 @@ export type UsdaCandidates =
   | {
       status: "ok";
       foods: { record: NutritionRecord; dataType: UsdaDataType }[];
+      /** Entries that failed the food schema. */
+      malformed: number;
+      /** Supported foods dropped because their serving unit is not mass or volume. */
+      noBasis: number;
     };
 
 function basisFor(food: z.output<typeof usdaFoodSchema>): ServingBasis | null {
@@ -192,14 +196,31 @@ export function createUsdaAdapter(
       foods = [detail];
     }
     const kept: { record: NutritionRecord; dataType: UsdaDataType }[] = [];
+    let malformed = 0;
+    let noBasis = 0;
     const retrievedAt = now().toISOString();
     for (const food of foods) {
-      if (!food.success) continue;
+      if (!food.success) {
+        malformed += 1;
+        continue;
+      }
       const record = recordFor(food.data, retrievedAt);
       if (record && (query !== undefined || path === `food/${record.sourceId}`))
         kept.push({ record, dataType: food.data.dataType as UsdaDataType });
+      else if (
+        !record &&
+        DATA_TYPES.some((dataType) => dataType === food.data.dataType) &&
+        basisFor(food.data) === null
+      )
+        noBasis += 1;
     }
-    return { status: "ok", foods: kept, rejected: foods.length - kept.length };
+    return {
+      status: "ok",
+      foods: kept,
+      malformed,
+      noBasis,
+      rejected: foods.length - kept.length,
+    };
   }
 
   async function records(
@@ -228,6 +249,13 @@ export function createUsdaAdapter(
     /** Like search, but keeps each record's USDA data type. */
     searchCandidates: async (query: string): Promise<UsdaCandidates> =>
       searchCandidates(query),
+    /** Like fetchById, but keeps the data type and why a record was dropped. */
+    async fetchCandidate(fdcId: number): Promise<UsdaCandidates> {
+      if (!Number.isSafeInteger(fdcId) || fdcId < 1)
+        return { status: "error", reason: "invalid_request" };
+      return lookup(`food/${fdcId}`);
+    },
+    configured: Boolean(apiKey),
     async fetchById(fdcId: string): Promise<UsdaResult> {
       if (!/^[1-9]\d*$/.test(fdcId) || !Number.isSafeInteger(Number(fdcId)))
         return { status: "error", reason: "invalid_request" };
