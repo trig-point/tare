@@ -46,6 +46,7 @@ export const usdaFoodSchema = z.object({
 export const usdaSearchSchema = z.object({ foods: z.array(z.unknown()) });
 
 export type UsdaFood = z.input<typeof usdaFoodSchema>;
+export type UsdaDataType = (typeof DATA_TYPES)[number];
 
 export type UsdaResult =
   | { status: "ok"; records: NutritionRecord[]; rejected: number }
@@ -54,6 +55,17 @@ export type UsdaResult =
       status: "error";
       reason: "http" | "network" | "invalid_response" | "invalid_request";
       statusCode?: number;
+    };
+
+export type UsdaCandidates =
+  | Exclude<UsdaResult, { status: "ok" }>
+  | {
+      status: "ok";
+      foods: { record: NutritionRecord; dataType: UsdaDataType }[];
+      /** Entries that failed the food schema or nutrition checks, or named another id. */
+      malformed: number;
+      /** Supported foods dropped without a mass basis. */
+      noBasis: number;
     };
 
 function basisFor(food: z.output<typeof usdaFoodSchema>): ServingBasis | null {
@@ -134,7 +146,10 @@ export function createUsdaAdapter(
   const request = options.fetch ?? fetch;
   const now = options.now ?? (() => new Date());
 
-  async function lookup(path: string, query?: string): Promise<UsdaResult> {
+  async function lookup(
+    path: string,
+    query?: string,
+  ): Promise<UsdaCandidates & { rejected?: number }> {
     if (!apiKey) return { status: "skipped", reason: "missing_key" };
     const url = new URL(path, API_URL);
     if (query !== undefined) {
@@ -180,25 +195,73 @@ export function createUsdaAdapter(
         return { status: "error", reason: "invalid_response" };
       foods = [detail];
     }
-    const records: NutritionRecord[] = [];
+    const kept: { record: NutritionRecord; dataType: UsdaDataType }[] = [];
+    let malformed = 0;
+    let noBasis = 0;
     const retrievedAt = now().toISOString();
     for (const food of foods) {
-      const record = food.success ? recordFor(food.data, retrievedAt) : null;
-      if (record && (query !== undefined || path === `food/${record.sourceId}`))
-        records.push(record);
+      if (!food.success) {
+        malformed += 1;
+        continue;
+      }
+      if (query === undefined && path !== `food/${food.data.fdcId}`) {
+        malformed += 1;
+        continue;
+      }
+      const record = recordFor(food.data, retrievedAt);
+      if (record)
+        kept.push({ record, dataType: food.data.dataType as UsdaDataType });
+      else if (!DATA_TYPES.some((dataType) => dataType === food.data.dataType))
+        continue;
+      else if (basisFor(food.data)?.dimension !== "mass") noBasis += 1;
+      else malformed += 1;
     }
-    return { status: "ok", records, rejected: foods.length - records.length };
+    return {
+      status: "ok",
+      foods: kept,
+      malformed,
+      noBasis,
+      rejected: foods.length - kept.length,
+    };
+  }
+
+  async function records(
+    pending: Promise<UsdaCandidates & { rejected?: number }>,
+  ): Promise<UsdaResult> {
+    const result = await pending;
+    if (result.status !== "ok") return result;
+    return {
+      status: "ok",
+      records: result.foods.map((food) => food.record),
+      rejected: result.rejected ?? 0,
+    };
+  }
+
+  function searchCandidates(query: string) {
+    if (!query.trim())
+      return Promise.resolve({
+        status: "error",
+        reason: "invalid_request",
+      } as const);
+    return lookup("foods/search", query.trim());
   }
 
   return {
-    async search(query: string): Promise<UsdaResult> {
-      if (!query.trim()) return { status: "error", reason: "invalid_request" };
-      return lookup("foods/search", query.trim());
+    search: (query: string) => records(searchCandidates(query)),
+    /** Like search, but keeps each record's USDA data type. */
+    searchCandidates: async (query: string): Promise<UsdaCandidates> =>
+      searchCandidates(query),
+    /** Like fetchById, but keeps the data type and why a record was dropped. */
+    async fetchCandidate(fdcId: number): Promise<UsdaCandidates> {
+      if (!Number.isSafeInteger(fdcId) || fdcId < 1)
+        return { status: "error", reason: "invalid_request" };
+      return lookup(`food/${fdcId}`);
     },
+    configured: Boolean(apiKey),
     async fetchById(fdcId: string): Promise<UsdaResult> {
       if (!/^[1-9]\d*$/.test(fdcId) || !Number.isSafeInteger(Number(fdcId)))
         return { status: "error", reason: "invalid_request" };
-      return lookup(`food/${fdcId}`);
+      return records(lookup(`food/${fdcId}`));
     },
   };
 }

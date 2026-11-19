@@ -71,6 +71,8 @@ test("registry constrains public and administrator operations and inventories ev
       "body_fat_history",
       "lookup_barcode",
       "search_online",
+      "search_food_candidates",
+      "add_source_food",
       "list_questions",
       "answer_question",
       "log_signal",
