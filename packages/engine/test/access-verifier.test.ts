@@ -49,6 +49,18 @@ const cases: [string, JWTPayload, number, string][] = [
     "",
   ],
   [
+    "nonempty sub without email rejects service",
+    { sub: "person", common_name: "agent" },
+    401,
+    "unauthenticated",
+  ],
+  [
+    "absent sub with empty email rejects service",
+    { common_name: "agent", email: "" },
+    401,
+    "unauthenticated",
+  ],
+  [
     "nonempty sub permits browser",
     { sub: "person", common_name: "agent", email: "admin@example.com" },
     200,
