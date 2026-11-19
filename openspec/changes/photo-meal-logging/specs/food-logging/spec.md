@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Estimated amount of a referenced food
-A person or agent SHALL be able to log a catalog or source food with its amount marked as estimated. The entry SHALL keep its reference to the food, take its values from the food times the servings, store that its amount is estimated, carry provenance `estimated`, and MAY carry a low and high number of servings from which its calorie range is computed. Editing the servings or the servings range of such an entry SHALL recompute its values and range from the current food. Marking the amount as measured SHALL recompute the entry at its servings, restore the food's provenance and any range the food itself carries, and clear the estimate. An entry with an estimated amount SHALL NOT consume pantry stock. A requested provenance that differs from the food's SHALL still be refused with `provenance_mismatch`.
+A person or agent SHALL be able to log a catalog or source food with its amount marked as estimated. The entry SHALL keep its reference to the food, take its values from the food times the servings, store that its amount is estimated, carry provenance `estimated`, and MAY carry a low and high number of servings from which its calorie range is computed. Editing the servings or the servings range of such an entry SHALL recompute its values and range from the current food; a new amount outside the stored servings range SHALL clear the range. Marking the amount as measured SHALL recompute the entry at its servings, restore the food's provenance and any range the food itself carries, and clear the estimate. An entry with an estimated amount SHALL NOT consume pantry stock. A requested provenance that differs from the food's SHALL still be refused with `provenance_mismatch`.
 
 #### Scenario: Estimated rice portion
 - **WHEN** a USDA Foundation rice food stored per 100 g at 130 kcal is logged with 3 servings, low 2.5 and high 3.5, and the amount marked as estimated
@@ -21,7 +21,11 @@ A person or agent SHALL be able to log a catalog or source food with its amount 
 
 #### Scenario: Grocery food with an estimated amount
 - **WHEN** a food bound to a pantry product is logged with its amount marked as estimated
-- **THEN** no pantry stock is consumed and the entry records that it was not
+- **THEN** no pantry stock is consumed and no pantry request is written
+
+#### Scenario: Amount edited outside the range
+- **WHEN** the estimated rice entry (2.5 to 3.5 servings) is edited to 4 servings with no new range
+- **THEN** it has 520 kcal, stays an estimated amount, and has no range
 
 #### Scenario: Other provenance still refused
 - **WHEN** a USDA Foundation food is logged with provenance `label`
