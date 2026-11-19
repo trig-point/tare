@@ -10,29 +10,35 @@ const totalSchema = zod.strictObject({
   known_subtotal: zod.number(),
 });
 const totalKeys = ["kcal", "protein_g", "carbs_g", "fat_g", "fiber_g"] as const;
+export const ledgerTotalsSchema = zod.strictObject({
+  kcal: totalSchema,
+  protein_g: totalSchema,
+  carbs_g: totalSchema,
+  fat_g: totalSchema,
+  fiber_g: totalSchema,
+});
 export const ledgerSchema = zod.strictObject({
   day: zod.string(),
   entries: zod.array(intakeRow),
-  totals: zod.strictObject({
-    kcal: totalSchema,
-    protein_g: totalSchema,
-    carbs_g: totalSchema,
-    fat_g: totalSchema,
-    fiber_g: totalSchema,
-  }),
+  totals: ledgerTotalsSchema,
 });
 
-export function readLedger(database: Database, personId: number, day: string) {
-  const entries = selectLedgerEntries(database, { user_id: personId, day });
-  const totals = Object.fromEntries(
+export function ledgerTotals(
+  entries: ReadonlyArray<
+    Pick<zod.infer<typeof intakeRow>, (typeof totalKeys)[number]>
+  >,
+  checkSubtotal?: (subtotal: number, part: number) => void,
+) {
+  return Object.fromEntries(
     totalKeys.map((key) => {
       let known = 0;
       let subtotal = 0;
-      for (const entry of entries) {
+      for (const [index, entry] of entries.entries()) {
         const value = entry[key];
         if (value !== null) {
           known += 1;
           subtotal += value;
+          checkSubtotal?.(subtotal, index + 1);
         }
       }
       const complete = known === entries.length;
@@ -45,8 +51,12 @@ export function readLedger(database: Database, personId: number, day: string) {
         },
       ];
     }),
-  ) as zod.infer<typeof ledgerSchema>["totals"];
-  return { day, entries, totals };
+  ) as zod.infer<typeof ledgerTotalsSchema>;
+}
+
+export function readLedger(database: Database, personId: number, day: string) {
+  const entries = selectLedgerEntries(database, { user_id: personId, day });
+  return { day, entries, totals: ledgerTotals(entries) };
 }
 
 export function remainingFor(

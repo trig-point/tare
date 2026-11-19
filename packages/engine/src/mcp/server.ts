@@ -78,7 +78,7 @@ export function mountMcp(app: Hono<AuthEnv>, deps: OperationDependencies) {
         operation.name,
         {
           description: operation.description,
-          inputSchema: operation.input,
+          inputSchema: operation.mcpInput ?? operation.input,
           outputSchema: operation.output,
         },
         async (input) => {
@@ -109,12 +109,17 @@ export function mountMcp(app: Hono<AuthEnv>, deps: OperationDependencies) {
               error instanceof OperationError && code === "food_is_regular_meal"
                 ? error.issues
                 : undefined;
+            const part =
+              error instanceof OperationError &&
+              operation.name === "log_meal_parts"
+                ? error.part
+                : undefined;
             return {
               isError: true,
               content: [
                 {
                   type: "text",
-                  text: JSON.stringify({ error: { code, issues } }),
+                  text: JSON.stringify({ error: { code, issues, part } }),
                 },
               ],
             };
