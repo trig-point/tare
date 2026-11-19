@@ -154,10 +154,9 @@ test("edit_food accepts a nutrition correction after the linked catalog basis ch
     source_food_id: evidence.id,
   });
   assert.equal(created.status, 201);
-  assert.equal(
-    upsertSourceFood(database, { ...catalog, serving_size: 2 })?.id,
-    evidence.id,
-  );
+  const refreshed = upsertSourceFood(database, { ...catalog, serving_size: 2 });
+  assert.equal(refreshed?.id, evidence.id);
+  assert.equal(refreshed?.serving_size, 2);
   const edited = await send(
     `/api/foods/${created.food.id}`,
     { kcal: 175 },
