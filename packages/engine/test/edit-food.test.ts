@@ -102,7 +102,7 @@ test("edit_food protects regular meals and the current pantry serving basis", as
     baseline: "estimate",
   });
   assert.equal(meal.status, 201);
-  const editMeal = async () => {
+  const editMeal = async (issue: string) => {
     const result = await send(
       `/api/foods/${meal.meal.id}`,
       { kcal: 175 },
@@ -112,17 +112,21 @@ test("edit_food protects regular meals and the current pantry serving basis", as
       status: 409,
       error: {
         code: "food_is_regular_meal",
-        issues: ["Use save_regular_meal to correct this food."],
+        issues: [issue],
       },
     });
   };
-  await editMeal();
+  await editMeal(
+    "This food belongs to a regular meal; correct it with save_regular_meal.",
+  );
   assert.equal(
     (await send("/api/regular-meals", { action: "delete", id: meal.meal.id }))
       .status,
     200,
   );
-  await editMeal();
+  await editMeal(
+    "This food belongs to an archived regular meal and can't be edited.",
+  );
   const owner = { user_id: admin.user.id, generation: 2 };
   saveConnection(database, {
     ...owner,
@@ -134,6 +138,10 @@ test("edit_food protects regular meals and the current pantry serving basis", as
     error: null,
   });
   const reference = { ...owner, reference_kind: "food", reference_id: id };
+  assert.deepEqual((await edit({ serving_size: 2 })).food, {
+    ...food,
+    serving_size: 2,
+  });
   saveBinding(database, {
     ...reference,
     product_id: 1,
@@ -142,12 +150,16 @@ test("edit_food protects regular meals and the current pantry serving basis", as
     change_token: "example",
   });
   const before = readBinding(database, reference);
-  assert.ok(before);
-  assert.deepEqual(await edit({ serving_size: 2 }), {
+  assert.equal(before.length, 1);
+  assert.deepEqual(await edit({ serving_size: 3 }), {
     status: 409,
     error: { code: "food_bound_serving_change" },
   });
-  assert.deepEqual((await edit({ kcal: 175 })).food, { ...food, kcal: 175 });
+  assert.deepEqual((await edit({ kcal: 175 })).food, {
+    ...food,
+    serving_size: 2,
+    kcal: 175,
+  });
   assert.deepEqual(readBinding(database, reference), before);
 });
 
@@ -188,4 +200,15 @@ test("MCP advertises edit_food and its effect on past logs", async (context) => 
     (tool: { name: string }) => tool.name === "edit_food",
   );
   assert.match(edit?.description, /Past logs keep their nutrition/);
+  const call = (name: string, args: unknown) =>
+    rpc("tools/call", { name, arguments: args });
+  const { food } = (await call("create_food", rice)).structuredContent;
+  assert.equal(food.id, 1);
+  const invalid = await call("edit_food", { id: true, kcal: 175 });
+  assert.equal(invalid.isError, true);
+  assert.match(invalid.content[0].text, /Invalid arguments/);
+  assert.deepEqual(
+    (await call("create_food", rice)).structuredContent.food,
+    food,
+  );
 });

@@ -6,7 +6,7 @@ export type SelectRegularMealFoodParams = {
 };
 
 export type SelectRegularMealFoodResult = {
-  food_id: number;
+  archived_at: string | null;
 };
 
 export function selectRegularMealFood(
@@ -14,7 +14,7 @@ export function selectRegularMealFood(
   params: SelectRegularMealFoodParams,
 ): SelectRegularMealFoodResult | null {
   const sql = `
-	SELECT food_id FROM regular_meals WHERE user_id = ? AND food_id = ?;
+	SELECT archived_at FROM regular_meals WHERE user_id = ? AND food_id = ?;
 	
 	`;
   const res = db.prepare(sql).raw(true).get([params.user_id, params.id]);
@@ -24,7 +24,7 @@ export function selectRegularMealFood(
 
 function mapArrayToSelectRegularMealFoodResult(data: any) {
   const result: SelectRegularMealFoodResult = {
-    food_id: data[0],
+    archived_at: data[0],
   };
   return result;
 }

@@ -5,7 +5,6 @@ import { z as zod } from "zod";
 import { scopeDatabase, type WriteScope, writeTransaction } from "../db.ts";
 import { resolveProvenance } from "../logging/provenance.ts";
 import {
-  idInput,
   type Numbers,
   numbersFrom,
   nutrientFields,
@@ -191,7 +190,9 @@ const createFood = defineOperation({
   },
 });
 
-const regularMealEditIssue = "Use save_regular_meal to correct this food.";
+const foodId = zod
+  .union([zod.number(), zod.string().regex(/^\d+$/)])
+  .pipe(zod.coerce.number().int().positive());
 
 const editFood = defineOperation({
   name: "edit_food",
@@ -206,7 +207,7 @@ const editFood = defineOperation({
   input: ownedFoodInput
     .omit({ source_food_id: true })
     .partial()
-    .extend(idInput.shape)
+    .extend({ id: foodId })
     .refine((input) => Object.keys(input).length > 1),
   output: foodOutput,
   handler({ id, ...fields }, context) {
@@ -215,9 +216,12 @@ const editFood = defineOperation({
       const database = scopeDatabase(scope);
       const food = selectFood(database, owner);
       if (!food) throw new OperationError(404, "food_not_found");
-      if (selectRegularMealFood(database, owner))
+      const regularMeal = selectRegularMealFood(database, owner);
+      if (regularMeal)
         throw new OperationError(409, "food_is_regular_meal", {}, [
-          regularMealEditIssue,
+          regularMeal.archived_at === null
+            ? "This food belongs to a regular meal; correct it with save_regular_meal."
+            : "This food belongs to an archived regular meal and can't be edited.",
         ]);
       const { id: _id, ...stored } = viewOfFood(food);
       const merged = { ...stored, ...fields };
@@ -226,16 +230,16 @@ const editFood = defineOperation({
         merged.serving_unit !== stored.serving_unit
       ) {
         const connection = readConnection(database);
-        if (
-          connection?.user_id === owner.user_id &&
-          readBinding(database, {
+        if (connection?.user_id === owner.user_id) {
+          const [binding] = readBinding(database, {
             user_id: owner.user_id,
             generation: connection.generation,
             reference_kind: "food",
             reference_id: id,
-          })
-        )
-          throw new OperationError(409, "food_bound_serving_change");
+          });
+          if (binding)
+            throw new OperationError(409, "food_bound_serving_change");
+        }
       }
       const parsed = ownedFoodInput.safeParse(merged);
       if (!parsed.success) throw new OperationError(400, "invalid_request");
