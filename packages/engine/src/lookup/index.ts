@@ -9,10 +9,15 @@ import {
 import type { Database } from "better-sqlite3";
 import { scopeDatabase, writeTransaction } from "../db.ts";
 import type { SelectSourceFoodResult } from "../queries/select-source-food.ts";
+import { selectSourceFoodByKey } from "../queries/select-source-food-by-key.ts";
 import { selectSourceFoodsByBarcode } from "../queries/select-source-foods-by-barcode.ts";
 import { upsertSourceFood } from "../queries/upsert-source-food.ts";
 import { type createOffAdapter, normalizeBarcode } from "../sources/off.ts";
-import type { createUsdaAdapter } from "../sources/usda.ts";
+import type {
+  createUsdaAdapter,
+  UsdaDataType,
+  UsdaResult,
+} from "../sources/usda.ts";
 
 export interface LookupAdapters {
   usda: ReturnType<typeof createUsdaAdapter>;
@@ -204,4 +209,82 @@ export function searchOnline(
     name,
     brand: brand ?? null,
   });
+}
+
+export type CandidateFailure =
+  | "lookup_unavailable"
+  | "lookup_rate_limited"
+  | "lookup_failed"
+  | "lookup_invalid_response"
+  | "food_not_found";
+export class CandidateError extends Error {
+  readonly code: CandidateFailure | "no_mass_basis" | "unsupported_food";
+
+  constructor(code: CandidateError["code"]) {
+    super(code);
+    this.code = code;
+  }
+}
+const DATA_TYPE_ORDER: Record<UsdaDataType, number> = {
+  Foundation: 0,
+  "SR Legacy": 1,
+  Branded: 2,
+};
+
+function failure(
+  result: Exclude<UsdaResult, { status: "ok" }>,
+): CandidateFailure {
+  if (result.status === "skipped") return "lookup_unavailable";
+  if (result.reason === "invalid_response") return "lookup_invalid_response";
+  if (result.statusCode === 429) return "lookup_rate_limited";
+  if (result.statusCode === 404) return "food_not_found";
+  return "lookup_failed";
+}
+
+/** USDA hits with a mass basis for the caller to choose from; writes nothing. */
+export async function searchFoodCandidates(
+  adapters: LookupAdapters,
+  query: string,
+  limit: number,
+) {
+  const result = await adapters.usda.searchCandidates(query);
+  if (result.status !== "ok") throw new CandidateError(failure(result));
+  return result.foods
+    .filter(({ record }) => record.basis?.dimension === "mass")
+    .map((food, index) => ({ ...food, index }))
+    .sort(
+      (left, right) =>
+        DATA_TYPE_ORDER[left.dataType] - DATA_TYPE_ORDER[right.dataType] ||
+        left.index - right.index,
+    )
+    .slice(0, limit)
+    .map(({ record, dataType }) => ({
+      fdc_id: Number(record.sourceId),
+      name: record.name,
+      data_type: dataType,
+      brand: record.brand,
+      kcal_per_100g: record.nutrients.kcal?.amount ?? null,
+    }));
+}
+
+/** Stores one chosen USDA food in the shared cache; a cached id is returned as is. */
+export async function addSourceFood(
+  database: Database,
+  adapters: LookupAdapters,
+  fdcId: number,
+): Promise<LookupFood> {
+  const key = { source: "usda", source_key: String(fdcId) } as const;
+  const cached = selectSourceFoodByKey(database, key);
+  if (cached) return publicFood(cached);
+  const result = await adapters.usda.fetchById(key.source_key);
+  if (result.status !== "ok") throw new CandidateError(failure(result));
+  const [record] = result.records.map(normalizedRecord);
+  if (!record) throw new CandidateError("unsupported_food");
+  if (record.basis?.dimension !== "mass")
+    throw new CandidateError("no_mass_basis");
+  return publicFood(
+    writeTransaction(database, (scope) =>
+      storeRecord(scopeDatabase(scope), record),
+    ),
+  );
 }
