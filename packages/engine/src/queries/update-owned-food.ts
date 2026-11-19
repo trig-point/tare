@@ -2,8 +2,6 @@ import type { Database } from "better-sqlite3";
 
 export type UpdateOwnedFoodData = {
   name: string;
-  serving_size: number | null;
-  serving_unit: string | null;
   kcal: number | null;
   protein_g: number | null;
   carbs_g: number | null;
@@ -43,7 +41,7 @@ export function updateOwnedFood(
   params: UpdateOwnedFoodParams,
 ): UpdateOwnedFoodResult[] {
   const sql = `
-	UPDATE foods SET name = ?, serving_size = ?, serving_unit = ?,
+	UPDATE foods SET name = ?,
 	  kcal = ?, protein_g = ?, carbs_g = ?, fat_g = ?, fiber_g = ?,
 	  kcal_low = ?, kcal_high = ?, provenance = ?, source = ?
 	WHERE user_id = ? AND id = ? RETURNING id, name, serving_size, serving_unit, kcal, protein_g, carbs_g, fat_g,
@@ -55,8 +53,6 @@ export function updateOwnedFood(
     .raw(true)
     .all([
       data.name,
-      data.serving_size,
-      data.serving_unit,
       data.kcal,
       data.protein_g,
       data.carbs_g,

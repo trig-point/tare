@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
 import type { TestContext } from "node:test";
-import { insertAgentToken } from "../src/queries/insert-agent-token.ts";
-import { readBinding } from "../src/queries/pantry/read-binding.ts";
-import { saveBinding } from "../src/queries/pantry/save-binding.ts";
-import { saveConnection } from "../src/queries/pantry/save-connection.ts";
-import { assertionHeader, signAccessToken } from "./auth-support.ts";
+import { upsertSourceFood } from "../src/queries/upsert-source-food.ts";
+import { mcpSession } from "./auth-support.ts";
 import { test } from "./support/hang-ceiling.ts";
 import { twoUsers } from "./support/two-users.ts";
 
@@ -84,6 +81,8 @@ test("edit_food refuses unknown, foreign and invalid edits without changing the 
     [{ kcal: null, carbs_g: null }, "invalid_request"],
     [{ provenance: "label", source: null }, "label_source_required"],
     [{}, "invalid_request"],
+    [{ serving_size: 2 }, "serving_basis_not_editable"],
+    [{ serving_unit: "g" }, "serving_basis_not_editable"],
   ] as const) {
     const result = await edit(body);
     assert.equal(result.status, 400);
@@ -92,8 +91,8 @@ test("edit_food refuses unknown, foreign and invalid edits without changing the 
   assert.deepEqual((await send("/api/foods", rice)).food, food);
 });
 
-test("edit_food protects regular meals and the current pantry serving basis", async (context) => {
-  const { admin, database, send, edit, id, food } = await setup(context);
+test("edit_food refuses active and archived regular meals", async (context) => {
+  const { send } = await setup(context);
   const meal = await send("/api/regular-meals", {
     action: "create",
     name: "Example meal",
@@ -127,88 +126,84 @@ test("edit_food protects regular meals and the current pantry serving basis", as
   await editMeal(
     "This food belongs to an archived regular meal and can't be edited.",
   );
-  const owner = { user_id: admin.user.id, generation: 2 };
-  saveConnection(database, {
-    ...owner,
-    url: "https://grocy.example.com",
-    username: "example",
-    reset_required: 0,
-    fetch_started_at: null,
-    last_success_at: null,
-    error: null,
+});
+
+test("edit_food accepts a nutrition correction after the linked catalog basis changes", async (context) => {
+  const { database, send } = await setup(context);
+  const catalog = {
+    source: "off",
+    source_key: "example",
+    name: rice.name,
+    brand: null,
+    serving_size: rice.serving_size,
+    serving_unit: rice.serving_unit,
+    kcal: rice.kcal,
+    protein_g: null,
+    carbs_g: rice.carbs_g,
+    fat_g: null,
+    fiber_g: null,
+    provenance: "label",
+    barcode: null,
+    fetched_at: "2026-01-01T00:00:00.000Z",
+  } as const;
+  const evidence = upsertSourceFood(database, catalog);
+  assert.ok(evidence);
+  const created = await send("/api/foods", {
+    ...rice,
+    mutation_id: "7f1c2a4e-8b3d-4c5e-9f10-2a3b4c5d6e7f",
+    source_food_id: evidence.id,
   });
-  const reference = { ...owner, reference_kind: "food", reference_id: id };
-  assert.deepEqual((await edit({ serving_size: 2 })).food, {
-    ...food,
-    serving_size: 2,
-  });
-  saveBinding(database, {
-    ...reference,
-    product_id: 1,
-    stock_unit_id: 1,
-    quantity_per_serving: 2,
-    change_token: "example",
-  });
-  const before = readBinding(database, reference);
-  assert.equal(before.length, 1);
-  assert.deepEqual(await edit({ serving_size: 3 }), {
-    status: 409,
-    error: { code: "food_bound_serving_change" },
-  });
-  assert.deepEqual((await edit({ kcal: 175 })).food, {
-    ...food,
-    serving_size: 2,
-    kcal: 175,
-  });
-  assert.deepEqual(readBinding(database, reference), before);
+  assert.equal(created.status, 201);
+  assert.equal(
+    upsertSourceFood(database, { ...catalog, serving_size: 2 })?.id,
+    evidence.id,
+  );
+  const edited = await send(
+    `/api/foods/${created.food.id}`,
+    { kcal: 175 },
+    "PATCH",
+  );
+  assert.equal(edited.status, 200);
+  assert.deepEqual(edited.food, { ...created.food, kcal: 175 });
 });
 
 test("MCP advertises edit_food and its effect on past logs", async (context) => {
-  const { app, database, admin } = await twoUsers(context, "access");
-  insertAgentToken(database, {
-    client_id: "example-editor",
-    user_id: admin.user.id,
-    name: "Example",
-    created_at: "2026-01-01T00:00:00.000Z",
+  const setup = await twoUsers(context, "access");
+  const client = await mcpSession(context, setup, setup.admin.user.id);
+  const { tools } = await client.listTools();
+  const edit = tools.find((tool) => tool.name === "edit_food");
+  assert.ok(edit);
+  const inputSchema = edit.inputSchema;
+  assert.match(edit?.description, /Create a new food for a different serving/);
+  assert.equal(inputSchema.minProperties, 2);
+  assert.equal(inputSchema.additionalProperties, false);
+  assert.equal(inputSchema.properties?.serving_size, undefined);
+  assert.equal(inputSchema.properties?.serving_unit, undefined);
+  assert.deepEqual(inputSchema.properties?.id, {
+    anyOf: [
+      {
+        type: "integer",
+        exclusiveMinimum: 0,
+        maximum: Number.MAX_SAFE_INTEGER,
+      },
+      { type: "string", pattern: "^0*[1-9][0-9]*$" },
+    ],
   });
-  const headers = new Headers({
-    ...assertionHeader(
-      await signAccessToken({ sub: "", common_name: "example-editor" }),
-    ),
-    Accept: "application/json, text/event-stream",
-    "Content-Type": "application/json",
-  });
-  const rpc = async (method: string, params: unknown) => {
-    const response = await app.request("/mcp", {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-    });
-    assert.equal(response.status, 200);
-    const session = response.headers.get("mcp-session-id");
-    if (session) headers.set("mcp-session-id", session);
-    return JSON.parse((await response.text()).split("data: ").at(-1) ?? "")
-      .result;
-  };
-  await rpc("initialize", {
-    protocolVersion: "2025-11-25",
-    capabilities: {},
-    clientInfo: { name: "Example", version: "1" },
-  });
-  const tools = (await rpc("tools/list", {})).tools;
-  const edit = tools.find(
-    (tool: { name: string }) => tool.name === "edit_food",
-  );
-  assert.match(edit?.description, /Past logs keep their nutrition/);
-  const call = (name: string, args: unknown) =>
-    rpc("tools/call", { name, arguments: args });
-  const { food } = (await call("create_food", rice)).structuredContent;
-  assert.equal(food.id, 1);
+  const call = (name: string, args: Record<string, unknown>) =>
+    client.callTool({ name, arguments: args });
+  const created = (await call("create_food", rice)).structuredContent;
+  assert.ok(created);
   const invalid = await call("edit_food", { id: true, kcal: 175 });
   assert.equal(invalid.isError, true);
-  assert.match(invalid.content[0].text, /Invalid arguments/);
-  assert.deepEqual(
-    (await call("create_food", rice)).structuredContent.food,
-    food,
+  assert.match(JSON.stringify(invalid.content), /Invalid arguments/);
+  const basis = await call("edit_food", { id: "1", serving_size: 2 });
+  assert.equal(basis.isError, true);
+  assert.match(
+    JSON.stringify(basis.content),
+    /serving_basis_not_editable: Serving size and unit can't change; create a new food instead/,
   );
+  assert.deepEqual((await call("create_food", rice)).structuredContent, {
+    ...created,
+    created: false,
+  });
 });

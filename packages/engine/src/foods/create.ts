@@ -17,8 +17,6 @@ import {
 } from "../operations/registry.ts";
 import { insertFood } from "../queries/insert-food.ts";
 import { insertFoodReceipt } from "../queries/insert-food-receipt.ts";
-import { readBinding } from "../queries/pantry/read-binding.ts";
-import { readConnection } from "../queries/pantry/read-connection.ts";
 import { selectFood } from "../queries/select-food.ts";
 import { selectFoodReceipt } from "../queries/select-food-receipt.ts";
 import { selectRegularMealFood } from "../queries/select-regular-meal-food.ts";
@@ -35,8 +33,7 @@ export type OwnedFoodValues = Numbers & {
   source_food_id: number | null;
 };
 
-/** Every check insertOwnedFood makes, without writing; throws the same errors. */
-export function checkOwnedFood(database: Database, values: OwnedFoodValues) {
+function validateFood(values: OwnedFoodValues, sourceDatabase?: Database) {
   const name = values.name.trim();
   const unit = values.serving_unit.trim();
   const source = values.source?.trim() ?? null;
@@ -48,8 +45,10 @@ export function checkOwnedFood(database: Database, values: OwnedFoodValues) {
     { provenance: values.provenance, source },
     null,
   );
-  if (values.source_food_id !== null) {
-    const evidence = selectSourceFood(database, { id: values.source_food_id });
+  if (sourceDatabase && values.source_food_id !== null) {
+    const evidence = selectSourceFood(sourceDatabase, {
+      id: values.source_food_id,
+    });
     if (!evidence) throw new OperationError(404, "food_not_found");
     // Owned servings never convert units, so they must keep the source's basis.
     if (
@@ -72,6 +71,11 @@ export function checkOwnedFood(database: Database, values: OwnedFoodValues) {
   );
   if (!nutrition.ok) throw new OperationError(400, "invalid_request");
   return { name, source, numbers, row: nutrition.row };
+}
+
+/** Every check insertOwnedFood makes, without writing; throws the same errors. */
+export function checkOwnedFood(database: Database, values: OwnedFoodValues) {
+  return validateFood(values, database);
 }
 
 /** Validates and inserts one owned food in the caller's transaction; callers keep their own replay records. */
@@ -190,28 +194,56 @@ const createFood = defineOperation({
   },
 });
 
-const foodId = zod
-  .union([zod.number(), zod.string().regex(/^\d+$/)])
-  .pipe(zod.coerce.number<string | number>().int().positive());
+const servingBasisCode = "serving_basis_not_editable";
+const servingBasisIssue =
+  "Serving size and unit can't change; create a new food instead.";
+const servingBasisError = `${servingBasisCode}: ${servingBasisIssue}`;
+
+const editFields = ownedFoodInput
+  .omit({ source_food_id: true, serving_size: true, serving_unit: true })
+  .partial();
+const editFoodInput = zod
+  .strictObject(
+    {
+      ...editFields.shape,
+      id: zod.union([
+        zod.number().int().positive(),
+        zod.string().regex(/^0*[1-9][0-9]*$/),
+      ]),
+    },
+    {
+      error: (issue) =>
+        issue.code === "unrecognized_keys" &&
+        issue.keys.some(
+          (key) => key === "serving_size" || key === "serving_unit",
+        )
+          ? servingBasisError
+          : undefined,
+    },
+  )
+  .refine((input) => Object.keys(input).length > 1)
+  .meta({ minProperties: 2 });
 
 const editFood = defineOperation({
   name: "edit_food",
   description:
-    "Correct a saved food. Omitted fields keep their values. Past logs keep their nutrition, and new logs use the edit.",
+    "Correct a saved food. Omitted fields keep their values. Create a new food for a different serving size or unit. Past logs keep their nutrition.",
   modes: ["access", "fallback"],
   callerClass: "browser_and_agent",
   admin: false,
   method: "PATCH",
   path: "/api/foods/:id",
   bodyLimit: 8192,
-  input: ownedFoodInput
-    .omit({ source_food_id: true })
-    .partial()
-    .extend({ id: foodId })
-    .refine((input) => Object.keys(input).length > 1),
+  input: editFoodInput,
+  inputRejection: (error) =>
+    error.issues.some((issue) => issue.message === servingBasisError)
+      ? new OperationError(400, servingBasisCode, {}, [servingBasisIssue])
+      : undefined,
   output: foodOutput,
   handler({ id, ...fields }, context) {
-    const owner = { id, user_id: operationPerson(context).id };
+    const owner = { id: Number(id), user_id: operationPerson(context).id };
+    if (!Number.isSafeInteger(owner.id))
+      throw new OperationError(404, "food_not_found");
     return writeTransaction(context.database, (scope) => {
       const database = scopeDatabase(scope);
       const food = selectFood(database, owner);
@@ -225,31 +257,14 @@ const editFood = defineOperation({
         ]);
       const { id: _id, ...stored } = viewOfFood(food);
       const merged = { ...stored, ...fields };
-      if (
-        merged.serving_size !== stored.serving_size ||
-        merged.serving_unit !== stored.serving_unit
-      ) {
-        const connection = readConnection(database);
-        if (connection?.user_id === owner.user_id) {
-          const [binding] = readBinding(database, {
-            user_id: owner.user_id,
-            generation: connection.generation,
-            reference_kind: "food",
-            reference_id: id,
-          });
-          if (binding)
-            throw new OperationError(409, "food_bound_serving_change");
-        }
-      }
       const parsed = ownedFoodInput.safeParse(merged);
       if (!parsed.success) throw new OperationError(400, "invalid_request");
-      const { name, source, numbers, row } = checkOwnedFood(
-        database,
+      const { name, source, numbers, row } = validateFood(
         ownedFoodValues(parsed.data),
       );
       const [updated] = updateOwnedFood(
         database,
-        { ...numbers, ...row, name, source },
+        { ...numbers, provenance: row.provenance, name, source },
         owner,
       );
       if (!updated) throw new Error("Food update returned no row");

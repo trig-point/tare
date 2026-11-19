@@ -67,6 +67,7 @@ export interface Operation<Input extends zod.ZodType = zod.ZodType> {
   input: Input;
   inputError?: "not_found";
   inputIssues?: true;
+  inputRejection?(error: zod.ZodError): OperationError | undefined;
   output: zod.ZodType;
   handler(
     input: zod.output<Input>,
@@ -143,13 +144,16 @@ export async function executeOperation(
   authorizeOperation(operation, identity, deps);
   const input = operation.input.safeParse(rawInput);
   if (!input.success)
-    throw new OperationError(
-      operation.inputError === "not_found" ? 404 : 400,
-      operation.inputError ?? "invalid_request",
-      {},
-      operation.inputIssues
-        ? input.error.issues.map((issue) => issue.message)
-        : undefined,
+    throw (
+      operation.inputRejection?.(input.error) ??
+      new OperationError(
+        operation.inputError === "not_found" ? 404 : 400,
+        operation.inputError ?? "invalid_request",
+        {},
+        operation.inputIssues
+          ? input.error.issues.map((issue) => issue.message)
+          : undefined,
+      )
     );
   const result = await operation.handler(input.data, {
     ...deps,
