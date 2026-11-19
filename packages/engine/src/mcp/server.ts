@@ -105,10 +105,17 @@ export function mountMcp(app: Hono<AuthEnv>, deps: OperationDependencies) {
                 error instanceof Error ? error.name : "UnknownError",
                 operation.name,
               );
+            const issues =
+              error instanceof OperationError && code === "food_is_regular_meal"
+                ? error.issues
+                : undefined;
             return {
               isError: true,
               content: [
-                { type: "text", text: JSON.stringify({ error: { code } }) },
+                {
+                  type: "text",
+                  text: JSON.stringify({ error: { code, issues } }),
+                },
               ],
             };
           }
