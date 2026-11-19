@@ -67,7 +67,7 @@ async function setup(context: TestContext, key = true) {
   return { calls, responses, send, rows };
 }
 
-test("candidate search orders mass-basis hits by data type and writes nothing", async (context) => {
+test("candidate search puts generic mass-basis hits before Branded and writes nothing", async (context) => {
   const { responses, send, rows, calls } = await setup(context);
   const body = { foods: [branded, legacy, drink, unlabeled, foundation] };
   responses["foods/search"] = () => Response.json(body);
@@ -86,8 +86,8 @@ test("candidate search orders mass-basis hits by data type and writes nothing", 
   const summary = (list: Candidate[]) =>
     list.map((hit) => [hit.fdc_id, hit.data_type, hit.kcal_per_100g]);
   assert.deepEqual(summary(found.candidates), [
-    [3004, "Foundation", 128],
     [3002, "SR Legacy", 130],
+    [3004, "Foundation", 128],
     [3001, "Branded", 140],
     [3005, "Branded", null],
   ]);
@@ -95,7 +95,7 @@ test("candidate search orders mass-basis hits by data type and writes nothing", 
     query: "rice",
     limit: 1,
   });
-  assert.deepEqual(summary(limited.candidates), [[3004, "Foundation", 128]]);
+  assert.deepEqual(summary(limited.candidates), [[3002, "SR Legacy", 130]]);
   assert.deepEqual(calls, ["foods/search", "foods/search"]);
   assert.deepEqual(rows(), { count: 0 });
 });

@@ -225,10 +225,11 @@ export class CandidateError extends Error {
     this.code = code;
   }
 }
+// Generic foods share one group so USDA's relevance order decides between them.
 const DATA_TYPE_ORDER: Record<UsdaDataType, number> = {
   Foundation: 0,
-  "SR Legacy": 1,
-  Branded: 2,
+  "SR Legacy": 0,
+  Branded: 1,
 };
 
 function failure(
