@@ -187,7 +187,7 @@ function mealSummary(entries: SelectIntakeByClientResult[]) {
 export const logMealParts = defineOperation({
   name: "log_meal_parts",
   description:
-    "Get food IDs first with search_food_candidates and add_source_food, or with find_food. Each part needs grams and one food_id or source_food_id. For a range, send both grams_low and grams_high.",
+    "Get food IDs first with search_food_candidates and add_source_food, or with find_food. Send client_id and 1 to 12 parts. Each part needs grams and one food_id or source_food_id. For a range, send both grams_low and grams_high.",
   method: "POST",
   path: "/api/intake/meal-parts",
   modes: ["access", "fallback"],
@@ -195,8 +195,12 @@ export const logMealParts = defineOperation({
   admin: false,
   bodyLimit: 8192,
   input: mealInput,
-  mcpInput: mealInput.extend({
-    parts: zod.array(zod.unknown()).min(1).max(12),
+  // Let the operation report the part position even when other fields are invalid.
+  mcpInput: zod.looseObject({
+    client_id: zod.unknown().optional(),
+    eaten_at: zod.unknown().optional(),
+    meal_note: zod.unknown().optional(),
+    parts: zod.union([zod.array(zod.unknown()), zod.unknown()]).optional(),
   }),
   inputRejection(error) {
     const issue = error.issues.find(
@@ -222,7 +226,7 @@ export const logMealParts = defineOperation({
           throw new OperationError(409, "mutation_conflict");
         const entries = Array.from(
           { length: receipt.part_count },
-          (_, index) => {
+          (_part, index) => {
             const entry = selectIntakeByClient(database, {
               user_id: person.id,
               client_id: mealPartClientId(receipt.part_key, index + 1),

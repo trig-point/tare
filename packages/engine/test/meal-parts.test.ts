@@ -150,8 +150,9 @@ test("part failures agree over HTTP and MCP and roll back the meal", async (cont
     food_id: seed.get(admin.user.id, 100, "g", 1.04e308),
     grams: 100,
   };
-  for (const [code, status, parts, position] of [
+  for (const [code, status, parts, position, clientId] of [
     ["invalid_part", 400, [part, null], 2],
+    ["invalid_part", 400, [part, null], 2, ""],
     ["invalid_part", 400, [part, { ...part, grams_low: 90 }], 2],
     ["dimension_mismatch", 400, [part, { ...part, food_id: volume }, part], 2],
     ["no_serving_basis", 400, [part, { ...part, food_id: missing }], 2],
@@ -159,7 +160,7 @@ test("part failures agree over HTTP and MCP and roll back the meal", async (cont
     ["amount_out_of_range", 400, [part, { ...large, grams: 200 }], 2],
     ["amount_out_of_range", 400, [large, large], 2],
   ] as const) {
-    const args = { client_id: "failed-meal", parts };
+    const args = { client_id: clientId ?? "failed-meal", parts };
     const body = { error: { code, part: position } };
     assert.deepEqual(await json(admin, path, args), { status, body });
     const reply = await client.callTool({
@@ -179,9 +180,16 @@ test("part failures agree over HTTP and MCP and roll back the meal", async (cont
       { entries: 0, receipts: 0 },
     );
   }
-  for (const parts of [undefined, []])
-    assert.deepEqual(await json(admin, path, { client_id: "empty", parts }), {
-      status: 400,
-      body: { error: { code: "invalid_request" } },
+  for (const parts of [undefined, null, []]) {
+    const args = { client_id: "empty", parts };
+    const body = { error: { code: "invalid_request" } };
+    assert.deepEqual(await json(admin, path, args), { status: 400, body });
+    const reply = await client.callTool({
+      name: "log_meal_parts",
+      arguments: args,
     });
+    assert.deepEqual(reply.content, [
+      { type: "text", text: JSON.stringify(body) },
+    ]);
+  }
 });
