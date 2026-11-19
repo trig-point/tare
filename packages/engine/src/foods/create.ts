@@ -192,7 +192,7 @@ const createFood = defineOperation({
 
 const foodId = zod
   .union([zod.number(), zod.string().regex(/^\d+$/)])
-  .pipe(zod.coerce.number().int().positive());
+  .pipe(zod.coerce.number<string | number>().int().positive());
 
 const editFood = defineOperation({
   name: "edit_food",
