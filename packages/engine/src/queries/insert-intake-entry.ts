@@ -23,6 +23,9 @@ export type InsertIntakeEntryParams = {
   created_at: string;
   updated_at: string;
   name: string | null;
+  amount_estimated: number;
+  servings_low: number | null;
+  servings_high: number | null;
 };
 
 export type InsertIntakeEntryResult = {
@@ -49,6 +52,9 @@ export type InsertIntakeEntryResult = {
   name: string | null;
   slot_template_id: number | null;
   slot_position: number | null;
+  amount_estimated: number;
+  servings_low: number | null;
+  servings_high: number | null;
 };
 
 export function insertIntakeEntry(
@@ -56,8 +62,8 @@ export function insertIntakeEntry(
   params: InsertIntakeEntryParams,
 ): InsertIntakeEntryResult | null {
   const sql = `
-	INSERT INTO intake_entries (slot_template_id, slot_position, user_id, client_id, food_id, source_food_id, servings, eaten_at, day, kcal, protein_g, carbs_g, fat_g, fiber_g, kcal_low, kcal_high, provenance, source, portion_note, created_at, updated_at, name)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (user_id, client_id) DO NOTHING RETURNING *;
+	INSERT INTO intake_entries (slot_template_id, slot_position, user_id, client_id, food_id, source_food_id, servings, eaten_at, day, kcal, protein_g, carbs_g, fat_g, fiber_g, kcal_low, kcal_high, provenance, source, portion_note, created_at, updated_at, name, amount_estimated, servings_low, servings_high)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (user_id, client_id) DO NOTHING RETURNING *;
 	
 	`;
   const res = db
@@ -86,6 +92,9 @@ export function insertIntakeEntry(
       params.created_at,
       params.updated_at,
       params.name,
+      params.amount_estimated,
+      params.servings_low,
+      params.servings_high,
     ]);
 
   return res ? mapArrayToInsertIntakeEntryResult(res) : null;
@@ -116,6 +125,9 @@ function mapArrayToInsertIntakeEntryResult(data: any) {
     name: data[20],
     slot_template_id: data[21],
     slot_position: data[22],
+    amount_estimated: data[23],
+    servings_low: data[24],
+    servings_high: data[25],
   };
   return result;
 }

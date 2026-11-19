@@ -21,13 +21,44 @@ export interface Clock {
   now(): Date;
 }
 export type Reference = { kind: "food" | "source_food"; id: number };
+type ServingRange = { low: number; high: number };
+const measuredAmount = {
+  amount_estimated: 0,
+  servings_low: null,
+  servings_high: null,
+} as const;
+
+export function readServingRange(
+  servings: number,
+  low?: number,
+  high?: number,
+): ServingRange | null {
+  if (low === undefined && high === undefined) return null;
+  if (
+    low === undefined ||
+    high === undefined ||
+    !Number.isFinite(low) ||
+    !Number.isFinite(high) ||
+    low <= 0 ||
+    low > servings ||
+    servings > high
+  )
+    throw new OperationError(400, "invalid_bounds");
+  return { low, high };
+}
+
 export type IntakeInput = {
   client_id: string;
   eaten_at?: string;
   portion_note?: string | null;
   slot?: { template_id: number; position: number };
 } & (
-  | { reference: Reference; servings: number; claim: Pick<Claim, "provenance"> }
+  | {
+      reference: Reference;
+      servings: number;
+      claim: Pick<Claim, "provenance">;
+      estimatedRange?: ServingRange | null;
+    }
   | { name: string; numbers: Numbers; claim: Claim }
 );
 export function referenceSnapshot(
@@ -36,6 +67,7 @@ export function referenceSnapshot(
   reference: Reference,
   servings: number,
   claim: Claim = {},
+  estimatedRange?: ServingRange | null,
 ) {
   const database = scopeDatabase(scope);
   const food =
@@ -43,10 +75,21 @@ export function referenceSnapshot(
       ? selectFood(database, { user_id: person.id, id: reference.id })
       : selectSourceFood(database, { id: reference.id });
   if (!food) throw new OperationError(404, "food_not_found");
-  const numbers = numbersFrom(food);
+  const perServing = numbersFrom(food);
+  const numbers = { ...perServing };
   for (const key of nutrientKeys) {
     const value = numbers[key];
     numbers[key] = value === null ? null : value * servings;
+  }
+  if (estimatedRange !== undefined) {
+    numbers.kcal_low =
+      estimatedRange && food.kcal !== null
+        ? (perServing.kcal_low ?? food.kcal) * estimatedRange.low
+        : null;
+    numbers.kcal_high =
+      estimatedRange && food.kcal !== null
+        ? (perServing.kcal_high ?? food.kcal) * estimatedRange.high
+        : null;
   }
   if (
     nutrientKeys.some(
@@ -58,7 +101,17 @@ export function referenceSnapshot(
     ...numbers,
     name: food.name,
     source: food.source,
-    provenance: resolveProvenance(claim, food),
+    provenance:
+      estimatedRange === undefined
+        ? resolveProvenance(claim, food)
+        : "estimated",
+    ...(estimatedRange === undefined
+      ? measuredAmount
+      : {
+          amount_estimated: 1 as const,
+          servings_low: estimatedRange?.low ?? null,
+          servings_high: estimatedRange?.high ?? null,
+        }),
   };
 }
 
@@ -89,7 +142,10 @@ export function insertIntake(
   if (stock === "suppress") return result;
   return {
     ...result,
-    stock: stock.record(scope, person.id, result.entry, result.created),
+    stock:
+      result.entry.amount_estimated === 1
+        ? null
+        : stock.record(scope, person.id, result.entry, result.created),
   };
 }
 
@@ -109,11 +165,7 @@ function writeIntake(
   const instant = clock.now();
   const now = instant.toISOString();
   const eaten_at = canonicalInstant(input.eaten_at ?? now);
-  let snapshot: Numbers & {
-    name: string;
-    provenance: string;
-    source: string | null;
-  };
+  let snapshot: ReturnType<typeof referenceSnapshot>;
   if ("reference" in input) {
     snapshot = referenceSnapshot(
       scope,
@@ -121,10 +173,12 @@ function writeIntake(
       input.reference,
       input.servings,
       input.claim,
+      input.estimatedRange,
     );
   } else {
     validateNumbers(input.numbers);
     snapshot = {
+      ...measuredAmount,
       ...input.numbers,
       name: input.name.trim(),
       provenance: resolveProvenance(input.claim, null),

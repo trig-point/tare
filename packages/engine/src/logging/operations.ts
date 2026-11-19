@@ -14,7 +14,7 @@ import { selectWeight } from "../queries/select-weight.ts";
 import { updateIntake } from "../queries/update-intake.ts";
 import { updateWeight } from "../queries/update-weight.ts";
 import { canonicalInstant, localDay } from "./day.ts";
-import { insertIntake, referenceSnapshot } from "./intake.ts";
+import { insertIntake, readServingRange, referenceSnapshot } from "./intake.ts";
 import { resolveProvenance } from "./provenance.ts";
 import {
   editIntakeInput,
@@ -40,7 +40,7 @@ const logFood = defineOperation({
   ...base,
   name: "log_food",
   description:
-    "Use one food_id or source_food_id with servings and no name, source or nutrients. For ad hoc food, omit servings and provide a name and at least one of kcal, protein_g, carbs_g, fat_g or fiber_g.",
+    "Use one food_id or source_food_id with servings and no name, source or nutrients. For ad hoc food, omit servings and provide a name and at least one of kcal, protein_g, carbs_g, fat_g or fiber_g. Use amount_estimated: true for a guessed portion, with both servings bounds or neither. Omit provenance for an estimated amount.",
   method: "POST",
   path: "/api/intake",
   input: logFoodInput,
@@ -64,6 +64,13 @@ const logFood = defineOperation({
                   ? { kind: "food", id: input.food_id }
                   : { kind: "source_food", id: input.source_food_id as number },
               claim: { provenance: input.provenance },
+              estimatedRange: input.amount_estimated
+                ? readServingRange(
+                    input.servings as number,
+                    input.servings_low,
+                    input.servings_high,
+                  )
+                : undefined,
             }
           : {
               ...input,
@@ -98,6 +105,8 @@ const logWeight = defineOperation({
 const editIntake = defineOperation({
   ...base,
   name: "edit_intake",
+  description:
+    "For an estimated amount, edit servings, set both servings bounds, or set amount_measured: true to clear the estimate. A new range must bracket servings. Marking an amount measured takes no new bounds.",
   method: "PATCH",
   path: "/api/intake/:id",
   input: editIntakeInput,
@@ -110,6 +119,14 @@ const editIntake = defineOperation({
       if (!stored) throw new OperationError(404, "not_found");
       const reference =
         stored.food_id !== null || stored.source_food_id !== null;
+      const estimated = stored.amount_estimated === 1;
+      const changesRange =
+        input.servings_low !== undefined || input.servings_high !== undefined;
+      if (
+        (!estimated && (changesRange || input.amount_measured)) ||
+        (changesRange && input.amount_measured)
+      )
+        throw new OperationError(400, "invalid_request");
       const changesNumbers = nutrientKeys.some(
         (key) => input[key] !== undefined,
       );
@@ -117,7 +134,15 @@ const editIntake = defineOperation({
         reference &&
         Object.keys(input).some(
           (key) =>
-            !["id", "eaten_at", "servings", "portion_note"].includes(key),
+            ![
+              "id",
+              "eaten_at",
+              "servings",
+              "portion_note",
+              "amount_measured",
+              "servings_low",
+              "servings_high",
+            ].includes(key),
         )
       )
         throw new OperationError(400, "invalid_request");
@@ -136,7 +161,10 @@ const editIntake = defineOperation({
         provenance: stored.provenance,
         source: stored.source,
       };
-      if (reference && input.servings !== undefined) {
+      if (
+        reference &&
+        (input.servings !== undefined || changesRange || input.amount_measured)
+      ) {
         const ref =
           stored.food_id !== null
             ? { kind: "food" as const, id: stored.food_id }
@@ -144,9 +172,34 @@ const editIntake = defineOperation({
                 kind: "source_food" as const,
                 id: stored.source_food_id as number,
               };
+        const servings = input.servings ?? (stored.servings as number);
+        const keptRange =
+          stored.servings_low !== null &&
+          stored.servings_high !== null &&
+          stored.servings_low <= servings &&
+          servings <= stored.servings_high
+            ? { low: stored.servings_low, high: stored.servings_high }
+            : null;
+        const estimatedRange =
+          estimated && !input.amount_measured
+            ? changesRange
+              ? readServingRange(
+                  servings,
+                  input.servings_low,
+                  input.servings_high,
+                )
+              : keptRange
+            : undefined;
         merged = {
           ...merged,
-          ...referenceSnapshot(scope, person, ref, input.servings),
+          ...referenceSnapshot(
+            scope,
+            person,
+            ref,
+            servings,
+            {},
+            estimatedRange,
+          ),
         };
       } else if (changesNumbers) {
         merged.provenance = resolveProvenance(input, null);
@@ -170,12 +223,9 @@ const editIntake = defineOperation({
       const updated = updateIntake(context.database, merged, owner)[0];
       if (!updated) throw new Error("Intake update returned no entry");
       // The servings trigger has already resized or frozen the request; this only reads it.
-      const outcome = operationStock(context).record(
-        scope,
-        person.id,
-        updated,
-        false,
-      );
+      const outcome = estimated
+        ? null
+        : operationStock(context).record(scope, person.id, updated, false);
       return {
         entry: updated,
         stock: stockView(context.database, outcome),

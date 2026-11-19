@@ -91,6 +91,9 @@ function fixture(context: TestContext) {
       food_id: null,
       source_food_id: null,
       servings: null,
+      amount_estimated: 0,
+      servings_low: null,
+      servings_high: null,
       eaten_at: timestamp,
       day: storedDay,
       ...unknownNutrients,
@@ -525,6 +528,33 @@ test("kcal ranges require paired ordered bounds that contain known kcal", (conte
     assert.ok(create({ kcal_low: 0, kcal_high: 20 }));
     assert.ok(create({ kcal: 10, kcal_low: 10, kcal_high: 10 }));
   }
+});
+
+test("intake serving bounds require a flagged, referenced portion they contain", (context) => {
+  const { entry, food } = fixture(context);
+  const estimate = {
+    food_id: food()?.id,
+    amount_estimated: 1,
+    servings: 3,
+    servings_low: 2.5,
+    servings_high: 3.5,
+  };
+  assert.ok(entry(estimate));
+  for (const invalid of [
+    { amount_estimated: 2 },
+    { amount_estimated: 0 },
+    { food_id: null },
+    { servings: null },
+    { provenance: "verified" },
+    { servings_low: null },
+    { servings_high: null },
+    { servings_low: 0 },
+    { servings_low: 3.1 },
+    { servings_high: 2.9 },
+  ])
+    assert.throws(() => entry({ ...estimate, ...invalid }), {
+      code: "SQLITE_CONSTRAINT_CHECK",
+    });
 });
 
 test("nutrients are non-negative and known serving amounts are positive", (context) => {
