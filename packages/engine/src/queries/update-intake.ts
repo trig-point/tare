@@ -18,6 +18,9 @@ export type UpdateIntakeData = {
   source: string | null;
   portion_note: string | null;
   updated_at: string;
+  amount_estimated: number;
+  servings_low: number | null;
+  servings_high: number | null;
 };
 
 export type UpdateIntakeParams = {
@@ -49,6 +52,9 @@ export type UpdateIntakeResult = {
   name: string | null;
   slot_template_id: number | null;
   slot_position: number | null;
+  amount_estimated: number;
+  servings_low: number | null;
+  servings_high: number | null;
 };
 
 export function updateIntake(
@@ -57,7 +63,7 @@ export function updateIntake(
   params: UpdateIntakeParams,
 ): UpdateIntakeResult[] {
   const sql = `
-	UPDATE intake_entries SET slot_template_id = ?, slot_position = ?, name = ?, servings = ?, eaten_at = ?, day = ?, kcal = ?, protein_g = ?, carbs_g = ?, fat_g = ?, fiber_g = ?, kcal_low = ?, kcal_high = ?, provenance = ?, source = ?, portion_note = ?, updated_at = ? WHERE user_id = ? AND id = ? RETURNING *;
+	UPDATE intake_entries SET slot_template_id = ?, slot_position = ?, name = ?, servings = ?, eaten_at = ?, day = ?, kcal = ?, protein_g = ?, carbs_g = ?, fat_g = ?, fiber_g = ?, kcal_low = ?, kcal_high = ?, provenance = ?, source = ?, portion_note = ?, updated_at = ?, amount_estimated = ?, servings_low = ?, servings_high = ? WHERE user_id = ? AND id = ? RETURNING *;
 	
 	`;
   const rows = db
@@ -81,6 +87,9 @@ export function updateIntake(
       data.source,
       data.portion_note,
       data.updated_at,
+      data.amount_estimated,
+      data.servings_low,
+      data.servings_high,
       params.user_id,
       params.id,
     ]);
@@ -113,6 +122,9 @@ function mapArrayToUpdateIntakeResult(data: any) {
     name: data[20],
     slot_template_id: data[21],
     slot_position: data[22],
+    amount_estimated: data[23],
+    servings_low: data[24],
+    servings_high: data[25],
   };
   return result;
 }

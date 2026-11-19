@@ -47,6 +47,10 @@ const common = {
   eaten_at: zod.string().optional(),
   portion_note: text.nullable().optional(),
 };
+const servingBounds = {
+  servings_low: zod.number().positive().optional(),
+  servings_high: zod.number().positive().optional(),
+};
 export const logFoodInput = zod
   .strictObject({
     ...common,
@@ -55,12 +59,26 @@ export const logFoodInput = zod
     food_id: zod.number().int().positive().optional(),
     source_food_id: zod.number().int().positive().optional(),
     servings: zod.number().positive().optional(),
+    amount_estimated: zod.literal(true).optional(),
+    ...servingBounds,
     name: text.optional(),
   })
   .superRefine((input, context) => {
     const references =
       Number(input.food_id !== undefined) +
       Number(input.source_food_id !== undefined);
+    if (
+      (input.amount_estimated &&
+        (references !== 1 || input.provenance !== undefined)) ||
+      (!input.amount_estimated &&
+        (input.servings_low !== undefined || input.servings_high !== undefined))
+    )
+      context.addIssue({
+        code: "custom",
+        message: input.amount_estimated
+          ? "An estimated amount needs a food reference and no provenance"
+          : "servings_low and servings_high need amount_estimated: true",
+      });
     if (references === 0 && input.servings !== undefined)
       context.addIssue({
         code: "custom",
@@ -102,6 +120,8 @@ export const editIntakeInput = zod
     name: text.optional(),
     eaten_at: zod.string().optional(),
     servings: zod.number().positive().optional(),
+    amount_measured: zod.literal(true).optional(),
+    ...servingBounds,
     portion_note: text.nullable().optional(),
   })
   .refine((input) => Object.keys(input).length > 1);
@@ -128,6 +148,9 @@ export const intakeRow = zod.strictObject({
   food_id: zod.number().nullable(),
   source_food_id: zod.number().nullable(),
   servings: zod.number().nullable(),
+  amount_estimated: zod.union([zod.literal(0), zod.literal(1)]).default(0),
+  servings_low: zod.number().nullable().default(null),
+  servings_high: zod.number().nullable().default(null),
   eaten_at: zod.string(),
   day: zod.string(),
   ...nutrientFields,

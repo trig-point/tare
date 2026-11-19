@@ -29,6 +29,9 @@ export type SelectIntakeByClientResult = {
   name: string | null;
   slot_template_id: number | null;
   slot_position: number | null;
+  amount_estimated: number;
+  servings_low: number | null;
+  servings_high: number | null;
 };
 
 export function selectIntakeByClient(
@@ -69,6 +72,9 @@ function mapArrayToSelectIntakeByClientResult(data: any) {
     name: data[20],
     slot_template_id: data[21],
     slot_position: data[22],
+    amount_estimated: data[23],
+    servings_low: data[24],
+    servings_high: data[25],
   };
   return result;
 }
