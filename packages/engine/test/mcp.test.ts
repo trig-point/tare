@@ -127,7 +127,11 @@ test("MCP tools match registry schemas and routes and act for their person", asy
     const tool = tools.find((tool) => tool.name === operation.name);
     for (const io of ["input", "output"] as const) {
       const options = { target: "draft-7", io } as const;
-      const schema = zod.toJSONSchema(operation[io], options);
+      const input = operation.mcpInput ?? operation.input;
+      const schema = zod.toJSONSchema(
+        io === "input" ? input : operation.output,
+        options,
+      );
       assert.deepEqual(tool?.[`${io}Schema`], schema);
     }
   }

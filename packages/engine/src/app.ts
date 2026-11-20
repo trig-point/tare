@@ -77,6 +77,7 @@ export function createApp(
           error: {
             code: error.code,
             ...(error.issues ? { issues: error.issues } : {}),
+            ...(error.part !== undefined ? { part: error.part } : {}),
           },
         },
         error.status,

@@ -22,6 +22,9 @@ export interface Clock {
 }
 export type Reference = { kind: "food" | "source_food"; id: number };
 type ServingRange = { low: number; high: number };
+const mealPartPrefix = "meal-part:";
+export const mealPartClientId = (key: string, part: number) =>
+  `${mealPartPrefix}${key}:${part}`;
 const measuredAmount = {
   amount_estimated: 0,
   servings_low: null,
@@ -69,12 +72,30 @@ export function referenceSnapshot(
   claim: Claim = {},
   estimatedRange?: ServingRange | null,
 ) {
-  const database = scopeDatabase(scope);
-  const food =
-    reference.kind === "food"
-      ? selectFood(database, { user_id: person.id, id: reference.id })
-      : selectSourceFood(database, { id: reference.id });
+  const food = readReferenceFood(scope, person, reference);
   if (!food) throw new OperationError(404, "food_not_found");
+  return snapshotFromFood(food, servings, claim, estimatedRange);
+}
+
+export function readReferenceFood(
+  scope: WriteScope,
+  person: Person,
+  reference: Reference,
+) {
+  const database = scopeDatabase(scope);
+  return reference.kind === "food"
+    ? selectFood(database, { user_id: person.id, id: reference.id })
+    : selectSourceFood(database, { id: reference.id });
+}
+
+type ReferenceFood = NonNullable<ReturnType<typeof readReferenceFood>>;
+
+function snapshotFromFood(
+  food: ReferenceFood,
+  servings: number,
+  claim: Claim,
+  estimatedRange?: ServingRange | null,
+) {
   const perServing = numbersFrom(food);
   const numbers = { ...perServing };
   for (const key of nutrientKeys) {
@@ -123,6 +144,7 @@ export function insertIntake(
   input: IntakeInput,
   clock: Clock,
   stock: "suppress",
+  mealPartFood?: ReferenceFood,
 ): Inserted;
 export function insertIntake(
   scope: WriteScope,
@@ -137,8 +159,9 @@ export function insertIntake(
   input: IntakeInput,
   clock: Clock,
   stock: "suppress" | PantryStock,
+  mealPartFood?: ReferenceFood,
 ) {
-  const result = writeIntake(scope, person, input, clock);
+  const result = writeIntake(scope, person, input, clock, mealPartFood);
   if (stock === "suppress") return result;
   return {
     ...result,
@@ -154,6 +177,7 @@ function writeIntake(
   person: Person,
   input: IntakeInput,
   clock: Clock,
+  mealPartFood?: ReferenceFood,
 ) {
   const database = scopeDatabase(scope);
   if (!("reference" in input)) resolveProvenance(input.claim, null);
@@ -162,19 +186,28 @@ function writeIntake(
     client_id: input.client_id,
   });
   if (replay) return { entry: replay, created: false };
+  if (input.client_id.startsWith(mealPartPrefix) && !mealPartFood)
+    throw new OperationError(400, "invalid_request");
   const instant = clock.now();
   const now = instant.toISOString();
   const eaten_at = canonicalInstant(input.eaten_at ?? now);
   let snapshot: ReturnType<typeof referenceSnapshot>;
   if ("reference" in input) {
-    snapshot = referenceSnapshot(
-      scope,
-      person,
-      input.reference,
-      input.servings,
-      input.claim,
-      input.estimatedRange,
-    );
+    snapshot = mealPartFood
+      ? snapshotFromFood(
+          mealPartFood,
+          input.servings,
+          input.claim,
+          input.estimatedRange,
+        )
+      : referenceSnapshot(
+          scope,
+          person,
+          input.reference,
+          input.servings,
+          input.claim,
+          input.estimatedRange,
+        );
   } else {
     validateNumbers(input.numbers);
     snapshot = {

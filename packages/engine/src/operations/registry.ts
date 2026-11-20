@@ -38,6 +38,7 @@ export class OperationError extends Error {
   readonly status: 400 | 401 | 403 | 404 | 409 | 413 | 500 | 503;
   readonly code: string;
   readonly issues?: string[];
+  readonly part?: number;
   readonly headers: Record<string, string>;
 
   constructor(
@@ -45,12 +46,14 @@ export class OperationError extends Error {
     code: string,
     headers = {},
     issues?: string[],
+    part?: number,
   ) {
     super(code);
     this.status = status;
     this.code = code;
     this.headers = headers;
     this.issues = issues;
+    this.part = part;
   }
 }
 
@@ -65,6 +68,7 @@ export interface Operation<Input extends zod.ZodType = zod.ZodType> {
   bodyLimit?: number;
   noStoreSubpaths?: boolean;
   input: Input;
+  mcpInput?: zod.ZodType;
   inputError?: "not_found";
   inputIssues?: true;
   inputRejection?(error: zod.ZodError): OperationError | undefined;

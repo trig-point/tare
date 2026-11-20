@@ -35,6 +35,7 @@ export const isPantryPath = (path: string) =>
 // Logging and planning responses can carry stock details, so they get the same outgoing checks as pantry reads.
 const stockOperations = [
   "log_food",
+  "log_meal_parts",
   "log_regular_meal",
   "edit_intake",
   "delete_intake",

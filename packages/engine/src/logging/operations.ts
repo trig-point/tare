@@ -15,6 +15,7 @@ import { updateIntake } from "../queries/update-intake.ts";
 import { updateWeight } from "../queries/update-weight.ts";
 import { canonicalInstant, localDay } from "./day.ts";
 import { insertIntake, readServingRange, referenceSnapshot } from "./intake.ts";
+import { logMealParts } from "./meal-parts.ts";
 import { resolveProvenance } from "./provenance.ts";
 import {
   editIntakeInput,
@@ -324,6 +325,7 @@ const removeWeight = defineOperation({
 });
 export const loggingOperations = [
   logFood,
+  logMealParts,
   editIntake,
   logWeight,
   editWeight,

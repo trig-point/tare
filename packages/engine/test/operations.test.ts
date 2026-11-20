@@ -56,6 +56,7 @@ test("registry constrains public and administrator operations and inventories ev
     [
       "whoami",
       "log_food",
+      "log_meal_parts",
       "edit_intake",
       "log_weight",
       "edit_weight",
