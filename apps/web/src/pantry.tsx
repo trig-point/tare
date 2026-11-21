@@ -41,6 +41,11 @@ import { sourceName } from "./today-api.ts";
 
 type Props = { person: number; online: boolean };
 
+const connected = (pantry: Pantry | undefined) =>
+  pantry?.state === "ready" || pantry?.state === "never_refreshed";
+const toBuy = (items: ShoppingList["stores"][number]["items"]) =>
+  items.filter((item) => !item.done).length;
+
 const forbidden = (error: unknown) =>
   error instanceof ApiError && error.status === 403;
 
@@ -69,8 +74,10 @@ export function PantrySection({ person, online }: Props) {
     queryKey: productsKey(person),
     queryFn: ({ signal }) => readProducts(signal),
   });
+  // Reading the list asks Grocy to add missing products, so it waits for an active connection.
   const shopping = useQuery({
     ...owner,
+    enabled: owner.enabled && connected(pantry.data),
     queryKey: shoppingKey(person),
     queryFn: ({ signal }) => readShopping(signal),
   });
@@ -191,8 +198,7 @@ export function PantryView({
     onSuccess: (next) => client.setQueryData(pantryKey(person), next),
     onSettled: reload,
   });
-  const ready =
-    pantry?.state === "ready" || pantry?.state === "never_refreshed";
+  const ready = connected(pantry);
   const message = pantry && status(pantry);
   const units = new Map(
     pantry?.products.map((product) => [product.product_id, product]),
@@ -203,7 +209,8 @@ export function PantryView({
     requests && requests.state !== "disabled" && !requestsFailed
       ? requests.unresolved.length
       : null;
-  const shown = tab === "bindings" && !ready ? "stock" : tab;
+  const shown =
+    (tab === "bindings" || tab === "shopping") && !ready ? "stock" : tab;
   return (
     <section
       aria-label="Pantry"
@@ -294,18 +301,19 @@ export function PantryView({
             <TabsTrigger value="stock" className={trigger}>
               Stock
             </TabsTrigger>
-            <TabsTrigger value="shopping" className={trigger}>
-              Shopping{" "}
-              {!shoppingFailed && shopping?.state === "ready" && (
-                <Badge>
-                  {shopping.stores.reduce(
-                    (sum, group) =>
-                      sum + group.items.filter((item) => !item.done).length,
-                    0,
-                  )}
-                </Badge>
-              )}
-            </TabsTrigger>
+            {ready && (
+              <TabsTrigger value="shopping" className={trigger}>
+                Shopping{" "}
+                {!shoppingFailed && shopping?.state === "ready" && (
+                  <Badge>
+                    {shopping.stores.reduce(
+                      (sum, group) => sum + toBuy(group.items),
+                      0,
+                    )}
+                  </Badge>
+                )}
+              </TabsTrigger>
+            )}
             {ready && (
               <TabsTrigger
                 ref={bindingsTab}
@@ -333,13 +341,15 @@ export function PantryView({
               }}
             />
           </TabsContent>
-          <TabsContent value="shopping" forceMount className={panel}>
-            <Shopping
-              shopping={shopping}
-              failed={shoppingFailed}
-              online={online}
-            />
-          </TabsContent>
+          {ready && (
+            <TabsContent value="shopping" forceMount className={panel}>
+              <Shopping
+                shopping={shopping}
+                failed={shoppingFailed}
+                online={online}
+              />
+            </TabsContent>
+          )}
           {ready && (
             <TabsContent value="bindings" forceMount className={panel}>
               <Bindings
@@ -537,28 +547,31 @@ function Shopping({
             <h2 className="m-0 flex items-baseline justify-between gap-3 border-b border-border pb-2 text-(length:--step-2) font-semibold [overflow-wrap:anywhere]">
               {title}
               <span className="numeric shrink-0 text-xs font-normal text-ink-2">
-                {group.items.length}
+                {toBuy(group.items)}
               </span>
             </h2>
             <ul className="m-0 list-none p-0">
-              {group.items.map((item) => (
-                <li
-                  key={item.id}
-                  className={cn(
-                    row,
-                    "items-center py-3.5 text-base",
-                    item.done && "text-ink-2 line-through",
-                  )}
-                >
-                  <span className="min-w-0 font-medium [overflow-wrap:anywhere]">
-                    {item.name}
-                  </span>
-                  <span className="numeric shrink-0">
-                    {item.amount}
-                    {item.unit && ` ${item.unit}`}
-                  </span>
-                </li>
-              ))}
+              {group.items.map((item) => {
+                const Name = item.done ? "s" : "span";
+                return (
+                  <li
+                    key={item.id}
+                    className={cn(
+                      row,
+                      "items-center py-3.5 text-base",
+                      item.done && "text-ink-2 line-through",
+                    )}
+                  >
+                    <Name className="min-w-0 font-medium [overflow-wrap:anywhere]">
+                      {item.name}
+                    </Name>
+                    <span className="numeric shrink-0">
+                      {item.amount}
+                      {item.unit && ` ${item.unit}`}
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
           </section>
         );

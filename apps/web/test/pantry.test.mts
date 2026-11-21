@@ -11,6 +11,7 @@ import {
   readPantry,
   readProducts,
   readRequests,
+  readShopping,
   reconcile,
   refreshPantry,
   type ShoppingList,
@@ -344,7 +345,11 @@ test("a product list from before a reset is not offered", () => {
 });
 
 test("the shopping tab groups items under store headings, counts items not done, and tells empty from failed", () => {
-  const view = (shopping: ShoppingList, shoppingFailed = false) =>
+  const view = (
+    shopping: ShoppingList,
+    shoppingFailed = false,
+    pantry: Pantry = ready,
+  ) =>
     text(
       renderToStaticMarkup(
         createElement(
@@ -353,7 +358,7 @@ test("the shopping tab groups items under store headings, counts items not done,
           createElement(PantryView, {
             person: 1,
             online: true,
-            pantry: ready,
+            pantry,
             failed: false,
             requests: undefined,
             requestsFailed: false,
@@ -386,9 +391,16 @@ test("the shopping tab groups items under store headings, counts items not done,
   });
   assert.match(
     grouped,
-    /Shopping 2 .*Wegmans 2 Example broccoli 2 Bags Example rice 2 Bags No store 1 Example candles 2 /,
+    /Shopping 2 .*Wegmans 1 Example broccoli 2 Bags Example rice 2 Bags No store 1 Example candles 2 /,
   );
   assert.match(view({ state: "ready", stores: [] }), /Nothing to buy/);
+  assert.doesNotMatch(
+    view({ state: "ready", stores: [] }, false, {
+      ...ready,
+      state: "reset_required",
+    }),
+    /Shopping|Nothing to buy/,
+  );
   assert.match(
     view({ state: "unavailable", stores: [] }),
     /Couldn’t load shopping list/,
@@ -401,4 +413,18 @@ test("the shopping tab groups items under store headings, counts items not done,
     true,
   );
   assert.match(stale, /Shopping Bindings .*Couldn’t load shopping list/);
+});
+
+test("readShopping posts an empty body to the shopping list operation", async (context) => {
+  const sent: [string, string | undefined, unknown][] = [];
+  context.mock.method(
+    globalThis,
+    "fetch",
+    async (url: string, init?: RequestInit) => {
+      sent.push([String(url), init?.method, init?.body]);
+      return Response.json({ state: "ready", error: null, stores: [] });
+    },
+  );
+  assert.deepEqual(await readShopping(), { state: "ready", stores: [] });
+  assert.deepEqual(sent, [["/api/pantry/shopping", "POST", "{}"]]);
 });
