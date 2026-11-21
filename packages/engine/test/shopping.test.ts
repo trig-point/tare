@@ -89,7 +89,13 @@ async function setup(context: TestContext) {
     },
   });
   const ownerId = harness.admin.user.id;
+  harness.database
+    .prepare(
+      "INSERT INTO pantry_connection (id, generation, url, username, user_id) VALUES (1, 1, ?, ?, ?)",
+    )
+    .run(grocy.url, grocy.username, ownerId);
   wired.shopping = createShoppingService({
+    database: harness.database,
     config: grocy,
     ownerId,
     client: createGroceryClient({
@@ -211,7 +217,7 @@ test("refresh_shopping_list over MCP groups items by store, storeless last", asy
 });
 
 test("refresh_shopping_list tells an empty list from an unreachable or malformed Grocy", async (context) => {
-  const { admin, fake, sent } = await setup(context);
+  const { admin, fake, sent, database } = await setup(context);
   const refresh = async () =>
     (await json(admin, "/api/pantry/shopping", {})).body;
   assert.deepEqual(await refresh(), {
@@ -246,6 +252,13 @@ test("refresh_shopping_list tells an empty list from an unreachable or malformed
       stores: [],
     });
   }
+  database.prepare("UPDATE pantry_connection SET reset_required = 1").run();
+  sent.length = 0;
+  const pending = await json(admin, "/api/pantry/shopping", {});
+  assert.deepEqual(
+    [pending.status, pending.body.error.code, sent],
+    [503, "pantry_reset_required", []],
+  );
 });
 
 test("refresh_shopping_list is disabled without Grocy", async (context) => {
