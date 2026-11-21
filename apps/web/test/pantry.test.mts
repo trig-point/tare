@@ -343,8 +343,8 @@ test("a product list from before a reset is not offered", () => {
   assert.match(markup, /<option value="7">Synthetic beans/);
 });
 
-test("the shopping tab groups items by store, storeless last, and tells empty from failed", () => {
-  const view = (shopping: ShoppingList) =>
+test("the shopping tab groups items under store headings, counts items not done, and tells empty from failed", () => {
+  const view = (shopping: ShoppingList, shoppingFailed = false) =>
     text(
       renderToStaticMarkup(
         createElement(
@@ -359,6 +359,7 @@ test("the shopping tab groups items by store, storeless last, and tells empty fr
             requestsFailed: false,
             link: null,
             shopping,
+            shoppingFailed,
           }),
         ),
       ),
@@ -375,18 +376,29 @@ test("the shopping tab groups items by store, storeless last, and tells empty fr
     stores: [
       {
         store: { id: 1, name: "Wegmans" },
-        items: [item(1, "Example broccoli", "Bags")],
+        items: [
+          item(1, "Example broccoli", "Bags"),
+          { ...item(4, "Example rice", "Bags"), done: true },
+        ],
       },
       { store: null, items: [item(2, "Example candles", null)] },
     ],
   });
   assert.match(
     grouped,
-    /Shopping 2 .*Wegmans 1 Example broccoli 2 Bags No store 1 Example candles 2 /,
+    /Shopping 2 .*Wegmans 2 Example broccoli 2 Bags Example rice 2 Bags No store 1 Example candles 2 /,
   );
   assert.match(view({ state: "ready", stores: [] }), /Nothing to buy/);
   assert.match(
     view({ state: "unavailable", stores: [] }),
     /Couldn’t load shopping list/,
   );
+  const stale = view(
+    {
+      state: "ready",
+      stores: [{ store: null, items: [item(3, "Example rice", null)] }],
+    },
+    true,
+  );
+  assert.match(stale, /Shopping Bindings .*Couldn’t load shopping list/);
 });

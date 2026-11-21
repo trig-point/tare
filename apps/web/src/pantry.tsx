@@ -177,9 +177,10 @@ export function PantryView({
 }) {
   const client = useQueryClient();
   const [tab, setTab] = useState("stock");
-  // Products are read live from Grocy, so mutations do not wait for them.
+  // Products and the shopping list are read live from Grocy, so mutations do not wait for them.
   const reload = () => {
     void client.invalidateQueries({ queryKey: productsKey(person) });
+    void client.invalidateQueries({ queryKey: shoppingKey(person) });
     return Promise.all([
       client.invalidateQueries({ queryKey: pantryKey(person) }),
       client.invalidateQueries({ queryKey: requestsKey(person) }),
@@ -288,14 +289,14 @@ export function PantryView({
         <Tabs value={shown} onValueChange={setTab} className="gap-0">
           <TabsList
             variant="line"
-            className="w-full border-b border-border p-0 group-data-[orientation=horizontal]/tabs:h-auto"
+            className="w-full justify-start overflow-x-auto border-b border-border p-0 [scrollbar-width:none] group-data-[orientation=horizontal]/tabs:h-auto"
           >
             <TabsTrigger value="stock" className={trigger}>
               Stock
             </TabsTrigger>
             <TabsTrigger value="shopping" className={trigger}>
               Shopping{" "}
-              {shopping?.state === "ready" && (
+              {!shoppingFailed && shopping?.state === "ready" && (
                 <Badge>
                   {shopping.stores.reduce(
                     (sum, group) =>
@@ -376,7 +377,7 @@ export function PantryView({
 }
 
 const trigger =
-  "min-h-11 py-2.5 duration-(--motion-tab) group-data-[orientation=horizontal]/tabs:after:bottom-[-1px] after:duration-(--motion-tab)";
+  "min-h-11 px-1.5 py-2.5 duration-(--motion-tab) group-data-[orientation=horizontal]/tabs:after:bottom-0 after:duration-(--motion-tab)";
 
 function Stock({
   pantry,
