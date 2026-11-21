@@ -91,10 +91,31 @@ const requestsSchema = z.object({
 export type StockRequests = z.infer<typeof requestsSchema>;
 export type Decision = "delivered" | "not_delivered_retry" | "abandoned";
 
+const shoppingSchema = z.object({
+  state: z.enum(["disabled", "unavailable", "ready"]),
+  stores: z.array(
+    z.object({
+      store: z.object({ id: z.number(), name: z.string() }).nullable(),
+      items: z.array(
+        z.object({
+          id: z.number(),
+          name: z.string(),
+          amount: z.number(),
+          unit: z.string().nullable(),
+          done: z.boolean(),
+        }),
+      ),
+    }),
+  ),
+});
+export type ShoppingList = z.infer<typeof shoppingSchema>;
+
 export const pantryKey = (person: number) => ["pantry", person] as const;
 export const requestsKey = (person: number) =>
   ["pantry_requests", person] as const;
 export const linkKey = (person: number) => ["pantry_link", person] as const;
+export const shoppingKey = (person: number) =>
+  ["pantry_shopping", person] as const;
 export const productsKey = (person: number) =>
   ["pantry_products", person] as const;
 
@@ -104,6 +125,11 @@ export const readRequests = async (signal?: AbortSignal) =>
   requestsSchema.parse(await api("/api/pantry/requests", { signal }));
 export const readProducts = async (signal?: AbortSignal) =>
   productsSchema.parse(await api("/api/pantry/products", { signal }));
+/** Grocy adds below-minimum products before the list is read, so this is a POST. */
+export const readShopping = async (signal?: AbortSignal) =>
+  shoppingSchema.parse(
+    await api("/api/pantry/shopping", { method: "POST", body: "{}", signal }),
+  );
 export const readLink = async (signal?: AbortSignal) =>
   z
     .object({ url: z.string().nullable() })

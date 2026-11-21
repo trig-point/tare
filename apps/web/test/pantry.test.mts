@@ -13,6 +13,7 @@ import {
   readRequests,
   reconcile,
   refreshPantry,
+  type ShoppingList,
   type StockRequests,
   saveBinding,
 } from "../src/pantry-api.ts";
@@ -340,4 +341,52 @@ test("a product list from before a reset is not offered", () => {
   });
   assert.doesNotMatch(markup, /Old item/);
   assert.match(markup, /<option value="7">Synthetic beans/);
+});
+
+test("the shopping tab groups items by store, storeless last, and tells empty from failed", () => {
+  const view = (shopping: ShoppingList) =>
+    text(
+      renderToStaticMarkup(
+        createElement(
+          QueryClientProvider,
+          { client: new QueryClient() },
+          createElement(PantryView, {
+            person: 1,
+            online: true,
+            pantry: ready,
+            failed: false,
+            requests: undefined,
+            requestsFailed: false,
+            link: null,
+            shopping,
+          }),
+        ),
+      ),
+    );
+  const item = (id: number, name: string, unit: string | null) => ({
+    id,
+    name,
+    amount: 2,
+    unit,
+    done: false,
+  });
+  const grouped = view({
+    state: "ready",
+    stores: [
+      {
+        store: { id: 1, name: "Wegmans" },
+        items: [item(1, "Example broccoli", "Bags")],
+      },
+      { store: null, items: [item(2, "Example candles", null)] },
+    ],
+  });
+  assert.match(
+    grouped,
+    /Shopping 2 .*Wegmans 1 Example broccoli 2 Bags No store 1 Example candles 2 /,
+  );
+  assert.match(view({ state: "ready", stores: [] }), /Nothing to buy/);
+  assert.match(
+    view({ state: "unavailable", stores: [] }),
+    /Couldn’t load shopping list/,
+  );
 });

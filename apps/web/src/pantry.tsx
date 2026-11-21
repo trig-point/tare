@@ -17,13 +17,16 @@ import {
   readPantry,
   readProducts,
   readRequests,
+  readShopping,
   reconcile,
   refreshPantry,
   requestsKey,
   resetPantry,
+  type ShoppingList,
   type StockRequest,
   type StockRequests,
   saveBinding,
+  shoppingKey,
 } from "./pantry-api.ts";
 import {
   Button,
@@ -66,6 +69,11 @@ export function PantrySection({ person, online }: Props) {
     queryKey: productsKey(person),
     queryFn: ({ signal }) => readProducts(signal),
   });
+  const shopping = useQuery({
+    ...owner,
+    queryKey: shoppingKey(person),
+    queryFn: ({ signal }) => readShopping(signal),
+  });
   if (forbidden(pantry.error)) return null;
   return (
     <PantryView
@@ -76,6 +84,8 @@ export function PantrySection({ person, online }: Props) {
       requests={requests.data}
       requestsFailed={requests.isError}
       link={link.data ?? null}
+      shopping={shopping.data}
+      shoppingFailed={shopping.isError}
       catalog={
         catalog.isError
           ? { state: "unavailable", generation: null, products: [] }
@@ -153,6 +163,8 @@ export function PantryView({
   requestsFailed,
   link,
   catalog,
+  shopping,
+  shoppingFailed = false,
 }: Props & {
   pantry: Pantry | undefined;
   failed: boolean;
@@ -160,6 +172,8 @@ export function PantryView({
   requestsFailed: boolean;
   link: string | null;
   catalog?: PantryProducts;
+  shopping?: ShoppingList;
+  shoppingFailed?: boolean;
 }) {
   const client = useQueryClient();
   const [tab, setTab] = useState("stock");
@@ -279,6 +293,18 @@ export function PantryView({
             <TabsTrigger value="stock" className={trigger}>
               Stock
             </TabsTrigger>
+            <TabsTrigger value="shopping" className={trigger}>
+              Shopping{" "}
+              {shopping?.state === "ready" && (
+                <Badge>
+                  {shopping.stores.reduce(
+                    (sum, group) =>
+                      sum + group.items.filter((item) => !item.done).length,
+                    0,
+                  )}
+                </Badge>
+              )}
+            </TabsTrigger>
             {ready && (
               <TabsTrigger
                 ref={bindingsTab}
@@ -304,6 +330,13 @@ export function PantryView({
                 setTab("bindings");
                 bindingsTab.current?.focus();
               }}
+            />
+          </TabsContent>
+          <TabsContent value="shopping" forceMount className={panel}>
+            <Shopping
+              shopping={shopping}
+              failed={shoppingFailed}
+              online={online}
             />
           </TabsContent>
           {ready && (
@@ -456,6 +489,75 @@ function Stock({
           </Button>
         </div>
       )}
+    </div>
+  );
+}
+
+function Shopping({
+  shopping,
+  failed,
+  online,
+}: {
+  shopping: ShoppingList | undefined;
+  failed: boolean;
+  online: boolean;
+}) {
+  if (failed || shopping?.state === "unavailable")
+    return (
+      <p role="alert" className={cn(notice, "text-destructive")}>
+        Couldn’t load shopping list
+      </p>
+    );
+  if (!shopping)
+    return online ? (
+      <div>
+        <p className="sr-only">Loading...</p>
+        <div
+          aria-hidden
+          className="h-40 rounded-(--radius) bg-bg-sunk motion-safe:animate-pulse"
+        />
+      </div>
+    ) : (
+      <p className={cn(hint, "m-0")}>Unavailable offline</p>
+    );
+  if (shopping.state === "disabled") return null;
+  if (shopping.stores.length === 0)
+    return <p className={cn(hint, "m-0")}>Nothing to buy</p>;
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-6">
+      {shopping.stores.map((group) => {
+        const title = group.store?.name ?? "No store";
+        return (
+          <section key={group.store?.id ?? "none"} aria-label={title}>
+            <h2 className="m-0 flex items-baseline justify-between gap-3 border-b border-border pb-2 text-(length:--step-2) font-semibold [overflow-wrap:anywhere]">
+              {title}
+              <span className="numeric shrink-0 text-xs font-normal text-ink-2">
+                {group.items.length}
+              </span>
+            </h2>
+            <ul className="m-0 list-none p-0">
+              {group.items.map((item) => (
+                <li
+                  key={item.id}
+                  className={cn(
+                    row,
+                    "items-center py-3.5 text-base",
+                    item.done && "text-ink-2 line-through",
+                  )}
+                >
+                  <span className="min-w-0 font-medium [overflow-wrap:anywhere]">
+                    {item.name}
+                  </span>
+                  <span className="numeric shrink-0">
+                    {item.amount}
+                    {item.unit && ` ${item.unit}`}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        );
+      })}
     </div>
   );
 }
