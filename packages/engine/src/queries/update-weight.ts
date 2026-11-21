@@ -5,6 +5,7 @@ export type UpdateWeightData = {
   day: string;
   weight_kg: number;
   body_fat_pct: number | null;
+  note: string | null;
 };
 
 export type UpdateWeightParams = {
@@ -22,6 +23,7 @@ export type UpdateWeightResult = {
   body_fat_pct: number | null;
   source: string | null;
   created_at: string;
+  note: string | null;
 };
 
 export function updateWeight(
@@ -30,7 +32,7 @@ export function updateWeight(
   params: UpdateWeightParams,
 ): UpdateWeightResult[] {
   const sql = `
-	UPDATE weights SET measured_at = ?, day = ?, weight_kg = ?, body_fat_pct = ? WHERE user_id = ? AND id = ? RETURNING *;
+	UPDATE weights SET measured_at = ?, day = ?, weight_kg = ?, body_fat_pct = ?, note = ? WHERE user_id = ? AND id = ? RETURNING *;
 	
 	`;
   const rows = db
@@ -41,6 +43,7 @@ export function updateWeight(
       data.day,
       data.weight_kg,
       data.body_fat_pct,
+      data.note,
       params.user_id,
       params.id,
     ]);
@@ -59,6 +62,7 @@ function mapArrayToUpdateWeightResult(data: any) {
     body_fat_pct: data[6],
     source: data[7],
     created_at: data[8],
+    note: data[9],
   };
   return result;
 }

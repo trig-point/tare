@@ -21,17 +21,34 @@ export const weightHistory = defineOperation({
   callerClass: "browser_and_agent",
   admin: false,
   input: emptyInput,
-  output: zod.strictObject({ days: zod.array(weightTrendDayOutput) }),
-  handler: (_input, context) => ({
-    status: 200,
-    body: {
-      days: weightTrend(
-        selectWeightHistory(context.database, {
-          user_id: operationPerson(context).id,
-        }),
-      ),
-    },
+  output: zod.strictObject({
+    days: zod.array(weightTrendDayOutput),
+    readings: zod.array(
+      zod.strictObject({
+        id: zod.number(),
+        day: zod.iso.date(),
+        weight_kg: zod.number(),
+        note: zod.string().nullable(),
+      }),
+    ),
   }),
+  handler: (_input, context) => {
+    const weights = selectWeightHistory(context.database, {
+      user_id: operationPerson(context).id,
+    });
+    return {
+      status: 200,
+      body: {
+        days: weightTrend(weights),
+        readings: weights.map(({ id, day, weight_kg, note }) => ({
+          id,
+          day,
+          weight_kg,
+          note,
+        })),
+      },
+    };
+  },
 });
 
 const bodyFatReadingOutput = zod.strictObject({

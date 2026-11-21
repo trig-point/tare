@@ -131,12 +131,23 @@ export const logWeightInput = zod.strictObject({
   weight_kg: zod.number().positive(),
   body_fat_pct: zod.number().min(0).max(100).nullable().optional(),
   source: text.nullable().optional(),
+  note: zod
+    .string()
+    .max(200)
+    .refine((note) => !note.includes("\0") && !/[\uD800-\uDFFF]/u.test(note))
+    .nullable()
+    .optional(),
 });
 export const editWeightInput = zod
   .strictObject({
     ...idInput.shape,
     ...logWeightInput
-      .pick({ measured_at: true, weight_kg: true, body_fat_pct: true })
+      .pick({
+        measured_at: true,
+        weight_kg: true,
+        body_fat_pct: true,
+        note: true,
+      })
       .partial().shape,
   })
   .refine((input) => Object.keys(input).length > 1);
@@ -172,6 +183,7 @@ export const weightRow = zod.strictObject({
   body_fat_pct: zod.number().nullable(),
   source: zod.string().nullable(),
   created_at: zod.string(),
+  note: zod.string().nullable(),
 });
 export function numbersFrom(input: Partial<Numbers>): Numbers {
   return Object.fromEntries(

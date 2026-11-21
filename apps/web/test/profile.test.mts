@@ -175,25 +175,34 @@ test("weight section shows the latest weigh-in, the trend and weigh-ins newest f
     { day: "2025-11-30", reading_kg: 81.5, trend_kg: 81.8 },
     { day: "2025-12-01", reading_kg: null, trend_kg: 81.7 },
   ];
+  const readings = [
+    { id: 1, day: "2025-06-01", weight_kg: 82, note: null },
+    { id: 2, day: "2025-11-29", weight_kg: 81.9, note: null },
+    { id: 3, day: "2025-11-30", weight_kg: 81.5, note: "clothed" },
+    { id: 4, day: "2025-11-30", weight_kg: 81.6, note: null },
+  ];
   const chart = render(
     createElement(WeightChart, { person: 1, online: true }),
-    [[historyKey(1), { days }]],
+    [[historyKey(1), { days, readings }]],
   );
   assert.match(chart, /81\.5 <small[^>]*>kg.*Weigh-in, Nov 30, 2025/s);
   assert.match(chart, /81\.7 <small[^>]*>kg.*Trend/s);
   assert.match(chart, /aria-pressed="true"[^>]*>3M</);
-  const rows = [...chart.matchAll(/<li[^>]*><span[^>]*>([\d.]+) kg/g)];
+  const rows = [
+    ...chart.matchAll(/<li[^>]*><div[^>]*><span[^>]*>([\d.]+) kg/g),
+  ];
   assert.deepEqual(
     rows.map((match) => match[1]),
-    ["81.5", "81.9"],
+    ["81.6", "81.5", "81.9"],
   );
+  assert.match(chart, /81\.5 kg<\/span><p[^>]*>clothed<\/p>/);
   assert.doesNotMatch(chart, />82 kg/);
 });
 
 test("a failed refetch keeps the loaded weights beside the error", () => {
   const client = new QueryClient();
   const days = [{ day: "2025-11-30", reading_kg: 81.5, trend_kg: 81.8 }];
-  client.setQueryData(historyKey(1), { days });
+  client.setQueryData(historyKey(1), { days, readings: [] });
   client
     .getQueryCache()
     .find({ queryKey: historyKey(1) })

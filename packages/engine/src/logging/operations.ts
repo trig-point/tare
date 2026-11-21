@@ -92,6 +92,7 @@ const logFood = defineOperation({
 const logWeight = defineOperation({
   ...base,
   name: "log_weight",
+  description: "Log a weigh-in with an optional note.",
   method: "POST",
   path: "/api/weights",
   input: logWeightInput,
@@ -238,6 +239,7 @@ const editIntake = defineOperation({
 const editWeight = defineOperation({
   ...base,
   name: "edit_weight",
+  description: "Edit a weigh-in. Set note to null to clear it.",
   method: "PATCH",
   path: "/api/weights/:id",
   input: editWeightInput,

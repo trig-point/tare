@@ -9,6 +9,7 @@ export type InsertWeightParams = {
   body_fat_pct: number | null;
   source: string | null;
   created_at: string;
+  note: string | null;
 };
 
 export type InsertWeightResult = {
@@ -21,6 +22,7 @@ export type InsertWeightResult = {
   body_fat_pct: number | null;
   source: string | null;
   created_at: string;
+  note: string | null;
 };
 
 export function insertWeight(
@@ -28,8 +30,8 @@ export function insertWeight(
   params: InsertWeightParams,
 ): InsertWeightResult | null {
   const sql = `
-	INSERT INTO weights (user_id, client_id, measured_at, day, weight_kg, body_fat_pct, source, created_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (user_id, client_id) DO NOTHING RETURNING *;
+	INSERT INTO weights (user_id, client_id, measured_at, day, weight_kg, body_fat_pct, source, created_at, note)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (user_id, client_id) DO NOTHING RETURNING *;
 	
 	`;
   const res = db
@@ -44,6 +46,7 @@ export function insertWeight(
       params.body_fat_pct,
       params.source,
       params.created_at,
+      params.note,
     ]);
 
   return res ? mapArrayToInsertWeightResult(res) : null;
@@ -60,6 +63,7 @@ function mapArrayToInsertWeightResult(data: any) {
     body_fat_pct: data[6],
     source: data[7],
     created_at: data[8],
+    note: data[9],
   };
   return result;
 }
