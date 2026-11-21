@@ -135,8 +135,12 @@ export type GrocyDependencies = {
   ownerId: number | null;
   fetch?: typeof globalThis.fetch;
 };
-/** A POST body sent once; HTTP 400 with a refused message is a proven pre-write refusal. */
-export type GrocyWrite = { body: unknown; refused: ReadonlySet<string> };
+/** A body sent once (POST unless PUT); HTTP 400 with a refused message is a proven pre-write refusal. */
+export type GrocyWrite = {
+  body: unknown;
+  refused: ReadonlySet<string>;
+  method?: "PUT";
+};
 
 export function createGrocyTransport({
   config,
@@ -183,7 +187,7 @@ export function createGrocyTransport({
     }, 30_000);
     try {
       const init: RequestInit & { duplex?: "half" } = {
-        method: write ? "POST" : "GET",
+        method: write ? (write.method ?? "POST") : "GET",
         headers: {
           "GROCY-API-KEY": config.apiKey,
           "Content-Type": "application/json",
@@ -214,6 +218,13 @@ export function createGrocyTransport({
           : httpStatus === 404
             ? "not_found"
             : "http";
+      // Grocy answers PUT and its shopping list actions with an empty 204.
+      if (httpStatus === 204) {
+        const parsed = schema.safeParse(null);
+        return parsed.success
+          ? { status: write ? "confirmed" : "ok", value: parsed.data }
+          : failure(after, "invalid_response", httpStatus);
+      }
       const reader = response.body?.getReader();
       if (!reader)
         return failure(

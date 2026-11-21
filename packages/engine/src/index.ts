@@ -27,6 +27,7 @@ import { createOuraSyncJob } from "./oura/sync.ts";
 import { createPantryDispatcher } from "./pantry/dispatch.ts";
 import { createPantryStock, recoverRequests } from "./pantry/requests.ts";
 import { createPantryService } from "./pantry/service.ts";
+import { createShoppingService } from "./pantry/shopping.ts";
 import { deleteExpiredSessions } from "./queries/delete-expired-sessions.ts";
 import { createScaleSubscriber, resolveScaleUsers } from "./scale/ingest.ts";
 import { createTargetRecomputeJob } from "./target/job.ts";
@@ -96,6 +97,12 @@ async function startEngine(scaleUsers: Map<string, number> | null) {
     client: createGroceryClient({ config: config.grocy, ownerId: grocyOwner }),
     refresh: pantry.refreshAfterDelivery,
     report: reportPantry,
+  });
+  const shopping = createShoppingService({
+    database: connection.database,
+    config: config.grocy,
+    ownerId: grocyOwner,
+    client: createGroceryClient({ config: config.grocy, ownerId: grocyOwner }),
   });
   const stock = createPantryStock({
     config: config.grocy,
@@ -227,6 +234,7 @@ async function startEngine(scaleUsers: Map<string, number> | null) {
     dummyHash,
     pantry,
     grocery,
+    shopping,
     stock,
     questionKinds,
     verifyPassword,

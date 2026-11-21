@@ -29,6 +29,8 @@ export const isPantryOperation = (name: string) =>
     "read_pantry_link",
     "list_pantry_products",
     "reconcile_pantry_request",
+    "save_shopping_minimum",
+    "refresh_shopping_list",
   ].includes(name);
 export const isPantryPath = (path: string) =>
   path === "/api/pantry" || path.startsWith("/api/pantry/");
