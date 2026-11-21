@@ -90,6 +90,8 @@ Body card why-lines compare a signal with its recent baseline; empty values coun
 
 `TARE_USDA_API_KEY` enables USDA FoodData Central lookups; it is trimmed, and empty or unset skips USDA.
 
+`TARE_VISION_PROVIDER`, `TARE_VISION_MODEL` and `TARE_VISION_API_KEY` enable meal photo estimates. Set all three or leave all three unset. Values are trimmed, and empty counts as unset. The provider is `anthropic` or `google`, and the model ID accepts ASCII letters, digits, dots, underscores and hyphens.
+
 `TARE_ORDER_MODEL_BASE_URL`, `TARE_ORDER_MODEL` and `TARE_ORDER_MODEL_API_KEY` configure order-email parsing through an OpenAI-compatible model. Set all three or leave all three unset. Values are trimmed; empty values count as unset. The base URL must use HTTP or HTTPS and may include a path, but not credentials, a query or a fragment. A keyless local endpoint requires a placeholder API key. With no model configured, the parser returns `no_model` for the engine to turn into a question.
 
 `TARE_OFF_USER_AGENT` must follow `AppName/Version (ContactEmail)`; leaving it empty or unset disables Open Food Facts requests.

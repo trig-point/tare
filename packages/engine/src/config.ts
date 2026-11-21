@@ -25,6 +25,12 @@ export interface WhySettings {
   lateMinutes: number;
 }
 
+export interface VisionConfig {
+  provider: "anthropic" | "google";
+  model: string;
+  apiKey: string;
+}
+
 export interface Config {
   grocy: GrocyConfig | null;
   orderEmailServices: Record<
@@ -47,6 +53,7 @@ export interface Config {
   usdaApiKey: string | undefined;
   offUserAgent: string | undefined;
   orderModel: { baseURL: string; model: string; apiKey: string } | null;
+  vision: VisionConfig | null;
   oura: { clientId: string; clientSecret: string; redirectUrl: string } | null;
   ouraTokenKey: Buffer | undefined;
   mqtt: MqttConfig | null;
@@ -188,6 +195,21 @@ function parseOrderModel(
     throw new Error("TARE_ORDER_MODEL_BASE_URL must be an HTTP or HTTPS URL");
   }
   return { baseURL, model, apiKey };
+}
+
+function parseVision(
+  env: Record<string, string | undefined>,
+): VisionConfig | null {
+  const provider = env.TARE_VISION_PROVIDER?.trim();
+  const model = env.TARE_VISION_MODEL?.trim();
+  const apiKey = env.TARE_VISION_API_KEY?.trim();
+  if (!provider && !model && !apiKey) return null;
+  if (provider !== "anthropic" && provider !== "google")
+    throw new Error("TARE_VISION_PROVIDER must be anthropic or google");
+  if (!model || !/^[A-Za-z0-9._-]+$/.test(model))
+    throw new Error("TARE_VISION_MODEL must be a model ID");
+  if (!apiKey) throw new Error("TARE_VISION_API_KEY must be set");
+  return { provider, model, apiKey };
 }
 
 function parseOura(env: Record<string, string | undefined>): Config["oura"] {
@@ -521,6 +543,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     usdaApiKey: env.TARE_USDA_API_KEY?.trim() || undefined,
     offUserAgent: validateOffUserAgent(env.TARE_OFF_USER_AGENT),
     orderModel: parseOrderModel(env),
+    vision: parseVision(env),
     oura: parseOura(env),
     ouraTokenKey: parseOuraKey(env.TARE_OURA_TOKEN_KEY),
     mqtt,

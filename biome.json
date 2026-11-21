@@ -8,6 +8,27 @@
     {
       "includes": ["packages/engine/src/queries/**/*.ts"],
       "linter": { "rules": { "suspicious": { "noExplicitAny": "off" } } }
+    },
+    {
+      "includes": ["packages/engine/src/photo/**"],
+      "linter": {
+        "rules": {
+          "suspicious": { "noConsole": "error" },
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "node:fs": "Photo uploads stay in memory.",
+                  "node:fs/promises": "Photo uploads stay in memory.",
+                  "fs": "Photo uploads stay in memory.",
+                  "fs/promises": "Photo uploads stay in memory."
+                }
+              }
+            }
+          }
+        }
+      }
     }
   ]
 }
