@@ -28,6 +28,7 @@ export function insertWeight(
     day: localDay(measured_at, person.timezone, person.day_start_hour),
     body_fat_pct: input.body_fat_pct ?? null,
     source: input.source ?? null,
+    note: input.note ?? null,
     created_at: now,
   });
   const entry =

@@ -87,7 +87,7 @@ test("accepted readings log once with body fat, and count once within 10 minutes
   ]);
   assert.equal(scale.refreshes(), 2);
   const edit = { measured_at: "2026-03-01T23:58:00.000Z", day: "2026-03-01" };
-  const edited = { ...edit, weight_kg: 80, body_fat_pct: null };
+  const edited = { ...edit, weight_kg: 80, body_fat_pct: null, note: null };
   updateWeight(scale.database, edited, { user_id: 1, id: 1 });
   assert.equal(scale.send(repeat), "duplicate");
   assert.equal(scale.questions().length, 0);

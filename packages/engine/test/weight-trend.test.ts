@@ -71,6 +71,7 @@ test("weight history uses stored days, the earliest reading and only its owner",
         client_id: `invented-weight-${index}`,
         body_fat_pct: null,
         source: null,
+        note: null,
         created_at: row.measured_at,
       }),
     );

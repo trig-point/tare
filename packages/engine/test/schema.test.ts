@@ -115,6 +115,7 @@ function fixture(context: TestContext) {
       day: storedDay,
       weight_kg: 70,
       body_fat_pct: null,
+      note: null,
       source: null,
       created_at: timestamp,
       ...overrides,

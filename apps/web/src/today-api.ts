@@ -163,13 +163,18 @@ export async function enqueueWeight(
   replay: OutboxReplay,
   person: Session["user"],
   weight: string,
+  note = "",
 ) {
   const value = Number(weight);
   if (!weight.trim() || !Number.isFinite(value) || value <= 0)
     throw new Error("Invalid weight");
   await replay.enqueue(
     "weight",
-    { weight_kg: value, measured_at: new Date().toISOString() },
+    {
+      weight_kg: value,
+      measured_at: new Date().toISOString(),
+      ...(note.trim() ? { note: note.trim() } : {}),
+    },
     person,
   );
 }

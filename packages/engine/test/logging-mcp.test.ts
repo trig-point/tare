@@ -4,7 +4,7 @@ import { assertionHeader, signAccessToken } from "./auth-support.ts";
 import { test } from "./support/hang-ceiling.ts";
 import { twoUsers } from "./support/two-users.ts";
 
-test("MCP advertises food fields and logs, edits and deletes intake", async (context) => {
+test("MCP logs and edits intake and weights", async (context) => {
   const setup = await twoUsers(context, "access");
   insertAgentToken(setup.database, {
     client_id: "example-logger",
@@ -89,4 +89,36 @@ test("MCP advertises food fields and logs, edits and deletes intake", async (con
     deleted: true,
     id: logged.entry.id,
   });
+  const weight = await call("log_weight", {
+    client_id: "mcp-weight",
+    weight_kg: 70,
+    note: "clothed",
+  });
+  assert.equal(weight.entry.note, "clothed");
+  const today = await setup.admin.request("/api/today");
+  assert.equal(today.status, 200);
+  assert.equal((await today.json()).weights[0].note, "clothed");
+  assert.equal((await call("weight_history", {})).readings[0].note, "clothed");
+  for (const [patch, note] of [
+    [{ note: "before breakfast" }, "before breakfast"],
+    [{ weight_kg: 71 }, "before breakfast"],
+    [{ note: null }, null],
+  ] as const) {
+    const editedWeight = await call("edit_weight", {
+      id: weight.entry.id,
+      ...patch,
+    });
+    assert.equal(editedWeight.entry.note, note);
+    assert.equal((await call("today", {})).weights[0].note, note);
+  }
+  const invalid = await rpc("tools/call", {
+    name: "log_weight",
+    arguments: { client_id: "too-long", weight_kg: 70, note: "n".repeat(201) },
+  });
+  assert.equal(invalid.isError, true);
+  assert.equal(
+    (await call("log_weight", { client_id: "no-note", weight_kg: 70 })).entry
+      .note,
+    null,
+  );
 });

@@ -366,7 +366,11 @@ export function WeightChart({
     [history.data, range],
   );
   const chart = useMemo(() => chartData({ days }), [days]);
-  const weighIns = days.filter(hasReading);
+  const firstDay = days[0]?.day;
+  const weighIns =
+    history.data?.readings.filter(
+      (reading) => firstDay && reading.day >= firstDay,
+    ) ?? [];
   const latest = history.data?.days.findLast(hasReading);
   const trend = history.data?.days.at(-1)?.trend_kg;
   return (
@@ -425,10 +429,22 @@ export function WeightChart({
           <Disclosure summary="Weigh-ins">
             <ul className="m-0 list-none p-0">
               {weighIns.toReversed().map((weighIn) => (
-                <li key={weighIn.day} className={row}>
-                  <span className="numeric font-medium">
-                    {displayNumber(weighIn.reading_kg)} kg
-                  </span>
+                <li key={weighIn.id} className={row}>
+                  <div className="min-w-0">
+                    <span className="numeric font-medium">
+                      {displayNumber(weighIn.weight_kg)} kg
+                    </span>
+                    {weighIn.note && (
+                      <p
+                        className={cn(
+                          hint,
+                          "m-0 whitespace-pre-wrap wrap-anywhere",
+                        )}
+                      >
+                        {weighIn.note}
+                      </p>
+                    )}
+                  </div>
                   <span className={hint}>{shortDate(weighIn.day)}</span>
                 </li>
               ))}
@@ -510,12 +526,16 @@ export function WeightForm({
   replay: OutboxReplay;
 }) {
   const [weight, setWeight] = useState("");
+  const [note, setNote] = useState("");
   const save = useMutation({
     networkMode: "always",
     mutationFn: async () => {
-      await enqueueWeight(replay, person, weight);
+      await enqueueWeight(replay, person, weight, note);
     },
-    onSuccess: () => setWeight(""),
+    onSuccess: () => {
+      setWeight("");
+      setNote("");
+    },
   });
   return (
     <form
@@ -538,6 +558,17 @@ export function WeightForm({
         className="m-0"
         value={weight}
         onChange={(event) => setWeight(event.target.value)}
+        disabled={save.isPending}
+      />
+      <label htmlFor="weight-note" className="text-ink">
+        Note (optional)
+      </label>
+      <input
+        id="weight-note"
+        className="m-0"
+        maxLength={200}
+        value={note}
+        onChange={(event) => setNote(event.target.value)}
         disabled={save.isPending}
       />
       <Button

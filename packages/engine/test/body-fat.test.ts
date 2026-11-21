@@ -106,6 +106,7 @@ test("one person's trend never uses another person's readings or workouts", asyn
       client_id: `invented-weight-${index}`,
       weight_kg: 70,
       body_fat_pct: 20 + index,
+      note: null,
     });
   const { started_at, duration_minutes } = workout(day);
   const logged = await setup.member.request("/api/activities", {

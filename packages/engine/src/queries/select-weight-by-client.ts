@@ -15,6 +15,7 @@ export type SelectWeightByClientResult = {
   body_fat_pct: number | null;
   source: string | null;
   created_at: string;
+  note: string | null;
 };
 
 export function selectWeightByClient(
@@ -41,6 +42,7 @@ function mapArrayToSelectWeightByClientResult(data: any) {
     body_fat_pct: data[6],
     source: data[7],
     created_at: data[8],
+    note: data[9],
   };
   return result;
 }

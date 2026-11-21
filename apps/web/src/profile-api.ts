@@ -54,6 +54,14 @@ export async function saveProfile(values: ProfileValues) {
 }
 
 const historySchema = z.object({
+  readings: z.array(
+    z.object({
+      id: z.number(),
+      day: z.string(),
+      weight_kg: z.number(),
+      note: z.string().nullable(),
+    }),
+  ),
   days: z.array(
     z.object({
       day: z.string(),
@@ -69,7 +77,7 @@ export const historyKey = (person: number) =>
 export async function readHistory(signal: AbortSignal) {
   return historySchema.parse(await api("/api/weights/history", { signal }));
 }
-export function chartData(history: WeightHistory): AlignedData {
+export function chartData(history: Pick<WeightHistory, "days">): AlignedData {
   return [
     history.days.map((entry) => Date.parse(`${entry.day}T12:00:00Z`) / 1000),
     history.days.map((entry) => entry.reading_kg),
