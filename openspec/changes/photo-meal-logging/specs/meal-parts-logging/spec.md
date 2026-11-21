@@ -32,7 +32,7 @@ The system SHALL provide `log_meal_parts`, which logs a meal of 1 to 12 parts. E
 - **THEN** the request fails with `food_not_found` for part 3 and nothing is written
 
 ### Requirement: Photo estimate
-The system SHALL provide a photo estimate route that accepts one JPEG, PNG or WebP image up to 5 MiB, sends it to the configured vision model, and returns proposed parts with a name, a search query, grams and a gram range for each. The route SHALL NOT log anything, and the image SHALL NOT be written to disk, the database or any log. A vision reply that does not match the expected structure SHALL be reported as an invalid response, never as an empty list. With no vision model configured, the route SHALL answer `vision_unavailable`.
+The system SHALL provide a photo estimate route that accepts one JPEG, PNG or WebP image up to 5 MiB, sends it to the configured vision model, and returns proposed parts with a name, a search query, grams and a gram range for each. The route SHALL NOT log anything, and the image SHALL NOT be written to disk, the database or any log. A vision reply that does not match the expected structure SHALL be reported as an invalid response. A valid reply with no parts SHALL answer 422 `vision_no_food`. With no vision model configured, the route SHALL answer `vision_unavailable`.
 
 #### Scenario: Plate photo
 - **WHEN** a person posts a photo of a plate with rice and chicken

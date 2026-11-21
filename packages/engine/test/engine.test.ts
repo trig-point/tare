@@ -95,6 +95,7 @@ describe("engine", () => {
       offUserAgent: undefined,
       orderEmailServices: {},
       orderModel: null,
+      vision: null,
       oura: null,
       ouraTokenKey: undefined,
       mqtt: null,

@@ -16,12 +16,17 @@ import { mountOuraCallback } from "./oura/callback.ts";
 import { createOura } from "./oura/service.ts";
 import { pantryEgress } from "./pantry/egress.ts";
 import { createPantryStock } from "./pantry/requests.ts";
+import {
+  mountPhotoEstimate,
+  type PhotoOptions,
+  photoEstimatePath,
+} from "./photo/endpoint.ts";
 import { createOffAdapter } from "./sources/off.ts";
 import { createUsdaAdapter } from "./sources/usda.ts";
 import { mountWeb } from "./web.ts";
 
 export function createApp(
-  options: AppOptions & InboundOptions & { webRoot?: string },
+  options: AppOptions & InboundOptions & PhotoOptions & { webRoot?: string },
 ) {
   if (options.config.grocy && !options.pantry)
     throw new Error("Pantry service required");
@@ -66,6 +71,10 @@ export function createApp(
       ? ["GET", "POST", "DELETE"].map((method) => ({ method, path: "/mcp" }))
       : [],
   );
+  app.use(photoEstimatePath, async (context, next) => {
+    context.header("Cache-Control", "no-store");
+    await next();
+  });
   app.use("*", pantryEgress(options.config.grocy));
   app.use("*", guards.noStore);
   app.onError((error, context) => {
@@ -118,6 +127,7 @@ export function createApp(
     app.use("*", guards.serviceRoutes);
   }
   mountOuraCallback(app, dependencies);
+  mountPhotoEstimate(app, dependencies);
   mountOperations(app, operations, dependencies);
   if (options.config.identity.mode === "access") mountMcp(app, dependencies);
   mountWeb(app, options.webRoot);

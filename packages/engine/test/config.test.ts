@@ -98,6 +98,31 @@ test("order model settings are all-or-none, trimmed, and validate the URL", () =
     );
 });
 
+test("vision settings are all-or-none and invalid values stay out of startup errors", () => {
+  const settings = {
+    DATABASE_URL: ":memory:",
+    TARE_VISION_PROVIDER: " google ",
+    TARE_VISION_MODEL: " fixture-model ",
+    TARE_VISION_API_KEY: " fixture-key ",
+  };
+  assert.deepEqual(loadConfig(settings).vision, {
+    provider: "google",
+    model: "fixture-model",
+    apiKey: "fixture-key",
+  });
+  for (const [setting, value] of Object.entries({
+    TARE_VISION_API_KEY: " ",
+    TARE_VISION_PROVIDER: "unknown-provider-marker",
+    TARE_VISION_MODEL: "../unknown-model-marker",
+  }))
+    assert.throws(
+      () => loadConfig({ ...settings, [setting]: value }),
+      (error: Error) =>
+        error.message.startsWith(setting) &&
+        !/marker|fixture-key/.test(error.message),
+    );
+});
+
 authTest("MCP origin config validates the allow list", () => {
   for (const [value, expected] of [
     [undefined, []],

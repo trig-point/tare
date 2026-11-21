@@ -106,6 +106,9 @@ Relative filesystem paths resolve from `/app/packages/engine` in the image.
 | `TARE_ORDER_MODEL_BASE_URL` | Unset (order parsing disabled) | HTTP or HTTPS base URL of an OpenAI-compatible model. May include a path, but not credentials, a query or a fragment. Trimmed; empty counts as unset. Set all three order model settings or none. |
 | `TARE_ORDER_MODEL` | Unset (order parsing disabled) | Model name sent to the endpoint. Trimmed; empty counts as unset. Set all three order model settings or none. |
 | `TARE_ORDER_MODEL_API_KEY` | Unset (order parsing disabled) | API key for the endpoint. This is a secret: supply it through the environment, never in a file you commit. A keyless local endpoint needs a placeholder. Trimmed; empty counts as unset. Set all three order model settings or none. |
+| `TARE_VISION_PROVIDER` | Unset (photo estimates disabled) | `anthropic` or `google`. Set all three vision settings or leave them blank. |
+| `TARE_VISION_MODEL` | Unset | Native API model ID using letters, digits, dots, underscores and hyphens. |
+| `TARE_VISION_API_KEY` | Unset | Vendor API key. For Gemini, use a key from a paid Gemini API project. Supply the key through the environment or a private `.env` file. |
 | `TARE_ORDER_EMAIL_SERVICES` | Unset (all email held as unverified) | JSON map, for example `{"kit-a":{"senders":["orders@kit-a.example.com"],"dkim_domains":["kit-a.example.com"]}}`. Each service needs a sender or domain. Addresses and domains are lowercased. Duplicate senders and cross-service parent/subdomain overlap prevent startup. Accepted DKIM domains must be controlled by the service, never shared mail provider domains. |
 | `TARE_PUBLIC_URL` | Unset | HTTP or HTTPS URL. Empty counts as unset. Set the external HTTPS URL to enable `Secure` session cookies. |
 | `TARE_SESSION_DAYS` | `30` | Absolute session lifetime, integer from 1 to 365. Trimmed; empty uses the default. |
