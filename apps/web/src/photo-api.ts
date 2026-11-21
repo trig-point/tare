@@ -68,7 +68,7 @@ export function photoMessage(error: unknown) {
 }
 
 /**
- * An empty POST answers vision_unavailable when no model is set and 415 when
+ * An empty POST returns vision_unavailable when no model is set and 415 when
  * one is, without calling the model.
  */
 export async function probePhoto(signal?: AbortSignal) {
@@ -94,7 +94,7 @@ export function photoProbeQuery(person: number) {
       try {
         localStorage.setItem(probeStorageKey(person), String(available));
       } catch {
-        // Blocked storage only costs the remembered answer.
+        // Blocked storage loses only the remembered answer.
       }
       return available;
     },

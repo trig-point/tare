@@ -250,7 +250,9 @@ export function AddFood({ person, replay, online }: Props) {
       <output aria-live="polite" className={cn(hint, "min-h-5")}>
         {logged}
       </output>
-      {!online && <p className={hint}>Logs send when you reconnect.</p>}
+      {!online && tab !== "photo" && (
+        <p className={hint}>Logs send when you reconnect.</p>
+      )}
     </section>
   );
 }

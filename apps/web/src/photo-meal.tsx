@@ -420,7 +420,7 @@ function Candidates({
           <input
             type="radio"
             name={`candidate-${name}`}
-            className="accent-(--accent)"
+            className="m-0 size-4 w-4 shrink-0 accent-accent"
             checked={pick?.fdc_id === candidate.fdc_id}
             onChange={() => choose(candidate)}
           />
