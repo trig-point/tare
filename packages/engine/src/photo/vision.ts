@@ -20,7 +20,7 @@ export type VisionEstimator = (
 const prompt = [
   "Name the visible foods in this meal photo, with one part per food and at most 12 parts.",
   "Use short names (up to 120 characters) and nonblank USDA search queries (up to 200 characters).",
-  "For each part guess grams (greater than 0, at most 5000) and give a plausible range with 0 < grams_low <= grams <= grams_high.",
+  "For each part guess grams and give a plausible range with 0 < grams_low <= grams <= grams_high <= 5000.",
   "Return an empty parts array if no food is visible.",
 ].join(" ");
 
@@ -70,7 +70,7 @@ const geminiEnvelope = z.object({
 function anthropic(config: VisionConfig, mediaType: ImageType, data: string) {
   return {
     url: "https://api.anthropic.com/v1/messages",
-    headers: { "x-api-key": config.apiKey, "anthropic-version": "2023-06-01" },
+    headers: { "x-api-key": config.apiKey, "anthropic-version": "2026-10-21" },
     body: {
       model: config.model,
       max_tokens: 4096,

@@ -4,7 +4,18 @@ import {
   createVisionEstimator,
   type VisionEstimator,
 } from "../src/photo/vision.ts";
-import { cookie, fixture, rejection, requestedWith } from "./auth-support.ts";
+import { insertAgentToken } from "../src/queries/insert-agent-token.ts";
+import {
+  accessConfig,
+  accessFixture,
+  assertionHeader,
+  cookie,
+  fixture,
+  issuedAt,
+  rejection,
+  requestedWith,
+  signAccessToken,
+} from "./auth-support.ts";
 import { test } from "./support/hang-ceiling.ts";
 
 const path = "/api/photo/estimate";
@@ -58,6 +69,31 @@ test("photo requests check auth, availability and the image before dispatch", as
     app.request(path, { method: "POST", headers, body });
   await rejection(await post({}), 401, "unauthenticated");
   await rejection(await post(session), 403, "requested_with_required");
+  const access = accessFixture(context, undefined, {
+    config: { ...accessConfig, vision: config.vision },
+  });
+  insertAgentToken(access.database, {
+    client_id: "example-agent",
+    user_id: access.admin.id,
+    name: "Example agent",
+    created_at: issuedAt.toISOString(),
+  });
+  const postAccess = (headers?: HeadersInit) =>
+    access.app.request(path, { method: "POST", headers });
+  await rejection(await postAccess(), 401, "unauthenticated");
+  const service = await signAccessToken({
+    sub: "",
+    common_name: "example-agent",
+  });
+  await rejection(await postAccess(assertionHeader(service)), 403, "forbidden");
+  await rejection(
+    await postAccess({
+      ...assertionHeader(await signAccessToken()),
+      ...requestedWith,
+    }),
+    415,
+    "unsupported_media_type",
+  );
   await rejection(
     await unset.app.request(path, {
       method: "POST",
@@ -89,14 +125,19 @@ test("photo route returns only validated parts, never writes and hides provider 
     search_query: " cooked rice ",
     extra: "discard",
   };
-  const results = [
-    { parts: [rawPart] },
-    { parts: [] },
-    { parts: [{ ...part, grams_low: 160 }] },
+  const results: Awaited<ReturnType<VisionEstimator>>[] = [
+    ...Array.from({ length: 3 }, () => ({
+      status: "ok" as const,
+      estimate: { parts: [rawPart] },
+    })),
+    { status: "ok", estimate: { parts: [] } },
+    { status: "ok", estimate: { parts: [{ ...part, grams_low: 160 }] } },
+    { status: "ok", estimate: { parts: [{ ...part, grams_high: 5001 }] } },
+    { status: "vision_rate_limited" },
   ];
   const vision: VisionEstimator = async () => {
-    const estimate = results.shift();
-    if (estimate) return { status: "ok", estimate };
+    const result = results.shift();
+    if (result) return result;
     throw Object.assign(new Error(marker), { name: marker });
   };
   const options = { config, vision };
@@ -106,15 +147,28 @@ test("photo route returns only validated parts, never writes and hides provider 
     Cookie: cookie(await signIn()),
     "Content-Type": "Image/PNG",
   };
-  const post = () => app.request(path, { method: "POST", headers, body: png });
+  const post = (body = png, type = "Image/PNG") =>
+    app.request(path, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": type },
+      body,
+    });
   const changes = database.prepare("SELECT total_changes()").pluck();
   const before = changes.get();
-  const response = await post();
-  assert.equal(response.status, 200);
-  assert.equal(response.headers.get("Cache-Control"), "no-store");
-  assert.deepEqual(await response.json(), { parts: [part] });
+  for (const [bytes, type] of [
+    [png, "Image/PNG"],
+    [Buffer.from("ffd8ffe0", "hex"), "image/jpeg"],
+    [Buffer.from("RIFF0000WEBP"), "image/webp"],
+  ] as const) {
+    const response = await post(bytes, type);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("Cache-Control"), "no-store");
+    assert.deepEqual(await response.json(), { parts: [part] });
+  }
   await rejection(await post(), 422, "vision_no_food");
   await rejection(await post(), 503, "vision_invalid_response");
+  await rejection(await post(), 503, "vision_invalid_response");
+  await rejection(await post(), 503, "vision_rate_limited");
 
   const output: unknown[] = [];
   for (const method of ["error", "info", "log", "warn", "debug"] as const)
@@ -136,10 +190,48 @@ test("photo route returns only validated parts, never writes and hides provider 
   assert.equal(changes.get(), before);
 });
 
+test("vendor transport cancels refusals and distinguishes malformed JSON", async (context) => {
+  assert.ok(config.vision);
+  for (const [status, expected] of [
+    [429, "vision_rate_limited"],
+    [302, "vision_failed"],
+    [200, "vision_invalid_response"],
+  ] as const) {
+    const cancel = context.mock.fn();
+    const body = new ReadableStream({
+      start(controller) {
+        if (status === 200) {
+          controller.enqueue(new TextEncoder().encode("not JSON"));
+          controller.close();
+        }
+      },
+      cancel,
+    });
+    const request = context.mock.fn<typeof fetch>(
+      async () => new Response(body, { status }),
+    );
+    const estimate = createVisionEstimator(config.vision, request);
+    assert.deepEqual(
+      await estimate(png, "image/png", new AbortController().signal),
+      { status: expected },
+    );
+    assert.equal(cancel.mock.callCount(), status === 200 ? 0 : 1);
+    assert.deepEqual(await estimate(png, "image/png", AbortSignal.abort()), {
+      status: "vision_failed",
+    });
+    assert.equal(request.mock.callCount(), 1);
+  }
+});
+
 test("native adapters send one streamed image and require a completed response", async () => {
   const text = JSON.stringify({ parts: [part] });
   const content = [{ type: "text", text }];
-  const candidates = [{ finishReason: "STOP", content: { parts: [{ text }] } }];
+  const candidates = [
+    {
+      finishReason: "STOP",
+      content: { parts: [{ text: "thinking", thought: true }, { text }] },
+    },
+  ];
   for (const [provider, valid, invalid] of [
     [
       "anthropic",
@@ -180,6 +272,8 @@ test("native adapters send one streamed image and require a completed response",
           assert.equal(image.data, png.toString("base64"));
           assert.equal(image.media_type ?? image.mimeType, "image/png");
           assert.equal(new URL(String(url)).search, "");
+          if (provider === "anthropic")
+            assert.equal(headers.get("anthropic-version"), "2026-10-21");
           assert.equal(
             headers.get(
               provider === "anthropic" ? "x-api-key" : "x-goog-api-key",

@@ -27,6 +27,7 @@ const signatures: Record<ImageType, Buffer> = {
   "image/webp": Buffer.from("RIFF"),
 };
 const webpSignature = Buffer.from("WEBP");
+const grams = z.number().positive().max(5000);
 const estimateSchema = z.object({
   parts: z
     .array(
@@ -34,9 +35,9 @@ const estimateSchema = z.object({
         .object({
           name: z.string().trim().min(1).max(120),
           search_query: z.string().trim().min(1).max(200),
-          grams: z.number().positive().max(5000),
-          grams_low: z.number().positive(),
-          grams_high: z.number().positive(),
+          grams,
+          grams_low: grams,
+          grams_high: grams,
         })
         .refine(
           (part) =>
