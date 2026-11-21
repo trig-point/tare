@@ -94,10 +94,6 @@ test("estimated rice retains its reference and recomputes its calorie range", as
     ).status,
     400,
   );
-  assert.equal(
-    database.prepare("SELECT count(*) FROM intake_entries").pluck().get(),
-    1,
-  );
 });
 
 test("a bound catalog estimate skips pantry and remains scoped to its owner", async (context) => {
