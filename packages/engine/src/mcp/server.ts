@@ -111,7 +111,8 @@ export function mountMcp(app: Hono<AuthEnv>, deps: OperationDependencies) {
                 : undefined;
             const part =
               error instanceof OperationError &&
-              operation.name === "log_meal_parts"
+              (operation.name === "log_meal_parts" ||
+                operation.name === "save_batch_food")
                 ? error.part
                 : undefined;
             return {

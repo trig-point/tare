@@ -1,9 +1,4 @@
 import { createHash, randomUUID } from "node:crypto";
-import {
-  fromStoredNutrition,
-  type ServingBasis,
-  servingsFor,
-} from "@tare/nutrition";
 import { z as zod } from "zod";
 import type { Person } from "../auth/middleware.ts";
 import { ledgerTotals, ledgerTotalsSchema } from "../days/ledger.ts";
@@ -21,12 +16,12 @@ import {
 import { selectMealReceipt } from "../queries/select-meal-receipt.ts";
 import {
   type Clock,
+  foodPartError,
+  gramsToServings,
   insertIntake,
   mealPartClientId,
-  type Reference,
-  readReferenceFood,
+  readWeighedFood,
 } from "./intake.ts";
-import { resolveProvenance } from "./provenance.ts";
 import { intakeRow, nutrientKeys } from "./schemas.ts";
 
 const foodId = zod.number().int().positive();
@@ -64,34 +59,6 @@ const mealOutput = zod.strictObject({
     .nullable(),
 });
 
-type PartError =
-  | "food_not_found"
-  | "no_serving_basis"
-  | "dimension_mismatch"
-  | "amount_out_of_range"
-  | "invalid_part";
-
-function partError(code: PartError, part: number) {
-  return new OperationError(
-    code === "food_not_found" ? 404 : 400,
-    code,
-    {},
-    undefined,
-    part,
-  );
-}
-
-function gramsToServings(amount: number, basis: ServingBasis, part: number) {
-  const converted = servingsFor(amount, "g", basis);
-  if (converted.ok) return converted.value;
-  throw partError(
-    converted.reason === "dimension_mismatch"
-      ? converted.reason
-      : "amount_out_of_range",
-    part,
-  );
-}
-
 function writePart(
   scope: WriteScope,
   person: Person,
@@ -101,22 +68,13 @@ function writePart(
   partNumber: number,
   partKey: string,
 ) {
-  const reference: Reference =
-    "food_id" in part
-      ? { kind: "food", id: part.food_id }
-      : { kind: "source_food", id: part.source_food_id };
-  const food = readReferenceFood(scope, person, reference);
-  if (!food) throw partError("food_not_found", partNumber);
-  if ((food.serving_size === null) !== (food.serving_unit === null))
-    throw partError("no_serving_basis", partNumber);
-  const { basis } = fromStoredNutrition({
-    ...food,
-    provenance: resolveProvenance({}, food),
-  });
-  if (!basis?.unit.trim()) throw partError("no_serving_basis", partNumber);
-
+  const { reference, food, basis, servings } = readWeighedFood(
+    scope,
+    person,
+    part,
+    partNumber,
+  );
   const { grams, grams_low, grams_high } = part;
-  const servings = gramsToServings(grams, basis, partNumber);
   const estimatedRange =
     grams_low === undefined || grams_high === undefined
       ? null
@@ -151,13 +109,14 @@ function writePart(
     return result.entry;
   } catch (error) {
     if (error instanceof OperationError && error.code === "invalid_request")
-      throw partError("amount_out_of_range", partNumber);
+      throw foodPartError("amount_out_of_range", partNumber);
     throw error;
   }
 }
 
 function finiteAmount(amount: number, part: number) {
-  if (!Number.isFinite(amount)) throw partError("amount_out_of_range", part);
+  if (!Number.isFinite(amount))
+    throw foodPartError("amount_out_of_range", part);
 }
 
 function mealSummary(entries: SelectIntakeByClientResult[]) {
@@ -208,7 +167,7 @@ export const logMealParts = defineOperation({
     );
     const index = issue?.path[1];
     return typeof index === "number"
-      ? partError("invalid_part", index + 1)
+      ? foodPartError("invalid_part", index + 1)
       : undefined;
   },
   output: mealOutput,
