@@ -317,7 +317,7 @@ const batchNutrients = [
   "fiber_g",
 ] as const;
 type BatchNutrient = (typeof batchNutrients)[number];
-type BatchTotal = { amount: number; part: number } | null;
+type BatchTotal = { amount: number; part: number; complete: boolean };
 
 function checkedBatchAmount(amount: number, positive: boolean, part: number) {
   if (!Number.isFinite(amount) || (positive && amount === 0))
@@ -334,7 +334,7 @@ function batchValues(
     ingredients,
   }: Omit<zod.output<typeof batchInput>, "mutation_id">,
 ): OwnedFoodValues {
-  const zero = { amount: 0, part: 1 };
+  const zero = { amount: 0, part: 1, complete: true };
   const totals: Record<BatchNutrient, BatchTotal> = {
     kcal: zero,
     protein_g: zero,
@@ -351,8 +351,9 @@ function batchValues(
     if (weighed.provenance === "estimated") provenance = "estimated";
     for (const key of batchNutrients) {
       const value = weighed.food[key];
+      const total = totals[key];
       if (value === null) {
-        totals[key] = null;
+        totals[key] = { ...total, complete: false };
         continue;
       }
       const contribution = checkedBatchAmount(
@@ -360,9 +361,9 @@ function batchValues(
         value > 0,
         part,
       );
-      const total = totals[key];
-      if (total !== null && contribution !== 0)
+      if (contribution !== 0)
         totals[key] = {
+          ...total,
           amount: checkedBatchAmount(total.amount + contribution, true, part),
           part,
         };
@@ -372,16 +373,23 @@ function batchValues(
   const numbers = numbersFrom({});
   for (const key of batchNutrients) {
     const total = totals[key];
-    if (total !== null)
+    if (total.complete)
       numbers[key] = checkedBatchAmount(
         (total.amount * 100) / cooked_grams,
         total.amount > 0,
         total.part,
       );
   }
-  const macroGrams =
-    (numbers.protein_g ?? 0) + (numbers.carbs_g ?? 0) + (numbers.fat_g ?? 0);
-  if ((numbers.kcal !== null && numbers.kcal > 900) || macroGrams > 100)
+  const knownMacroGrams =
+    totals.protein_g.amount + totals.carbs_g.amount + totals.fat_g.amount;
+  // Allow roundoff from conversion and summation at the physical limits.
+  const roundoff = Number.EPSILON * (ingredients.length + 4);
+  const exceeds = (amount: number, limit: number) =>
+    amount - limit > limit * roundoff;
+  if (
+    exceeds(totals.kcal.amount, 9 * cooked_grams) ||
+    exceeds(knownMacroGrams, cooked_grams)
+  )
     throw new OperationError(400, "cooked_weight_too_low");
 
   return {

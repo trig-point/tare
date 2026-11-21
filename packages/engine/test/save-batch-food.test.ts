@@ -17,6 +17,8 @@ const rice = {
   serving_size: 0.1,
   serving_unit: "kg",
   kcal: 120,
+  kcal_low: 110,
+  kcal_high: 130,
   protein_g: 4,
   carbs_g: 25,
   fat_g: 0,
@@ -80,7 +82,7 @@ test("two weighed ingredients produce a food with the batch nutrition per 100 g"
 
   const edited = await admin.request(`/api/foods/${owned.body.food.id}`, {
     method: "PATCH",
-    body: JSON.stringify({ kcal: 200 }),
+    body: JSON.stringify({ kcal: null }),
   });
   assert.equal(edited.status, 200);
   const replay = await json(admin, path, {
@@ -168,4 +170,45 @@ test("batch ingredient refusals preserve position and leave foods and receipts u
       status: 400,
       body: { error: { code: "invalid_request" } },
     });
+
+  for (const [name, cooked_grams, ingredients, expectedStatus] of [
+    [
+      "known macro subtotal still limits batches with an unknown macro",
+      100,
+      [
+        { food_id: seed.get(admin.user.id, 100, "g", 100, 55), grams: 200 },
+        { food_id: seed.get(admin.user.id, 100, "g", 1, null), grams: 10 },
+      ],
+      400,
+    ],
+    [
+      "accepts the exact calorie limit",
+      7,
+      [{ food_id: seed.get(admin.user.id, 100, "g", 900, 0), grams: 7 }],
+      201,
+    ],
+    [
+      "accepts the exact macro limit",
+      7,
+      [{ food_id: seed.get(admin.user.id, 100, "g", 400, 100), grams: 7 }],
+      201,
+    ],
+  ] as const) {
+    await context.test(name, async () => {
+      const before = counts();
+      const response = await json(admin, path, {
+        ...batch,
+        mutation_id: crypto.randomUUID(),
+        cooked_grams,
+        ingredients,
+      });
+      assert.equal(response.status, expectedStatus);
+      if (expectedStatus === 400) {
+        assert.deepEqual(response.body, {
+          error: { code: "cooked_weight_too_low" },
+        });
+        assert.deepEqual(counts(), before);
+      }
+    });
+  }
 });
