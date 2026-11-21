@@ -528,7 +528,11 @@ function Shopping({
       {shopping.stores.map((group) => {
         const title = group.store?.name ?? "No store";
         return (
-          <section key={group.store?.id ?? "none"} aria-label={title}>
+          <section
+            key={group.store?.id ?? "none"}
+            aria-label={title}
+            className="p-0"
+          >
             <h2 className="m-0 flex items-baseline justify-between gap-3 border-b border-border pb-2 text-(length:--step-2) font-semibold [overflow-wrap:anywhere]">
               {title}
               <span className="numeric shrink-0 text-xs font-normal text-ink-2">
