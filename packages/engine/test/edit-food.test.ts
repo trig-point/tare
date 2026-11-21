@@ -175,6 +175,9 @@ test("MCP advertises edit_food and its effect on past logs", async (context) => 
   const inputSchema = edit.inputSchema;
   assert.match(edit.description, /Create a new food for a different serving/);
   assert.equal(inputSchema.minProperties, 2);
+  assert.equal(inputSchema.additionalProperties, false);
+  assert.equal(inputSchema.properties?.serving_size, undefined);
+  assert.equal(inputSchema.properties?.serving_unit, undefined);
   assert.deepEqual(inputSchema.properties?.id, {
     anyOf: [
       {
@@ -185,10 +188,15 @@ test("MCP advertises edit_food and its effect on past logs", async (context) => 
       { type: "string", pattern: "^0*[1-9][0-9]*$" },
     ],
   });
-  const invalid = await client.callTool({
-    name: "edit_food",
-    arguments: { id: true, kcal: 175 },
-  });
+  const callEdit = (args: Record<string, unknown>) =>
+    client.callTool({ name: "edit_food", arguments: args });
+  const invalid = await callEdit({ id: true, kcal: 175 });
   assert.equal(invalid.isError, true);
   assert.match(JSON.stringify(invalid.content), /Invalid arguments/);
+  const basis = await callEdit({ id: "1", serving_size: 2 });
+  assert.equal(basis.isError, true);
+  assert.match(
+    JSON.stringify(basis.content),
+    /serving_basis_not_editable: Serving size and unit can't change; create a new food instead/,
+  );
 });
