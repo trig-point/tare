@@ -403,7 +403,7 @@ test("the shopping tab groups items under store headings, counts items not done,
   );
   assert.match(
     view({ state: "unavailable", stores: [] }),
-    /Couldn’t load shopping list/,
+    /Shopping Bindings .*Couldn’t load shopping list/,
   );
   const stale = view(
     {

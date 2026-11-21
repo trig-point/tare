@@ -78,7 +78,7 @@ export function PantrySection({ person, online }: Props) {
   const shopping = useQuery({
     ...owner,
     enabled: owner.enabled && connected(pantry.data),
-    queryKey: shoppingKey(person),
+    queryKey: shoppingKey(person, pantry.data?.generation ?? null),
     queryFn: ({ signal }) => readShopping(signal),
   });
   if (forbidden(pantry.error)) return null;

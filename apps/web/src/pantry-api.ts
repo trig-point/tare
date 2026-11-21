@@ -114,8 +114,11 @@ export const pantryKey = (person: number) => ["pantry", person] as const;
 export const requestsKey = (person: number) =>
   ["pantry_requests", person] as const;
 export const linkKey = (person: number) => ["pantry_link", person] as const;
-export const shoppingKey = (person: number) =>
-  ["pantry_shopping", person] as const;
+/** A connection reset bumps the generation, so the old Grocy's list is never shown for the new one. */
+export const shoppingKey = (person: number, generation?: number | null) =>
+  generation === undefined
+    ? (["pantry_shopping", person] as const)
+    : (["pantry_shopping", person, generation] as const);
 export const productsKey = (person: number) =>
   ["pantry_products", person] as const;
 
