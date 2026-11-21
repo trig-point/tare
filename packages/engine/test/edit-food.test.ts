@@ -188,15 +188,21 @@ test("MCP advertises edit_food and its effect on past logs", async (context) => 
       { type: "string", pattern: "^0*[1-9][0-9]*$" },
     ],
   });
-  const callEdit = (args: Record<string, unknown>) =>
-    client.callTool({ name: "edit_food", arguments: args });
-  const invalid = await callEdit({ id: true, kcal: 175 });
+  const call = (name: string, args: Record<string, unknown>) =>
+    client.callTool({ name, arguments: args });
+  const created = (await call("create_food", rice)).structuredContent;
+  assert.ok(created);
+  const invalid = await call("edit_food", { id: true, kcal: 175 });
   assert.equal(invalid.isError, true);
   assert.match(JSON.stringify(invalid.content), /Invalid arguments/);
-  const basis = await callEdit({ id: "1", serving_size: 2 });
+  const basis = await call("edit_food", { id: "1", serving_size: 2 });
   assert.equal(basis.isError, true);
   assert.match(
     JSON.stringify(basis.content),
     /serving_basis_not_editable: Serving size and unit can't change; create a new food instead/,
   );
+  assert.deepEqual((await call("create_food", rice)).structuredContent, {
+    ...created,
+    created: false,
+  });
 });
