@@ -13,6 +13,7 @@ import {
 import type { OuraService } from "../oura/service.ts";
 import type { PantryStock } from "../pantry/requests.ts";
 import type { PantryService } from "../pantry/service.ts";
+import type { ShoppingService } from "../pantry/shopping.ts";
 import { deleteSession } from "../queries/delete-session.ts";
 import { insertAccount } from "../queries/insert-account.ts";
 import { selectUserByUsername } from "../queries/select-user-by-username.ts";
@@ -30,6 +31,7 @@ import { createSession, hashToken } from "./sessions.ts";
 export interface AppOptions {
   pantry?: PantryService;
   grocery?: GroceryService;
+  shopping?: ShoppingService;
   stock?: PantryStock;
   database: Database;
   config: Config;

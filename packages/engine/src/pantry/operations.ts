@@ -23,6 +23,7 @@ import {
   pantryRecipesOutput,
   pantryReference,
 } from "./service.ts";
+import { shoppingOperations } from "./shopping.ts";
 import { pantrySuggestionContext } from "./suggestions.ts";
 
 const disabled = {
@@ -238,4 +239,5 @@ export const pantryOperations = [
     }),
   ),
   pantrySuggestionContext,
+  ...shoppingOperations,
 ];

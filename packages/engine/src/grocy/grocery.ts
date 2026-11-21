@@ -57,15 +57,38 @@ export const groceryStockLogSchema = z.object({
   location_id: identifier.nullable(),
   undone: flag,
 });
+export const shoppingProductSchema = z.object({
+  id: identifier,
+  name: z.string(),
+  min_stock_amount: decimal,
+  shopping_location_id: identifier.nullable(),
+});
+export const shoppingItemSchema = z.object({
+  id: identifier,
+  product_id: identifier.nullable(),
+  note: z.string().nullable(),
+  amount: decimal,
+  qu_id: identifier.nullable(),
+  done: flag,
+  shopping_list_id: identifier,
+});
+/** Grocy's default shopping list, the one its UI opens. */
+export const shoppingListId = 1;
 export type GroceryProduct = z.output<typeof groceryProductSchema>;
 export type GroceryStockLogRow = z.output<typeof groceryStockLogSchema>;
 
-type Entity = "quantity_units" | "locations" | "products" | "product_barcodes";
+type Entity =
+  | "quantity_units"
+  | "locations"
+  | "products"
+  | "product_barcodes"
+  | "shopping_locations";
 const uniqueColumns: Record<Entity, string> = {
   quantity_units: "name",
   locations: "name",
   products: "name",
   product_barcodes: "barcode",
+  shopping_locations: "name",
 };
 
 // Grocy parses each filter with an unanchored pattern and silently truncates the
@@ -358,6 +381,71 @@ export function createGroceryClient(dependencies: GrocyDependencies) {
           isId(barcode.product_id) &&
           isId(barcode.qu_id) &&
           isAmount(barcode.amount),
+      ),
+    shoppingProduct: (userId: number, id: number) =>
+      byId(userId, "products", shoppingProductSchema, id),
+    shoppingProducts: (userId: number) =>
+      request(userId, "/objects/products", z.array(shoppingProductSchema)),
+    units: (userId: number) =>
+      request(userId, "/objects/quantity_units", z.array(groceryUnitSchema)),
+    shoppingLocations: (userId: number) =>
+      request(
+        userId,
+        "/objects/shopping_locations",
+        z.array(groceryLocationSchema.pick({ id: true, name: true })),
+      ),
+    shoppingLocationNamed: (userId: number, name: string) =>
+      findUnique(
+        userId,
+        "shopping_locations",
+        groceryLocationSchema.pick({ id: true, name: true }),
+        name,
+      ),
+    createShoppingLocation: (userId: number, name: string) =>
+      create(userId, "shopping_locations", { name }, findable(name)),
+    /** Grocy accepts any shopping_location_id, so callers pass one they just read. */
+    setShopping: (
+      userId: number,
+      productId: number,
+      fields: { min_stock_amount: number; shopping_location_id: number | null },
+    ) =>
+      request(
+        userId,
+        `/objects/products/${productId}`,
+        z.null(),
+        isId(productId) &&
+          Number.isFinite(fields.min_stock_amount) &&
+          fields.min_stock_amount >= 0 &&
+          (fields.shopping_location_id === null ||
+            isId(fields.shopping_location_id)),
+        {
+          method: "PUT",
+          body: fields,
+          refused: new Set(["Object not found"]),
+        },
+      ),
+    /** Grocy 4.7.1 adds below-minimum products only through this call unless a user setting is on. */
+    addMissingProducts: (userId: number) =>
+      request(
+        userId,
+        "/stock/shoppinglist/add-missing-products",
+        z.null(),
+        true,
+        {
+          body: { list_id: shoppingListId },
+          refused: new Set(["Shopping list does not exist"]),
+        },
+      ),
+    shoppingList: (userId: number) =>
+      request(
+        userId,
+        `/objects/shopping_list?${query([`shopping_list_id=${shoppingListId}`], "id:asc", 1001)}`,
+        z
+          .array(shoppingItemSchema)
+          .max(1000)
+          .refine((rows) =>
+            rows.every((row) => row.shopping_list_id === shoppingListId),
+          ),
       ),
     /**
      * Adds the amount in the product's stock unit as given; Grocy converts
