@@ -12,6 +12,7 @@ const textFields = new Set([
   "source",
   "provenance",
   "portion_note",
+  "note",
   "eaten_at",
   "measured_at",
 ]);
@@ -43,7 +44,7 @@ export function removableFields(
 ): ReadonlySet<string> {
   const fields =
     kind === "weight"
-      ? ["body_fat_pct", "source"]
+      ? ["body_fat_pct", "source", "note"]
       : [
           "provenance",
           "source",

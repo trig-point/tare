@@ -134,7 +134,7 @@ export const logWeightInput = zod.strictObject({
   note: zod
     .string()
     .max(200)
-    .refine((note) => !note.includes("\0"))
+    .refine((note) => !note.includes("\0") && !/[\uD800-\uDFFF]/u.test(note))
     .nullable()
     .optional(),
 });

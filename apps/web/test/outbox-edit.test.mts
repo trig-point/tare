@@ -74,6 +74,11 @@ test("Remove preserves engine-required fields and valid intake reference shapes"
     }
   }
   assert.equal(removableFields("intake", { kcal: 100 }).has("kcal"), false);
+  assert.ok(removableFields("weight", { note: null }).has("note"));
+  assert.equal(
+    editorPatch({ note: null }, { note: "clothed" }).note,
+    "clothed",
+  );
 });
 
 test("changing another entry preserves the open editor and its unsaved input", () => {

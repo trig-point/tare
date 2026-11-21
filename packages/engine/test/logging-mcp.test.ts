@@ -111,11 +111,13 @@ test("MCP logs and edits intake and weights", async (context) => {
     assert.equal(editedWeight.entry.note, note);
     assert.equal((await call("today", {})).weights[0].note, note);
   }
-  const invalid = await rpc("tools/call", {
-    name: "log_weight",
-    arguments: { client_id: "too-long", weight_kg: 70, note: "n".repeat(201) },
-  });
-  assert.equal(invalid.isError, true);
+  for (const note of ["n".repeat(201), "\0", "\ud800"]) {
+    const response = await setup.admin.request("/api/weights", {
+      method: "POST",
+      body: JSON.stringify({ client_id: "invalid-note", weight_kg: 70, note }),
+    });
+    assert.equal(response.status, 400);
+  }
   assert.equal(
     (await call("log_weight", { client_id: "no-note", weight_kg: 70 })).entry
       .note,

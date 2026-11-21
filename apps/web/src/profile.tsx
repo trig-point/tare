@@ -566,9 +566,16 @@ export function WeightForm({
       <input
         id="weight-note"
         className="m-0"
-        maxLength={200}
         value={note}
-        onChange={(event) => setNote(event.target.value)}
+        onChange={(event) => {
+          const input = event.currentTarget;
+          input.setCustomValidity(
+            [...input.value.trim()].length > 200
+              ? "Use 200 characters or fewer"
+              : "",
+          );
+          setNote(input.value);
+        }}
         disabled={save.isPending}
       />
       <Button
