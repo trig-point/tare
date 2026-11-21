@@ -25,6 +25,7 @@ async function setup(context: TestContext) {
     shopping_list: [],
     quantity_units: [{ id: 4, name: "Bag", name_plural: "Bags", active: 1 }],
   };
+  const sent: string[] = [];
   const fake = grocyFetch({
     "/system/info": { grocy_version: { Version: "4.7.1" } },
     "/objects/products": () => tables.products,
@@ -91,7 +92,14 @@ async function setup(context: TestContext) {
   wired.shopping = createShoppingService({
     config: grocy,
     ownerId,
-    client: createGroceryClient({ config: grocy, ownerId, fetch: fake.fetch }),
+    client: createGroceryClient({
+      config: grocy,
+      ownerId,
+      fetch: (url, init) => {
+        sent.push(`${init?.method} ${new URL(String(url)).pathname}`);
+        return fake.fetch(url, init);
+      },
+    }),
   });
   const save = (
     product_id: number,
@@ -103,11 +111,11 @@ async function setup(context: TestContext) {
       min_stock_amount,
       store,
     });
-  return { ...harness, tables, fake, save };
+  return { ...harness, tables, fake, save, sent };
 }
 
 test("save_shopping_minimum creates the store once, reuses it and clears it", async (context) => {
-  const { tables, save, fake } = await setup(context);
+  const { tables, save, fake, sent } = await setup(context);
   const wegmans = { id: 1, name: "Wegmans" };
   const first = await save(1, 2, "Wegmans");
   assert.deepEqual(
@@ -142,16 +150,21 @@ test("save_shopping_minimum creates the store once, reuses it and clears it", as
     [missing.status, missing.body.error.code],
     [404, "pantry_product_missing"],
   );
-  let puts = 0;
   fake.routes["/objects/products/:id"] = ({ body }: { body?: Row }) => {
     if (!body) return tables.products?.[0];
-    puts++;
     throw new Error("Response lost");
   };
+  sent.length = 0;
   const lost = await save(1, 3, null);
   assert.deepEqual(
-    [lost.status, lost.body.error.code, puts],
-    [503, "pantry_write_uncertain", 1],
+    [
+      lost.status,
+      lost.body.error.code,
+      sent.filter(
+        (call) => call.endsWith("/products/1") && !call.startsWith("GET"),
+      ),
+    ],
+    [503, "pantry_write_uncertain", ["PUT /api/objects/products/1"]],
   );
 });
 
@@ -198,7 +211,7 @@ test("refresh_shopping_list over MCP groups items by store, storeless last", asy
 });
 
 test("refresh_shopping_list tells an empty list from an unreachable or malformed Grocy", async (context) => {
-  const { admin, fake } = await setup(context);
+  const { admin, fake, sent } = await setup(context);
   const refresh = async () =>
     (await json(admin, "/api/pantry/shopping", {})).body;
   assert.deepEqual(await refresh(), {
@@ -209,6 +222,16 @@ test("refresh_shopping_list tells an empty list from an unreachable or malformed
   const unreachable = () => {
     throw new Error("Connection refused");
   };
+  fake.routes["/stock/shoppinglist/add-missing-products"] = unreachable;
+  sent.length = 0;
+  assert.deepEqual(await refresh(), {
+    state: "unavailable",
+    error: { reason: "write_uncertain" },
+    stores: [],
+  });
+  assert.equal(sent.filter((call) => call.includes("add-missing")).length, 1);
+  fake.routes["/stock/shoppinglist/add-missing-products"] = () =>
+    new Response(null, { status: 204 });
   for (const [route, error] of [
     [unreachable, { reason: "transport" }],
     [

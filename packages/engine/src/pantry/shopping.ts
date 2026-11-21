@@ -238,7 +238,10 @@ export function createShoppingService({
       if (!(caught instanceof GrocyFailed)) throw caught;
       return shoppingList.parse({
         state: "unavailable",
-        error: caught.detail,
+        // Grocy may already have added items when the add-missing response was lost.
+        error: caught.uncertain
+          ? { ...caught.detail, reason: "write_uncertain" }
+          : caught.detail,
         stores: [],
       });
     }
