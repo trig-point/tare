@@ -11,8 +11,10 @@ import {
   readPantry,
   readProducts,
   readRequests,
+  readShopping,
   reconcile,
   refreshPantry,
+  type ShoppingList,
   type StockRequests,
   saveBinding,
 } from "../src/pantry-api.ts";
@@ -340,4 +342,89 @@ test("a product list from before a reset is not offered", () => {
   });
   assert.doesNotMatch(markup, /Old item/);
   assert.match(markup, /<option value="7">Synthetic beans/);
+});
+
+test("the shopping tab groups items under store headings, counts items not done, and tells empty from failed", () => {
+  const view = (
+    shopping: ShoppingList,
+    shoppingFailed = false,
+    pantry: Pantry = ready,
+  ) =>
+    text(
+      renderToStaticMarkup(
+        createElement(
+          QueryClientProvider,
+          { client: new QueryClient() },
+          createElement(PantryView, {
+            person: 1,
+            online: true,
+            pantry,
+            failed: false,
+            requests: undefined,
+            requestsFailed: false,
+            link: null,
+            shopping,
+            shoppingFailed,
+          }),
+        ),
+      ),
+    );
+  const item = (id: number, name: string, unit: string | null) => ({
+    id,
+    name,
+    amount: 2,
+    unit,
+    done: false,
+  });
+  const grouped = view({
+    state: "ready",
+    stores: [
+      {
+        store: { id: 1, name: "Wegmans" },
+        items: [
+          item(1, "Example broccoli", "Bags"),
+          { ...item(4, "Example rice", "Bags"), done: true },
+        ],
+      },
+      { store: null, items: [item(2, "Example candles", null)] },
+    ],
+  });
+  assert.match(
+    grouped,
+    /Shopping 2 .*Wegmans 1 Example broccoli 2 Bags Example rice 2 Bags No store 1 Example candles 2 /,
+  );
+  assert.match(view({ state: "ready", stores: [] }), /Nothing to buy/);
+  assert.doesNotMatch(
+    view({ state: "ready", stores: [] }, false, {
+      ...ready,
+      state: "reset_required",
+    }),
+    /Shopping|Nothing to buy/,
+  );
+  assert.match(
+    view({ state: "unavailable", stores: [] }),
+    /Shopping Bindings .*Couldn’t load shopping list/,
+  );
+  const stale = view(
+    {
+      state: "ready",
+      stores: [{ store: null, items: [item(3, "Example rice", null)] }],
+    },
+    true,
+  );
+  assert.match(stale, /Shopping Bindings .*Couldn’t load shopping list/);
+});
+
+test("readShopping posts an empty body to the shopping list operation", async (context) => {
+  const sent: [string, string | undefined, unknown][] = [];
+  context.mock.method(
+    globalThis,
+    "fetch",
+    async (url: string, init?: RequestInit) => {
+      sent.push([String(url), init?.method, init?.body]);
+      return Response.json({ state: "ready", error: null, stores: [] });
+    },
+  );
+  assert.deepEqual(await readShopping(), { state: "ready", stores: [] });
+  assert.deepEqual(sent, [["/api/pantry/shopping", "POST", "{}"]]);
 });

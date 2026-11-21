@@ -17,13 +17,16 @@ import {
   readPantry,
   readProducts,
   readRequests,
+  readShopping,
   reconcile,
   refreshPantry,
   requestsKey,
   resetPantry,
+  type ShoppingList,
   type StockRequest,
   type StockRequests,
   saveBinding,
+  shoppingKey,
 } from "./pantry-api.ts";
 import {
   Button,
@@ -37,6 +40,11 @@ import {
 import { sourceName } from "./today-api.ts";
 
 type Props = { person: number; online: boolean };
+
+const connected = (pantry: Pantry | undefined) =>
+  pantry?.state === "ready" || pantry?.state === "never_refreshed";
+const toBuy = (items: ShoppingList["stores"][number]["items"]) =>
+  items.filter((item) => !item.done).length;
 
 const forbidden = (error: unknown) =>
   error instanceof ApiError && error.status === 403;
@@ -66,6 +74,13 @@ export function PantrySection({ person, online }: Props) {
     queryKey: productsKey(person),
     queryFn: ({ signal }) => readProducts(signal),
   });
+  // Reading the list asks Grocy to add missing products, so it waits for an active connection.
+  const shopping = useQuery({
+    ...owner,
+    enabled: owner.enabled && connected(pantry.data),
+    queryKey: shoppingKey(person, pantry.data?.generation ?? null),
+    queryFn: ({ signal }) => readShopping(signal),
+  });
   if (forbidden(pantry.error)) return null;
   return (
     <PantryView
@@ -76,6 +91,8 @@ export function PantrySection({ person, online }: Props) {
       requests={requests.data}
       requestsFailed={requests.isError}
       link={link.data ?? null}
+      shopping={shopping.data}
+      shoppingFailed={shopping.isError}
       catalog={
         catalog.isError
           ? { state: "unavailable", generation: null, products: [] }
@@ -153,6 +170,8 @@ export function PantryView({
   requestsFailed,
   link,
   catalog,
+  shopping,
+  shoppingFailed = false,
 }: Props & {
   pantry: Pantry | undefined;
   failed: boolean;
@@ -160,12 +179,15 @@ export function PantryView({
   requestsFailed: boolean;
   link: string | null;
   catalog?: PantryProducts;
+  shopping?: ShoppingList;
+  shoppingFailed?: boolean;
 }) {
   const client = useQueryClient();
   const [tab, setTab] = useState("stock");
-  // Products are read live from Grocy, so mutations do not wait for them.
+  // Products and the shopping list are read live from Grocy, so mutations do not wait for them.
   const reload = () => {
     void client.invalidateQueries({ queryKey: productsKey(person) });
+    void client.invalidateQueries({ queryKey: shoppingKey(person) });
     return Promise.all([
       client.invalidateQueries({ queryKey: pantryKey(person) }),
       client.invalidateQueries({ queryKey: requestsKey(person) }),
@@ -176,8 +198,7 @@ export function PantryView({
     onSuccess: (next) => client.setQueryData(pantryKey(person), next),
     onSettled: reload,
   });
-  const ready =
-    pantry?.state === "ready" || pantry?.state === "never_refreshed";
+  const ready = connected(pantry);
   const message = pantry && status(pantry);
   const units = new Map(
     pantry?.products.map((product) => [product.product_id, product]),
@@ -188,7 +209,8 @@ export function PantryView({
     requests && requests.state !== "disabled" && !requestsFailed
       ? requests.unresolved.length
       : null;
-  const shown = tab === "bindings" && !ready ? "stock" : tab;
+  const shown =
+    (tab === "bindings" || tab === "shopping") && !ready ? "stock" : tab;
   return (
     <section
       aria-label="Pantry"
@@ -274,11 +296,24 @@ export function PantryView({
         <Tabs value={shown} onValueChange={setTab} className="gap-0">
           <TabsList
             variant="line"
-            className="w-full border-b border-border p-0 group-data-[orientation=horizontal]/tabs:h-auto"
+            className="w-full justify-start overflow-x-auto border-b border-border p-0 [scrollbar-width:none] group-data-[orientation=horizontal]/tabs:h-auto"
           >
             <TabsTrigger value="stock" className={trigger}>
               Stock
             </TabsTrigger>
+            {ready && (
+              <TabsTrigger value="shopping" className={trigger}>
+                Shopping{" "}
+                {!shoppingFailed && shopping?.state === "ready" && (
+                  <Badge>
+                    {shopping.stores.reduce(
+                      (sum, group) => sum + toBuy(group.items),
+                      0,
+                    )}
+                  </Badge>
+                )}
+              </TabsTrigger>
+            )}
             {ready && (
               <TabsTrigger
                 ref={bindingsTab}
@@ -306,6 +341,15 @@ export function PantryView({
               }}
             />
           </TabsContent>
+          {ready && (
+            <TabsContent value="shopping" forceMount className={panel}>
+              <Shopping
+                shopping={shopping}
+                failed={shoppingFailed}
+                online={online}
+              />
+            </TabsContent>
+          )}
           {ready && (
             <TabsContent value="bindings" forceMount className={panel}>
               <Bindings
@@ -343,7 +387,7 @@ export function PantryView({
 }
 
 const trigger =
-  "min-h-11 py-2.5 duration-(--motion-tab) group-data-[orientation=horizontal]/tabs:after:bottom-[-1px] after:duration-(--motion-tab)";
+  "min-h-11 px-1.5 py-2.5 duration-(--motion-tab) group-data-[orientation=horizontal]/tabs:after:bottom-0 after:duration-(--motion-tab)";
 
 function Stock({
   pantry,
@@ -456,6 +500,82 @@ function Stock({
           </Button>
         </div>
       )}
+    </div>
+  );
+}
+
+function Shopping({
+  shopping,
+  failed,
+  online,
+}: {
+  shopping: ShoppingList | undefined;
+  failed: boolean;
+  online: boolean;
+}) {
+  if (failed || shopping?.state === "unavailable")
+    return (
+      <p role="alert" className={cn(notice, "text-destructive")}>
+        Couldn’t load shopping list
+      </p>
+    );
+  if (!shopping)
+    return online ? (
+      <div>
+        <p className="sr-only">Loading...</p>
+        <div
+          aria-hidden
+          className="h-40 rounded-(--radius) bg-bg-sunk motion-safe:animate-pulse"
+        />
+      </div>
+    ) : (
+      <p className={cn(hint, "m-0")}>Unavailable offline</p>
+    );
+  if (shopping.state === "disabled") return null;
+  if (shopping.stores.length === 0)
+    return <p className={cn(hint, "m-0")}>Nothing to buy</p>;
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-6">
+      {shopping.stores.map((group) => {
+        const title = group.store?.name ?? "No store";
+        return (
+          <section
+            key={group.store?.id ?? "none"}
+            aria-label={title}
+            className="p-0"
+          >
+            <h2 className="m-0 flex items-baseline justify-between gap-3 border-b border-border pb-2 text-(length:--step-2) font-semibold [overflow-wrap:anywhere]">
+              {title}
+              <span className="numeric shrink-0 text-xs font-normal text-ink-2">
+                {toBuy(group.items)}
+              </span>
+            </h2>
+            <ul className="m-0 list-none p-0">
+              {group.items.map((item) => {
+                const Name = item.done ? "s" : "span";
+                return (
+                  <li
+                    key={item.id}
+                    className={cn(
+                      row,
+                      "items-center py-3.5 text-base",
+                      item.done && "text-ink-2 line-through",
+                    )}
+                  >
+                    <Name className="min-w-0 font-medium [overflow-wrap:anywhere]">
+                      {item.name}
+                    </Name>
+                    <span className="numeric shrink-0">
+                      {item.amount}
+                      {item.unit && ` ${item.unit}`}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        );
+      })}
     </div>
   );
 }
