@@ -99,6 +99,7 @@ async function startEngine(scaleUsers: Map<string, number> | null) {
     report: reportPantry,
   });
   const shopping = createShoppingService({
+    database: connection.database,
     config: config.grocy,
     ownerId: grocyOwner,
     client: createGroceryClient({ config: config.grocy, ownerId: grocyOwner }),

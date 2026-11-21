@@ -1,3 +1,4 @@
+import type { Database } from "better-sqlite3";
 import { z } from "zod";
 import type { GrocyResult } from "../grocy/client.ts";
 import type { GrocyConfig } from "../grocy/config.ts";
@@ -7,6 +8,7 @@ import {
   OperationError,
   operationPerson,
 } from "../operations/registry.ts";
+import { readConnection } from "../queries/pantry/read-connection.ts";
 
 const identifier = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 const store = z.strictObject({ id: identifier, name: z.string() });
@@ -95,10 +97,12 @@ export type ShoppingService = ReturnType<typeof createShoppingService>;
 
 /** Grocy's own shopping list; Tare stores nothing about it. */
 export function createShoppingService({
+  database,
   config,
   ownerId,
   client,
 }: {
+  database: Database;
   config: GrocyConfig | null;
   ownerId: number | null;
   client: Client;
@@ -108,6 +112,10 @@ export function createShoppingService({
     if (!config || ownerId === null)
       throw new OperationError(503, "pantry_disabled");
     if (userId !== ownerId) throw new OperationError(403, "forbidden");
+    // Both operations write to Grocy, which may be a replacement awaiting reset.
+    const row = readConnection(database);
+    if (!row || row.reset_required || row.user_id !== ownerId)
+      throw new OperationError(503, "pantry_reset_required");
   }
   async function resolveStore(name: string) {
     const [found] = await value(client.shoppingLocationNamed(owner, name));
