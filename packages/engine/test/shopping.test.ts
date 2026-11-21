@@ -107,7 +107,7 @@ async function setup(context: TestContext) {
 }
 
 test("save_shopping_minimum creates the store once, reuses it and clears it", async (context) => {
-  const { tables, save } = await setup(context);
+  const { tables, save, fake } = await setup(context);
   const wegmans = { id: 1, name: "Wegmans" };
   const first = await save(1, 2, "Wegmans");
   assert.deepEqual(
@@ -141,6 +141,17 @@ test("save_shopping_minimum creates the store once, reuses it and clears it", as
   assert.deepEqual(
     [missing.status, missing.body.error.code],
     [404, "pantry_product_missing"],
+  );
+  let puts = 0;
+  fake.routes["/objects/products/:id"] = ({ body }: { body?: Row }) => {
+    if (!body) return tables.products?.[0];
+    puts++;
+    throw new Error("Response lost");
+  };
+  const lost = await save(1, 3, null);
+  assert.deepEqual(
+    [lost.status, lost.body.error.code, puts],
+    [503, "pantry_write_uncertain", 1],
   );
 });
 

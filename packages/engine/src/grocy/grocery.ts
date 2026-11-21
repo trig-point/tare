@@ -385,9 +385,23 @@ export function createGroceryClient(dependencies: GrocyDependencies) {
     shoppingProduct: (userId: number, id: number) =>
       byId(userId, "products", shoppingProductSchema, id),
     shoppingProducts: (userId: number) =>
-      request(userId, "/objects/products", z.array(shoppingProductSchema)),
+      request(
+        userId,
+        "/objects/products",
+        z.array(
+          shoppingProductSchema.pick({
+            id: true,
+            name: true,
+            shopping_location_id: true,
+          }),
+        ),
+      ),
     units: (userId: number) =>
-      request(userId, "/objects/quantity_units", z.array(groceryUnitSchema)),
+      request(
+        userId,
+        "/objects/quantity_units",
+        z.array(groceryUnitSchema.omit({ active: true })),
+      ),
     shoppingLocations: (userId: number) =>
       request(
         userId,

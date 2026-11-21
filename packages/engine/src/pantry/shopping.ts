@@ -69,8 +69,10 @@ type Client = Pick<
 type ShoppingError = z.infer<typeof shoppingError>;
 class GrocyFailed extends Error {
   readonly detail: ShoppingError;
+  readonly uncertain: boolean;
   constructor(result: GrocyResult<unknown> | undefined) {
     super("Grocy call failed");
+    this.uncertain = result?.status === "uncertain";
     this.detail =
       result && "reason" in result
         ? {
@@ -156,9 +158,11 @@ export function createShoppingService({
       if (!(caught instanceof GrocyFailed)) throw caught;
       throw new OperationError(
         503,
-        caught.detail.reason === "unsupported_version"
-          ? "pantry_unsupported_version"
-          : "pantry_unavailable",
+        caught.uncertain
+          ? "pantry_write_uncertain"
+          : caught.detail.reason === "unsupported_version"
+            ? "pantry_unsupported_version"
+            : "pantry_unavailable",
       );
     }
   }
