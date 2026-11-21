@@ -16,6 +16,8 @@ import {
   usualFoodsQuery,
 } from "./food-api.ts";
 import type { OutboxReplay } from "./outbox-replay.ts";
+import { photoProbeQuery, savedPhotoProbe } from "./photo-api.ts";
+import { PhotoMeal } from "./photo-meal.tsx";
 import {
   Button,
   cn,
@@ -64,6 +66,8 @@ export function AddFood({ person, replay, online }: Props) {
   });
   const lookup = useMutation({ mutationFn: searchOnline, retry: 0 });
   const barcode = useMutation({ mutationFn: lookupBarcode, retry: 0 });
+  const probe = useQuery({ ...photoProbeQuery(person.id), enabled: online });
+  const photo = (probe.data ?? savedPhotoProbe(person.id)) !== false;
   const searched = lookup.variables === term ? lookup : undefined;
   const choices = mergeChoices(
     matchingFoods(usualList ?? [], term),
@@ -109,15 +113,17 @@ export function AddFood({ person, replay, online }: Props) {
           variant="line"
           className="w-full border-b border-border p-0 group-data-[orientation=horizontal]/tabs:h-auto"
         >
-          {["Search", "Scan", "Quick add"].map((title) => (
-            <TabsTrigger
-              key={title}
-              value={title.toLowerCase().replace(" ", "-")}
-              className="min-h-11 py-2.5 duration-(--motion-tab) group-data-[orientation=horizontal]/tabs:after:bottom-[-1px] after:duration-(--motion-tab)"
-            >
-              {title}
-            </TabsTrigger>
-          ))}
+          {["Search", "Scan", "Quick add", ...(photo ? ["Photo"] : [])].map(
+            (title) => (
+              <TabsTrigger
+                key={title}
+                value={title.toLowerCase().replace(" ", "-")}
+                className="min-h-11 py-2.5 duration-(--motion-tab) group-data-[orientation=horizontal]/tabs:after:bottom-[-1px] after:duration-(--motion-tab)"
+              >
+                {title}
+              </TabsTrigger>
+            ),
+          )}
         </TabsList>
         <TabsContent
           value="search"
@@ -218,6 +224,15 @@ export function AddFood({ person, replay, online }: Props) {
             done={() => setLogged("Logged Quick add")}
           />
         </TabsContent>
+        {photo && (
+          <TabsContent
+            value="photo"
+            forceMount
+            className={cn(panel, "data-[state=inactive]:hidden")}
+          >
+            <PhotoMeal person={person} online={online} onLogged={setLogged} />
+          </TabsContent>
+        )}
       </Tabs>
       {manual !== null && (
         <NumbersForm
