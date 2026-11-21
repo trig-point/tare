@@ -1,3 +1,8 @@
+import {
+  fromStoredNutrition,
+  type ServingBasis,
+  servingsFor,
+} from "@tare/nutrition";
 import type { Person } from "../auth/middleware.ts";
 import { scopeDatabase, type WriteScope } from "../db.ts";
 import { OperationError } from "../operations/registry.ts";
@@ -89,6 +94,70 @@ export function readReferenceFood(
 }
 
 type ReferenceFood = NonNullable<ReturnType<typeof readReferenceFood>>;
+
+type FoodPartError =
+  | "food_not_found"
+  | "no_serving_basis"
+  | "dimension_mismatch"
+  | "amount_out_of_range"
+  | "ingredient_kcal_unknown"
+  | "invalid_part";
+
+export function foodPartError(code: FoodPartError, part: number) {
+  return new OperationError(
+    code === "food_not_found" ? 404 : 400,
+    code,
+    {},
+    undefined,
+    part,
+  );
+}
+
+export function gramsToServings(
+  grams: number,
+  basis: ServingBasis,
+  part: number,
+) {
+  const converted = servingsFor(grams, "g", basis);
+  if (converted.ok) return converted.value;
+  throw foodPartError(
+    converted.reason === "dimension_mismatch"
+      ? converted.reason
+      : "amount_out_of_range",
+    part,
+  );
+}
+
+type WeighedFood = { grams: number } & (
+  | { food_id: number }
+  | { source_food_id: number }
+);
+
+export function readWeighedFood(
+  scope: WriteScope,
+  person: Person,
+  input: WeighedFood,
+  part: number,
+) {
+  const reference: Reference =
+    "food_id" in input
+      ? { kind: "food", id: input.food_id }
+      : { kind: "source_food", id: input.source_food_id };
+  const food = readReferenceFood(scope, person, reference);
+  if (!food) throw foodPartError("food_not_found", part);
+  if ((food.serving_size === null) !== (food.serving_unit === null))
+    throw foodPartError("no_serving_basis", part);
+  const provenance = resolveProvenance({}, food);
+  const { basis } = fromStoredNutrition({ ...food, provenance });
+  if (!basis?.unit.trim()) throw foodPartError("no_serving_basis", part);
+  return {
+    reference,
+    food,
+    provenance,
+    basis,
+    servings: gramsToServings(input.grams, basis, part),
+  };
+}
 
 function snapshotFromFood(
   food: ReferenceFood,
