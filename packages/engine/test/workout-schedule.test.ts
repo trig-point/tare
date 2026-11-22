@@ -85,6 +85,11 @@ test("today picks the dated entry, else the weekday template and its group", asy
       { source: "week", kind: "lift", name: "Legs A", session: "legs_a" },
     ],
     [
+      "template key outside rotation",
+      { rotation: ["push_a", "push_b"], next_session: null },
+      { source: "week", name: "Legs A", session: "legs_a" },
+    ],
+    [
       "group day takes next_session",
       {
         week: {

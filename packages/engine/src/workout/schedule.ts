@@ -169,6 +169,7 @@ export function resolveToday(
 }
 
 function pickSession(document: ScheduleDocument, name: string): string {
+  if (Object.hasOwn(document.sessions, name)) return name;
   const keys = groupKeys(document, name);
   if (document.next_session && keys.includes(document.next_session))
     return document.next_session;
