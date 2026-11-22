@@ -193,11 +193,19 @@ function amounts(part: ReviewPart) {
     : { grams };
 }
 
-/** The UI line for a failed log; a conflict means an earlier send of this meal was logged. */
-export function logMessage(error: unknown) {
-  return error instanceof ApiError && error.code === "mutation_conflict"
-    ? "Meal already logged"
-    : "Couldn’t log meal";
+/** The meal's client id, kept until logged so a resend after a lost reply cannot log twice. */
+export function mealId(current: string | null) {
+  return current ?? clientId(crypto);
+}
+
+/** A conflict on a kept client id means an earlier send of this meal was logged. */
+export function loggedEarlier(error: unknown) {
+  return error instanceof ApiError && error.code === "mutation_conflict";
+}
+
+/** An estimate refused because there is no model turns the Photo tab off, as the probe would. */
+export function hidesPhoto(error: unknown) {
+  return error instanceof ApiError && error.code === "vision_unavailable";
 }
 
 /** Adds each picked food to the source cache, then logs the meal. */

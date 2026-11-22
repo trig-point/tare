@@ -8,14 +8,15 @@ import {
   type ScanProblem,
   scanMessages,
 } from "./barcode.ts";
-import { clientId } from "./outbox-store.ts";
 import {
   type Candidate,
   canLog,
   drawJpeg,
   estimatePhoto,
+  hidesPhoto,
+  loggedEarlier,
   logMeal,
-  logMessage,
+  mealId,
   photoMessage,
   photoProbeQuery,
   photoToSend,
@@ -48,7 +49,6 @@ export function PhotoMeal({ person, online, active, onLogged }: Props) {
   const video = useRef<HTMLVideoElement>(null);
   // Held only until the estimate request starts, so no photo stays in memory.
   const photo = useRef<Blob | Promise<Blob> | null>(null);
-  // Kept until the meal logs or a new photo starts, so a resend after a lost reply cannot log twice.
   const sent = useRef<string | null>(null);
   const cameraOn = camera && active;
 
@@ -64,7 +64,7 @@ export function PhotoMeal({ person, online, active, onLogged }: Props) {
     },
     onSuccess: (proposed) => setParts(reviewParts(proposed)),
     onError: (error) => {
-      if (error instanceof ApiError && error.code === "vision_unavailable")
+      if (hidesPhoto(error))
         client.setQueryData(
           photoProbeQuery(person.id).queryKey,
           savePhotoProbe(person.id, false),
@@ -76,17 +76,23 @@ export function PhotoMeal({ person, online, active, onLogged }: Props) {
     retry: 0,
     mutationFn: () => {
       if (!online || !navigator.onLine) throw new Error("Offline");
-      sent.current ??= clientId(crypto);
+      sent.current = mealId(sent.current);
       return logMeal(sent.current, parts);
     },
-    onSuccess: async (count) => {
-      sent.current = null;
-      setParts([]);
-      estimate.reset();
-      onLogged(count === 1 ? "Logged 1 food" : `Logged ${count} foods`);
-      await refreshToday(client, person.id);
+    onSuccess: (count) =>
+      finish(count === 1 ? "Logged 1 food" : `Logged ${count} foods`),
+    onError: (error) => {
+      if (loggedEarlier(error)) return finish("Meal already logged");
     },
   });
+
+  const finish = async (message: string) => {
+    sent.current = null;
+    setParts([]);
+    estimate.reset();
+    onLogged(message);
+    await refreshToday(client, person.id);
+  };
 
   const send = (image: Blob | Promise<Blob>) => {
     photo.current = image;
@@ -139,7 +145,7 @@ export function PhotoMeal({ person, online, active, onLogged }: Props) {
       estimateError={estimate.isError ? photoMessage(estimate.error) : null}
       parts={parts}
       logging={log.isPending}
-      logError={log.isError ? logMessage(log.error) : null}
+      logFailed={log.isError && !loggedEarlier(log.error)}
       video={video}
       openCamera={() => {
         setProblem(null);
@@ -177,7 +183,7 @@ export function PhotoView(props: {
   estimateError: string | null;
   parts: ReviewPart[];
   logging: boolean;
-  logError: string | null;
+  logFailed: boolean;
   video?: RefObject<HTMLVideoElement | null>;
   openCamera: () => void;
   closeCamera: () => void;
@@ -250,7 +256,7 @@ export function PhotoView(props: {
         hidden={!props.camera}
         muted
         playsInline
-        className="aspect-video rounded-(--radius) bg-bg-sunk"
+        className="aspect-video rounded-(--radius) bg-bg-sunk object-contain"
       />
       {props.problem && props.problem !== "decoder" && (
         <p role="alert">{scanMessages[props.problem]}</p>
@@ -261,7 +267,7 @@ export function PhotoView(props: {
           {[0, 1].map((row) => (
             <div
               key={row}
-              className="h-[188px] motion-safe:animate-pulse rounded-(--radius) bg-bg-sunk"
+              className="h-[392px] motion-safe:animate-pulse rounded-(--radius) bg-bg-sunk"
             />
           ))}
         </div>
@@ -299,7 +305,7 @@ export function PhotoView(props: {
             >
               {props.logging ? "Logging..." : "Log meal"}
             </Button>
-            {props.logError && <p role="alert">{props.logError}</p>}
+            {props.logFailed && <p role="alert">Couldn’t log meal</p>}
           </form>
         )
       )}

@@ -8,8 +8,10 @@ import type { OutboxReplay } from "../src/outbox-replay.ts";
 import {
   canLog,
   estimatePhoto,
+  hidesPhoto,
+  loggedEarlier,
   logMeal,
-  logMessage,
+  mealId,
   type PhotoCode,
   photoMessage,
   photoProbeQuery,
@@ -98,7 +100,7 @@ function renderView(parts: ReviewPart[], online: boolean, logging = false) {
         estimateError: null,
         parts,
         logging,
-        logError: null,
+        logFailed: false,
         openCamera: noop,
         closeCamera: noop,
         capture: noop,
@@ -208,6 +210,16 @@ test("the Photo tab is hidden when photo estimates are off", async (context) => 
     Response.json({ error: { code: "unauthorized" } }, { status: 401 }),
   );
   await assert.rejects(probePhoto());
+  assert.equal(hidesPhoto(new ApiError(503, "vision_unavailable")), true);
+  assert.equal(hidesPhoto(new ApiError(503, "vision_failed")), false);
+});
+
+test("a resend after a lost reply keeps the meal's client id", () => {
+  const first = mealId(null);
+  assert.equal(mealId(first), first);
+  assert.notEqual(mealId(null), first);
+  assert.equal(loggedEarlier(new ApiError(409, "mutation_conflict")), true);
+  assert.equal(loggedEarlier(new ApiError(503, "lookup_unavailable")), false);
 });
 
 test("offline, the Photo tab needs a connection and sends nothing", () => {
@@ -237,11 +249,6 @@ test("each estimate error has one line", async (context) => {
     const error = await estimatePhoto(image).catch((caught) => caught);
     assert.equal(photoMessage(error), line, code);
   }
-  assert.equal(
-    logMessage(new ApiError(409, "mutation_conflict")),
-    "Meal already logged",
-  );
-  assert.equal(logMessage(new Error("Offline")), "Couldn’t log meal");
   assert.equal(await photoToSend(image), image);
   const global = globalThis as { createImageBitmap?: unknown };
   global.createImageBitmap = async () => {
