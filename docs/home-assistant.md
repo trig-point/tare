@@ -38,6 +38,7 @@ The device is named `Tare <username>`. Every entity on it goes unavailable when 
 | Target changed | event | Fires when a recompute changes the stored target. Attributes `old_kcal`, `old_protein_g`, `new_kcal` and `new_protein_g`. |
 | `<meal> ate it`, `<meal> ate 3/4` | button | One pair per meal on hand. Pressing one logs that portion. |
 | Last meal press | | Result of the last button press: `logged`, `stale_revision`, `invalid_press` or another error code, with `meal_id`, `action` and `at` attributes. Shows `none` until the first press since Tare started. |
+| Workout today | | Today's session name, or the cardio or rest label. Shows `No schedule` until a schedule is stored. Attributes `today` (the entry with its movements) and `week`. |
 
 A number can be unknown: no target until the profile is set up and there is a first weigh-in, no remaining value while any entry today lacks a value, no trend without weigh-ins, no TDEE estimate until there is enough signed-off history. Home Assistant shows these as `unknown`. Do not treat unknown as zero in templates or automations.
 

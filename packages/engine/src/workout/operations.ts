@@ -1,0 +1,131 @@
+import type { Database } from "better-sqlite3";
+import { z as zod } from "zod";
+import { writeTransaction } from "../db.ts";
+import { localDay } from "../logging/day.ts";
+import {
+  defineOperation,
+  OperationError,
+  operationPerson,
+} from "../operations/registry.ts";
+import { selectWorkoutSchedule } from "../queries/workout/select-workout-schedule.ts";
+import { upsertWorkoutSchedule } from "../queries/workout/upsert-workout-schedule.ts";
+import {
+  resolveToday,
+  type ScheduleDocument,
+  scheduleDocument,
+  todayEntry,
+} from "./schedule.ts";
+
+const documentLimit = 60_000;
+
+const shared = {
+  modes: ["access", "fallback"] as ("access" | "fallback")[],
+  callerClass: "browser_and_agent",
+  admin: false,
+} as const;
+
+export function readSchedule(
+  database: Database,
+  userId: number,
+): ScheduleDocument | null {
+  const row = selectWorkoutSchedule(database, { user_id: userId });
+  if (!row) return null;
+  return scheduleDocument.parse({
+    ...JSON.parse(row.document),
+    updated: row.updated_at,
+  });
+}
+
+export const workoutOperations = [
+  defineOperation({
+    ...shared,
+    name: "read_workout_schedule",
+    description:
+      "Read the workout schedule. schedule is null when none is stored; send its updated back with a replace.",
+    method: "GET",
+    path: "/api/workout-schedule",
+    input: zod.strictObject({}),
+    output: zod.strictObject({ schedule: scheduleDocument.nullable() }),
+    handler(_input, context) {
+      return {
+        status: 200,
+        body: {
+          schedule: readSchedule(context.database, operationPerson(context).id),
+        },
+      };
+    },
+  }),
+  defineOperation({
+    ...shared,
+    name: "replace_workout_schedule",
+    description:
+      "Replace the whole workout schedule, up to 60 KB. Include the updated you last read; omit it only for the first write.",
+    method: "POST",
+    path: "/api/workout-schedule",
+    bodyLimit: 65_536,
+    input: scheduleDocument,
+    inputIssues: true,
+    output: zod.strictObject({ schedule: scheduleDocument }),
+    handler(input, context) {
+      const person = operationPerson(context);
+      const { updated, ...document } = input;
+      // Leaves room for the updated stamp and the MCP envelope, so a stored copy can always be sent back.
+      if (Buffer.byteLength(JSON.stringify(document)) > documentLimit)
+        throw new OperationError(413, "schedule_too_large");
+      const schedule = writeTransaction(context.database, () => {
+        const stored = selectWorkoutSchedule(context.database, {
+          user_id: person.id,
+        });
+        if ((stored?.updated_at ?? undefined) !== updated)
+          throw new OperationError(409, "schedule_conflict");
+        // Strictly later than the stored stamp, so a stale copy never matches a newer write.
+        const stamp = new Date(
+          Math.max(
+            context.clock.now().getTime(),
+            stored ? Date.parse(stored.updated_at) + 1 : 0,
+          ),
+        ).toISOString();
+        const row = upsertWorkoutSchedule(context.database, {
+          user_id: person.id,
+          document: JSON.stringify(document),
+          updated_at: stamp,
+        });
+        if (!row) throw new Error("Schedule save returned no row");
+        return { ...document, updated: row.updated_at };
+      });
+      return { status: 200, body: { schedule } };
+    },
+  }),
+  defineOperation({
+    ...shared,
+    name: "today_workout",
+    description:
+      "Today's workout: the dated entry, else the weekday template, with movements. today is null when no schedule is stored.",
+    method: "GET",
+    path: "/api/workout-schedule/today",
+    input: zod.strictObject({}),
+    output: zod.strictObject({ today: todayEntry.nullable() }),
+    handler(_input, context) {
+      const person = operationPerson(context);
+      return {
+        status: 200,
+        body: {
+          today: workoutToday(context.database, person, context.clock.now()),
+        },
+      };
+    },
+  }),
+];
+
+export function workoutToday(
+  database: Database,
+  person: { id: number; timezone: string; day_start_hour: number },
+  now: Date,
+) {
+  const schedule = readSchedule(database, person.id);
+  if (!schedule) return null;
+  return resolveToday(
+    schedule,
+    localDay(now.toISOString(), person.timezone, person.day_start_hour),
+  );
+}
