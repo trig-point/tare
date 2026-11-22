@@ -31,7 +31,7 @@ export async function request(
 ): Promise<Response> {
   const headers = new Headers(options.headers);
   headers.set("X-Requested-With", "XMLHttpRequest");
-  if (options.body !== undefined)
+  if (options.body !== undefined && !headers.has("Content-Type"))
     headers.set("Content-Type", "application/json");
   return fetcher(path, {
     ...options,

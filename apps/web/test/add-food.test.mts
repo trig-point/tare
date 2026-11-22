@@ -347,7 +347,7 @@ test("add food opens on Search with usual foods before typing", async (context) 
   const tabs = [...html.matchAll(/role="tab"[^>]*>([^<]+)</g)].map(
     (match) => match[1],
   );
-  assert.deepEqual(tabs, ["Search", "Scan", "Quick add"]);
+  assert.deepEqual(tabs, ["Search", "Scan", "Photo", "Quick add"]);
   assert.match(html, /id="servings-food-5"[^>]*value="1.5"/);
   assert.equal(html.match(/id="servings-food-5"/g)?.length, 1);
   assert.match(html, /aria-label="Log Example oats"/);
