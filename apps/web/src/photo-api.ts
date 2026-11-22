@@ -90,18 +90,20 @@ const probeStorageKey = (person: number) => `tare:photo-available:${person}`;
 export function photoProbeQuery(person: number) {
   return {
     queryKey: ["photo_probe", person] as const,
-    queryFn: async ({ signal }: { signal: AbortSignal }) => {
-      const available = await probePhoto(signal);
-      try {
-        localStorage.setItem(probeStorageKey(person), String(available));
-      } catch {
-        // Blocked storage loses only the remembered answer.
-      }
-      return available;
-    },
+    queryFn: async ({ signal }: { signal: AbortSignal }) =>
+      savePhotoProbe(person, await probePhoto(signal)),
     staleTime: 5 * 60_000,
     retry: 0,
   };
+}
+
+export function savePhotoProbe(person: number, available: boolean) {
+  try {
+    localStorage.setItem(probeStorageKey(person), String(available));
+  } catch {
+    // Blocked storage loses only the remembered answer.
+  }
+  return available;
 }
 
 export function savedPhotoProbe(person: number): boolean | undefined {
@@ -191,14 +193,11 @@ function amounts(part: ReviewPart) {
     : { grams };
 }
 
-/** Identifies the meal as it would be sent, so only an identical retry reuses a client id. */
-export function mealKey(parts: ReviewPart[]) {
-  return JSON.stringify(
-    parts.map((part) => [
-      part.pick?.fdc_id,
-      partGrams(part) === null ? part.grams : amounts(part),
-    ]),
-  );
+/** The UI line for a failed log; a conflict means an earlier send of this meal was logged. */
+export function logMessage(error: unknown) {
+  return error instanceof ApiError && error.code === "mutation_conflict"
+    ? "Meal already logged"
+    : "Couldn’t log meal";
 }
 
 /** Adds each picked food to the source cache, then logs the meal. */

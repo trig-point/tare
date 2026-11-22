@@ -15,11 +15,13 @@ import {
   drawJpeg,
   estimatePhoto,
   logMeal,
-  mealKey,
+  logMessage,
   photoMessage,
+  photoProbeQuery,
   photoToSend,
   type ReviewPart,
   reviewParts,
+  savePhotoProbe,
   searchCandidates,
 } from "./photo-api.ts";
 import { Button, cn, Input } from "./shared/ui/index.ts";
@@ -46,7 +48,8 @@ export function PhotoMeal({ person, online, active, onLogged }: Props) {
   const video = useRef<HTMLVideoElement>(null);
   // Held only until the estimate request starts, so no photo stays in memory.
   const photo = useRef<Blob | Promise<Blob> | null>(null);
-  const sent = useRef<{ key: string; id: string } | null>(null);
+  // Kept until the meal logs or a new photo starts, so a resend after a lost reply cannot log twice.
+  const sent = useRef<string | null>(null);
   const cameraOn = camera && active;
 
   const estimate = useMutation({
@@ -60,16 +63,21 @@ export function PhotoMeal({ person, online, active, onLogged }: Props) {
       return estimatePhoto(await photoToSend(await image));
     },
     onSuccess: (proposed) => setParts(reviewParts(proposed)),
+    onError: (error) => {
+      if (error instanceof ApiError && error.code === "vision_unavailable")
+        client.setQueryData(
+          photoProbeQuery(person.id).queryKey,
+          savePhotoProbe(person.id, false),
+        );
+    },
   });
   const log = useMutation({
     networkMode: "always",
     retry: 0,
     mutationFn: () => {
       if (!online || !navigator.onLine) throw new Error("Offline");
-      const key = mealKey(parts);
-      if (sent.current?.key !== key)
-        sent.current = { key, id: clientId(crypto) };
-      return logMeal(sent.current.id, parts);
+      sent.current ??= clientId(crypto);
+      return logMeal(sent.current, parts);
     },
     onSuccess: async (count) => {
       sent.current = null;
@@ -83,6 +91,7 @@ export function PhotoMeal({ person, online, active, onLogged }: Props) {
   const send = (image: Blob | Promise<Blob>) => {
     photo.current = image;
     sent.current = null;
+    setProblem(null);
     setCamera(false);
     setParts([]);
     log.reset();
@@ -130,10 +139,11 @@ export function PhotoMeal({ person, online, active, onLogged }: Props) {
       estimateError={estimate.isError ? photoMessage(estimate.error) : null}
       parts={parts}
       logging={log.isPending}
-      logFailed={log.isError}
+      logError={log.isError ? logMessage(log.error) : null}
       video={video}
       openCamera={() => {
         setProblem(null);
+        estimate.reset();
         setCamera(true);
       }}
       closeCamera={() => setCamera(false)}
@@ -167,7 +177,7 @@ export function PhotoView(props: {
   estimateError: string | null;
   parts: ReviewPart[];
   logging: boolean;
-  logFailed: boolean;
+  logError: string | null;
   video?: RefObject<HTMLVideoElement | null>;
   openCamera: () => void;
   closeCamera: () => void;
@@ -179,7 +189,7 @@ export function PhotoView(props: {
 }) {
   const busy = !props.online || props.estimating || props.logging;
   return (
-    <div className="grid gap-3">
+    <div className="scanner grid gap-3">
       {!props.online && <p className={cn(hint, "m-0")}>Needs a connection</p>}
       <div className="flex flex-wrap gap-2">
         {props.camera ? (
@@ -240,7 +250,7 @@ export function PhotoView(props: {
         hidden={!props.camera}
         muted
         playsInline
-        className="rounded-(--radius) bg-bg-sunk"
+        className="aspect-video rounded-(--radius) bg-bg-sunk"
       />
       {props.problem && props.problem !== "decoder" && (
         <p role="alert">{scanMessages[props.problem]}</p>
@@ -289,7 +299,7 @@ export function PhotoView(props: {
             >
               {props.logging ? "Logging..." : "Log meal"}
             </Button>
-            {props.logFailed && <p role="alert">Couldn’t log meal</p>}
+            {props.logError && <p role="alert">{props.logError}</p>}
           </form>
         )
       )}

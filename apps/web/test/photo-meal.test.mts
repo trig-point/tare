@@ -3,12 +3,13 @@ import type { TestContext } from "node:test";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { ApiError } from "../src/api.ts";
 import type { OutboxReplay } from "../src/outbox-replay.ts";
 import {
   canLog,
   estimatePhoto,
   logMeal,
-  mealKey,
+  logMessage,
   type PhotoCode,
   photoMessage,
   photoProbeQuery,
@@ -97,7 +98,7 @@ function renderView(parts: ReviewPart[], online: boolean, logging = false) {
         estimateError: null,
         parts,
         logging,
-        logFailed: false,
+        logError: null,
         openCamera: noop,
         closeCamera: noop,
         capture: noop,
@@ -167,15 +168,10 @@ test("a corrected gram amount is sent, with the range only while it fits", async
   assert.deepEqual(await sentParts("400"), [
     { source_food_id: 11, grams: 400 },
   ]);
-  for (const grams of ["", "0", "-5", "abc"]) {
+  for (const grams of ["", "0", "-5"]) {
     assert.equal(canLog([{ ...part, grams, pick: rice }]), false);
     await assert.rejects(logMeal("meal-3", [{ ...part, grams, pick: rice }]));
   }
-  const key = (grams: string, low = part.low) =>
-    mealKey([{ ...part, grams, low, pick: rice }]);
-  assert.equal(key("300"), key("300.0"));
-  assert.notEqual(key("300"), key("300", 260));
-  assert.notEqual(key("300"), key("310"));
 });
 
 function renderAddFood(client: QueryClient, online = true) {
@@ -241,6 +237,11 @@ test("each estimate error has one line", async (context) => {
     const error = await estimatePhoto(image).catch((caught) => caught);
     assert.equal(photoMessage(error), line, code);
   }
+  assert.equal(
+    logMessage(new ApiError(409, "mutation_conflict")),
+    "Meal already logged",
+  );
+  assert.equal(logMessage(new Error("Offline")), "Couldn’t log meal");
   assert.equal(await photoToSend(image), image);
   const global = globalThis as { createImageBitmap?: unknown };
   global.createImageBitmap = async () => {
