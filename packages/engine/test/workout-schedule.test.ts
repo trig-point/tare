@@ -33,6 +33,10 @@ test("replace then read returns the same document, and a stale updated is refuse
   });
   assert.equal(first.status, 200);
   const { updated, ...stored } = first.schedule;
+  assert.deepEqual(
+    Object.keys(stored.week),
+    Object.keys(exampleSchedule().week),
+  );
   assert.deepEqual(stored, {
     ...exampleSchedule(),
     updated_by: "example-coach",

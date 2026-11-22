@@ -7,13 +7,13 @@ const sessionKey = zod
   .regex(/^[a-z0-9]+(_[a-z0-9]+)*$/)
   .max(40);
 export const weekdays = [
-  "sun",
   "mon",
   "tue",
   "wed",
   "thu",
   "fri",
   "sat",
+  "sun",
 ] as const;
 
 const movement = zod.strictObject({
@@ -128,7 +128,8 @@ export function resolveToday(
   day: string,
 ): TodayEntry {
   const dated = document.planned.find((entry) => entry.date === day);
-  const weekday = weekdays[new Date(`${day}T00:00:00.000Z`).getUTCDay()];
+  const weekday =
+    weekdays[(new Date(`${day}T00:00:00.000Z`).getUTCDay() + 6) % 7];
   const template = weekday ? document.week[weekday] : undefined;
   const entry = dated ?? template;
   if (!entry) throw new Error("Schedule day missing");
