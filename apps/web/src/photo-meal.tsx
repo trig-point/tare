@@ -265,17 +265,22 @@ export function PhotoView(props: {
               props.submit();
             }}
           >
-            <ul className="m-0 grid list-none gap-3 p-0">
-              {props.parts.map((part) => (
-                <PartRow
-                  key={part.key}
-                  part={part}
-                  online={props.online}
-                  change={(next) => props.change(part.key, next)}
-                  remove={() => props.remove(part.key)}
-                />
-              ))}
-            </ul>
+            <fieldset
+              disabled={props.logging}
+              className="m-0 min-w-0 border-0 p-0"
+            >
+              <ul className="m-0 grid list-none gap-3 p-0">
+                {props.parts.map((part) => (
+                  <PartRow
+                    key={part.key}
+                    part={part}
+                    online={props.online}
+                    change={(next) => props.change(part.key, next)}
+                    remove={() => props.remove(part.key)}
+                  />
+                ))}
+              </ul>
+            </fieldset>
             <Button
               type="submit"
               size="lg"

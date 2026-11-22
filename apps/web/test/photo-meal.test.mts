@@ -80,7 +80,7 @@ const mealReply = (path: string, init: RequestInit) => {
   return Response.json({ entries: [{}, {}] }, { status: 201 });
 };
 
-function renderView(parts: ReviewPart[], online: boolean) {
+function renderView(parts: ReviewPart[], online: boolean, logging = false) {
   const client = new QueryClient();
   for (const part of parts)
     client.setQueryData(["food_candidates", part.searchQuery], [rice, chicken]);
@@ -96,7 +96,7 @@ function renderView(parts: ReviewPart[], online: boolean) {
         estimating: false,
         estimateError: null,
         parts,
-        logging: false,
+        logging,
         logFailed: false,
         openCamera: noop,
         closeCamera: noop,
@@ -140,6 +140,7 @@ test("a reviewed photo meal logs its picked foods", async (context) => {
     { ...second, pick: chicken },
   ];
   assert.doesNotMatch(renderView(picked, true), /disabled=""[^>]*>Log meal/);
+  assert.match(renderView(picked, true, true), /<fieldset disabled=""/);
   assert.equal(await logMeal("meal-1", picked), 2);
   const meal = calls.at(-1);
   assert.equal(meal?.path, "/api/intake/meal-parts");
