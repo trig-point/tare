@@ -16,6 +16,8 @@ import {
   todayEntry,
 } from "./schedule.ts";
 
+const documentLimit = 60_000;
+
 const shared = {
   modes: ["access", "fallback"] as ("access" | "fallback")[],
   callerClass: "browser_and_agent",
@@ -57,7 +59,7 @@ export const workoutOperations = [
     ...shared,
     name: "replace_workout_schedule",
     description:
-      "Replace the whole workout schedule. Include the updated you last read; omit it only for the first write.",
+      "Replace the whole workout schedule, up to 60 KB. Include the updated you last read; omit it only for the first write.",
     method: "POST",
     path: "/api/workout-schedule",
     bodyLimit: 65_536,
@@ -67,6 +69,9 @@ export const workoutOperations = [
     handler(input, context) {
       const person = operationPerson(context);
       const { updated, ...document } = input;
+      // Leaves room for the updated stamp and the MCP envelope, so a stored copy can always be sent back.
+      if (Buffer.byteLength(JSON.stringify(document)) > documentLimit)
+        throw new OperationError(413, "schedule_too_large");
       const schedule = writeTransaction(context.database, () => {
         const stored = selectWorkoutSchedule(context.database, {
           user_id: person.id,

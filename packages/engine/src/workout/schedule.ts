@@ -1,7 +1,7 @@
 import { z as zod } from "zod";
-import { supportedZone } from "../calendar/time.ts";
 
-const text = (max: number) => zod.string().min(1).max(max);
+const text = (max: number) =>
+  zod.string().max(max).regex(/\S/, "must not be blank");
 const sessionKey = zod
   .string()
   .regex(/^[a-z0-9]+(_[a-z0-9]+)*$/)
@@ -55,13 +55,14 @@ export const scheduleDocument = zod
     updated: zod.iso.datetime().optional(),
     updated_by: text(80).optional(),
     timezone: text(64).refine((zone) => {
+      if (/^(UTC|GMT)?[+-]\d/i.test(zone)) return false;
       try {
-        supportedZone(zone);
+        new Intl.DateTimeFormat("en", { timeZone: zone });
         return true;
       } catch {
         return false;
       }
-    }, "timezone is not a supported IANA zone"),
+    }, "timezone is not an IANA zone"),
     week: zod.strictObject(
       Object.fromEntries(weekdays.map((day) => [day, weekDay])) as Record<
         (typeof weekdays)[number],
@@ -93,8 +94,15 @@ export const scheduleDocument = zod
     });
     for (const day of weekdays) {
       const entry = document.week[day];
-      if (entry.kind === "lift" && !groupKeys(document, entry.session).length)
+      if (entry.kind !== "lift") continue;
+      const keys = groupKeys(document, entry.session);
+      if (!keys.length)
         refuse(["week", day, "session"], `unknown session ${entry.session}`);
+      else if (
+        !keys.includes(entry.session) &&
+        !document.rotation.some((key) => keys.includes(key))
+      )
+        refuse(["week", day, "session"], `no ${entry.session} in rotation`);
     }
   });
 
@@ -164,5 +172,7 @@ function pickSession(document: ScheduleDocument, name: string): string {
   const keys = groupKeys(document, name);
   if (document.next_session && keys.includes(document.next_session))
     return document.next_session;
-  return document.rotation.find((key) => keys.includes(key)) ?? keys[0] ?? name;
+  const next = document.rotation.find((key) => keys.includes(key));
+  if (!next) throw new Error("Schedule group missing from rotation");
+  return next;
 }

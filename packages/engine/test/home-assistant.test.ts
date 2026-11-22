@@ -491,10 +491,16 @@ test("the workout sensor shows no schedule, then today's session after a replace
     admin.user.timezone,
     admin.user.day_start_hour,
   ).end.getTime();
+  const day = async () =>
+    (await send(admin.request, "/api/workout-schedule/today", undefined, "GET"))
+      .today.day;
+  clock.now().setTime(dayEnd - 1);
+  assert.equal(await day(), "2026-01-01");
   clock.now().setTime(dayEnd);
   for (const timer of [...clock.timers])
     if (timer.at <= dayEnd) timer.callback();
   await harness.settle((now) => sensor(now)?.state === "Push B");
+  assert.equal(await day(), "2026-01-02");
   assert.equal(sensor(await harness.retained()).today.source, "planned");
 });
 

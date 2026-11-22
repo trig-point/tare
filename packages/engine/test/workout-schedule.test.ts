@@ -27,6 +27,8 @@ test("replace then read returns the same document, and a stale updated is refuse
   const { replace, read, today, database } = await setup(context);
   assert.deepEqual(await read(), { status: 200, schedule: null });
   assert.deepEqual(await today(), { status: 200, today: null });
+  const early = { ...exampleSchedule(), updated: "2026-01-01T00:00:00.000Z" };
+  assert.equal((await replace(early)).status, 409);
   const first = await replace({
     ...exampleSchedule(),
     updated_by: "example-coach",
@@ -147,6 +149,13 @@ test("a malformed document is refused over HTTP and MCP and nothing is stored", 
       { week: { ...week, mon: { kind: "lift", session: "pu" } } },
     ],
     ["missing weekday", { week: { ...week, sun: undefined } }],
+    [
+      "blank label",
+      { week: { ...week, fri: { kind: "rest", label: " \t " } } },
+    ],
+    ["group outside rotation", { rotation: ["legs_a"], next_session: null }],
+    ["Windows zone name", { timezone: "Eastern Standard Time" }],
+    ["fixed offset zone", { timezone: "+05:30" }],
   ];
   for (const [name, overrides] of cases) {
     const body = exampleSchedule(overrides);
@@ -155,13 +164,26 @@ test("a malformed document is refused over HTTP and MCP and nothing is stored", 
       body: JSON.stringify(body),
     });
     assert.equal(response.status, 400, name);
-    assert.equal((await response.json()).error.code, "invalid_request", name);
+    const { error } = await response.json();
+    assert.equal(error.code, "invalid_request", name);
     const tool = await client.callTool({
       name: "replace_workout_schedule",
       arguments: body,
     });
     assert.equal(tool.isError, true, name);
+    const [content] = tool.content as { text: string }[];
+    assert.ok(content?.text.includes(error.issues[0]), name);
   }
+  const extra = { name: "Example extra", where: "home", note: "x".repeat(200) };
+  const sessions: Record<string, unknown> = { ...exampleSchedule().sessions };
+  for (let index = 0; JSON.stringify(sessions).length <= 60_000; index++)
+    sessions[`extra_${index}`] = { ...extra, movements: [] };
+  const large = await setup.admin.request("/api/workout-schedule", {
+    method: "POST",
+    body: JSON.stringify(exampleSchedule({ sessions })),
+  });
+  assert.equal(large.status, 413);
+  assert.equal((await large.json()).error.code, "schedule_too_large");
   const read = await client.callTool({
     name: "read_workout_schedule",
     arguments: {},
