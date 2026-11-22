@@ -68,6 +68,7 @@ export function AddFood({ person, replay, online }: Props) {
   const barcode = useMutation({ mutationFn: lookupBarcode, retry: 0 });
   const probe = useQuery({ ...photoProbeQuery(person.id), enabled: online });
   const photo = (probe.data ?? savedPhotoProbe(person.id)) !== false;
+  const shown = !photo && tab === "photo" ? "search" : tab;
   const searched = lookup.variables === term ? lookup : undefined;
   const choices = mergeChoices(
     matchingFoods(usualList ?? [], term),
@@ -101,7 +102,7 @@ export function AddFood({ person, replay, online }: Props) {
         </h1>
       </div>
       <Tabs
-        value={tab}
+        value={shown}
         onValueChange={(next) => {
           setTab(next);
           setManual(null);
@@ -113,7 +114,7 @@ export function AddFood({ person, replay, online }: Props) {
           variant="line"
           className="w-full border-b border-border p-0 group-data-[orientation=horizontal]/tabs:h-auto"
         >
-          {["Search", "Scan", "Quick add", ...(photo ? ["Photo"] : [])].map(
+          {["Search", "Scan", ...(photo ? ["Photo"] : []), "Quick add"].map(
             (title) => (
               <TabsTrigger
                 key={title}
@@ -230,7 +231,12 @@ export function AddFood({ person, replay, online }: Props) {
             forceMount
             className={cn(panel, "data-[state=inactive]:hidden")}
           >
-            <PhotoMeal person={person} online={online} onLogged={setLogged} />
+            <PhotoMeal
+              person={person}
+              online={online}
+              active={shown === "photo"}
+              onLogged={setLogged}
+            />
           </TabsContent>
         )}
       </Tabs>
@@ -250,7 +256,7 @@ export function AddFood({ person, replay, online }: Props) {
       <output aria-live="polite" className={cn(hint, "min-h-5")}>
         {logged}
       </output>
-      {!online && tab !== "photo" && (
+      {!online && shown !== "photo" && (
         <p className={hint}>Logs send when you reconnect.</p>
       )}
     </section>

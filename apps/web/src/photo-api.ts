@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ApiError, api } from "./api.ts";
+import { clientId } from "./outbox-store.ts";
 
 export const photoPath = "/api/photo/estimate";
 export const maxPhotoBytes = 5 * 1024 * 1024;
@@ -98,7 +99,7 @@ export function photoProbeQuery(person: number) {
       }
       return available;
     },
-    staleTime: Number.POSITIVE_INFINITY,
+    staleTime: 5 * 60_000,
     retry: 0,
   };
 }
@@ -145,6 +146,8 @@ export async function addSourceFood(fdcId: number) {
 export type ReviewPart = {
   key: string;
   name: string;
+  /** The name the current candidates were searched for. */
+  searchedName: string;
   searchQuery: string;
   grams: string;
   low: number;
@@ -154,8 +157,9 @@ export type ReviewPart = {
 
 export function reviewParts(parts: EstimatedPart[]): ReviewPart[] {
   return parts.map((part) => ({
-    key: crypto.randomUUID(),
+    key: clientId(crypto),
     name: part.name,
+    searchedName: part.name,
     searchQuery: part.search_query,
     grams: String(part.grams),
     low: part.grams_low,
@@ -179,27 +183,36 @@ export function canLog(parts: ReviewPart[]) {
   );
 }
 
-/**
- * Adds each picked food to the source cache, then logs the meal. The estimate's
- * range is kept only while it still brackets the grams sent.
- */
-export async function logMeal(clientId: string, parts: ReviewPart[]) {
+/** Grams as sent, with the estimate's range only while it still brackets them. */
+function amounts(part: ReviewPart) {
+  const grams = partGrams(part) as number;
+  return part.low <= grams && grams <= part.high
+    ? { grams, grams_low: part.low, grams_high: part.high }
+    : { grams };
+}
+
+/** Identifies the meal as it would be sent, so only an identical retry reuses a client id. */
+export function mealKey(parts: ReviewPart[]) {
+  return JSON.stringify(
+    parts.map((part) => [
+      part.pick?.fdc_id,
+      partGrams(part) === null ? part.grams : amounts(part),
+    ]),
+  );
+}
+
+/** Adds each picked food to the source cache, then logs the meal. */
+export async function logMeal(mealId: string, parts: ReviewPart[]) {
   if (!canLog(parts)) throw new Error("Incomplete meal");
   const ids = await Promise.all(
     parts.map((part) => addSourceFood((part.pick as Candidate).fdc_id)),
   );
   const body = {
-    client_id: clientId,
-    parts: parts.map((part, index) => {
-      const grams = partGrams(part) as number;
-      return {
-        source_food_id: ids[index],
-        grams,
-        ...(part.low <= grams && grams <= part.high
-          ? { grams_low: part.low, grams_high: part.high }
-          : {}),
-      };
-    }),
+    client_id: mealId,
+    parts: parts.map((part, index) => ({
+      source_food_id: ids[index],
+      ...amounts(part),
+    })),
   };
   return mealSchema.parse(
     await api("/api/intake/meal-parts", {
@@ -209,17 +222,19 @@ export async function logMeal(clientId: string, parts: ReviewPart[]) {
   ).entries.length;
 }
 
-/** The photo as sent: an accepted type under 5 MiB, otherwise a smaller JPEG. */
+/** The photo as sent: an accepted type under 5 MiB, otherwise a smaller JPEG. An undecodable file is rejected with 415. */
 export async function photoToSend(file: Blob): Promise<Blob> {
   if (photoTypes.includes(file.type) && file.size <= maxPhotoBytes) return file;
-  const bitmap = await createImageBitmap(file);
+  const bitmap = await createImageBitmap(file).catch(() => {
+    throw new ApiError(415, "unsupported_media_type");
+  });
   try {
     for (const side of [2048, 1600, 1200]) {
       const scale = Math.min(1, side / Math.max(bitmap.width, bitmap.height));
       const blob = await drawJpeg(
         bitmap,
-        Math.round(bitmap.width * scale),
-        Math.round(bitmap.height * scale),
+        Math.max(1, Math.round(bitmap.width * scale)),
+        Math.max(1, Math.round(bitmap.height * scale)),
       );
       if (blob.size <= maxPhotoBytes) return blob;
     }

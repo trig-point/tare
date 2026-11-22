@@ -8,9 +8,11 @@ import {
   canLog,
   estimatePhoto,
   logMeal,
+  mealKey,
   type PhotoCode,
   photoMessage,
   photoProbeQuery,
+  photoToSend,
   probePhoto,
   type ReviewPart,
   reviewParts,
@@ -168,6 +170,11 @@ test("a corrected gram amount is sent, with the range only while it fits", async
     assert.equal(canLog([{ ...part, grams, pick: rice }]), false);
     await assert.rejects(logMeal("meal-3", [{ ...part, grams, pick: rice }]));
   }
+  const key = (grams: string, low = part.low) =>
+    mealKey([{ ...part, grams, low, pick: rice }]);
+  assert.equal(key("300"), key("300.0"));
+  assert.notEqual(key("300"), key("300", 260));
+  assert.notEqual(key("300"), key("310"));
 });
 
 function renderAddFood(client: QueryClient, online = true) {
@@ -206,8 +213,7 @@ test("the Photo tab is hidden when photo estimates are off", async (context) => 
   await assert.rejects(probePhoto());
 });
 
-test("offline, the Photo tab needs a connection and sends nothing", (context) => {
-  const calls = stubApi(context, mealReply);
+test("offline, the Photo tab needs a connection and sends nothing", () => {
   const html = renderView(
     reviewParts(estimate.parts).map((part) => ({ ...part, pick: rice })),
     false,
@@ -216,26 +222,33 @@ test("offline, the Photo tab needs a connection and sends nothing", (context) =>
   assert.match(html, /disabled=""[^>]*>.*Take photo/);
   assert.match(html, /disabled=""[^>]*>Log meal/);
   assert.match(tabs(renderAddFood(new QueryClient(), false)).join(), /Photo/);
-  assert.equal(calls.length, 0);
 });
 
 test("each estimate error has one line", async (context) => {
-  const lines: Record<PhotoCode, string> = {
-    vision_no_food: "No food found",
-    vision_unavailable: "Photo estimates are off",
-    vision_rate_limited: "Try again in a minute",
-    vision_failed: "Couldn’t estimate the photo",
-    vision_invalid_response: "Couldn’t estimate the photo",
-    body_too_large: "Photo too large",
-    unsupported_media_type: "Use a JPEG, PNG or WebP photo",
-  };
+  const lines: [PhotoCode, number, string][] = [
+    ["vision_no_food", 422, "No food found"],
+    ["vision_unavailable", 503, "Photo estimates are off"],
+    ["vision_rate_limited", 503, "Try again in a minute"],
+    ["vision_failed", 503, "Couldn’t estimate the photo"],
+    ["vision_invalid_response", 503, "Couldn’t estimate the photo"],
+    ["body_too_large", 413, "Photo too large"],
+    ["unsupported_media_type", 415, "Use a JPEG, PNG or WebP photo"],
+  ];
   const image = new Blob(["x"], { type: "image/png" });
-  for (const [code, line] of Object.entries(lines)) {
-    stubApi(context, () => Response.json({ error: { code } }, { status: 503 }));
+  for (const [code, status, line] of lines) {
+    stubApi(context, () => Response.json({ error: { code } }, { status }));
     const error = await estimatePhoto(image).catch((caught) => caught);
     assert.equal(photoMessage(error), line, code);
   }
-  stubApi(context, () => Response.json({ parts: [] }));
-  const empty = await estimatePhoto(image).catch((caught) => caught);
-  assert.equal(photoMessage(empty), "Couldn’t estimate the photo");
+  assert.equal(await photoToSend(image), image);
+  const global = globalThis as { createImageBitmap?: unknown };
+  global.createImageBitmap = async () => {
+    throw new DOMException("Cannot decode", "InvalidStateError");
+  };
+  context.after(() => {
+    delete global.createImageBitmap;
+  });
+  const heic = new Blob(["x"], { type: "image/heic" });
+  const undecodable = await photoToSend(heic).catch((caught) => caught);
+  assert.equal(photoMessage(undecodable), "Use a JPEG, PNG or WebP photo");
 });

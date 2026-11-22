@@ -8,12 +8,14 @@ import {
   type ScanProblem,
   scanMessages,
 } from "./barcode.ts";
+import { clientId } from "./outbox-store.ts";
 import {
   type Candidate,
   canLog,
   drawJpeg,
   estimatePhoto,
   logMeal,
+  mealKey,
   photoMessage,
   photoToSend,
   type ReviewPart,
@@ -32,37 +34,41 @@ const enter =
 type Props = {
   person: Session["user"];
   online: boolean;
+  active: boolean;
   onLogged: (message: string) => void;
 };
 
-export function PhotoMeal({ person, online, onLogged }: Props) {
+export function PhotoMeal({ person, online, active, onLogged }: Props) {
   const client = useQueryClient();
   const [camera, setCamera] = useState(false);
   const [problem, setProblem] = useState<ScanProblem | null>(null);
   const [parts, setParts] = useState<ReviewPart[]>([]);
   const video = useRef<HTMLVideoElement>(null);
   // Held only until the estimate request starts, so no photo stays in memory.
-  const photo = useRef<Blob | null>(null);
+  const photo = useRef<Blob | Promise<Blob> | null>(null);
   const sent = useRef<{ key: string; id: string } | null>(null);
+  const cameraOn = camera && active;
 
   const estimate = useMutation({
+    networkMode: "always",
     retry: 0,
     mutationFn: async () => {
       const image = photo.current;
       photo.current = null;
       if (!image) throw new Error("No photo");
-      return estimatePhoto(await photoToSend(image));
+      if (!online || !navigator.onLine) throw new Error("Offline");
+      return estimatePhoto(await photoToSend(await image));
     },
     onSuccess: (proposed) => setParts(reviewParts(proposed)),
   });
   const log = useMutation({
+    networkMode: "always",
     retry: 0,
     mutationFn: () => {
-      const key = JSON.stringify(
-        parts.map((part) => [part.pick?.fdc_id, part.grams]),
-      );
+      if (!online || !navigator.onLine) throw new Error("Offline");
+      const key = mealKey(parts);
       if (sent.current?.key !== key)
-        sent.current = { key, id: crypto.randomUUID() };
+        sent.current = { key, id: clientId(crypto) };
       return logMeal(sent.current.id, parts);
     },
     onSuccess: async (count) => {
@@ -74,22 +80,32 @@ export function PhotoMeal({ person, online, onLogged }: Props) {
     },
   });
 
-  const send = (image: Blob) => {
+  const send = (image: Blob | Promise<Blob>) => {
     photo.current = image;
+    sent.current = null;
+    setCamera(false);
     setParts([]);
     log.reset();
     estimate.mutate();
   };
 
   useEffect(() => {
-    if (!camera) return;
+    if (!active) setCamera(false);
+  }, [active]);
+
+  useEffect(() => {
+    if (!cameraOn) return;
     let stopped = false;
     let stream: MediaStream | null = null;
+    const element = video.current;
     (async () => {
       try {
         stream = await navigator.mediaDevices.getUserMedia(cameraConstraints);
-        const element = video.current;
-        if (stopped || !element) return;
+        // A stream granted after the camera closed is stopped here, since cleanup already ran.
+        if (stopped || !element) {
+          for (const track of stream.getTracks()) track.stop();
+          return;
+        }
         element.srcObject = stream;
         await element.play();
       } catch (error) {
@@ -101,13 +117,14 @@ export function PhotoMeal({ person, online, onLogged }: Props) {
     return () => {
       stopped = true;
       for (const track of stream?.getTracks() ?? []) track.stop();
+      if (element) element.srcObject = null;
     };
-  }, [camera]);
+  }, [cameraOn]);
 
   return (
     <PhotoView
       online={online}
-      camera={camera}
+      camera={cameraOn}
       problem={problem}
       estimating={estimate.isPending}
       estimateError={estimate.isError ? photoMessage(estimate.error) : null}
@@ -120,21 +137,13 @@ export function PhotoMeal({ person, online, onLogged }: Props) {
         setCamera(true);
       }}
       closeCamera={() => setCamera(false)}
-      capture={async () => {
+      capture={() => {
         const element = video.current;
         if (!element?.videoWidth) return;
-        const frame = await drawJpeg(
-          element,
-          element.videoWidth,
-          element.videoHeight,
-        );
-        setCamera(false);
-        send(frame);
+        // The frame is drawn before the camera stops; only its encoding is awaited.
+        send(drawJpeg(element, element.videoWidth, element.videoHeight));
       }}
-      pick={(file) => {
-        setCamera(false);
-        send(file);
-      }}
+      pick={send}
       change={(key, next) =>
         setParts((current) =>
           current.map((part) =>
@@ -303,8 +312,8 @@ function PartRow({
   });
   const search = () => {
     const term = part.name.trim();
-    if (term && term !== part.searchQuery.trim())
-      change({ searchQuery: term, pick: null });
+    if (term && term !== part.searchedName.trim())
+      change({ searchedName: term, searchQuery: term, pick: null });
   };
   return (
     <li className="grid gap-3 rounded-(--radius) border border-border bg-surface p-3">
@@ -334,7 +343,6 @@ function PartRow({
           <Input
             id={`grams-${part.key}`}
             type="number"
-            min="1"
             step="any"
             inputMode="decimal"
             required
@@ -394,7 +402,7 @@ function Candidates({
     return (
       <div
         aria-hidden="true"
-        className="h-[104px] motion-safe:animate-pulse rounded-md bg-bg-sunk"
+        className="h-[252px] motion-safe:animate-pulse rounded-md bg-bg-sunk"
       />
     );
   if (state instanceof Error)
