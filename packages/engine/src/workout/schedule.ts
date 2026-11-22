@@ -100,7 +100,7 @@ export const scheduleDocument = zod
 
 export type ScheduleDocument = zod.output<typeof scheduleDocument>;
 
-// A week lift day names a session key, or a group: the text before a key's first underscore.
+// A week lift day names a session key or a group: the text before a key's first underscore.
 function groupKeys(
   document: Pick<ScheduleDocument, "sessions">,
   name: string,
