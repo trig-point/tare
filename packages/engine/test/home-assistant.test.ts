@@ -23,6 +23,10 @@ import {
 import { createHomeAssistantPublisher } from "../src/home-assistant/publisher.ts";
 import { sensorProvider } from "../src/home-assistant/snapshot.ts";
 import { targetEventProvider } from "../src/home-assistant/target-event.ts";
+import {
+  workoutProvider,
+  workoutTopic,
+} from "../src/home-assistant/workout.ts";
 import { listPeople } from "../src/queries/home-assistant/list-people.ts";
 import { createTargetRecomputeJob } from "../src/target/job.ts";
 import { profile, seed } from "./support/adaptive-seed.ts";
@@ -32,6 +36,7 @@ import { orderMeal } from "./support/order-meals.ts";
 import { planDay } from "./support/plan-day.ts";
 import { disabledStock } from "./support/stock.ts";
 import { twoUsers } from "./support/two-users.ts";
+import { exampleSchedule } from "./support/workout-schedule.ts";
 
 type Retained = Map<string, string>;
 type SensorConfig = Record<string, string> & {
@@ -455,6 +460,42 @@ test("the next-slot refresh lands on the true slot end across clock changes", as
     const output = provider(person, { state: "", events: "" });
     assert.equal(output.refreshAt?.toISOString(), end);
   }
+});
+
+test("the workout sensor shows no schedule, then today's session after a replace and the next day's at day end", async (context) => {
+  const harness = await setup(context);
+  const { admin, database, install, clock, publisher, send } = harness;
+  publisher.addProvider(workoutProvider(database, clock));
+  const topic = workoutTopic(install, admin.user.id);
+  const sensor = (now: Retained) => JSON.parse(now.get(topic) ?? "null");
+  const config = `homeassistant/sensor/tare_${install}_${admin.user.id}/workout_today/config`;
+  await harness.settle(
+    (now) => now.has(config) && sensor(now)?.state === "No schedule",
+  );
+  assert.deepEqual(sensor(await harness.retained()), {
+    state: "No schedule",
+    today: null,
+    week: null,
+  });
+  assert.equal(
+    JSON.parse(`${(await harness.retained()).get(config)}`).default_entity_id,
+    `sensor.tare_${admin.user.username.replace("-", "_")}_workout_today`,
+  );
+  await send(admin.request, "/api/workout-schedule", exampleSchedule());
+  await harness.settle((now) => sensor(now)?.state === "Legs A");
+  const replaced = sensor(await harness.retained());
+  assert.equal(replaced.today.day, "2026-01-01");
+  assert.deepEqual(replaced.week, exampleSchedule().week);
+  const dayEnd = personDayBounds(
+    "2026-01-01",
+    admin.user.timezone,
+    admin.user.day_start_hour,
+  ).end.getTime();
+  clock.now().setTime(dayEnd);
+  for (const timer of [...clock.timers])
+    if (timer.at <= dayEnd) timer.callback();
+  await harness.settle((now) => sensor(now)?.state === "Push B");
+  assert.equal(sensor(await harness.retained()).today.source, "planned");
 });
 
 test("a recompute that changes a target fires one event and sets the TDEE sensor, per person", async (context) => {
