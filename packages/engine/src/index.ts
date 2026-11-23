@@ -22,6 +22,7 @@ import { workoutProvider } from "./home-assistant/workout.ts";
 import { createOrderEmailParseJob } from "./inbound/job.ts";
 import { createOrderQuestionKinds } from "./inbound/questions.ts";
 import { createJobRunner } from "./jobs.ts";
+import { generateAll } from "./medications/store.ts";
 import { createOrderMaintenanceJob } from "./orders/maintenance.ts";
 import { createOura } from "./oura/service.ts";
 import { createOuraSyncJob } from "./oura/sync.ts";
@@ -122,6 +123,7 @@ async function startEngine(scaleUsers: Map<string, number> | null) {
     now: clock.now().toISOString(),
   });
   const dummyHash = await hashPassword(randomBytes(32).toString("base64url"));
+  generateAll(connection.database, clock.now());
   const homeAssistant = config.mqtt
     ? createHomeAssistantPublisher({
         database: connection.database,
@@ -216,6 +218,15 @@ async function startEngine(scaleUsers: Map<string, number> | null) {
       onFinished: () => homeAssistant?.refreshAll(),
     }),
   );
+  runner.register({
+    name: "medication-dose-generation",
+    schedule: "0 * * * *",
+    run() {
+      if (generateAll(connection.database, clock.now()))
+        homeAssistant?.refreshAll();
+      return "medication_doses_generated";
+    },
+  });
   runner.register(calendar.job);
   calendar.start();
   if (config.grocy) runner.register(pantry.job);
