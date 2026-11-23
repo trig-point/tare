@@ -5,6 +5,7 @@ export type ListMedicationsResult = {
   name: string;
   active: number;
   late_after_minutes: number;
+  active_since: string;
   generated_until: string;
 };
 
@@ -24,7 +25,8 @@ function mapArrayToListMedicationsResult(data: any) {
     name: data[1],
     active: data[2],
     late_after_minutes: data[3],
-    generated_until: data[4],
+    active_since: data[4],
+    generated_until: data[5],
   };
   return result;
 }

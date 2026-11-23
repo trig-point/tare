@@ -87,7 +87,7 @@ export function readDose(
 export function nextSlot(
   revisions: ListRevisionsResult[],
   after: string,
-  exclude?: ListDosesResult,
+  exclude?: Parameters<typeof slotKey>[0],
 ) {
   const start = exclude ? after : new Date(Date.parse(after) + 1).toISOString();
   const until = new Date(Date.parse(start) + horizonMs).toISOString();
@@ -115,8 +115,9 @@ function upcomingPlan(
 ) {
   const occupied = new Set(doses.map(slotKey));
   let cursor = after;
+  let exclude: Parameters<typeof slotKey>[0] | undefined;
   for (;;) {
-    const slot = nextSlot(revisions, cursor);
+    const slot = nextSlot(revisions, cursor, exclude);
     if (!slot) return null;
     const held = holdsOn(holds, tareDay(slot.slot_at, person));
     if (held[0]) {
@@ -124,6 +125,8 @@ function upcomingPlan(
         (latest, hold) => (hold.to_date > latest ? hold.to_date : latest),
         held[0].to_date,
       );
+      if (through >= "9999-12-16") return null;
+      exclude = undefined;
       const start = personDayBounds(
         shiftDay(through, 1),
         person.timezone,
@@ -132,6 +135,7 @@ function upcomingPlan(
       cursor = new Date(start.getTime() - 1).toISOString();
     } else if (occupied.has(slotKey(slot))) {
       cursor = slot.slot_at;
+      exclude = slot;
     } else {
       return {
         id: null,

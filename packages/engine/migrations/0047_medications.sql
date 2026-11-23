@@ -3,6 +3,7 @@ CREATE TABLE medications (
   name TEXT NOT NULL COLLATE NOCASE UNIQUE CHECK (length(trim(name)) > 0),
   active INTEGER NOT NULL CHECK (active IN (0, 1)),
   late_after_minutes INTEGER NOT NULL DEFAULT 60 CHECK (late_after_minutes >= 0),
+  active_since TEXT NOT NULL,
   generated_until TEXT NOT NULL
 ) STRICT;
 

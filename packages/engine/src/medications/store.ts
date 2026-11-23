@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Database } from "better-sqlite3";
 import { personDayBounds } from "../calendar/time.ts";
 import { writeTransaction } from "../db.ts";
-import { localDay } from "../logging/day.ts";
+import { localDay, shiftDay } from "../logging/day.ts";
 import { OperationError } from "../operations/registry.ts";
 import { deleteDose } from "../queries/medications/delete-dose.ts";
 import { endRevision } from "../queries/medications/end-revision.ts";
@@ -132,7 +132,12 @@ function replan(
   timezoneEdit: boolean,
 ) {
   for (const dose of listDoses(database, { medication_id: medication.id })) {
-    if (dose.status !== "scheduled" || dose.slot_at < start) continue;
+    if (
+      dose.status !== "scheduled" ||
+      dose.slot_at < start ||
+      (timezoneEdit && dose.slot_at === start)
+    )
+      continue;
     const candidate = plans.map((revision) => ({
       revision,
       instant: slotInstant(dose, revision.timezone),
@@ -157,7 +162,10 @@ function replan(
     } else if (
       !timezoneEdit ||
       !candidate.some(
-        ({ revision, instant }) => instant <= start && hasSlot(revision, dose),
+        ({ revision, instant }) =>
+          revision.effective_from === start &&
+          instant <= start &&
+          hasSlot(revision, dose),
       )
     ) {
       deleteDose(database, dose);
@@ -165,7 +173,7 @@ function replan(
   }
 }
 
-export function editTimezone(
+export function editDaySettings(
   database: Database,
   person: PersonDay,
   previous: PersonDay,
@@ -181,6 +189,7 @@ export function editTimezone(
       (revision) =>
         revision.effective_to === null && revision.effective_from > now,
     );
+    if (!pending && previous.timezone === person.timezone) continue;
     cancelPending(database, revisions, now);
     endRevision(database, { effective_to: now }, current);
     const pendingStart =
@@ -252,7 +261,9 @@ export function saveMedication(
     days: [...new Set(days)].sort(),
     times: [...new Set(times)].sort(),
   };
-  const data = { name, active, late_after_minutes };
+  const active_since =
+    stored && (stored.active || !active) ? stored.active_since : now;
+  const data = { name, active, late_after_minutes, active_since };
   if (!stored) {
     const medication = insertMedication(database, {
       ...data,
@@ -284,7 +295,7 @@ export function saveMedication(
     if (stored.active) {
       for (const dose of listDoses(database, { medication_id: stored.id })) {
         if (dose.status !== "scheduled") continue;
-        if (dose.scheduled_at > now) deleteDose(database, dose);
+        if (dose.slot_at > now) deleteDose(database, dose);
         else changeDose(database, dose, "skipped", null, "stopped");
       }
     }
@@ -292,11 +303,20 @@ export function saveMedication(
     append(database, stored.id, now, person.timezone, schedule);
     generated_until = now;
   } else if (active && changed) {
-    const next = personDayBounds(
-      tareDay(now, person),
+    let day = tareDay(now, person);
+    let next = personDayBounds(
+      day,
       person.timezone,
       person.day_start_hour,
     ).end.toISOString();
+    if (next <= now) {
+      day = shiftDay(day, 1);
+      next = personDayBounds(
+        day,
+        person.timezone,
+        person.day_start_hour,
+      ).end.toISOString();
+    }
     cancelPending(database, revisions, now);
     const current = revisions.find((revision) => covers(revision, now));
     if (!current) throw new Error("Missing current medication revision");

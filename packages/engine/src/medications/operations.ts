@@ -22,7 +22,7 @@ import {
   readDose,
   readMedication,
 } from "./read.ts";
-import { hasSlot, scheduleDays, scheduleTimes } from "./schedule.ts";
+import { hasSlot, scheduleDays, scheduleTimes, slotKey } from "./schedule.ts";
 import {
   changeDose,
   covers,
@@ -205,6 +205,7 @@ export const medicationOperations = [
                 throw conflict();
               const planned =
                 medication.active &&
+                dose.slot_at >= medication.active_since &&
                 revisions().some(
                   (revision) =>
                     covers(revision, dose.slot_at) && hasSlot(revision, dose),
@@ -234,7 +235,7 @@ export const medicationOperations = [
                   row.status === "scheduled" &&
                   (row.scheduled_at > dose.scheduled_at ||
                     (row.scheduled_at === dose.scheduled_at &&
-                      row.id > dose.id)),
+                      slotKey(row) > slotKey(dose))),
               );
               if (
                 target <= base ||

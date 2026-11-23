@@ -181,6 +181,8 @@ test("deactivation stops past doses, drops future doses and reactivation starts 
   const [past] = lane.doses(medication.id);
   assert.ok(past);
   lane.step("2026-01-01T10:00:00Z");
+  const snoozed = await lane.action("snooze", past.id, { minutes: 30 });
+  assert.equal(snoozed.status, 200);
   const off = await lane.save({
     id: medication.id,
     active: false,
@@ -188,7 +190,12 @@ test("deactivation stops past doses, drops future doses and reactivation starts 
   });
   assert.equal(off.medication.status, null);
   assert.deepEqual(lane.doses(medication.id), [
-    { ...past, status: "skipped", skip_reason: "stopped" },
+    {
+      ...past,
+      scheduled_at: snoozed.dose.scheduled_at,
+      status: "skipped",
+      skip_reason: "stopped",
+    },
   ]);
   assert.equal((await lane.action("log", past.id)).dose.status, "taken");
   assert.equal(
@@ -203,6 +210,11 @@ test("deactivation stops past doses, drops future doses and reactivation starts 
   assert.equal(
     lane.doses(medication.id)[1]?.slot_at,
     "2026-01-03T11:00:00.000Z",
+  );
+  assert.equal((await lane.action("log", past.id)).dose.status, "taken");
+  assert.equal(
+    (await lane.action("undo", past.id)).dose.skip_reason,
+    "stopped",
   );
 });
 
@@ -327,4 +339,56 @@ test("malformed medication commands return the same refusal over HTTP and MCP", 
     assert.ok(content);
     assert.deepEqual(JSON.parse(content.text), await response.json());
   }
+});
+
+test("changing the day start rebases a pending edit and removes its obsolete doses", async (context) => {
+  const lane = await setup(context);
+  const { medication } = await lane.save({
+    name: "Example Gems",
+    days: weekdays,
+    times: ["06:00"],
+  });
+  assert.equal(
+    (await lane.save({ id: medication.id, times: ["07:00"] })).status,
+    200,
+  );
+  assert.equal(
+    (
+      await lane.call(
+        "/api/me",
+        { timezone: "UTC", day_start_hour: 8 },
+        "PATCH",
+      )
+    ).status,
+    200,
+  );
+  const nextDay = lane
+    .doses(medication.id)
+    .filter((dose) => dose.slot_date === "2026-01-02");
+  assert.deepEqual(
+    nextDay.map((dose) => dose.slot_time),
+    ["06:00"],
+  );
+});
+
+test("a hold through the date limit keeps medication reads available", async (context) => {
+  const lane = await setup(context);
+  const { medication } = await lane.save({
+    name: "Example Pellets",
+    days: weekdays,
+    times: ["09:00"],
+  });
+  assert.equal(
+    (
+      await lane.call("/api/medications/holds/save", {
+        medication_id: medication.id,
+        from_date: "2026-01-01",
+        to_date: "9999-12-31",
+      })
+    ).status,
+    200,
+  );
+  const listed = await lane.call("/api/medications");
+  assert.equal(listed.status, 200);
+  assert.equal(listed.medications[0].status.next_dose, null);
 });

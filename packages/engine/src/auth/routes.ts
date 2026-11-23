@@ -6,7 +6,7 @@ import { type Config, validateTimezone } from "../config.ts";
 import { writeTransaction } from "../db.ts";
 import type { GroceryService } from "../grocery/flow.ts";
 import type { LookupAdapters } from "../lookup/index.ts";
-import { editTimezone } from "../medications/store.ts";
+import { editDaySettings } from "../medications/store.ts";
 import {
   defineOperation,
   OperationError,
@@ -123,8 +123,11 @@ export const authOperations = [
       const person = writeTransaction(context.database, () => {
         const [saved] = updateDaySettings(context.database, body, previous);
         if (!saved) throw new Error("Day settings save returned no row");
-        if (previous.timezone !== saved.timezone)
-          editTimezone(
+        if (
+          previous.timezone !== saved.timezone ||
+          previous.day_start_hour !== saved.day_start_hour
+        )
+          editDaySettings(
             context.database,
             saved,
             previous,
