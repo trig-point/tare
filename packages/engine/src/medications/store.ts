@@ -125,6 +125,73 @@ function cancelPending(database: Database, revisions: Revision[], now: string) {
   }
 }
 
+function plannedSlot(
+  plans: Revision[],
+  dose: ListDosesResult,
+  eligible: (instant: string) => boolean = () => true,
+) {
+  for (const revision of plans) {
+    if (!hasSlot(revision, dose)) continue;
+    const instant = slotInstant(dose, revision.timezone);
+    if (covers(revision, instant) && eligible(instant))
+      return { revision, instant };
+  }
+}
+
+function retainsSlotAtCutover(
+  revision: Revision,
+  dose: ListDosesResult,
+  start: string,
+) {
+  return (
+    revision.effective_from === start &&
+    hasSlot(revision, dose) &&
+    slotInstant(dose, revision.timezone) <= start
+  );
+}
+
+function applySlot(
+  database: Database,
+  dose: ListDosesResult,
+  slot: { revision: Revision; instant: string },
+  scheduled_at: string,
+) {
+  const timing = {
+    revision_id: slot.revision.id,
+    slot_at: slot.instant,
+    scheduled_at,
+  };
+  if (replanDose(database, timing, dose).changes !== 1)
+    throw new Error("Missing scheduled dose during replanning");
+  return { ...dose, ...timing };
+}
+
+export function undoDose(
+  database: Database,
+  medication: Medication,
+  dose: ListDosesResult,
+  now: string,
+) {
+  const plans = listRevisions(database, {
+    medication_id: medication.id,
+  }).filter(
+    (revision) => revision.effective_to === null || revision.effective_to > now,
+  );
+  const current = plans.find((revision) => covers(revision, now));
+  const plan =
+    medication.active &&
+    dose.slot_at >= medication.active_since &&
+    (plannedSlot(plans, dose) ??
+      (current &&
+      dose.slot_at > current.effective_from &&
+      retainsSlotAtCutover(current, dose, current.effective_from)
+        ? { revision: current, instant: slotInstant(dose, current.timezone) }
+        : undefined));
+  if (!plan) return changeDose(database, dose, "skipped", null, "stopped");
+  const updated = changeDose(database, dose, "scheduled");
+  return applySlot(database, updated, plan, plan.instant);
+}
+
 function replan(
   database: Database,
   medication: Medication,
@@ -139,38 +206,25 @@ function replan(
       (timezoneEdit && dose.slot_at === start)
     )
       continue;
-    const candidate = plans.map((revision) => ({
-      revision,
-      instant: slotInstant(dose, revision.timezone),
-    }));
-    const match = candidate.find(
-      ({ revision, instant }) =>
-        (!timezoneEdit || instant > start) &&
-        covers(revision, instant) &&
-        hasSlot(revision, dose),
+    const match = plannedSlot(
+      plans,
+      dose,
+      (instant) => !timezoneEdit || instant > start,
     );
     if (match) {
       const snoozed =
         match.instant === dose.slot_at && dose.scheduled_at > dose.slot_at;
       const next = snoozed && nextSlot(plans, match.instant, dose);
       const keepSnooze = snoozed && (!next || dose.scheduled_at < next.slot_at);
-      replanDose(
+      applySlot(
         database,
-        {
-          revision_id: match.revision.id,
-          slot_at: match.instant,
-          scheduled_at: keepSnooze ? dose.scheduled_at : match.instant,
-        },
         dose,
+        match,
+        keepSnooze ? dose.scheduled_at : match.instant,
       );
     } else if (
       !timezoneEdit ||
-      !candidate.some(
-        ({ revision, instant }) =>
-          revision.effective_from === start &&
-          instant <= start &&
-          hasSlot(revision, dose),
-      )
+      !plans.some((revision) => retainsSlotAtCutover(revision, dose, start))
     ) {
       deleteDose(database, dose);
     }

@@ -13,8 +13,8 @@ import { listDoses } from "../queries/medications/list-doses.ts";
 import { listHolds } from "../queries/medications/list-holds.ts";
 import { listMedications } from "../queries/medications/list-medications.ts";
 import { listRevisions } from "../queries/medications/list-revisions.ts";
-import { replanDose } from "../queries/medications/replan-dose.ts";
 import { shortenHold } from "../queries/medications/shorten-hold.ts";
+import { selectUser } from "../queries/select-user.ts";
 import {
   doseSchema,
   holdSchema,
@@ -22,21 +22,14 @@ import {
   readDose,
   readMedication,
 } from "./read.ts";
-import {
-  hasSlot,
-  nextSlot,
-  scheduleDays,
-  scheduleTimes,
-  slotInstant,
-  slotKey,
-} from "./schedule.ts";
+import { nextSlot, scheduleDays, scheduleTimes, slotKey } from "./schedule.ts";
 import {
   changeDose,
-  covers,
   generate,
   requireMedication,
   saveMedication,
   tareDay,
+  undoDose,
 } from "./store.ts";
 
 const shared = {
@@ -144,10 +137,12 @@ export const medicationOperations = [
     output: z.strictObject({ medication: medicationSchema }),
     handler(input, context) {
       const { database } = context;
-      const person = operationPerson(context);
-      const now = context.clock.now().toISOString();
+      const { id } = operationPerson(context);
       try {
         const medication = writeTransaction(database, () => {
+          const person = selectUser(database, { id });
+          if (!person) throw new OperationError(401, "unauthenticated");
+          const now = context.clock.now().toISOString();
           const savedId = saveMedication(database, person, now, input);
           return readMedication(
             database,
@@ -214,56 +209,7 @@ export const medicationOperations = [
             case "undo_dose": {
               if (dose.status !== "taken" && dose.skip_reason !== "user")
                 throw conflict();
-              const historical = dose.slot_at <= now;
-              const plan =
-                medication.active &&
-                dose.slot_at >= medication.active_since &&
-                revisions()
-                  .map((revision) => ({
-                    revision,
-                    instant: historical
-                      ? dose.slot_at
-                      : slotInstant(dose, revision.timezone),
-                  }))
-                  .find(
-                    ({ revision, instant }) =>
-                      covers(revision, instant) && hasSlot(revision, dose),
-                  );
-              if (!plan) {
-                updated = changeDose(
-                  database,
-                  dose,
-                  "skipped",
-                  null,
-                  "stopped",
-                );
-                break;
-              }
-              updated = changeDose(database, dose, "scheduled");
-              if (
-                plan.revision.id !== dose.revision_id ||
-                plan.instant !== dose.slot_at
-              ) {
-                const scheduled_at =
-                  plan.instant === dose.slot_at
-                    ? dose.scheduled_at
-                    : plan.instant;
-                replanDose(
-                  database,
-                  {
-                    revision_id: plan.revision.id,
-                    slot_at: plan.instant,
-                    scheduled_at,
-                  },
-                  dose,
-                );
-                updated = {
-                  ...updated,
-                  revision_id: plan.revision.id,
-                  slot_at: plan.instant,
-                  scheduled_at,
-                };
-              }
+              updated = undoDose(database, medication, dose, now);
               break;
             }
             case "snooze_dose": {
