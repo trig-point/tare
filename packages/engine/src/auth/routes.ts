@@ -3,8 +3,10 @@ import type { JWTVerifyGetKey } from "jose";
 import { z as zod } from "zod";
 import type { CalendarRefresher } from "../calendar/refresh.ts";
 import { type Config, validateTimezone } from "../config.ts";
+import { writeTransaction } from "../db.ts";
 import type { GroceryService } from "../grocery/flow.ts";
 import type { LookupAdapters } from "../lookup/index.ts";
+import { editDaySettings } from "../medications/store.ts";
 import {
   defineOperation,
   OperationError,
@@ -16,6 +18,7 @@ import type { PantryService } from "../pantry/service.ts";
 import type { ShoppingService } from "../pantry/shopping.ts";
 import { deleteSession } from "../queries/delete-session.ts";
 import { insertAccount } from "../queries/insert-account.ts";
+import { selectUser } from "../queries/select-user.ts";
 import { selectUserByUsername } from "../queries/select-user-by-username.ts";
 import { updateDaySettings } from "../queries/update-day-settings.ts";
 import type { QuestionKind } from "../questions/kinds.ts";
@@ -117,10 +120,24 @@ export const authOperations = [
       } catch {
         throw new OperationError(400, "invalid_request");
       }
-      const [person] = updateDaySettings(context.database, body, {
-        id: operationPerson(context).id,
+      const { id } = operationPerson(context);
+      const person = writeTransaction(context.database, () => {
+        const previous = selectUser(context.database, { id });
+        if (!previous) throw new OperationError(401, "unauthenticated");
+        const [saved] = updateDaySettings(context.database, body, previous);
+        if (!saved) throw new Error("Day settings save returned no row");
+        if (
+          previous.timezone !== saved.timezone ||
+          previous.day_start_hour !== saved.day_start_hour
+        )
+          editDaySettings(
+            context.database,
+            saved,
+            previous,
+            context.clock.now().toISOString(),
+          );
+        return saved;
       });
-      if (!person) throw new Error("Day settings save returned no row");
       context.calendar?.enqueue(person.id);
       return { status: 200, body: { user: toPublicUser(person) } };
     },

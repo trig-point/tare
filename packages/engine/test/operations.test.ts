@@ -127,6 +127,14 @@ test("registry constrains public and administrator operations and inventories ev
       "read_workout_schedule",
       "replace_workout_schedule",
       "today_workout",
+      "list_medications",
+      "save_medication",
+      "log_dose",
+      "skip_dose",
+      "undo_dose",
+      "snooze_dose",
+      "save_hold",
+      "delete_hold",
     ],
   );
   assert.deepEqual(
