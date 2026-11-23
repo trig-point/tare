@@ -13,16 +13,23 @@ import { listDoses } from "../queries/medications/list-doses.ts";
 import { listHolds } from "../queries/medications/list-holds.ts";
 import { listMedications } from "../queries/medications/list-medications.ts";
 import { listRevisions } from "../queries/medications/list-revisions.ts";
+import { replanDose } from "../queries/medications/replan-dose.ts";
 import { shortenHold } from "../queries/medications/shorten-hold.ts";
 import {
   doseSchema,
   holdSchema,
   medicationSchema,
-  nextSlot,
   readDose,
   readMedication,
 } from "./read.ts";
-import { hasSlot, scheduleDays, scheduleTimes, slotKey } from "./schedule.ts";
+import {
+  hasSlot,
+  nextSlot,
+  scheduleDays,
+  scheduleTimes,
+  slotInstant,
+  slotKey,
+} from "./schedule.ts";
 import {
   changeDose,
   covers,
@@ -192,7 +199,11 @@ export const medicationOperations = [
                 args.taken_at === undefined
                   ? now
                   : canonicalInstant(args.taken_at);
-              if (taken > now) throw new OperationError(400, "invalid_time");
+              if (
+                taken.length !== now.length ||
+                Date.parse(taken) > Date.parse(now)
+              )
+                throw new OperationError(400, "invalid_time");
               updated = changeDose(database, dose, "taken", taken);
               break;
             }
@@ -203,16 +214,56 @@ export const medicationOperations = [
             case "undo_dose": {
               if (dose.status !== "taken" && dose.skip_reason !== "user")
                 throw conflict();
-              const planned =
+              const historical = dose.slot_at <= now;
+              const plan =
                 medication.active &&
                 dose.slot_at >= medication.active_since &&
-                revisions().some(
-                  (revision) =>
-                    covers(revision, dose.slot_at) && hasSlot(revision, dose),
+                revisions()
+                  .map((revision) => ({
+                    revision,
+                    instant: historical
+                      ? dose.slot_at
+                      : slotInstant(dose, revision.timezone),
+                  }))
+                  .find(
+                    ({ revision, instant }) =>
+                      covers(revision, instant) && hasSlot(revision, dose),
+                  );
+              if (!plan) {
+                updated = changeDose(
+                  database,
+                  dose,
+                  "skipped",
+                  null,
+                  "stopped",
                 );
-              updated = planned
-                ? changeDose(database, dose, "scheduled")
-                : changeDose(database, dose, "skipped", null, "stopped");
+                break;
+              }
+              updated = changeDose(database, dose, "scheduled");
+              if (
+                plan.revision.id !== dose.revision_id ||
+                plan.instant !== dose.slot_at
+              ) {
+                const scheduled_at =
+                  plan.instant === dose.slot_at
+                    ? dose.scheduled_at
+                    : plan.instant;
+                replanDose(
+                  database,
+                  {
+                    revision_id: plan.revision.id,
+                    slot_at: plan.instant,
+                    scheduled_at,
+                  },
+                  dose,
+                );
+                updated = {
+                  ...updated,
+                  revision_id: plan.revision.id,
+                  slot_at: plan.instant,
+                  scheduled_at,
+                };
+              }
               break;
             }
             case "snooze_dose": {

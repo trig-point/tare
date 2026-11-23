@@ -157,8 +157,9 @@ test("timezone save moves future doses in place and retains a slot that moves to
     days: weekdays,
     times: ["09:00", "16:00"],
   });
-  const [crosses, future] = lane.doses(medication.id);
-  assert.ok(crosses && future);
+  const [crosses, future, resolved] = lane.doses(medication.id);
+  assert.ok(crosses && future && resolved);
+  assert.equal((await lane.action("skip", resolved.id)).status, 200);
   assert.equal((await lane.zone("Europe/Paris")).status, 200);
   const after = lane.doses(medication.id);
   assert.deepEqual(
@@ -168,6 +169,10 @@ test("timezone save moves future doses in place and retains a slot that moves to
   assert.equal(
     after.find((dose) => dose.id === future.id)?.slot_at,
     "2026-01-01T15:00:00.000Z",
+  );
+  assert.equal(
+    (await lane.action("undo", resolved.id)).dose.slot_at,
+    "2026-01-02T08:00:00.000Z",
   );
 });
 
@@ -281,6 +286,14 @@ test("dose transitions, snooze bounds and next dose use the stepped clock", asyn
   assert.equal(
     (await lane.action("log", first.id, { taken_at: "2026-01-01T11:00:00Z" }))
       .status,
+    400,
+  );
+  assert.equal(
+    (
+      await lane.action("log", first.id, {
+        taken_at: "9999-12-31T23:59:00-01:00",
+      })
+    ).status,
     400,
   );
   assert.equal(

@@ -15,7 +15,7 @@ import {
   type ListRevisionsResult,
   listRevisions,
 } from "../queries/medications/list-revisions.ts";
-import { expand, horizonMs, slotKey } from "./schedule.ts";
+import { nextSlot, slotKey } from "./schedule.ts";
 import { type PersonDay, tareDay } from "./store.ts";
 
 const instant = z.iso.datetime();
@@ -82,28 +82,6 @@ export function readDose(
     else if (dose.scheduled_at <= now) status = "due";
   }
   return { ...publicDose, status };
-}
-
-export function nextSlot(
-  revisions: ListRevisionsResult[],
-  after: string,
-  exclude?: Parameters<typeof slotKey>[0],
-) {
-  const start = exclude ? after : new Date(Date.parse(after) + 1).toISOString();
-  const until = new Date(Date.parse(start) + horizonMs).toISOString();
-  return revisions
-    .flatMap((revision) => expand(revision, start, until))
-    .filter(
-      (slot) =>
-        !exclude ||
-        (slotKey(slot) !== slotKey(exclude) &&
-          (slot.slot_at > after || slotKey(slot) > slotKey(exclude))),
-    )
-    .sort(
-      (left, right) =>
-        left.slot_at.localeCompare(right.slot_at) ||
-        slotKey(left).localeCompare(slotKey(right)),
-    )[0];
 }
 
 function upcomingPlan(

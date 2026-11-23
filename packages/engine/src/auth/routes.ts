@@ -18,6 +18,7 @@ import type { PantryService } from "../pantry/service.ts";
 import type { ShoppingService } from "../pantry/shopping.ts";
 import { deleteSession } from "../queries/delete-session.ts";
 import { insertAccount } from "../queries/insert-account.ts";
+import { selectUser } from "../queries/select-user.ts";
 import { selectUserByUsername } from "../queries/select-user-by-username.ts";
 import { updateDaySettings } from "../queries/update-day-settings.ts";
 import type { QuestionKind } from "../questions/kinds.ts";
@@ -119,8 +120,10 @@ export const authOperations = [
       } catch {
         throw new OperationError(400, "invalid_request");
       }
-      const previous = operationPerson(context);
+      const { id } = operationPerson(context);
       const person = writeTransaction(context.database, () => {
+        const previous = selectUser(context.database, { id });
+        if (!previous) throw new OperationError(401, "unauthenticated");
         const [saved] = updateDaySettings(context.database, body, previous);
         if (!saved) throw new Error("Day settings save returned no row");
         if (

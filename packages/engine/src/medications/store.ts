@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Database } from "better-sqlite3";
-import { personDayBounds } from "../calendar/time.ts";
+import { personDayBounds, wallTime } from "../calendar/time.ts";
 import { writeTransaction } from "../db.ts";
 import { localDay, shiftDay } from "../logging/day.ts";
 import { OperationError } from "../operations/registry.ts";
@@ -29,6 +29,7 @@ import {
   expand,
   hasSlot,
   horizonMs,
+  nextSlot,
   readSchedule,
   slotInstant,
 } from "./schedule.ts";
@@ -149,13 +150,16 @@ function replan(
         hasSlot(revision, dose),
     );
     if (match) {
+      const snoozed =
+        match.instant === dose.slot_at && dose.scheduled_at > dose.slot_at;
+      const next = snoozed && nextSlot(plans, match.instant, dose);
+      const keepSnooze = snoozed && (!next || dose.scheduled_at < next.slot_at);
       replanDose(
         database,
         {
           revision_id: match.revision.id,
           slot_at: match.instant,
-          scheduled_at:
-            match.instant === dose.slot_at ? dose.scheduled_at : match.instant,
+          scheduled_at: keepSnooze ? dose.scheduled_at : match.instant,
         },
         dose,
       );
@@ -189,7 +193,7 @@ export function editDaySettings(
       (revision) =>
         revision.effective_to === null && revision.effective_from > now,
     );
-    if (!pending && previous.timezone === person.timezone) continue;
+    if (!pending && current.timezone === person.timezone) continue;
     cancelPending(database, revisions, now);
     endRevision(database, { effective_to: now }, current);
     const pendingStart =
@@ -303,19 +307,18 @@ export function saveMedication(
     append(database, stored.id, now, person.timezone, schedule);
     generated_until = now;
   } else if (active && changed) {
-    let day = tareDay(now, person);
+    const day = tareDay(now, person);
     let next = personDayBounds(
       day,
       person.timezone,
       person.day_start_hour,
     ).end.toISOString();
     if (next <= now) {
-      day = shiftDay(day, 1);
-      next = personDayBounds(
-        day,
-        person.timezone,
-        person.day_start_hour,
-      ).end.toISOString();
+      const wallNow = wallTime(new Date(now), person.timezone).getTime();
+      const wallBoundary = Date.parse(
+        `${shiftDay(day, 1)}T${String(person.day_start_hour).padStart(2, "0")}:00:00.000Z`,
+      );
+      next = new Date(Date.parse(now) + wallBoundary - wallNow).toISOString();
     }
     cancelPending(database, revisions, now);
     const current = revisions.find((revision) => covers(revision, now));
