@@ -3,8 +3,10 @@ import type { JWTVerifyGetKey } from "jose";
 import { z as zod } from "zod";
 import type { CalendarRefresher } from "../calendar/refresh.ts";
 import { type Config, validateTimezone } from "../config.ts";
+import { writeTransaction } from "../db.ts";
 import type { GroceryService } from "../grocery/flow.ts";
 import type { LookupAdapters } from "../lookup/index.ts";
+import { editTimezone } from "../medications/store.ts";
 import {
   defineOperation,
   OperationError,
@@ -117,10 +119,19 @@ export const authOperations = [
       } catch {
         throw new OperationError(400, "invalid_request");
       }
-      const [person] = updateDaySettings(context.database, body, {
-        id: operationPerson(context).id,
+      const previous = operationPerson(context);
+      const person = writeTransaction(context.database, () => {
+        const [saved] = updateDaySettings(context.database, body, previous);
+        if (!saved) throw new Error("Day settings save returned no row");
+        if (previous.timezone !== saved.timezone)
+          editTimezone(
+            context.database,
+            saved,
+            previous,
+            context.clock.now().toISOString(),
+          );
+        return saved;
       });
-      if (!person) throw new Error("Day settings save returned no row");
       context.calendar?.enqueue(person.id);
       return { status: 200, body: { user: toPublicUser(person) } };
     },

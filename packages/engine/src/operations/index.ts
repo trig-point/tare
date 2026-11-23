@@ -8,6 +8,7 @@ import { groceryOperations } from "../grocery/operations.ts";
 import { inboundTokenOperations } from "../inbound/tokens.ts";
 import { loggingOperations } from "../logging/operations.ts";
 import { lookupOperations } from "../lookup/operations.ts";
+import { medicationOperations } from "../medications/operations.ts";
 import { orderOperations } from "../orders/operations.ts";
 import { ouraOperations } from "../oura/operations.ts";
 import { pantryOperations } from "../pantry/operations.ts";
@@ -43,6 +44,7 @@ export const operations: Operation[] = [
   ...pantryOperations,
   ...groceryOperations,
   ...workoutOperations,
+  ...medicationOperations,
 ];
 export const agentOperations = operations.filter(
   (operation) => operation.callerClass === "browser_and_agent",
