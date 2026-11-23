@@ -157,9 +157,8 @@ test("timezone save moves future doses in place and retains a slot that moves to
     days: weekdays,
     times: ["09:00", "16:00"],
   });
-  const [crosses, future, resolved] = lane.doses(medication.id);
-  assert.ok(crosses && future && resolved);
-  assert.equal((await lane.action("skip", resolved.id)).status, 200);
+  const [crosses, future] = lane.doses(medication.id);
+  assert.ok(crosses && future);
   assert.equal((await lane.zone("Europe/Paris")).status, 200);
   const after = lane.doses(medication.id);
   assert.deepEqual(
@@ -169,10 +168,6 @@ test("timezone save moves future doses in place and retains a slot that moves to
   assert.equal(
     after.find((dose) => dose.id === future.id)?.slot_at,
     "2026-01-01T15:00:00.000Z",
-  );
-  assert.equal(
-    (await lane.action("undo", resolved.id)).dose.slot_at,
-    "2026-01-02T08:00:00.000Z",
   );
 });
 
@@ -200,13 +195,10 @@ test("deactivation stops past doses, drops future doses and reactivation starts 
       scheduled_at: snoozed.dose.scheduled_at,
       status: "skipped",
       skip_reason: "stopped",
+      resolved_at: "2026-01-01T10:00:00.000Z",
     },
   ]);
   assert.equal((await lane.action("log", past.id)).dose.status, "taken");
-  assert.equal(
-    (await lane.action("undo", past.id)).dose.skip_reason,
-    "stopped",
-  );
   lane.step("2026-01-03T10:00:00Z");
   assert.equal(
     (await lane.save({ id: medication.id, active: true })).status,
@@ -215,11 +207,6 @@ test("deactivation stops past doses, drops future doses and reactivation starts 
   assert.equal(
     lane.doses(medication.id)[1]?.slot_at,
     "2026-01-03T11:00:00.000Z",
-  );
-  assert.equal((await lane.action("log", past.id)).dose.status, "taken");
-  assert.equal(
-    (await lane.action("undo", past.id)).dose.skip_reason,
-    "stopped",
   );
 });
 
@@ -408,59 +395,48 @@ test("a hold through the date limit keeps medication reads available", async (co
   assert.equal(listed.medications[0].status.next_dose, null);
 });
 
-test("undo uses the revised slot instant and drops snoozes", async (context) => {
+test("undo restores a recent resolution and refuses expired or inactive corrections", async (context) => {
   const lane = await setup(context);
   for (const scenario of [
+    { name: "Example Recent", action: "log", expected: null },
+    { name: "Example Expired", action: "skip", expected: "undo_expired" },
     {
-      name: "Example East",
-      zone: "Europe/Paris",
-      expected: "2026-01-01T08:00:00.000Z",
-    },
-    {
-      name: "Example West",
-      zone: "America/New_York",
-      expected: "2026-01-01T14:00:00.000Z",
-    },
-    {
-      name: "Example Earlier Slot",
-      zone: null,
-      expected: "2026-01-02T09:00:00.000Z",
+      name: "Example Inactive",
+      action: "skip",
+      expected: "medication_inactive",
     },
   ]) {
     lane.step("2026-01-01T08:00:00Z");
-    assert.equal((await lane.zone("UTC")).status, 200);
     const { medication } = await lane.save({
       name: scenario.name,
       days: weekdays,
-      times: ["09:00", "12:00"],
+      times: ["09:00"],
     });
-    const dose = lane.doses(medication.id)[scenario.zone ? 0 : 2];
+    const [dose] = lane.doses(medication.id);
     assert.ok(dose);
     assert.equal(
-      (await lane.action("snooze", dose.id, { minutes: 120 })).status,
+      (await lane.action("snooze", dose.id, { minutes: 10 })).status,
       200,
     );
-    assert.equal((await lane.action("skip", dose.id)).status, 200);
-    lane.step("2026-01-01T08:05:00Z");
-    if (scenario.zone) {
-      assert.equal((await lane.zone(scenario.zone)).status, 200);
-      if (scenario.zone === "America/New_York")
-        lane.step("2026-01-01T10:00:00Z");
-    } else {
+    const fields =
+      scenario.action === "log" ? { taken_at: "2025-12-30T08:00:00Z" } : {};
+    assert.equal(
+      (await lane.action(scenario.action, dose.id, fields)).status,
+      200,
+    );
+    if (scenario.expected === "undo_expired") lane.step("2026-01-02T08:00:01Z");
+    if (scenario.expected === "medication_inactive")
       assert.equal(
-        (await lane.save({ id: medication.id, times: ["09:00", "10:00"] }))
-          .status,
+        (await lane.save({ id: medication.id, active: false })).status,
         200,
       );
-    }
     const result = await lane.action("undo", dose.id);
-    assert.equal(result.status, 200, scenario.name);
-    assert.equal(result.dose.slot_at, scenario.expected, scenario.name);
-    assert.equal(result.dose.scheduled_at, scenario.expected, scenario.name);
-    assert.equal(result.dose.skip_reason, null, scenario.name);
-    assert.equal(
-      (await lane.save({ id: medication.id, active: false })).status,
-      200,
-    );
+    if (scenario.expected) {
+      assert.equal(result.status, 409);
+      assert.equal(result.error.code, scenario.expected);
+    } else {
+      assert.equal(result.status, 200);
+      assert.deepEqual(lane.doses(medication.id)[0], dose);
+    }
   }
 });

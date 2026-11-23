@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Database } from "better-sqlite3";
-import { personDayBounds, wallTime } from "../calendar/time.ts";
+import { calendarDayMs, personDayBounds, wallTime } from "../calendar/time.ts";
 import { writeTransaction } from "../db.ts";
 import { localDay, shiftDay } from "../logging/day.ts";
 import { OperationError } from "../operations/registry.ts";
@@ -172,24 +172,14 @@ export function undoDose(
   dose: ListDosesResult,
   now: string,
 ) {
-  const plans = listRevisions(database, {
-    medication_id: medication.id,
-  }).filter(
-    (revision) => revision.effective_to === null || revision.effective_to > now,
-  );
-  const current = plans.find((revision) => covers(revision, now));
-  const plan =
-    medication.active &&
-    dose.slot_at >= medication.active_since &&
-    (plannedSlot(plans, dose) ??
-      (current &&
-      dose.slot_at > current.effective_from &&
-      retainsSlotAtCutover(current, dose, current.effective_from)
-        ? { revision: current, instant: slotInstant(dose, current.timezone) }
-        : undefined));
-  if (!plan) return changeDose(database, dose, "skipped", null, "stopped");
-  const updated = changeDose(database, dose, "scheduled");
-  return applySlot(database, updated, plan, plan.instant);
+  if (!medication.active) throw new OperationError(409, "medication_inactive");
+  if (dose.status !== "taken" && dose.skip_reason !== "user")
+    throw new OperationError(409, "invalid_dose_state");
+  if (!dose.resolved_at) throw new Error("Missing dose resolution time");
+  const elapsed = Date.parse(now) - Date.parse(dose.resolved_at);
+  if (elapsed < 0 || elapsed > calendarDayMs)
+    throw new OperationError(409, "undo_expired");
+  return changeDose(database, dose, "scheduled", null, null, dose.slot_at);
 }
 
 function replan(
@@ -319,9 +309,7 @@ export function saveMedication(
     days: [...new Set(days)].sort(),
     times: [...new Set(times)].sort(),
   };
-  const active_since =
-    stored && (stored.active || !active) ? stored.active_since : now;
-  const data = { name, active, late_after_minutes, active_since };
+  const data = { name, active, late_after_minutes };
   if (!stored) {
     const medication = insertMedication(database, {
       ...data,
@@ -354,7 +342,16 @@ export function saveMedication(
       for (const dose of listDoses(database, { medication_id: stored.id })) {
         if (dose.status !== "scheduled") continue;
         if (dose.slot_at > now) deleteDose(database, dose);
-        else changeDose(database, dose, "skipped", null, "stopped");
+        else
+          changeDose(
+            database,
+            dose,
+            "skipped",
+            null,
+            "stopped",
+            dose.scheduled_at,
+            now,
+          );
       }
     }
   } else if (active && !stored.active) {
@@ -395,10 +392,11 @@ export function changeDose(
   taken_at: string | null = null,
   skip_reason: "user" | "stopped" | null = null,
   scheduled_at = dose.scheduled_at,
+  resolved_at: string | null = null,
 ) {
   const [updated] = updateDose(
     database,
-    { status, taken_at, skip_reason, scheduled_at },
+    { status, taken_at, skip_reason, scheduled_at, resolved_at },
     dose,
   );
   if (!updated) throw new Error("Missing updated dose");

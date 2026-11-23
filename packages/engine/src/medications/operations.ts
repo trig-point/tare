@@ -199,16 +199,30 @@ export const medicationOperations = [
                 Date.parse(taken) > Date.parse(now)
               )
                 throw new OperationError(400, "invalid_time");
-              updated = changeDose(database, dose, "taken", taken);
+              updated = changeDose(
+                database,
+                dose,
+                "taken",
+                taken,
+                null,
+                dose.scheduled_at,
+                dose.status === "taken" ? dose.resolved_at : now,
+              );
               break;
             }
             case "skip_dose":
               if (dose.status !== "scheduled") throw conflict();
-              updated = changeDose(database, dose, "skipped", null, "user");
+              updated = changeDose(
+                database,
+                dose,
+                "skipped",
+                null,
+                "user",
+                dose.scheduled_at,
+                now,
+              );
               break;
             case "undo_dose": {
-              if (dose.status !== "taken" && dose.skip_reason !== "user")
-                throw conflict();
               updated = undoDose(database, medication, dose, now);
               break;
             }

@@ -15,6 +15,7 @@ export type ListDosesResult = {
   scheduled_at: string;
   status: string;
   taken_at: string | null;
+  resolved_at: string | null;
   skip_reason: string | null;
 };
 
@@ -43,7 +44,8 @@ function mapArrayToListDosesResult(data: any) {
     scheduled_at: data[7],
     status: data[8],
     taken_at: data[9],
-    skip_reason: data[10],
+    resolved_at: data[10],
+    skip_reason: data[11],
   };
   return result;
 }

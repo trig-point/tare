@@ -4,7 +4,6 @@ export type UpdateMedicationData = {
   name: string;
   active: number;
   late_after_minutes: number;
-  active_since: string;
   generated_until: string;
 };
 
@@ -24,7 +23,7 @@ export function updateMedication(
   const sql = `
 	UPDATE medications
 	SET name = ?, active = ?, late_after_minutes = ?,
-	    active_since = ?, generated_until = ?
+	    generated_until = ?
 	WHERE id = ?
 	
 	`;
@@ -34,7 +33,6 @@ export function updateMedication(
       data.name,
       data.active,
       data.late_after_minutes,
-      data.active_since,
       data.generated_until,
       params.id,
     ]) as UpdateMedicationResult;

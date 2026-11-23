@@ -3,7 +3,6 @@ CREATE TABLE medications (
   name TEXT NOT NULL COLLATE NOCASE UNIQUE CHECK (length(trim(name)) > 0),
   active INTEGER NOT NULL CHECK (active IN (0, 1)),
   late_after_minutes INTEGER NOT NULL DEFAULT 60 CHECK (late_after_minutes >= 0),
-  active_since TEXT NOT NULL,
   generated_until TEXT NOT NULL
 ) STRICT;
 
@@ -30,7 +29,9 @@ CREATE TABLE medication_doses (
   scheduled_at TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'taken', 'skipped')),
   taken_at TEXT,
+  resolved_at TEXT,
   skip_reason TEXT CHECK (skip_reason IN ('user', 'stopped')),
+  CHECK ((status != 'scheduled') = (resolved_at IS NOT NULL)),
   CHECK ((status = 'taken') = (taken_at IS NOT NULL)),
   CHECK ((status = 'skipped') = (skip_reason IS NOT NULL)),
   UNIQUE (medication_id, slot_date, slot_time)

@@ -3,6 +3,7 @@ import type { Database } from "better-sqlite3";
 export type UpdateDoseData = {
   status: string;
   taken_at: string | null;
+  resolved_at: string | null;
   skip_reason: string | null;
   scheduled_at: string;
 };
@@ -22,6 +23,7 @@ export type UpdateDoseResult = {
   scheduled_at: string;
   status: string;
   taken_at: string | null;
+  resolved_at: string | null;
   skip_reason: string | null;
 };
 
@@ -32,7 +34,7 @@ export function updateDose(
 ): UpdateDoseResult[] {
   const sql = `
 	UPDATE medication_doses
-	SET status = ?, taken_at = ?, skip_reason = ?, scheduled_at = ?
+	SET status = ?, taken_at = ?, resolved_at = ?, skip_reason = ?, scheduled_at = ?
 	WHERE id = ?
 	RETURNING *
 	
@@ -43,6 +45,7 @@ export function updateDose(
     .all([
       data.status,
       data.taken_at,
+      data.resolved_at,
       data.skip_reason,
       data.scheduled_at,
       params.id,
@@ -63,7 +66,8 @@ function mapArrayToUpdateDoseResult(data: any) {
     scheduled_at: data[7],
     status: data[8],
     taken_at: data[9],
-    skip_reason: data[10],
+    resolved_at: data[10],
+    skip_reason: data[11],
   };
   return result;
 }

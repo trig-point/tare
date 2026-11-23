@@ -69,7 +69,11 @@ export function readDose(
   person: PersonDay,
   now: string,
 ) {
-  const { revision_id: _revision, ...publicDose } = dose;
+  const {
+    revision_id: _revision,
+    resolved_at: _resolution,
+    ...publicDose
+  } = dose;
   let status = state.parse(dose.status);
   if (status === "scheduled") {
     if (holdsOn(holds, tareDay(dose.scheduled_at, person)).length)
