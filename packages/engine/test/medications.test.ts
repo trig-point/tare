@@ -396,7 +396,6 @@ test("a hold through the date limit keeps medication reads available", async (co
 });
 
 test("undo restores a recent resolution and refuses expired or inactive corrections", async (context) => {
-  const lane = await setup(context);
   for (const scenario of [
     { name: "Example Recent", action: "log", expected: null },
     { name: "Example Expired", action: "skip", expected: "undo_expired" },
@@ -406,7 +405,7 @@ test("undo restores a recent resolution and refuses expired or inactive correcti
       expected: "medication_inactive",
     },
   ]) {
-    lane.step("2026-01-01T08:00:00Z");
+    const lane = await setup(context);
     const { medication } = await lane.save({
       name: scenario.name,
       days: weekdays,
@@ -430,6 +429,10 @@ test("undo restores a recent resolution and refuses expired or inactive correcti
         (await lane.save({ id: medication.id, active: false })).status,
         200,
       );
+    if (!scenario.expected) {
+      lane.step("2026-01-01T08:05:00Z");
+      assert.equal((await lane.zone("America/New_York")).status, 200);
+    }
     const result = await lane.action("undo", dose.id);
     if (scenario.expected) {
       assert.equal(result.status, 409);
