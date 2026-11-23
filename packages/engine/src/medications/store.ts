@@ -205,7 +205,8 @@ function replan(
       const snoozed =
         match.instant === dose.slot_at && dose.scheduled_at > dose.slot_at;
       const next = snoozed && nextSlot(plans, match.instant, dose);
-      const retainSnooze = snoozed && (!next || dose.scheduled_at < next.slot_at);
+      const retainSnooze =
+        snoozed && (!next || dose.scheduled_at < next.slot_at);
       applySlot(
         database,
         dose,
@@ -369,7 +370,9 @@ export function saveMedication(
       const localBoundaryMs = Date.parse(
         `${shiftDay(day, 1)}T${String(person.day_start_hour).padStart(2, "0")}:00:00.000Z`,
       );
-      next = new Date(Date.parse(now) + localBoundaryMs - localNowMs).toISOString();
+      next = new Date(
+        Date.parse(now) + localBoundaryMs - localNowMs,
+      ).toISOString();
     }
     cancelPending(database, revisions, now);
     const current = revisions.find((revision) => covers(revision, now));
