@@ -1,0 +1,4 @@
+INSERT INTO body_scans (user_id, day, method, total_mass_kg, body_fat_pct, fat_mass_kg, lean_mass_kg, bone_mineral_kg, arms_fat_pct, arms_lean_kg, legs_fat_pct, legs_lean_kg, trunk_fat_pct, trunk_lean_kg, android_fat_pct, android_lean_kg, gynoid_fat_pct, gynoid_lean_kg, bone_density_g_cm2, t_score, note, created_at)
+VALUES (:user_id, :day, :method, :total_mass_kg, :body_fat_pct, :fat_mass_kg, :lean_mass_kg, :bone_mineral_kg, :arms_fat_pct, :arms_lean_kg, :legs_fat_pct, :legs_lean_kg, :trunk_fat_pct, :trunk_lean_kg, :android_fat_pct, :android_lean_kg, :gynoid_fat_pct, :gynoid_lean_kg, :bone_density_g_cm2, :t_score, :note, :created_at)
+ON CONFLICT (user_id, day, method) DO NOTHING
+RETURNING id, day, method, total_mass_kg, body_fat_pct, fat_mass_kg, lean_mass_kg, bone_mineral_kg, arms_fat_pct, arms_lean_kg, legs_fat_pct, legs_lean_kg, trunk_fat_pct, trunk_lean_kg, android_fat_pct, android_lean_kg, gynoid_fat_pct, gynoid_lean_kg, bone_density_g_cm2, t_score, note;

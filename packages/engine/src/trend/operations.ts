@@ -2,9 +2,15 @@ import { z as zod } from "zod";
 import { emptyInput } from "../auth/routes.ts";
 import { localDay } from "../logging/day.ts";
 import { defineOperation, operationPerson } from "../operations/registry.ts";
+import { selectBodyScans } from "../queries/body-scans/select-body-scans.ts";
 import { selectWeightHistory } from "../queries/select-weight-history.ts";
 import { readWorkouts } from "../signals/activities.ts";
 import { type BodyFatReading, bodyFatTrend, shiftDay } from "./body-fat.ts";
+import {
+  bodyScanOperations,
+  compareScans,
+  scanComparison,
+} from "./body-scans.ts";
 import { weightTrend } from "./weight-trend.ts";
 
 const weightTrendDayOutput = zod.strictObject({
@@ -85,6 +91,7 @@ export const bodyFatHistory = defineOperation({
   output: zod.strictObject({
     readings: zod.array(bodyFatReadingOutput),
     trend: bodyFatTrendOutput.nullable(),
+    scans: zod.array(scanComparison),
   }),
   handler: (_input, context) => {
     const person = operationPerson(context);
@@ -107,16 +114,24 @@ export const bodyFatHistory = defineOperation({
       from: shiftDay(first < strengthFrom ? first : strengthFrom, -1),
       to: today,
     });
+    const scans = selectBodyScans(context.database, { user_id: person.id });
     return {
       status: 200,
-      body: bodyFatTrend({
-        readings,
-        workouts,
-        weights: weightTrend(weights),
-        today,
-      }),
+      body: {
+        ...bodyFatTrend({
+          readings,
+          workouts,
+          weights: weightTrend(weights),
+          today,
+        }),
+        scans: compareScans(scans, readings),
+      },
     };
   },
 });
 
-export const trendOperations = [weightHistory, bodyFatHistory];
+export const trendOperations = [
+  weightHistory,
+  bodyFatHistory,
+  ...bodyScanOperations,
+];
