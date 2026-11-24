@@ -43,18 +43,24 @@ async function setup(
   mode: "access" | "fallback" = "fallback",
 ) {
   const users = await twoUsers(context, mode);
-  const call = async (method: string, path: string, body?: unknown) => {
-    const response = await users.admin.request(path, {
-      method,
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    return { status: response.status, ...(await response.json()) };
+  const callAs =
+    (person: typeof users.admin) =>
+    async (method: string, path: string, body?: unknown) => {
+      const response = await person.request(path, {
+        method,
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      return { status: response.status, ...(await response.json()) };
+    };
+  return {
+    ...users,
+    call: callAs(users.admin),
+    memberCall: callAs(users.member),
   };
-  return { ...users, call };
 }
 
 test("a full and a minimal scan save and read back; a second scan that day is refused", async (context) => {
-  const { call } = await setup(context);
+  const { call, memberCall } = await setup(context);
   assert.deepEqual(await call("GET", "/api/body-scans"), {
     status: 200,
     scans: [],
@@ -76,6 +82,15 @@ test("a full and a minimal scan save and read back; a second scan that day is re
   assert.deepEqual(
     await call("POST", "/api/body-scans", { ...minimalScan, note: "again" }),
     { status: 409, error: { code: "scan_exists" } },
+  );
+  const theirs = await memberCall("POST", "/api/body-scans", fullScan);
+  assert.equal(theirs.status, 201);
+  assert.deepEqual((await memberCall("GET", "/api/body-scans")).scans, [
+    theirs.scan,
+  ]);
+  assert.equal(
+    (await call("DELETE", `/api/body-scans/${theirs.scan.id}`)).status,
+    404,
   );
   assert.deepEqual(await call("GET", "/api/body-scans"), {
     status: 200,
@@ -125,7 +140,7 @@ test("malformed scans are refused the same way over HTTP and MCP", async (contex
 });
 
 test("body fat history shows each scan with the gap to that day's first scale reading", async (context) => {
-  const { call, database, admin } = await setup(context);
+  const { call, memberCall, database, admin } = await setup(context);
   for (const [index, [measured_at, body_fat_pct]] of (
     [
       ["2026-01-05T08:00:00.000Z", 33.2],
@@ -168,4 +183,8 @@ test("body fat history shows each scan with the gap to that day's first scale re
       gap_points: null,
     },
   ]);
+  assert.deepEqual(
+    (await memberCall("GET", "/api/body-fat/history")).scans,
+    [],
+  );
 });

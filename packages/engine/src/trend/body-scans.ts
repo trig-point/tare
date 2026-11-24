@@ -150,7 +150,7 @@ export const scanComparison = zod.strictObject({
   gap_points: zod.number().nullable(),
 });
 
-/** Pairs each scan with the day's first scale reading; readings must be in day and time order. */
+/** Pairs each scan with the day's first reading that has body fat; readings must be in day and time order. */
 export function compareScans(
   scans: readonly {
     id: number;
