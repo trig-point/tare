@@ -5,6 +5,7 @@ import {
   defineOperation,
   type OperationContext,
   OperationError,
+  type OperationResult,
   operationPerson,
 } from "../operations/registry.ts";
 import { selectBodyUnits } from "../queries/select-body-units.ts";
@@ -30,7 +31,7 @@ function writeProfile(
   input: zod.infer<typeof profilePatch>,
   context: OperationContext,
   patch: boolean,
-) {
+): OperationResult {
   const person = operationPerson(context);
   const now = context.clock.now().toISOString();
   const profile = writeTransaction(context.database, (scope) => {
