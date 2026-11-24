@@ -52,6 +52,7 @@ export const medicationSchema = z.strictObject({
   name: z.string(),
   active: z.boolean(),
   late_after_minutes: z.number(),
+  water_ml: z.number().nullable(),
   status: z
     .strictObject({
       next_dose: nextSchema.nullable(),
@@ -75,6 +76,7 @@ export function readDose(
   const {
     revision_id: _revision,
     resolved_at: _resolution,
+    water_ml: _water,
     ...publicDose
   } = dose;
   let status = state.parse(dose.status);
@@ -139,8 +141,14 @@ export function readMedication(
   now: string,
   rows?: ReturnType<typeof medicationRows>,
 ) {
-  const { id, name, active, late_after_minutes } = medication;
-  const base = { id, name, active: Boolean(active), late_after_minutes };
+  const { id, name, active, late_after_minutes, water_ml } = medication;
+  const base = {
+    id,
+    name,
+    active: Boolean(active),
+    late_after_minutes,
+    water_ml,
+  };
   if (!active) return { ...base, status: null };
   const { holds, doses } = rows ?? medicationRows(database, id);
   const views = doses.map((dose) =>

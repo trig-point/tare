@@ -6,6 +6,7 @@ export type UpdateDoseData = {
   resolved_at: string | null;
   skip_reason: string | null;
   scheduled_at: string;
+  water_ml: number | null;
 };
 
 export type UpdateDoseParams = {
@@ -25,6 +26,7 @@ export type UpdateDoseResult = {
   taken_at: string | null;
   resolved_at: string | null;
   skip_reason: string | null;
+  water_ml: number | null;
 };
 
 export function updateDose(
@@ -34,7 +36,7 @@ export function updateDose(
 ): UpdateDoseResult[] {
   const sql = `
 	UPDATE medication_doses
-	SET status = ?, taken_at = ?, resolved_at = ?, skip_reason = ?, scheduled_at = ?
+	SET status = ?, taken_at = ?, resolved_at = ?, skip_reason = ?, scheduled_at = ?, water_ml = ?
 	WHERE id = ?
 	RETURNING *
 	
@@ -48,6 +50,7 @@ export function updateDose(
       data.resolved_at,
       data.skip_reason,
       data.scheduled_at,
+      data.water_ml,
       params.id,
     ]);
 
@@ -68,6 +71,7 @@ function mapArrayToUpdateDoseResult(data: any) {
     taken_at: data[9],
     resolved_at: data[10],
     skip_reason: data[11],
+    water_ml: data[12],
   };
   return result;
 }

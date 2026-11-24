@@ -4,6 +4,7 @@ import { calendarDayMs, personDayBounds, wallTime } from "../calendar/time.ts";
 import { writeTransaction } from "../db.ts";
 import { localDay, shiftDay } from "../logging/day.ts";
 import { OperationError } from "../operations/registry.ts";
+import { addWater } from "../queries/medications/add-water.ts";
 import { deleteDose } from "../queries/medications/delete-dose.ts";
 import { endRevision } from "../queries/medications/end-revision.ts";
 import { insertDose } from "../queries/medications/insert-dose.ts";
@@ -21,6 +22,7 @@ import {
   type ListRevisionsResult,
   listRevisions,
 } from "../queries/medications/list-revisions.ts";
+import { removeWater } from "../queries/medications/remove-water.ts";
 import { replanDose } from "../queries/medications/replan-dose.ts";
 import { setHorizon } from "../queries/medications/set-horizon.ts";
 import { updateDose } from "../queries/medications/update-dose.ts";
@@ -35,6 +37,7 @@ import {
 } from "./schedule.ts";
 
 export type PersonDay = { timezone: string; day_start_hour: number };
+export type DosePerson = PersonDay & { id: number };
 type Schedule = ReturnType<typeof readSchedule>;
 type Medication = ListMedicationsResult;
 type Revision = ListRevisionsResult;
@@ -168,6 +171,7 @@ function applySlot(
 
 export function undoDose(
   database: Database,
+  person: DosePerson,
   medication: Medication,
   dose: ListDosesResult,
   now: string,
@@ -179,6 +183,7 @@ export function undoDose(
   const elapsed = Date.parse(now) - Date.parse(dose.resolved_at);
   if (elapsed < 0 || elapsed > calendarDayMs)
     throw new OperationError(409, "undo_expired");
+  takeBackWater(database, person, dose, now);
   return changeDose(database, dose, "scheduled", null, null, dose.slot_at);
 }
 
@@ -278,6 +283,7 @@ export type SaveInput = Partial<Schedule> & {
   name?: string;
   active?: boolean;
   late_after_minutes?: number;
+  water_ml?: number | null;
 };
 
 export function saveMedication(
@@ -292,6 +298,8 @@ export function saveMedication(
   const active = Number(input.active ?? Boolean(stored?.active ?? 1));
   const late_after_minutes =
     input.late_after_minutes ?? stored?.late_after_minutes ?? 60;
+  const water_ml =
+    input.water_ml === undefined ? (stored?.water_ml ?? null) : input.water_ml;
   const revisions = stored
     ? listRevisions(database, { medication_id: stored.id })
     : [];
@@ -309,7 +317,7 @@ export function saveMedication(
     days: [...new Set(days)].sort(),
     times: [...new Set(times)].sort(),
   };
-  const data = { name, active, late_after_minutes };
+  const data = { name, active, late_after_minutes, water_ml };
   if (!stored) {
     const medication = insertMedication(database, {
       ...data,
@@ -393,22 +401,48 @@ export function changeDose(
   skip_reason: "user" | "stopped" | null = null,
   scheduled_at = dose.scheduled_at,
   resolved_at: string | null = null,
+  water_ml: number | null = null,
 ) {
   const [updated] = updateDose(
     database,
-    { status, taken_at, skip_reason, scheduled_at, resolved_at },
+    { status, taken_at, skip_reason, scheduled_at, resolved_at, water_ml },
     dose,
   );
   if (!updated) throw new Error("Missing updated dose");
   return updated;
 }
 
+function takeBackWater(
+  database: Database,
+  person: DosePerson,
+  dose: ListDosesResult,
+  now: string,
+) {
+  if (dose.water_ml === null || dose.taken_at === null) return;
+  removeWater(
+    database,
+    { amount: dose.water_ml, updated_at: now },
+    { user_id: person.id, day: tareDay(dose.taken_at, person) },
+  );
+}
+
+/** The only path that marks a dose taken; its water lands on the Tare day of takenAt in the same transaction. */
 export function recordTakenDose(
   database: Database,
+  person: DosePerson,
+  medication: Medication,
   dose: ListDosesResult,
   takenAt: string,
   now: string,
 ) {
+  takeBackWater(database, person, dose, now);
+  if (medication.water_ml !== null)
+    addWater(database, {
+      user_id: person.id,
+      day: tareDay(takenAt, person),
+      amount: medication.water_ml,
+      updated_at: now,
+    });
   return changeDose(
     database,
     dose,
@@ -417,5 +451,6 @@ export function recordTakenDose(
     null,
     dose.scheduled_at,
     dose.status === "taken" ? dose.resolved_at : now,
+    medication.water_ml,
   );
 }

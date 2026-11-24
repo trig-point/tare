@@ -6,6 +6,7 @@ export type ListMedicationsResult = {
   active: number;
   late_after_minutes: number;
   generated_until: string;
+  water_ml: number | null;
 };
 
 export function listMedications(db: Database): ListMedicationsResult[] {
@@ -25,6 +26,7 @@ function mapArrayToListMedicationsResult(data: any) {
     active: data[2],
     late_after_minutes: data[3],
     generated_until: data[4],
+    water_ml: data[5],
   };
   return result;
 }

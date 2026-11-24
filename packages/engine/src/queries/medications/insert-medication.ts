@@ -4,6 +4,7 @@ export type InsertMedicationParams = {
   name: string;
   active: number;
   late_after_minutes: number;
+  water_ml: number | null;
   generated_until: string;
 };
 
@@ -13,6 +14,7 @@ export type InsertMedicationResult = {
   active: number;
   late_after_minutes: number;
   generated_until: string;
+  water_ml: number | null;
 };
 
 export function insertMedication(
@@ -20,8 +22,8 @@ export function insertMedication(
   params: InsertMedicationParams,
 ): InsertMedicationResult | null {
   const sql = `
-	INSERT INTO medications (name, active, late_after_minutes, generated_until)
-	VALUES (?, ?, ?, ?)
+	INSERT INTO medications (name, active, late_after_minutes, water_ml, generated_until)
+	VALUES (?, ?, ?, ?, ?)
 	RETURNING *
 	
 	`;
@@ -32,6 +34,7 @@ export function insertMedication(
       params.name,
       params.active,
       params.late_after_minutes,
+      params.water_ml,
       params.generated_until,
     ]);
 
@@ -45,6 +48,7 @@ function mapArrayToInsertMedicationResult(data: any) {
     active: data[2],
     late_after_minutes: data[3],
     generated_until: data[4],
+    water_ml: data[5],
   };
   return result;
 }

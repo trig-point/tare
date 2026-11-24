@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import type { TestContext } from "node:test";
 import { generateAll } from "../src/medications/store.ts";
 import { listDoses } from "../src/queries/medications/list-doses.ts";
+import { upsertSignal } from "../src/queries/upsert-signal.ts";
 import { mcpSession } from "./auth-support.ts";
 import { test } from "./support/hang-ceiling.ts";
 import { twoUsers } from "./support/two-users.ts";
@@ -35,6 +36,7 @@ async function setup(
   );
   return {
     database,
+    userId: admin.user.id,
     call,
     doses: (medication_id: number) => listDoses(database, { medication_id }),
     action: (action: string, dose: number | string, fields = {}) =>
@@ -482,4 +484,75 @@ test("today and read_day place each dose on its Tare day", async (context) => {
   ]);
   for (const path of ["/api/days/2026-01-02", "/api/today"])
     assert.deepEqual(await read(path), [[taken.id, "taken"]]);
+});
+
+test("a taken dose adds its water to its Tare day and undo removes it", async (context) => {
+  const lane = await setup(context);
+  const water = async (day: string) =>
+    (await lane.call(`/api/signals/${day}`)).signals
+      .filter((row: { metric: string }) => row.metric === "water")
+      .map((row: { value: number; source: string }) => [row.source, row.value]);
+  for (const water_ml of [-1, 0, 1.5, 10_001, "600", false])
+    assert.equal(
+      (
+        await lane.save({
+          name: "Example Bad",
+          days: weekdays,
+          times: ["09:00"],
+          water_ml,
+        })
+      ).status,
+      400,
+    );
+  const withWater = await lane.save({
+    name: "Example Powder",
+    days: weekdays,
+    times: ["09:00", "12:00"],
+    water_ml: 600,
+  });
+  assert.equal(withWater.medication.water_ml, 600);
+  const plain = await lane.save({
+    name: "Example Capsule",
+    days: weekdays,
+    times: ["09:00"],
+  });
+  assert.equal(plain.medication.water_ml, null);
+  const [morning, noon] = lane.doses(withWater.medication.id);
+  const [capsule] = lane.doses(plain.medication.id);
+  assert.ok(morning && noon && capsule);
+  lane.step("2026-01-01T12:30:00Z");
+  assert.deepEqual(await water("2026-01-01"), []);
+  for (const [action, dose, fields, day, expected] of [
+    ["log", morning.id, {}, "2026-01-01", [["agent", 600]]],
+    ["log", capsule.id, {}, "2026-01-01", [["agent", 600]]],
+    ["skip", noon.id, {}, "2026-01-01", [["agent", 600]]],
+    ["undo", morning.id, {}, "2026-01-01", [["agent", 0]]],
+    [
+      "log",
+      morning.id,
+      { taken_at: "2026-01-01T03:00:00Z" },
+      "2025-12-31",
+      [["agent", 600]],
+    ],
+    ["log", morning.id, { replace: true }, "2025-12-31", [["agent", 0]]],
+    ["log", morning.id, { replace: true }, "2026-01-01", [["agent", 600]]],
+  ] as const) {
+    assert.equal((await lane.action(action, dose, fields)).status, 200);
+    assert.deepEqual(await water(day), expected, `${action} ${day}`);
+  }
+  upsertSignal(lane.database, {
+    user_id: lane.userId,
+    day: "2026-01-01",
+    metric: "water",
+    value: 100,
+    source: "agent",
+    updated_at: "2026-01-01T12:30:00.000Z",
+  });
+  assert.equal(
+    (await lane.save({ id: withWater.medication.id, water_ml: null }))
+      .medication.water_ml,
+    null,
+  );
+  assert.equal((await lane.action("undo", morning.id)).status, 200);
+  assert.deepEqual(await water("2026-01-01"), [["agent", 0]]);
 });

@@ -17,6 +17,7 @@ export type ListDosesResult = {
   taken_at: string | null;
   resolved_at: string | null;
   skip_reason: string | null;
+  water_ml: number | null;
 };
 
 export function listDoses(
@@ -46,6 +47,7 @@ function mapArrayToListDosesResult(data: any) {
     taken_at: data[9],
     resolved_at: data[10],
     skip_reason: data[11],
+    water_ml: data[12],
   };
   return result;
 }
