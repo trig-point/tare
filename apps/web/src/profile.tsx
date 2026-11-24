@@ -164,9 +164,11 @@ export function BodyUnitsSetting({
 export function ProfileSection({
   person,
   online,
+  units = "metric",
 }: {
   person: number;
   online: boolean;
+  units?: BodyUnits;
 }) {
   const [editing, setEditing] = useState(false);
   const profile = useQuery({
