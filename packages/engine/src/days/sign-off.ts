@@ -1,6 +1,7 @@
 import { z as zod } from "zod";
 import { writeTransaction } from "../db.ts";
 import { localDay } from "../logging/day.ts";
+import { doseSchema, readDayDoses } from "../medications/read.ts";
 import {
   defineOperation,
   type OperationContext,
@@ -121,7 +122,10 @@ export const daySignOffOperations = [
     method: "GET",
     path: "/api/days/:day",
     input: dayInput,
-    output: ledgerSchema.extend(metadata.shape),
+    output: ledgerSchema.extend({
+      ...metadata.shape,
+      doses: zod.array(doseSchema),
+    }),
     handler(input, context) {
       const person = operationPerson(context);
       const stored = selectDay(context.database, {
@@ -132,6 +136,12 @@ export const daySignOffOperations = [
         status: 200,
         body: {
           ...readLedger(context.database, person.id, input.day),
+          doses: readDayDoses(
+            context.database,
+            person,
+            input.day,
+            context.clock.now().toISOString(),
+          ),
           signed_off_at: stored?.signed_off_at ?? null,
           hunger: stored?.hunger ?? null,
           fullness: stored?.fullness ?? null,
