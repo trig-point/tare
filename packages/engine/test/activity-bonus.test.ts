@@ -13,7 +13,7 @@ const today = "2026-01-01";
 const usual = Array<number | null>(28).fill(430);
 const signal = "INSERT OR REPLACE INTO daily_signals VALUES (?, ?, ?, ?, ?, ?)";
 const seeds = [
-  "INSERT INTO profiles SELECT id, 180, '1986-01-01', 'male', 'moderate', -0.5, 1.6, '2026-01-01T00:00:00.000Z' FROM users",
+  "INSERT INTO profiles (user_id, height_cm, birth_date, sex, activity_level, goal_rate_kg_week, protein_factor, updated_at) SELECT id, 180, '1986-01-01', 'male', 'moderate', -0.5, 1.6, '2026-01-01T00:00:00.000Z' FROM users",
   "INSERT INTO weights (user_id, client_id, measured_at, day, weight_kg, created_at) SELECT id, 'weight', '2026-01-01T08:00:00.000Z', '2026-01-01', 80, '2026-01-01T08:00:00.000Z' FROM users",
   "INSERT INTO oura_connections (user_id, version, ciphertext, iv, tag, access_expires_at, scopes, scope_source, status, generation, last_synced_at, created_at, updated_at) SELECT id, 1, 'x', 'x', 'x', '2026-01-01T15:00:00.000Z', 'daily', 'requested', 'connected', 1, '2026-01-01T15:00:00.000Z', '2026-01-01T15:00:00.000Z', '2026-01-01T15:00:00.000Z' FROM users",
   "INSERT INTO day_templates SELECT id, id, 'Example template', '2026-01-01T00:00:00.000Z' FROM users",
