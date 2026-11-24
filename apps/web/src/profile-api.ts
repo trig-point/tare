@@ -1,6 +1,7 @@
 import type { AlignedData } from "uplot";
 import { z } from "zod";
 import { api } from "./api.ts";
+import { type BodyUnits, weightFromKg } from "./body-units.ts";
 
 export const activityLevels = {
   sedentary: "Sedentary",
@@ -11,6 +12,7 @@ export const activityLevels = {
 } as const;
 export const profileSchema = z.object({
   height_cm: z.number(),
+  units: z.enum(["metric", "imperial"]),
   birth_date: z.string(),
   sex: z.enum(["male", "female"]),
   activity_level: z.enum(
@@ -20,7 +22,9 @@ export const profileSchema = z.object({
   protein_factor: z.number(),
 });
 export type Profile = z.infer<typeof profileSchema>;
-export type ProfileValues = Record<keyof Profile, string>;
+export type ProfileValues = Record<Exclude<keyof Profile, "units">, string> & {
+  units?: BodyUnits;
+};
 
 export const profileKey = (person: number) => ["profile", person] as const;
 export async function readProfile(signal: AbortSignal) {
@@ -30,6 +34,7 @@ export async function readProfile(signal: AbortSignal) {
 }
 export function profileValues(profile: Profile | null): ProfileValues {
   return {
+    units: profile?.units ?? "metric",
     height_cm: profile ? String(profile.height_cm) : "",
     birth_date: profile?.birth_date ?? "",
     sex: profile?.sex ?? "",
@@ -39,7 +44,7 @@ export function profileValues(profile: Profile | null): ProfileValues {
   };
 }
 export async function saveProfile(values: ProfileValues) {
-  const input = profileSchema.parse({
+  const input = profileSchema.partial({ units: true }).parse({
     ...values,
     height_cm: Number(values.height_cm),
     goal_rate_kg_week: Number(values.goal_rate_kg_week),
@@ -77,10 +82,15 @@ export const historyKey = (person: number) =>
 export async function readHistory(signal: AbortSignal) {
   return historySchema.parse(await api("/api/weights/history", { signal }));
 }
-export function chartData(history: Pick<WeightHistory, "days">): AlignedData {
+export function chartData(
+  history: Pick<WeightHistory, "days">,
+  units: BodyUnits = "metric",
+): AlignedData {
   return [
     history.days.map((entry) => Date.parse(`${entry.day}T12:00:00Z`) / 1000),
-    history.days.map((entry) => entry.reading_kg),
-    history.days.map((entry) => entry.trend_kg),
+    history.days.map((entry) =>
+      entry.reading_kg === null ? null : weightFromKg(entry.reading_kg, units),
+    ),
+    history.days.map((entry) => weightFromKg(entry.trend_kg, units)),
   ];
 }

@@ -32,6 +32,7 @@ import { openOutboxStore, type QueueEntry } from "./outbox-store.ts";
 import { outboxView } from "./outbox-view.ts";
 import { PantrySection } from "./pantry.tsx";
 import { ProfileSection, WeightChart, WeightForm } from "./profile.tsx";
+import { profileKey, readProfile } from "./profile-api.ts";
 import { Questions } from "./questions.tsx";
 import { questionsKey, readQuestions } from "./questions-api.ts";
 import { AccountRow, AccountSettings } from "./settings.tsx";
@@ -254,6 +255,12 @@ function PantryScreen() {
 }
 function YouScreen() {
   const { runtime, session, online } = useApp();
+  const profile = useQuery({
+    queryKey: profileKey(session.user.id),
+    queryFn: ({ signal }) => readProfile(signal),
+    enabled: online,
+  });
+  const units = profile.data?.units ?? "metric";
   return (
     <section aria-label="You" className="you-screen p-0">
       <div className="page-head">
@@ -268,7 +275,17 @@ function YouScreen() {
           <WeightChart
             person={session.user.id}
             online={online}
-            entry={<WeightForm person={session.user} replay={runtime.queue} />}
+            units={units}
+            entry={
+              profile.data !== undefined && (
+                <WeightForm
+                  key={units}
+                  person={session.user}
+                  replay={runtime.queue}
+                  units={units}
+                />
+              )
+            }
           />
         </div>
         <div className="you-body-fat">

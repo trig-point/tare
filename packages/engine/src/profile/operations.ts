@@ -40,6 +40,10 @@ export const profileOperations = [
       const profile = writeTransaction(context.database, (scope) => {
         const profile = upsertProfile(context.database, {
           ...input,
+          units:
+            input.units ??
+            selectProfile(context.database, { user_id: person.id })?.units ??
+            "metric",
           user_id: person.id,
           updated_at: now,
         });

@@ -8,6 +8,7 @@ export type UpsertProfileParams = {
   activity_level: string;
   goal_rate_kg_week: number;
   protein_factor: number;
+  units: string;
   updated_at: string;
 };
 
@@ -19,6 +20,7 @@ export type UpsertProfileResult = {
   activity_level: string;
   goal_rate_kg_week: number;
   protein_factor: number;
+  units: string;
   updated_at: string;
 };
 
@@ -27,8 +29,8 @@ export function upsertProfile(
   params: UpsertProfileParams,
 ): UpsertProfileResult | null {
   const sql = `
-	INSERT INTO profiles (user_id, height_cm, birth_date, sex, activity_level, goal_rate_kg_week, protein_factor, updated_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	INSERT INTO profiles (user_id, height_cm, birth_date, sex, activity_level, goal_rate_kg_week, protein_factor, units, updated_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	ON CONFLICT (user_id) DO UPDATE SET
 	  height_cm = excluded.height_cm,
 	  birth_date = excluded.birth_date,
@@ -36,8 +38,9 @@ export function upsertProfile(
 	  activity_level = excluded.activity_level,
 	  goal_rate_kg_week = excluded.goal_rate_kg_week,
 	  protein_factor = excluded.protein_factor,
+	  units = excluded.units,
 	  updated_at = excluded.updated_at
-	RETURNING user_id, height_cm, birth_date, sex, activity_level, goal_rate_kg_week, protein_factor, updated_at;
+	RETURNING user_id, height_cm, birth_date, sex, activity_level, goal_rate_kg_week, protein_factor, units, updated_at;
 	
 	`;
   const res = db
@@ -51,6 +54,7 @@ export function upsertProfile(
       params.activity_level,
       params.goal_rate_kg_week,
       params.protein_factor,
+      params.units,
       params.updated_at,
     ]);
 
@@ -66,7 +70,8 @@ function mapArrayToUpsertProfileResult(data: any) {
     activity_level: data[4],
     goal_rate_kg_week: data[5],
     protein_factor: data[6],
-    updated_at: data[7],
+    units: data[7],
+    updated_at: data[8],
   };
   return result;
 }

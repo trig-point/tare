@@ -12,6 +12,7 @@ export type SelectProfileResult = {
   activity_level: string;
   goal_rate_kg_week: number;
   protein_factor: number;
+  units: string;
   updated_at: string;
 };
 
@@ -20,7 +21,7 @@ export function selectProfile(
   params: SelectProfileParams,
 ): SelectProfileResult | null {
   const sql = `
-	SELECT user_id, height_cm, birth_date, sex, activity_level, goal_rate_kg_week, protein_factor, updated_at
+	SELECT user_id, height_cm, birth_date, sex, activity_level, goal_rate_kg_week, protein_factor, units, updated_at
 	FROM profiles
 	WHERE user_id = ?;
 	
@@ -39,7 +40,8 @@ function mapArrayToSelectProfileResult(data: any) {
     activity_level: data[4],
     goal_rate_kg_week: data[5],
     protein_factor: data[6],
-    updated_at: data[7],
+    units: data[7],
+    updated_at: data[8],
   };
   return result;
 }

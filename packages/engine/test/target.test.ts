@@ -111,6 +111,7 @@ for (const mode of ["fallback", "access"] as const)
     assert.deepEqual(saved, {
       ...profile,
       protein_factor: 1.6,
+      units: "metric",
       user_id: admin.user.id,
       updated_at: "2026-01-01T00:00:00.000Z",
     });
@@ -131,6 +132,7 @@ for (const mode of ["fallback", "access"] as const)
       { ...profile, birth_date: "2030-01-01" },
       { ...profile, height_cm: 99 },
       { ...profile, protein_factor: null },
+      { ...profile, units: "stones" },
       { ...profile, user_id: admin.user.id },
     ])
       await send(member, "/api/profile", invalid, 400);

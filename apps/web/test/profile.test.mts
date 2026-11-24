@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { twoUsers } from "../../../packages/engine/test/support/two-users.ts";
+import { formatBodyWeight, heightToCm, weightToKg } from "../src/body-units.ts";
 import {
   chartData,
   historyKey,
@@ -61,6 +62,7 @@ test("profile form saves and edits", async (context) => {
   const saved = await readProfile(signal);
   assert.deepEqual(profileValues(saved), {
     ...profile,
+    units: "metric",
     height_cm: "172",
     activity_level: "light",
   });
@@ -267,4 +269,36 @@ test("charts rebuild when the color scheme or data-theme changes, until stopped"
   media.dispatchEvent(new Event("change"));
   assert.equal(rebuilds, 2);
   assert.equal(observers[0]?.disconnected, true);
+});
+
+test("imperial weight chart displays 103.2 kg as 227.5 lb", () => {
+  const days = [{ day: "2025-11-30", reading_kg: 103.2, trend_kg: 103.2 }];
+  const chart = render(
+    createElement(WeightChart, { person: 1, online: true, units: "imperial" }),
+    [[historyKey(1), { days, readings: [] }]],
+  );
+  assert.match(chart, /227\.5 <small[^>]*>lb/);
+});
+
+test("imperial height is saved in cm and metric edits keep the preference", async (context) => {
+  await engine(context);
+  const height_cm = String(heightToCm(6, 1));
+  await saveProfile({ ...profile, height_cm, units: "imperial" });
+  const saved = await saveProfile({ ...profile, height_cm });
+  assert.equal(saved.height_cm, 185.4);
+  assert.equal(saved.units, "imperial");
+});
+
+test("stored weight round-trips within half the display increment", () => {
+  const decimal = new Intl.NumberFormat(undefined, {
+    maximumFractionDigits: 1,
+  });
+  for (let sample = 1; sample <= 1000; sample += 1) {
+    const kg = ((sample * 16807) % 500003) / 1000;
+    const displayed = Math.round((kg / 0.45359237) * 10) / 10;
+    assert.equal(formatBodyWeight(kg, "imperial"), decimal.format(displayed));
+    assert.ok(
+      Math.abs(weightToKg(displayed, "imperial") - kg) <= 0.05 * 0.45359237,
+    );
+  }
 });
