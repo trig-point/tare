@@ -328,7 +328,7 @@ export function ProfileForm({
       if (cm !== original?.height_cm) patch.height_cm = String(cm);
     }
     if (rateDraft) {
-      const kg = weightDraftKg(rateDraft, original?.goal_rate_kg_week);
+      const kg = weightDraftKg(rateDraft);
       if (kg !== original?.goal_rate_kg_week)
         patch.goal_rate_kg_week = String(kg);
     }

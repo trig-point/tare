@@ -76,7 +76,7 @@ test("Remove preserves engine-required fields and valid intake reference shapes"
   }
   assert.equal(removableFields("intake", { kcal: 100 }).has("kcal"), false);
   assert.equal(
-    editorPatch({ weight_kg: 103.2 }, { weight_kg: "227.5" }, "imperial")
+    editorPatch({ weight_kg: 103.2 }, { weight_kg: "227.50" }, "imperial")
       .weight_kg,
     103.2,
   );

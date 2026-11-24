@@ -41,7 +41,8 @@ export function editedWeightKg(
   originalKg: number,
   units: BodyUnits,
 ) {
-  return value === weightInput(originalKg, units)
+  return value.trim() &&
+    Number(value) === Number(weightInput(originalKg, units))
     ? originalKg
     : weightToKg(Number(value), units);
 }

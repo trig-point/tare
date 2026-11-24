@@ -309,11 +309,19 @@ test("units save independently of stale profile edits", async (context) => {
   assert.equal((await readProfile(signal))?.height_cm, 185.4);
   const smallLoss = await saveProfile({ goal_rate_kg_week: "-0.02" }, "PATCH");
   assert.equal(weightInput(smallLoss.goal_rate_kg_week, "imperial"), "-0");
-  const maintenance = weightDraftKg(
-    { text: "0", units: "imperial" },
-    smallLoss.goal_rate_kg_week,
-  );
+  const maintenance = weightDraftKg({ text: "0", units: "imperial" });
   await saveProfile({ goal_rate_kg_week: String(maintenance) }, "PATCH");
+  assert.equal((await readProfile(signal))?.goal_rate_kg_week, 0);
+  const smallGain = await saveProfile({ goal_rate_kg_week: "0.02" }, "PATCH");
+  assert.equal(weightInput(smallGain.goal_rate_kg_week, "imperial"), "0");
+  await saveProfile(
+    {
+      goal_rate_kg_week: String(
+        weightDraftKg({ text: "0", units: "imperial" }),
+      ),
+    },
+    "PATCH",
+  );
   assert.equal((await readProfile(signal))?.goal_rate_kg_week, 0);
 });
 
