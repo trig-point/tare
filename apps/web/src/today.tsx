@@ -4,6 +4,14 @@ import { ChevronRight, Pencil, Trash2, X } from "lucide-react";
 import { Tabs } from "radix-ui";
 import { useEffect, useRef, useState } from "react";
 import type { Session } from "./api.ts";
+import {
+  type BodyUnits,
+  formatBodyWeight,
+  type MeasurementDraft,
+  weightDraftKg,
+  weightInput,
+  weightUnit,
+} from "./body-units.ts";
 import { refreshDays } from "./days-api.ts";
 import { BodyCard } from "./health.tsx";
 import type { OutboxReplay } from "./outbox-replay.ts";
@@ -35,10 +43,12 @@ export function Today({
   person,
   records,
   online,
+  units = "metric",
 }: {
   person: Session["user"];
   records: QueueEntry[];
   online: boolean;
+  units?: BodyUnits;
 }) {
   const client = useQueryClient();
   const today = useQuery({ ...todayQuery(person.id), enabled: online });
@@ -144,6 +154,7 @@ export function Today({
                 today={today.data}
                 pending={pending}
                 online={online}
+                units={units}
               />
             </div>
           </div>
@@ -260,11 +271,13 @@ function FoodLog({
   today,
   pending,
   online,
+  units,
 }: {
   person: number;
   today: TodayData | undefined;
   pending: QueueEntry[];
   online: boolean;
+  units: BodyUnits;
 }) {
   const client = useQueryClient();
   return (
@@ -275,7 +288,7 @@ function FoodLog({
           <li key={entry.client_id} className={row}>
             <strong>
               {entry.kind === "weight"
-                ? `${displayNumber(Number(entry.body.weight_kg))} kg`
+                ? `${formatBodyWeight(Number(entry.body.weight_kg), units)} ${weightUnit(units)}`
                 : String(entry.body.name ?? "Food")}
             </strong>
             <span className="col-span-2 justify-self-end rounded-(--radius) bg-bg-sunk px-2 py-0.5 text-step--1 text-ink-2">
@@ -310,6 +323,7 @@ function FoodLog({
               {today.weights.map((entry) => (
                 <WeightEntry
                   key={entry.id}
+                  units={units}
                   entry={entry}
                   timezone={today.timezone}
                   online={online}
@@ -624,14 +638,17 @@ function WeightEntry({
   timezone,
   online,
   refresh,
+  units,
 }: {
   entry: Weight;
+  units: BodyUnits;
   timezone: string;
   online: boolean;
   refresh: () => Promise<void>;
 }) {
-  const [editing, setEditing] = useState(false);
-  const [weight, setWeight] = useState(String(entry.weight_kg));
+  const [draft, setDraft] = useState<
+    MeasurementDraft & { originalKg: number }
+  >();
   const mutation = useMutation({
     networkMode: "always",
     mutationFn: async (changes: Record<string, unknown> | undefined) => {
@@ -639,11 +656,11 @@ function WeightEntry({
       await changeWeight(entry.id, changes);
     },
     onSuccess: async () => {
-      setEditing(false);
+      setDraft(undefined);
       await refresh();
     },
   });
-  const label = `${displayNumber(entry.weight_kg)} kg`;
+  const label = `${formatBodyWeight(entry.weight_kg, units)} ${weightUnit(units)}`;
   return (
     <li className={row}>
       <div>
@@ -660,8 +677,11 @@ function WeightEntry({
         label={label}
         disabled={!online || mutation.isPending}
         edit={() => {
-          setWeight(String(entry.weight_kg));
-          setEditing(true);
+          setDraft({
+            text: weightInput(entry.weight_kg, units),
+            units,
+            originalKg: entry.weight_kg,
+          });
         }}
         remove={() => mutation.mutate(undefined)}
       />
@@ -670,24 +690,28 @@ function WeightEntry({
           Couldn’t update entry
         </p>
       )}
-      {editing && (
+      {draft && (
         <form
           className="col-span-full"
           onSubmit={(event) => {
             event.preventDefault();
-            mutation.mutate({ weight_kg: Number(weight) });
+            const weight_kg = weightDraftKg(draft, draft.originalKg);
+            if (weight_kg === draft.originalKg) setDraft(undefined);
+            else mutation.mutate({ weight_kg });
           }}
         >
           <label>
-            Weight (kg)
+            Weight ({weightUnit(draft.units)})
             <input
               type="number"
               min="0.01"
               step="any"
               required
-              value={weight}
+              value={draft.text}
               disabled={!online || mutation.isPending}
-              onChange={(event) => setWeight(event.target.value)}
+              onChange={(event) =>
+                setDraft({ ...draft, text: event.target.value })
+              }
             />
           </label>
           <div className="flex gap-2">
@@ -702,7 +726,7 @@ function WeightEntry({
               type="button"
               variant="ghost"
               className={press}
-              onClick={() => setEditing(false)}
+              onClick={() => setDraft(undefined)}
             >
               Cancel
             </Button>

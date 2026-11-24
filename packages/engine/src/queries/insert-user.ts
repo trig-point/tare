@@ -16,6 +16,7 @@ export type InsertUserResult = {
   is_admin: number;
   created_at: string;
   access_email: string | null;
+  body_units: string;
 };
 
 export function insertUser(
@@ -50,6 +51,7 @@ function mapArrayToInsertUserResult(data: any) {
     is_admin: data[5],
     created_at: data[6],
     access_email: data[7],
+    body_units: data[8],
   };
   return result;
 }

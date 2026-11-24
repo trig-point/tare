@@ -5,12 +5,21 @@ import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { twoUsers } from "../../../packages/engine/test/support/two-users.ts";
 import {
+  formatBodyWeight,
+  heightToCm,
+  weightDraftKg,
+  weightInput,
+  weightToKg,
+} from "../src/body-units.ts";
+import {
   chartData,
   historyKey,
   profileKey,
   profileValues,
+  readBodyUnits,
   readHistory,
   readProfile,
+  saveBodyUnits,
   saveProfile,
 } from "../src/profile-api.ts";
 import { readToday } from "../src/today-api.ts";
@@ -267,4 +276,54 @@ test("charts rebuild when the color scheme or data-theme changes, until stopped"
   media.dispatchEvent(new Event("change"));
   assert.equal(rebuilds, 2);
   assert.equal(observers[0]?.disconnected, true);
+});
+
+test("imperial weight chart displays 103.2 kg as 227.5 lb", () => {
+  const days = [{ day: "2025-11-30", reading_kg: 103.2, trend_kg: 103.2 }];
+  const chart = render(
+    createElement(WeightChart, { person: 1, online: true, units: "imperial" }),
+    [[historyKey(1), { days, readings: [] }]],
+  );
+  assert.match(chart, /227\.5 <small[^>]*>lb/);
+});
+
+test("units save independently of stale profile edits", async (context) => {
+  await engine(context);
+  assert.equal(await readBodyUnits(signal), "metric");
+  const saved = await saveProfile({
+    ...profile,
+    height_cm: String(heightToCm(6, 1)),
+  });
+  await saveBodyUnits("imperial");
+  assert.deepEqual(await saveProfile({}), saved);
+  await saveProfile({ activity_level: "light" });
+  assert.equal(await readBodyUnits(signal), "imperial");
+  const response = await fetch("/api/profile/units", {
+    method: "POST",
+    body: JSON.stringify({ units: "stones" }),
+  });
+  assert.equal(response.status, 400);
+  assert.equal((await readProfile(signal))?.height_cm, 185.4);
+});
+
+test("a draft keeps its units and shares the display rounding", () => {
+  const kg = 154.35 * 0.45359237;
+  assert.equal(weightInput(kg, "imperial"), formatBodyWeight(kg, "imperial"));
+  const draft = { text: "228", units: "imperial" } as const;
+  assert.equal(weightDraftKg(draft), 228 * 0.45359237);
+});
+
+test("stored weight round-trips within half the display increment", () => {
+  const decimal = new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: 1,
+    useGrouping: false,
+  });
+  for (let sample = 1; sample <= 1000; sample += 1) {
+    const kg = ((sample * 16807) % 500003) / 1000;
+    const displayed = Math.round((kg / 0.45359237) * 10) / 10;
+    assert.equal(formatBodyWeight(kg, "imperial"), decimal.format(displayed));
+    assert.ok(
+      Math.abs(weightToKg(displayed, "imperial") - kg) <= 0.05 * 0.45359237,
+    );
+  }
 });

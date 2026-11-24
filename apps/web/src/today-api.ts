@@ -2,6 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import type { Session } from "./api.ts";
 import { api, liveRefresh } from "./api.ts";
+import { type BodyUnits, weightToKg } from "./body-units.ts";
 import { usualFoodsQuery } from "./food-api.ts";
 import type { OutboxReplay, QueueSnapshot } from "./outbox-replay.ts";
 import { planKey } from "./plan-api.ts";
@@ -164,8 +165,9 @@ export async function enqueueWeight(
   person: Session["user"],
   weight: string,
   note = "",
+  units: BodyUnits = "metric",
 ) {
-  const value = Number(weight);
+  const value = weightToKg(Number(weight), units);
   if (!weight.trim() || !Number.isFinite(value) || value <= 0)
     throw new Error("Invalid weight");
   await replay.enqueue(
