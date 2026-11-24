@@ -122,6 +122,10 @@ export const sectionHead =
 const hint = "text-sm text-ink-2";
 const row =
   "flex min-h-14 items-center justify-between gap-3 border-b border-border py-2.5 last:border-b-0";
+const metricGoalRate = new Intl.NumberFormat(undefined, {
+  maximumFractionDigits: 2,
+  signDisplay: "exceptZero",
+});
 
 export function BodyUnitsSetting({
   person,
@@ -245,7 +249,9 @@ function ProfileSummary({
     ["Birth date", longDate(profile.birth_date)],
     [
       "Goal rate",
-      `${formatBodyWeight(profile.goal_rate_kg_week, units)} ${weightUnit(units)}/week`,
+      units === "metric"
+        ? `${metricGoalRate.format(profile.goal_rate_kg_week)} kg/week`
+        : `${formatBodyWeight(profile.goal_rate_kg_week, units)} lb/week`,
     ],
     ["Protein", `${displayNumber(profile.protein_factor)} g/kg`],
   ] as const;
@@ -344,10 +350,12 @@ export function ProfileForm({
     className: "m-0",
     onChange: (event: { target: { value: string } }) => {
       save.reset();
-      setChanges({
-        ...changes,
-        [key]:
-          event.target.value === initial[key] ? undefined : event.target.value,
+      const value = event.target.value;
+      setChanges((previous) => {
+        const next = { ...previous };
+        if (value === initial[key]) delete next[key];
+        else next[key] = value;
+        return next;
       });
     },
   });
@@ -734,6 +742,16 @@ export function WeightForm({
         }
         disabled={save.isPending}
       />
+      {draft && draft.units !== units && (
+        <Button
+          type="button"
+          variant="ghost"
+          disabled={save.isPending}
+          onClick={() => setDraft(undefined)}
+        >
+          Reset weight
+        </Button>
+      )}
       <label htmlFor="weight-note" className="text-ink">
         Note (optional)
       </label>

@@ -78,7 +78,8 @@ export async function saveProfile(
   values: Partial<ProfileValues>,
   method: "POST" | "PATCH" = "POST",
 ) {
-  const input = profileSchema.partial().parse({
+  const schema = method === "PATCH" ? profileSchema.partial() : profileSchema;
+  const input = schema.parse({
     ...values,
     height_cm:
       values.height_cm === undefined ? undefined : Number(values.height_cm),

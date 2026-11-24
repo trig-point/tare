@@ -290,6 +290,9 @@ test("imperial weight chart displays 103.2 kg as 227.5 lb", () => {
 test("units save independently of stale profile edits", async (context) => {
   await engine(context);
   assert.equal(await readBodyUnits(signal), "metric");
+  await assert.rejects(saveProfile({ activity_level: "light" }, "PATCH"), {
+    status: 404,
+  });
   const saved = await saveProfile({
     ...profile,
     height_cm: String(heightToCm(6, 1)),
@@ -308,7 +311,10 @@ test("units save independently of stale profile edits", async (context) => {
 
 test("a draft keeps its units and shares the display rounding", () => {
   const kg = 154.35 * 0.45359237;
-  assert.equal(weightInput(kg, "imperial"), formatBodyWeight(kg, "imperial"));
+  assert.deepEqual(
+    [weightInput(kg, "imperial"), formatBodyWeight(kg, "imperial")],
+    ["154.4", "154.4"],
+  );
   const draft = { text: "228", units: "imperial" } as const;
   assert.equal(weightDraftKg(draft), 228 * 0.45359237);
 });
