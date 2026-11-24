@@ -1,9 +1,10 @@
 import { type FormEvent, useState } from "react";
+import { type BodyUnits, formatBodyWeight, weightUnit } from "./body-units.ts";
 import {
   type EditorValues,
   editorAfterChange,
+  editorInput,
   editorPatch,
-  inputValue,
   removableFields,
   saveEntry,
 } from "./outbox-edit.ts";
@@ -11,18 +12,22 @@ import type { OutboxReplay } from "./outbox-replay.ts";
 import type { EntryBody, JsonValue, QueueEntry } from "./outbox-store.ts";
 
 const label = (name: string) => name.replaceAll("_", " ");
-function Values({ body }: { body: EntryBody }) {
+const fieldLabel = (name: string, units: BodyUnits) =>
+  name === "weight_kg" ? `Weight (${weightUnit(units)})` : label(name);
+function Values({ body, units }: { body: EntryBody; units: BodyUnits }) {
   return (
     <dl>
       {Object.entries(body)
         .filter(([name]) => name !== "client_id")
         .map(([name, value]) => (
           <div key={name}>
-            <dt>{label(name)}</dt>
+            <dt>{fieldLabel(name, units)}</dt>
             <dd>
-              {typeof value === "object"
-                ? JSON.stringify(value)
-                : String(value)}
+              {name === "weight_kg" && typeof value === "number"
+                ? formatBodyWeight(value, units)
+                : typeof value === "object"
+                  ? JSON.stringify(value)
+                  : String(value)}
             </dd>
           </div>
         ))}
@@ -32,9 +37,11 @@ function Values({ body }: { body: EntryBody }) {
 export function RejectedEntries({
   entries,
   replay,
+  units,
 }: {
   entries: QueueEntry[];
   replay: OutboxReplay;
+  units: BodyUnits;
 }) {
   const [editing, setEditing] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
@@ -63,7 +70,8 @@ export function RejectedEntries({
             <p>{label(entry.error_code ?? "rejected")}</p>
             {editing === entry.seq && entry.error_code !== "already_saved" ? (
               <EntryEditor
-                key={`${entry.seq}:${entry.revision}`}
+                key={`${entry.seq}:${entry.revision}:${units}`}
+                units={units}
                 entry={entry}
                 busy={busy}
                 save={(patch) =>
@@ -73,7 +81,7 @@ export function RejectedEntries({
               />
             ) : (
               <>
-                <Values body={entry.body} />
+                <Values body={entry.body} units={units} />
                 {entry.error_code !== "already_saved" && (
                   <div className="actions">
                     <button
@@ -99,7 +107,7 @@ export function RejectedEntries({
             {entry.server_row && (
               <details>
                 <summary>Saved entry</summary>
-                <Values body={entry.server_row} />
+                <Values body={entry.server_row} units={units} />
               </details>
             )}
             <button
@@ -122,18 +130,20 @@ function EntryEditor({
   busy,
   save,
   cancel,
+  units,
 }: {
   entry: QueueEntry;
   busy: boolean;
   save: (patch: Record<string, JsonValue | undefined>) => Promise<void>;
   cancel: () => void;
+  units: BodyUnits;
 }) {
   const fields = Object.entries(entry.body).filter(
     ([name]) => name !== "client_id",
   );
   const [values, setValues] = useState<EditorValues>(() =>
     Object.fromEntries(
-      fields.map(([name, value]) => [name, inputValue(value)]),
+      fields.map(([name, value]) => [name, editorInput(name, value, units)]),
     ),
   );
   const [error, setError] = useState("");
@@ -141,7 +151,7 @@ function EntryEditor({
   function submit(event: FormEvent) {
     event.preventDefault();
     try {
-      const patch = editorPatch(entry.body, values);
+      const patch = editorPatch(entry.body, values, units);
       setError("");
       void save(patch);
     } catch {
@@ -152,7 +162,9 @@ function EntryEditor({
     <form onSubmit={submit}>
       {fields.map(([name, original]) => (
         <div key={name}>
-          <label htmlFor={`entry-${entry.seq}-${name}`}>{label(name)}</label>
+          <label htmlFor={`entry-${entry.seq}-${name}`}>
+            {fieldLabel(name, units)}
+          </label>
           <input
             id={`entry-${entry.seq}-${name}`}
             value={values[name] ?? ""}
@@ -171,7 +183,7 @@ function EntryEditor({
                   ...values,
                   [name]:
                     values[name] === undefined
-                      ? inputValue(original)
+                      ? editorInput(name, original, units)
                       : undefined,
                 })
               }

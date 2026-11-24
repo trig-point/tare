@@ -26,3 +26,16 @@ export function heightFromCm(cm: number) {
 
 export const heightToCm = (feet: number, inches: number) =>
   Math.round((feet * 12 + inches) * centimetersPerInch * 10) / 10;
+
+export const weightInput = (kg: number, units: BodyUnits) =>
+  units === "imperial" ? weightFromKg(kg, units).toFixed(1) : String(kg);
+
+export function editedWeightKg(
+  value: string,
+  originalKg: number,
+  units: BodyUnits,
+) {
+  return value === weightInput(originalKg, units)
+    ? originalKg
+    : weightToKg(Number(value), units);
+}

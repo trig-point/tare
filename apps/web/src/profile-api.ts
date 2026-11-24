@@ -26,6 +26,26 @@ export type ProfileValues = Record<Exclude<keyof Profile, "units">, string> & {
   units?: BodyUnits;
 };
 
+const unitsStorageKey = (person: number) => `tare:body-units:${person}`;
+
+export function cachedBodyUnits(person: number): BodyUnits {
+  try {
+    return localStorage.getItem(unitsStorageKey(person)) === "imperial"
+      ? "imperial"
+      : "metric";
+  } catch {
+    return "metric";
+  }
+}
+
+export function cacheBodyUnits(person: number, units: BodyUnits) {
+  try {
+    localStorage.setItem(unitsStorageKey(person), units);
+  } catch {
+    return;
+  }
+}
+
 export const profileKey = (person: number) => ["profile", person] as const;
 export async function readProfile(signal: AbortSignal) {
   return z

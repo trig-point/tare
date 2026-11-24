@@ -23,6 +23,7 @@ import { createRoot } from "react-dom/client";
 import { AddFood } from "./add-food.tsx";
 import { ApiError, type Session } from "./api.ts";
 import { BodyFatCard } from "./body-fat.tsx";
+import type { BodyUnits } from "./body-units.ts";
 import { BottomNav, createAppRouter } from "./nav.tsx";
 import { RejectedEntries } from "./outbox-editor.tsx";
 import { browserOnline } from "./outbox-http.ts";
@@ -32,7 +33,12 @@ import { openOutboxStore, type QueueEntry } from "./outbox-store.ts";
 import { outboxView } from "./outbox-view.ts";
 import { PantrySection } from "./pantry.tsx";
 import { ProfileSection, WeightChart, WeightForm } from "./profile.tsx";
-import { profileKey, readProfile } from "./profile-api.ts";
+import {
+  cacheBodyUnits,
+  cachedBodyUnits,
+  profileKey,
+  readProfile,
+} from "./profile-api.ts";
 import { Questions } from "./questions.tsx";
 import { questionsKey, readQuestions } from "./questions-api.ts";
 import { AccountRow, AccountSettings } from "./settings.tsx";
@@ -68,6 +74,7 @@ type App = {
   session: Session;
   records: QueueEntry[];
   online: boolean;
+  units: BodyUnits;
 };
 const appContext = createContext<App | null>(null);
 function useApp() {
@@ -173,6 +180,20 @@ function SessionHome({ runtime }: { runtime: Runtime }) {
     };
   }, [runtime]);
   const view = outboxView(session.data, queue, online, session.isError);
+  const person = view.session?.user.id;
+  const profile = useQuery({
+    queryKey: profileKey(person ?? 0),
+    queryFn: ({ signal }) => readProfile(signal),
+    enabled: online && person !== undefined,
+  });
+  const savedUnits =
+    profile.data === undefined ? undefined : (profile.data?.units ?? "metric");
+  const units =
+    savedUnits ?? (person === undefined ? "metric" : cachedBodyUnits(person));
+  useEffect(() => {
+    if (person !== undefined && savedUnits !== undefined)
+      cacheBodyUnits(person, savedUnits);
+  }, [person, savedUnits]);
   return (
     <section>
       <output className="queue-status">
@@ -204,12 +225,17 @@ function SessionHome({ runtime }: { runtime: Runtime }) {
             session: view.session,
             records: view.records,
             online,
+            units,
           }}
         >
           <TabShell />
         </appContext.Provider>
       )}
-      <RejectedEntries entries={view.records} replay={runtime.queue} />
+      <RejectedEntries
+        entries={view.records}
+        replay={runtime.queue}
+        units={units}
+      />
     </section>
   );
 }
@@ -236,8 +262,15 @@ function TabShell() {
 }
 
 function TodayScreen() {
-  const { session, records, online } = useApp();
-  return <Today person={session.user} records={records} online={online} />;
+  const { session, records, online, units } = useApp();
+  return (
+    <Today
+      person={session.user}
+      records={records}
+      online={online}
+      units={units}
+    />
+  );
 }
 function QuestionsScreen() {
   const { session, online } = useApp();
@@ -254,13 +287,7 @@ function PantryScreen() {
   return <PantrySection person={session.user.id} online={online} />;
 }
 function YouScreen() {
-  const { runtime, session, online } = useApp();
-  const profile = useQuery({
-    queryKey: profileKey(session.user.id),
-    queryFn: ({ signal }) => readProfile(signal),
-    enabled: online,
-  });
-  const units = profile.data?.units ?? "metric";
+  const { runtime, session, online, units } = useApp();
   return (
     <section aria-label="You" className="you-screen p-0">
       <div className="page-head">
@@ -277,14 +304,12 @@ function YouScreen() {
             online={online}
             units={units}
             entry={
-              profile.data !== undefined && (
-                <WeightForm
-                  key={units}
-                  person={session.user}
-                  replay={runtime.queue}
-                  units={units}
-                />
-              )
+              <WeightForm
+                key={units}
+                person={session.user}
+                replay={runtime.queue}
+                units={units}
+              />
             }
           />
         </div>

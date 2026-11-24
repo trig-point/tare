@@ -55,6 +55,7 @@ async function render(
   data: Awaited<ReturnType<typeof readToday>> | undefined,
   records: Parameters<typeof Today>[0]["records"] = [],
   questions?: unknown[],
+  units?: Parameters<typeof Today>[0]["units"],
 ) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: Infinity } },
@@ -68,7 +69,8 @@ async function render(
   if (questions) client.setQueryData(questionsKey(person.id), questions);
   const router = createRouter({
     routeTree: createRootRoute({
-      component: () => createElement(Today, { person, records, online: false }),
+      component: () =>
+        createElement(Today, { person, records, online: false, units }),
     }),
     history: createMemoryHistory(),
   });
@@ -215,10 +217,14 @@ test("pending markers are shown without duplicate synced entries", async (contex
     state: "pending" as const,
     revision: 0,
   };
-  assert.match(
-    await render(setupData.person, data, [pending]),
-    /70 kg.*Pending/s,
-  );
+  for (const [units, label] of [
+    ["metric", /70 kg/],
+    ["imperial", /154\.3 lb/],
+  ] as const)
+    assert.match(
+      await render(setupData.person, data, [pending], undefined, units),
+      new RegExp(`${label.source}.*Pending`, "s"),
+    );
   data.weights.push({
     id: 1,
     client_id: pending.client_id,
@@ -230,6 +236,10 @@ test("pending markers are shown without duplicate synced entries", async (contex
   const synced = await render(setupData.person, data, [pending]);
   assert.doesNotMatch(synced, /Manual/);
   assert.match(synced, /<strong>70 kg<\/strong>/);
+  assert.match(
+    await render(setupData.person, data, [pending], undefined, "imperial"),
+    /<strong>154\.4 lb<\/strong>/,
+  );
   assert.ok(
     synced.includes(
       new Date(data.weights[0]?.measured_at ?? "").toLocaleTimeString([], {
