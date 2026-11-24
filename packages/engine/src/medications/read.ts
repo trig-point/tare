@@ -77,6 +77,7 @@ export function readDose(
     revision_id: _revision,
     resolved_at: _resolution,
     water_ml: _water,
+    water_day: _waterDay,
     ...publicDose
   } = dose;
   let status = state.parse(dose.status);

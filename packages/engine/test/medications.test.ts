@@ -540,19 +540,40 @@ test("a taken dose adds its water to its Tare day and undo removes it", async (c
     assert.equal((await lane.action(action, dose, fields)).status, 200);
     assert.deepEqual(await water(day), expected, `${action} ${day}`);
   }
-  upsertSignal(lane.database, {
-    user_id: lane.userId,
-    day: "2026-01-01",
-    metric: "water",
-    value: 100,
-    source: "agent",
-    updated_at: "2026-01-01T12:30:00.000Z",
-  });
+  for (const [day, value] of [
+    ["2026-01-01", 100],
+    ["2025-12-31", 250],
+  ] as const)
+    upsertSignal(lane.database, {
+      user_id: lane.userId,
+      day,
+      metric: "water",
+      value,
+      source: "agent",
+      updated_at: "2026-01-01T12:30:00.000Z",
+    });
+  assert.equal(
+    (await lane.action("log", morning.id, { replace: true })).status,
+    200,
+  );
+  assert.deepEqual(await water("2026-01-01"), [["agent", 100]]);
+  assert.equal(
+    (
+      await lane.call(
+        "/api/me",
+        { timezone: "UTC", day_start_hour: 14 },
+        "PATCH",
+      )
+    ).status,
+    200,
+  );
   assert.equal(
     (await lane.save({ id: withWater.medication.id, water_ml: null }))
       .medication.water_ml,
     null,
   );
   assert.equal((await lane.action("undo", morning.id)).status, 200);
+  assert.deepEqual(await water("2026-01-01"), [["agent", 0]]);
+  assert.deepEqual(await water("2025-12-31"), [["agent", 250]]);
   assert.deepEqual(await water("2026-01-01"), [["agent", 0]]);
 });

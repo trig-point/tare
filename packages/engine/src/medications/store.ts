@@ -183,7 +183,12 @@ export function undoDose(
   const elapsed = Date.parse(now) - Date.parse(dose.resolved_at);
   if (elapsed < 0 || elapsed > calendarDayMs)
     throw new OperationError(409, "undo_expired");
-  takeBackWater(database, person, dose, now);
+  moveWater(
+    database,
+    person.id,
+    [[dose.water_day, dose.water_ml === null ? null : -dose.water_ml]],
+    now,
+  );
   return changeDose(database, dose, "scheduled", null, null, dose.slot_at);
 }
 
@@ -402,28 +407,42 @@ export function changeDose(
   scheduled_at = dose.scheduled_at,
   resolved_at: string | null = null,
   water_ml: number | null = null,
+  water_day: string | null = null,
 ) {
   const [updated] = updateDose(
     database,
-    { status, taken_at, skip_reason, scheduled_at, resolved_at, water_ml },
+    {
+      status,
+      taken_at,
+      skip_reason,
+      scheduled_at,
+      resolved_at,
+      water_ml,
+      water_day,
+    },
     dose,
   );
   if (!updated) throw new Error("Missing updated dose");
   return updated;
 }
 
-function takeBackWater(
+/** Nets each day's change first, so a same-day replace cannot be inflated by the floor at zero. */
+function moveWater(
   database: Database,
-  person: DosePerson,
-  dose: ListDosesResult,
+  userId: number,
+  changes: [day: string | null, amount: number | null][],
   now: string,
 ) {
-  if (dose.water_ml === null || dose.taken_at === null) return;
-  removeWater(
-    database,
-    { amount: dose.water_ml, updated_at: now },
-    { user_id: person.id, day: tareDay(dose.taken_at, person) },
-  );
+  const net = new Map<string, number>();
+  for (const [day, amount] of changes)
+    if (day !== null && amount !== null)
+      net.set(day, (net.get(day) ?? 0) + amount);
+  for (const [day, amount] of net) {
+    const owner = { user_id: userId, day };
+    if (amount > 0) addWater(database, { ...owner, amount, updated_at: now });
+    else if (amount < 0)
+      removeWater(database, { amount: -amount, updated_at: now }, owner);
+  }
 }
 
 /** The only path that marks a dose taken; its water lands on the Tare day of takenAt in the same transaction. */
@@ -435,14 +454,17 @@ export function recordTakenDose(
   takenAt: string,
   now: string,
 ) {
-  takeBackWater(database, person, dose, now);
-  if (medication.water_ml !== null)
-    addWater(database, {
-      user_id: person.id,
-      day: tareDay(takenAt, person),
-      amount: medication.water_ml,
-      updated_at: now,
-    });
+  const water_day =
+    medication.water_ml === null ? null : tareDay(takenAt, person);
+  moveWater(
+    database,
+    person.id,
+    [
+      [dose.water_day, dose.water_ml === null ? null : -dose.water_ml],
+      [water_day, medication.water_ml],
+    ],
+    now,
+  );
   return changeDose(
     database,
     dose,
@@ -452,5 +474,6 @@ export function recordTakenDose(
     dose.scheduled_at,
     dose.status === "taken" ? dose.resolved_at : now,
     medication.water_ml,
+    water_day,
   );
 }
