@@ -25,7 +25,7 @@ export function updateUserSettings(
   params: UpdateUserSettingsParams,
 ): UpdateUserSettingsResult[] {
   const sql = `
-	UPDATE users SET day_start_hour = ? WHERE id = ? RETURNING *;
+	UPDATE users SET day_start_hour = ? WHERE id = ? RETURNING id, username, password_hash, timezone, day_start_hour, is_admin, created_at, access_email;
 	
 	`;
   const rows = db.prepare(sql).raw(true).all([data.day_start_hour, params.id]);

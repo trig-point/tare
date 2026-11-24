@@ -5,6 +5,7 @@ import {
 } from "../../../packages/engine/src/logging/schemas.ts";
 import {
   editorAfterChange,
+  editorInput,
   editorPatch,
   inputValue,
   removableFields,
@@ -74,6 +75,36 @@ test("Remove preserves engine-required fields and valid intake reference shapes"
     }
   }
   assert.equal(removableFields("intake", { kcal: 100 }).has("kcal"), false);
+  assert.equal(
+    editorPatch({ weight_kg: 103.2 }, { weight_kg: "227.50" }, "imperial")
+      .weight_kg,
+    103.2,
+  );
+
+  assert.deepEqual(
+    editorPatch(
+      { weight_kg: 0.02, note: "Before" },
+      { weight_kg: "0", note: "After" },
+      "imperial",
+    ),
+    { weight_kg: 0.02, note: "After" },
+  );
+  const body = { weight_kg: 103.2 };
+  for (const [units, shown, entered, stored] of [
+    ["metric", "103.2", "104", 104],
+    ["imperial", "227.5", "228", 228 * 0.45359237],
+  ] as const) {
+    assert.equal(editorInput("weight_kg", body.weight_kg, units), shown);
+    assert.equal(
+      editorPatch(body, { weight_kg: shown }, units).weight_kg,
+      103.2,
+    );
+    assert.equal(
+      editorPatch(body, { weight_kg: entered }, units).weight_kg,
+      stored,
+    );
+  }
+
   assert.ok(removableFields("weight", { note: null }).has("note"));
   assert.equal(
     editorPatch({ note: null }, { note: "clothed" }).note,

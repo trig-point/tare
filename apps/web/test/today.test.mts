@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { twoUsers } from "../../../packages/engine/test/support/two-users.ts";
+import { formatBodyWeight } from "../src/body-units.ts";
 import { OutboxReplay } from "../src/outbox-replay.ts";
 import { openOutboxStore } from "../src/outbox-store.ts";
 import { questionsKey } from "../src/questions-api.ts";
@@ -54,6 +55,7 @@ async function render(
   data: Awaited<ReturnType<typeof readToday>> | undefined,
   records: Parameters<typeof Today>[0]["records"] = [],
   questions?: unknown[],
+  units?: Parameters<typeof Today>[0]["units"],
 ) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: Infinity } },
@@ -67,7 +69,8 @@ async function render(
   if (questions) client.setQueryData(questionsKey(person.id), questions);
   const router = createRouter({
     routeTree: createRootRoute({
-      component: () => createElement(Today, { person, records, online: false }),
+      component: () =>
+        createElement(Today, { person, records, online: false, units }),
     }),
     history: createMemoryHistory(),
   });
@@ -166,7 +169,15 @@ test("queued weights preserve measured time and refresh only after settlement", 
   for (const value of ["", "0"])
     await assert.rejects(enqueueWeight(replay, person, value));
   await enqueueWeight(replay, person, "70");
-  const [entry] = await store.entries(1);
+  await enqueueWeight(replay, person, "227.5", "", "imperial");
+  const entries = await store.entries(1);
+  const entry = entries.find((record) => record.body.weight_kg === 70);
+  const imperial = entries.find((record) => record !== entry);
+  assert.equal(imperial?.body.weight_kg, 227.5 * 0.45359237);
+  assert.equal(
+    formatBodyWeight(Number(imperial?.body.weight_kg), "imperial"),
+    "227.5",
+  );
   assert.ok(entry && typeof entry.body.measured_at === "string");
   assert.deepEqual(
     [entry.kind, entry.body.weight_kg, entry.state],
@@ -206,10 +217,14 @@ test("pending markers are shown without duplicate synced entries", async (contex
     state: "pending" as const,
     revision: 0,
   };
-  assert.match(
-    await render(setupData.person, data, [pending]),
-    /70 kg.*Pending/s,
-  );
+  for (const [units, label] of [
+    ["metric", /70 kg/],
+    ["imperial", /154\.3 lb/],
+  ] as const)
+    assert.match(
+      await render(setupData.person, data, [pending], undefined, units),
+      new RegExp(`${label.source}.*Pending`, "s"),
+    );
   data.weights.push({
     id: 1,
     client_id: pending.client_id,
@@ -221,6 +236,10 @@ test("pending markers are shown without duplicate synced entries", async (contex
   const synced = await render(setupData.person, data, [pending]);
   assert.doesNotMatch(synced, /Manual/);
   assert.match(synced, /<strong>70 kg<\/strong>/);
+  assert.match(
+    await render(setupData.person, data, [pending], undefined, "imperial"),
+    /<strong>154\.4 lb<\/strong>/,
+  );
   assert.ok(
     synced.includes(
       new Date(data.weights[0]?.measured_at ?? "").toLocaleTimeString([], {

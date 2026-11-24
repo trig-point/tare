@@ -24,7 +24,7 @@ export function insertUser(
 ): InsertUserResult | null {
   const sql = `
 	INSERT INTO users (username, password_hash, timezone, created_at)
-	VALUES (?, ?, ?, ?) RETURNING *;
+	VALUES (?, ?, ?, ?) RETURNING id, username, password_hash, timezone, day_start_hour, is_admin, created_at, access_email;
 	
 	`;
   const res = db

@@ -9,16 +9,29 @@ import {
 } from "react";
 import type { AlignedData, Legend, Series } from "uplot";
 import { ApiError, type Session } from "./api.ts";
+import {
+  type BodyUnits,
+  formatBodyWeight,
+  heightFromCm,
+  heightToCm,
+  type MeasurementDraft,
+  weightDraftKg,
+  weightInput,
+  weightUnit,
+} from "./body-units.ts";
 import type { OutboxReplay } from "./outbox-replay.ts";
 import {
   activityLevels,
+  bodyUnitsKey,
   chartData,
   historyKey,
   type Profile,
+  type ProfileValues,
   profileKey,
   profileValues,
   readHistory,
   readProfile,
+  saveBodyUnits,
   saveProfile,
   type WeightHistory,
 } from "./profile-api.ts";
@@ -109,13 +122,57 @@ export const sectionHead =
 const hint = "text-sm text-ink-2";
 const row =
   "flex min-h-14 items-center justify-between gap-3 border-b border-border py-2.5 last:border-b-0";
+const metricGoalRate = new Intl.NumberFormat(undefined, {
+  maximumFractionDigits: 2,
+  signDisplay: "exceptZero",
+});
+
+export function BodyUnitsSetting({
+  person,
+  online,
+  units,
+}: {
+  person: number;
+  online: boolean;
+  units: BodyUnits;
+}) {
+  const client = useQueryClient();
+  const save = useMutation({
+    mutationFn: (next: BodyUnits) => saveBodyUnits(next),
+    onSuccess: async (saved) => {
+      const queryKey = bodyUnitsKey(person);
+      await client.cancelQueries({ queryKey, exact: true });
+      client.setQueryData(queryKey, saved);
+    },
+  });
+  return (
+    <div className="flex items-center gap-3">
+      <label htmlFor="body-units">Body units</label>
+      <select
+        id="body-units"
+        className="m-0"
+        value={units}
+        disabled={!online || save.isPending}
+        onChange={(event) =>
+          save.mutate(event.target.value === "imperial" ? "imperial" : "metric")
+        }
+      >
+        <option value="metric">Metric</option>
+        <option value="imperial">Imperial</option>
+      </select>
+      {save.isError && <output>Couldn’t save units</output>}
+    </div>
+  );
+}
 
 export function ProfileSection({
   person,
   online,
+  units = "metric",
 }: {
   person: number;
   online: boolean;
+  units?: BodyUnits;
 }) {
   const [editing, setEditing] = useState(false);
   const profile = useQuery({
@@ -149,6 +206,7 @@ export function ProfileSection({
                 person={person}
                 profile={profile.data}
                 online={online}
+                units={units}
                 onSaved={() => setEditing(false)}
               />
             </DialogContent>
@@ -167,24 +225,40 @@ export function ProfileSection({
           <p className={cn(hint, "m-0")}>Unavailable offline</p>
         )
       ) : (
-        <ProfileSummary profile={profile.data} />
+        <ProfileSummary profile={profile.data} units={units} />
       )}
     </section>
   );
 }
 
-function ProfileSummary({ profile }: { profile: Profile | null }) {
+function ProfileSummary({
+  profile,
+  units,
+}: {
+  profile: Profile | null;
+  units: BodyUnits;
+}) {
   if (profile === null)
     return <p className={cn(hint, "m-0")}>Add your profile to get a target</p>;
+  const { feet, inches } = heightFromCm(profile.height_cm);
+  const height =
+    units === "imperial"
+      ? `${feet} ft ${inches} in`
+      : `${displayNumber(profile.height_cm)} cm`;
   const details = [
     ["Birth date", longDate(profile.birth_date)],
-    ["Goal rate", `${signed.format(profile.goal_rate_kg_week)} kg/week`],
+    [
+      "Goal rate",
+      units === "metric"
+        ? `${metricGoalRate.format(profile.goal_rate_kg_week)} kg/week`
+        : `${formatBodyWeight(profile.goal_rate_kg_week, units)} lb/week`,
+    ],
     ["Protein", `${displayNumber(profile.protein_factor)} g/kg`],
   ] as const;
   return (
     <div className="grid gap-4">
       <p className={cn(hint, "m-0")}>
-        <span className="numeric">{displayNumber(profile.height_cm)} cm</span>
+        <span className="numeric">{height}</span>
         {" / "}
         {profile.sex === "female" ? "Female" : "Male"}
         {" / "}
@@ -206,34 +280,89 @@ export function ProfileForm({
   person,
   profile,
   online,
+  units = "metric",
   onSaved,
 }: {
   person: number;
   profile: Profile | null;
   online: boolean;
+  units?: BodyUnits;
   onSaved?: () => void;
 }) {
   const client = useQueryClient();
-  const [values, setValues] = useState(() => profileValues(profile));
+  const [original] = useState(profile);
+  const [initial] = useState(() => profileValues(profile));
+  const [changes, setChanges] = useState<Partial<ProfileValues>>({});
+  const [heightDraft, setHeightDraft] = useState<
+    | { units: "metric"; text: string }
+    | { units: "imperial"; text: { feet: string; inches: string } }
+  >();
+  const [rateDraft, setRateDraft] = useState<MeasurementDraft>();
+  const heightUnits = heightDraft?.units ?? units;
+  const rateUnits = rateDraft?.units ?? units;
+  const height = heightFromCm(Number(initial.height_cm));
+  const imperialHeight =
+    heightDraft?.units === "imperial"
+      ? heightDraft.text
+      : {
+          feet: initial.height_cm ? String(height.feet) : "",
+          inches: initial.height_cm ? String(height.inches) : "",
+        };
+  const rate =
+    rateDraft?.text ??
+    weightInput(Number(initial.goal_rate_kg_week), rateUnits);
+  function changedFields() {
+    const patch = original ? { ...changes } : { ...initial, ...changes };
+    if (heightDraft) {
+      const cm =
+        heightDraft.units === "metric"
+          ? Number(heightDraft.text)
+          : Number(heightDraft.text.feet) === height.feet &&
+              Number(heightDraft.text.inches) === height.inches &&
+              original
+            ? original.height_cm
+            : heightToCm(
+                Number(heightDraft.text.feet),
+                Number(heightDraft.text.inches),
+              );
+      if (cm !== original?.height_cm) patch.height_cm = String(cm);
+    }
+    if (rateDraft) {
+      const kg = weightDraftKg(rateDraft);
+      if (kg !== original?.goal_rate_kg_week)
+        patch.goal_rate_kg_week = String(kg);
+    }
+    return patch;
+  }
   const save = useMutation({
-    mutationFn: () => saveProfile(values),
+    mutationFn: () => saveProfile(changedFields(), original ? "PATCH" : "POST"),
     onSuccess: async (saved) => {
+      await client.cancelQueries({ queryKey: profileKey(person), exact: true });
       client.setQueryData(profileKey(person), saved);
       onSaved?.();
       await refreshToday(client, person);
     },
   });
-  const field = (key: keyof typeof values) => ({
+  const field = (key: keyof ProfileValues) => ({
     id: `profile-${key}`,
-    value: values[key],
+    value: changes[key] ?? initial[key],
     required: true,
     className: "m-0",
     onChange: (event: { target: { value: string } }) => {
       save.reset();
-      setValues({ ...values, [key]: event.target.value });
+      const value = event.target.value;
+      setChanges((previous) => {
+        const next = { ...previous };
+        if (value === initial[key]) delete next[key];
+        else next[key] = value;
+        return next;
+      });
     },
   });
-  const labelled = (key: keyof typeof values, label: string) => (
+  const labelled = (
+    key: keyof ProfileValues | "feet" | "inches",
+    label: string,
+  ) => (
     <label htmlFor={`profile-${key}`} className="font-medium text-ink">
       {label}
     </label>
@@ -250,17 +379,54 @@ export function ProfileForm({
         disabled={!online || save.isPending}
         className="m-0 grid min-w-0 grid-cols-2 gap-3 border-0 p-0"
       >
-        <div className="grid gap-1.5">
-          {labelled("height_cm", "Height (cm)")}
-          <input
-            type="number"
-            inputMode="decimal"
-            min="100"
-            max="250"
-            step="any"
-            {...field("height_cm")}
-          />
-        </div>
+        {heightUnits === "imperial" ? (
+          <div className="grid grid-cols-2 gap-2">
+            {(["feet", "inches"] as const).map((part) => (
+              <div className="grid gap-1.5" key={part}>
+                {labelled(part, part === "feet" ? "Height (ft)" : "Inches")}
+                <input
+                  id={`profile-${part}`}
+                  type="number"
+                  min="0"
+                  max={part === "inches" ? 11 : 8}
+                  required
+                  className="m-0"
+                  value={imperialHeight[part]}
+                  onChange={(event) => {
+                    save.reset();
+                    setHeightDraft({
+                      units: "imperial",
+                      text: { ...imperialHeight, [part]: event.target.value },
+                    });
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="grid gap-1.5">
+            {labelled("height_cm", "Height (cm)")}
+            <input
+              type="number"
+              inputMode="decimal"
+              min="100"
+              max="250"
+              step="any"
+              id="profile-height_cm"
+              className="m-0"
+              required
+              value={
+                heightDraft?.units === "metric"
+                  ? heightDraft.text
+                  : initial.height_cm
+              }
+              onChange={(event) => {
+                save.reset();
+                setHeightDraft({ units: "metric", text: event.target.value });
+              }}
+            />
+          </div>
+        )}
         <div className="grid gap-1.5">
           {labelled("birth_date", "Birth date")}
           <input type="date" {...field("birth_date")} />
@@ -288,13 +454,21 @@ export function ProfileForm({
           </select>
         </div>
         <div className="grid gap-1.5">
-          {labelled("goal_rate_kg_week", "Goal rate (kg/week)")}
+          {labelled(
+            "goal_rate_kg_week",
+            `Goal rate (${weightUnit(rateUnits)}/week)`,
+          )}
           <input
+            id="profile-goal_rate_kg_week"
+            className="m-0"
             type="number"
-            min="-1.5"
-            max="1"
             step="any"
-            {...field("goal_rate_kg_week")}
+            required
+            value={rate}
+            onChange={(event) => {
+              save.reset();
+              setRateDraft({ text: event.target.value, units: rateUnits });
+            }}
           />
         </div>
         <div className="grid gap-1.5">
@@ -350,10 +524,12 @@ export function WeightChart({
   person,
   online,
   entry,
+  units = "metric",
 }: {
   person: number;
   online: boolean;
   entry?: ReactNode;
+  units?: BodyUnits;
 }) {
   const [range, setRange] = useState<WeightRange>("3M");
   const history = useQuery({
@@ -365,7 +541,7 @@ export function WeightChart({
     () => (history.data ? daysInRange(history.data, range) : []),
     [history.data, range],
   );
-  const chart = useMemo(() => chartData({ days }), [days]);
+  const chart = useMemo(() => chartData({ days }, units), [days, units]);
   const firstDay = days[0]?.day;
   const weighIns =
     history.data?.readings.filter(
@@ -380,7 +556,7 @@ export function WeightChart({
     >
       <div className="flex min-h-11 items-center justify-between gap-2">
         <h2 className={sectionHead}>Weight</h2>
-        <span className={hint}>kg</span>
+        <span className={hint}>{weightUnit(units)}</span>
       </div>
       {history.isError && (
         <p role="alert" className="m-0">
@@ -399,13 +575,13 @@ export function WeightChart({
         <>
           <div className="flex items-baseline gap-6">
             <Metric
-              value={displayNumber(latest.reading_kg)}
-              unit="kg"
+              value={formatBodyWeight(latest.reading_kg, units)}
+              unit={weightUnit(units)}
               label={`Weigh-in, ${shortDate(latest.day)}`}
             />
             <Metric
-              value={displayNumber(trend)}
-              unit="kg"
+              value={formatBodyWeight(trend, units)}
+              unit={weightUnit(units)}
               label="Trend"
               secondary
             />
@@ -432,7 +608,8 @@ export function WeightChart({
                 <li key={weighIn.id} className={row}>
                   <div className="min-w-0">
                     <span className="numeric font-medium">
-                      {displayNumber(weighIn.weight_kg)} kg
+                      {formatBodyWeight(weighIn.weight_kg, units)}{" "}
+                      {weightUnit(units)}
                     </span>
                     {weighIn.note && (
                       <p
@@ -521,19 +698,22 @@ export function Metric({
 export function WeightForm({
   person,
   replay,
+  units = "metric",
 }: {
   person: Session["user"];
   replay: OutboxReplay;
+  units?: BodyUnits;
 }) {
-  const [weight, setWeight] = useState("");
+  const [draft, setDraft] = useState<MeasurementDraft>();
+  const inputUnits = draft?.units ?? units;
   const [note, setNote] = useState("");
   const save = useMutation({
     networkMode: "always",
     mutationFn: async () => {
-      await enqueueWeight(replay, person, weight, note);
+      await enqueueWeight(replay, person, draft?.text ?? "", note, inputUnits);
     },
     onSuccess: () => {
-      setWeight("");
+      setDraft(undefined);
       setNote("");
     },
   });
@@ -546,7 +726,7 @@ export function WeightForm({
       }}
     >
       <label htmlFor="weight" className="text-ink">
-        Weight (kg)
+        Weight ({weightUnit(inputUnits)})
       </label>
       <input
         id="weight"
@@ -556,10 +736,22 @@ export function WeightForm({
         step="any"
         required
         className="m-0"
-        value={weight}
-        onChange={(event) => setWeight(event.target.value)}
+        value={draft?.text ?? ""}
+        onChange={(event) =>
+          setDraft({ text: event.target.value, units: inputUnits })
+        }
         disabled={save.isPending}
       />
+      {draft && draft.units !== units && (
+        <Button
+          type="button"
+          variant="ghost"
+          disabled={save.isPending}
+          onClick={() => setDraft(undefined)}
+        >
+          Reset weight
+        </Button>
+      )}
       <label htmlFor="weight-note" className="text-ink">
         Note (optional)
       </label>
@@ -617,10 +809,6 @@ export function Skeleton({
 }
 
 const dayTime = (day: string) => Date.parse(`${day}T12:00:00Z`);
-const signed = new Intl.NumberFormat(undefined, {
-  maximumFractionDigits: 2,
-  signDisplay: "exceptZero",
-});
 export function shortDate(day: string) {
   const time = dayTime(day);
   if (Number.isNaN(time)) return day;

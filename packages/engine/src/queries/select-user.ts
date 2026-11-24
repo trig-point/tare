@@ -20,7 +20,7 @@ export function selectUser(
   params: SelectUserParams,
 ): SelectUserResult | null {
   const sql = `
-	SELECT * FROM users WHERE id = ? LIMIT 1;
+	SELECT id, username, password_hash, timezone, day_start_hour, is_admin, created_at, access_email FROM users WHERE id = ? LIMIT 1;
 	
 	`;
   const res = db.prepare(sql).raw(true).get([params.id]);

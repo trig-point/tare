@@ -1,3 +1,4 @@
+import { type BodyUnits, editedWeightKg, weightInput } from "./body-units.ts";
 import type { OutboxReplay } from "./outbox-replay.ts";
 import type {
   EntryBody,
@@ -24,7 +25,17 @@ export const inputValue = (value: JsonValue) =>
       ? value
       : JSON.stringify(value);
 
-export function editorPatch(body: EntryBody, values: EditorValues) {
+export function editorInput(name: string, value: JsonValue, units: BodyUnits) {
+  return name === "weight_kg" && typeof value === "number"
+    ? weightInput(value, units)
+    : inputValue(value);
+}
+
+export function editorPatch(
+  body: EntryBody,
+  values: EditorValues,
+  units: BodyUnits = "metric",
+) {
   const patch: Record<string, JsonValue | undefined> = {};
   for (const [name, original] of Object.entries(body)) {
     if (name === "client_id") continue;
@@ -32,7 +43,24 @@ export function editorPatch(body: EntryBody, values: EditorValues) {
     if (value == null) patch[name] = value;
     else if (typeof original === "string" || textFields.has(name))
       patch[name] = value;
-    else patch[name] = JSON.parse(value);
+    else {
+      if (name === "weight_kg" && typeof original === "number") {
+        if (value === weightInput(original, units)) {
+          patch[name] = original;
+          continue;
+        }
+        const parsed: JsonValue = JSON.parse(value);
+        if (
+          typeof parsed !== "number" ||
+          !Number.isFinite(parsed) ||
+          parsed <= 0
+        )
+          throw new Error("Invalid weight");
+        const kg = editedWeightKg(value, original, units);
+        if (!Number.isFinite(kg) || kg <= 0) throw new Error("Invalid weight");
+        patch[name] = kg;
+      } else patch[name] = JSON.parse(value);
+    }
   }
   return patch;
 }
