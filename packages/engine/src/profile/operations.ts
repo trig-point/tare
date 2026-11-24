@@ -102,7 +102,7 @@ export const profileOperations = [
     input: zod.strictObject({}),
     output: zod.strictObject({ units: bodyUnits }),
     handler(_input, context) {
-      const row = selectBodyUnits(context.database, {
+      const [row] = selectBodyUnits(context.database, {
         user_id: operationPerson(context).id,
       });
       if (!row) throw new Error("Units read returned no row");
@@ -119,10 +119,11 @@ export const profileOperations = [
     input: zod.strictObject({ units: bodyUnits }),
     output: zod.strictObject({ units: bodyUnits }),
     handler(input, context) {
-      const row = updateBodyUnits(context.database, {
-        user_id: operationPerson(context).id,
-        body_units: input.units,
-      });
+      const [row] = updateBodyUnits(
+        context.database,
+        { body_units: input.units },
+        { user_id: operationPerson(context).id },
+      );
       if (!row) throw new Error("Units save returned no row");
       return { status: 200, body: { units: bodyUnits.parse(row.body_units) } };
     },
