@@ -34,7 +34,7 @@ export function pressMedication(
       if (!dose) continue;
       const { status } = readDose(dose, medication, holds, person, now);
       if (status === "due" || status === "late") {
-        recordTakenDose(database, dose, now, now);
+        recordTakenDose(database, person, medication, dose, now, now);
         return "logged";
       }
     }

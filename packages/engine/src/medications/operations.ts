@@ -57,6 +57,7 @@ const medicationInput = z.strictObject({
   name: z.string().trim().min(1).max(120).optional(),
   active: z.boolean().optional(),
   late_after_minutes: z.number().int().min(0).max(20_160).optional(),
+  water_ml: z.number().int().min(1).max(10_000).nullable().optional(),
   days: scheduleDays.optional(),
   times: scheduleTimes.optional(),
 });
@@ -132,7 +133,7 @@ export const medicationOperations = [
     name: "save_medication",
     path: "/api/medications/save",
     description:
-      "Create with name, weekday days and HH:MM times, or edit a medication by id.",
+      "Create with name, weekday days and HH:MM times, or edit a medication by id. water_ml is the water taken with each dose (whole ml), added to the day's water when a dose is logged; null clears it.",
     input: medicationInput,
     mcpInput: mcpInput(medicationInput),
     output: z.strictObject({ medication: medicationSchema }),
@@ -200,7 +201,14 @@ export const medicationOperations = [
                 Date.parse(taken) > Date.parse(now)
               )
                 throw new OperationError(400, "invalid_time");
-              updated = recordTakenDose(database, dose, taken, now);
+              updated = recordTakenDose(
+                database,
+                person,
+                medication,
+                dose,
+                taken,
+                now,
+              );
               break;
             }
             case "skip_dose":
@@ -216,7 +224,7 @@ export const medicationOperations = [
               );
               break;
             case "undo_dose": {
-              updated = undoDose(database, medication, dose, now);
+              updated = undoDose(database, person, medication, dose, now);
               break;
             }
             case "snooze_dose": {

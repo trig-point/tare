@@ -1,3 +1,3 @@
-INSERT INTO medications (name, active, late_after_minutes, generated_until)
-VALUES (:name, :active, :late_after_minutes, :generated_until)
+INSERT INTO medications (name, active, late_after_minutes, water_ml, generated_until)
+VALUES (:name, :active, :late_after_minutes, :water_ml, :generated_until)
 RETURNING *
