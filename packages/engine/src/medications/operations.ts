@@ -26,6 +26,7 @@ import { nextSlot, scheduleDays, scheduleTimes, slotKey } from "./schedule.ts";
 import {
   changeDose,
   generate,
+  recordTakenDose,
   requireMedication,
   saveMedication,
   tareDay,
@@ -199,15 +200,7 @@ export const medicationOperations = [
                 Date.parse(taken) > Date.parse(now)
               )
                 throw new OperationError(400, "invalid_time");
-              updated = changeDose(
-                database,
-                dose,
-                "taken",
-                taken,
-                null,
-                dose.scheduled_at,
-                dose.status === "taken" ? dose.resolved_at : now,
-              );
+              updated = recordTakenDose(database, dose, taken, now);
               break;
             }
             case "skip_dose":

@@ -402,3 +402,20 @@ export function changeDose(
   if (!updated) throw new Error("Missing updated dose");
   return updated;
 }
+
+export function recordTakenDose(
+  database: Database,
+  dose: ListDosesResult,
+  takenAt: string,
+  now: string,
+) {
+  return changeDose(
+    database,
+    dose,
+    "taken",
+    takenAt,
+    null,
+    dose.scheduled_at,
+    dose.status === "taken" ? dose.resolved_at : now,
+  );
+}

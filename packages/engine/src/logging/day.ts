@@ -26,10 +26,11 @@ export function localDay(
   timeZone: string,
   dayStartHour: number,
 ): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
+  const parts = new Intl.DateTimeFormat("en-US", {
     timeZone,
     calendar: "gregory",
     numberingSystem: "latn",
+    era: "short",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -39,8 +40,12 @@ export function localDay(
   const values = Object.fromEntries(
     parts.map((part) => [part.type, part.value]),
   );
-  const day = new Date(
-    `${values.year}-${values.month}-${values.day}T00:00:00.000Z`,
+  const year = Number(values.year);
+  const day = new Date(0);
+  day.setUTCFullYear(
+    values.era === "BC" ? 1 - year : year,
+    Number(values.month) - 1,
+    Number(values.day),
   );
   if (Number(values.hour) < dayStartHour) day.setUTCDate(day.getUTCDate() - 1);
   return day.toISOString().slice(0, 10);

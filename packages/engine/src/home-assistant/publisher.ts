@@ -240,22 +240,22 @@ export function createHomeAssistantPublisher({
           user_id: message.userId,
           topic: message.topic,
         });
-    if (sent.get(availability) !== "online") await send(availability, "online");
     for (const message of desired)
       if (sent.get(message.topic) !== message.payload)
         await send(message.topic, message.payload);
-    // Events are not retained: a retained one would fire again whenever Home Assistant reconnects.
-    for (const event of events) {
-      if (stopped || !client.connected) throw new Error("mqtt_disconnected");
-      await client.publishAsync(event.topic, event.payload, { qos: 1 });
-      event.sent();
-    }
     for (const row of owned) {
       if (wanted.has(row.topic)) continue;
       await send(row.topic, "");
       if (stopped) return;
       deleteHaEntity(database, row);
       sent.delete(row.topic);
+    }
+    if (sent.get(availability) !== "online") await send(availability, "online");
+    // Events are not retained: a retained one would fire again whenever Home Assistant reconnects.
+    for (const event of events) {
+      if (stopped || !client.connected) throw new Error("mqtt_disconnected");
+      await client.publishAsync(event.topic, event.payload, { qos: 1 });
+      event.sent();
     }
   }
 

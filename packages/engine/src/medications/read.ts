@@ -10,7 +10,10 @@ import {
   type ListHoldsResult,
   listHolds,
 } from "../queries/medications/list-holds.ts";
-import type { ListMedicationsResult } from "../queries/medications/list-medications.ts";
+import {
+  type ListMedicationsResult,
+  listMedications,
+} from "../queries/medications/list-medications.ts";
 import {
   type ListRevisionsResult,
   listRevisions,
@@ -134,12 +137,12 @@ export function readMedication(
   medication: ListMedicationsResult,
   person: PersonDay,
   now: string,
+  rows?: ReturnType<typeof medicationRows>,
 ) {
   const { id, name, active, late_after_minutes } = medication;
   const base = { id, name, active: Boolean(active), late_after_minutes };
   if (!active) return { ...base, status: null };
-  const holds = listHolds(database, { medication_id: id });
-  const doses = listDoses(database, { medication_id: id });
+  const { holds, doses } = rows ?? medicationRows(database, id);
   const views = doses.map((dose) =>
     readDose(dose, medication, holds, person, now),
   );
@@ -172,4 +175,35 @@ export function readMedication(
       active_holds: holdsOn(holds, tareDay(now, person)),
     },
   };
+}
+
+export function medicationRows(database: Database, medicationId: number) {
+  return {
+    holds: listHolds(database, { medication_id: medicationId }),
+    doses: listDoses(database, { medication_id: medicationId }),
+  };
+}
+
+export function dosesOnDay(
+  doses: ListDosesResult[],
+  person: PersonDay,
+  day: string,
+) {
+  return doses.filter(
+    (dose) => tareDay(dose.taken_at ?? dose.scheduled_at, person) === day,
+  );
+}
+
+export function readDayDoses(
+  database: Database,
+  person: PersonDay,
+  day: string,
+  now: string,
+) {
+  return listMedications(database).flatMap((medication) => {
+    const { holds, doses } = medicationRows(database, medication.id);
+    return dosesOnDay(doses, person, day).map((dose) =>
+      readDose(dose, medication, holds, person, now),
+    );
+  });
 }

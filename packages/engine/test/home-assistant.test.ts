@@ -17,6 +17,10 @@ import {
   pressTopic,
 } from "../src/home-assistant/meal-buttons.ts";
 import {
+  medicationPressTopic,
+  medicationProvider,
+} from "../src/home-assistant/medications.ts";
+import {
   nextSlotProvider,
   nextSlotTopic,
 } from "../src/home-assistant/next-slot.ts";
@@ -569,4 +573,129 @@ test("MQTT settings parse, and the importer refuses while the engine answers", a
     { env: { ...process.env, DATABASE_URL: ":memory:", PORT: port } },
   ).catch((error: { stderr: string }) => error);
   assert.deepEqual(JSON.parse(result.stderr), { code: "engine_running" });
+});
+
+test("medication sensor follows the dose clock, replays and removes retained messages", async (context) => {
+  const harness = await setup(context);
+  const {
+    admin,
+    send,
+    install,
+    retained,
+    settle,
+    clock,
+    publisher,
+    database,
+    published,
+  } = harness;
+  const refusals: (string | undefined)[] = [];
+  publisher.addProvider(
+    medicationProvider({
+      database,
+      publisher,
+      clock,
+      log: (_code, detail) => refusals.push(detail),
+    }),
+  );
+  await send(
+    admin.request,
+    "/api/me",
+    { timezone: "UTC", day_start_hour: 4 },
+    "PATCH",
+  );
+  clock.now().setTime(Date.parse("2026-01-01T07:00:00Z"));
+  const { medication } = await send(admin.request, "/api/medications/save", {
+    name: "Example Drops",
+    days: ["thu", "fri"],
+    times: ["08:10"],
+  });
+  const topic = `tare/${install}/${admin.user.id}/medication_${medication.id}`;
+  const discovery = `homeassistant/sensor/tare_${install}_${admin.user.id}/medication_${medication.id}/config`;
+  const state = (messages: Retained) =>
+    JSON.parse(messages.get(topic) ?? "null");
+  const expect = (status: string) =>
+    settle((messages) => state(messages)?.state === status);
+  const step = (at: string) => {
+    clock.now().setTime(Date.parse(at));
+    for (const timer of [...clock.timers])
+      if (timer.at <= clock.now().getTime()) {
+        clock.timers.delete(timer);
+        timer.callback();
+      }
+  };
+  await expect("scheduled");
+  assert.equal(
+    JSON.parse((await retained()).get(discovery) ?? "{}").name,
+    "Example Drops",
+  );
+
+  for (const [at, status] of [
+    ["2026-01-01T08:10:00Z", "due"],
+    ["2026-01-01T09:10:00Z", "late"],
+  ] as const) {
+    step(at);
+    await expect(status);
+  }
+  const late = state(await retained());
+  assert.equal(late.late_count, 1);
+  assert.equal(late.next_dose_at, "2026-01-01T08:10:00.000Z");
+  const futureHold = await send(admin.request, "/api/medications/holds/save", {
+    medication_id: medication.id,
+    from_date: "9999-12-31",
+    to_date: "9999-12-31",
+  });
+  assert.ok(futureHold.hold);
+  const watcher = await connectAsync(`mqtt://127.0.0.1:${harness.port}`);
+  context.after(() => watcher.endAsync(true));
+  const command = medicationPressTopic(install, admin.user.id);
+  const press = JSON.stringify({ dose_key: late.next_dose_key });
+  await watcher.publishAsync(command, press, { qos: 1 });
+  await expect("taken");
+  const taken = async () =>
+    (await send(admin.request, "/api/today", undefined, "GET")).doses;
+  const beforePress = await taken();
+  assert.equal(
+    beforePress.find((dose: { status: string }) => dose.status === "taken")
+      .public_key,
+    late.next_dose_key,
+  );
+  await watcher.publishAsync(command, press, { qos: 1 });
+  while (!refusals.length) await setImmediate();
+  assert.deepEqual(refusals, ["dose_exists"]);
+  assert.deepEqual(await taken(), beforePress);
+
+  const replayed = async (trigger: () => unknown) => {
+    const before = published.length;
+    await trigger();
+    while (!published.slice(before).includes(`${harness.status} online`))
+      await setImmediate();
+    const messages = published.slice(before);
+    const stateIndex = messages.findIndex((line) =>
+      line.startsWith(`${topic} `),
+    );
+    assert.ok(
+      stateIndex >= 0 &&
+        stateIndex < messages.indexOf(`${harness.status} online`),
+    );
+  };
+  await replayed(() =>
+    watcher.publishAsync(harness.statusTopic, "online", { qos: 1 }),
+  );
+  await replayed(() => {
+    for (const peer of Object.values(harness.broker.clients))
+      if (peer.id === `tare-${install}`) peer.conn.destroy();
+  });
+
+  await send(admin.request, "/api/medications/holds/save", {
+    medication_id: medication.id,
+    from_date: "2026-01-02",
+    to_date: "2026-01-02",
+  });
+  step("2026-01-02T08:10:00Z");
+  await expect("held");
+  await send(admin.request, "/api/medications/save", {
+    id: medication.id,
+    active: false,
+  });
+  await settle((messages) => !messages.has(topic) && !messages.has(discovery));
 });

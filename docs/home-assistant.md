@@ -70,6 +70,65 @@ Restart Home Assistant to load it. Alternatively, create a dashboard in the inte
 
 The meal buttons sit in an entity filter card that hides ids Home Assistant does not know. List the ids of the meals you expect; any meal without buttons stays hidden. To show new meals without editing the dashboard, the community `auto-entities` card can match `button.tare_example_meal_*` instead.
 
+## Medication reminders
+
+Tare publishes a sensor for each active medication. Its suggested entity ID starts with `sensor.tare_example_medication_`, where `example` is the account slug. Check the first sensor's ID on the device page and use that prefix for the automation. The prefix matches medications added later.
+
+The example below sends a mobile notification when a sensor becomes due or late, changes dose key while due or late, or reports more late doses. Replace `notify.mobile_app_example` with your phone's notification action.
+
+```yaml
+alias: Tare medication reminder
+triggers:
+  - trigger: event
+    event_type: state_changed
+conditions:
+  - condition: template
+    value_template: >
+      {% set event = trigger.event.data %}
+      {% set before = event.old_state %}
+      {% set after = event.new_state %}
+      {{ event.entity_id.startswith('sensor.tare_example_medication_')
+         and after is not none
+         and (
+           (after.state in ['due', 'late'] and
+            (before is none or before.state != after.state or
+             before.attributes.get('next_dose_key') != after.attributes.get('next_dose_key')))
+           or after.attributes.get('late_count', 0) >
+              (before.attributes.get('late_count', 0) if before else 0)
+         ) }}
+actions:
+  - variables:
+      dose_key: "{{ trigger.event.data.new_state.attributes.get('next_dose_key') }}"
+      can_log: "{{ trigger.event.data.new_state.state in ['due', 'late'] and dose_key is not none }}"
+  - action: notify.mobile_app_example
+    data:
+      title: "{{ trigger.event.data.new_state.name }}"
+      message: "{{ 'Dose due' if trigger.event.data.new_state.state == 'due' else 'Late dose' }}"
+      data:
+        actions: "{{ [{'action': 'TARE_DOSE_' ~ dose_key, 'title': 'Log dose'}] if can_log else [] }}"
+```
+
+Add a second automation to send the dose key captured by the notification button. In the command topic, replace `<install>` and `<user_id>` with the first two levels after `tare/` in the sensor's discovery `state_topic`.
+
+```yaml
+alias: Log a Tare medication dose
+triggers:
+  - trigger: event
+    event_type: mobile_app_notification_action
+conditions:
+  - condition: template
+    value_template: "{{ trigger.event.data.action.startswith('TARE_DOSE_') }}"
+actions:
+  - action: mqtt.publish
+    data:
+      topic: tare/<install>/<user_id>/medication_press
+      payload: "{{ {'dose_key': trigger.event.data.action[10:]} | tojson }}"
+      qos: 1
+      retain: false
+```
+
+Tare ignores the button once the dose is no longer due or late. Changing which dose the sensor shows never changes the key on a notification already sent.
+
 ## Replay and copies
 
 Discovery and state messages are retained on the broker. Tare publishes all of them again whenever it connects to the broker and whenever Home Assistant announces it is online on the status topic, so a restart of either side restores every entity.
@@ -79,5 +138,7 @@ Tare stores an install id in its database and uses it in topics, device ids and 
 ## Trust
 
 Anyone who can use your Home Assistant can press your Tare buttons. A press logs food on your Tare account without signing in to Tare. Give Home Assistant access only to people you would trust to log your meals, and check Last meal press if an entry looks wrong.
+
+Medication names and dose status are retained MQTT messages. Anyone with read access to the broker topics or the Home Assistant device can see them. Anyone who can publish to the medication command topic can mark a due or late dose taken.
 
 Products found through food lookups (USDA and Open Food Facts) are cached once for the whole install. The cache does not record who looked a product up, though each product keeps the time it was retrieved. Your own foods, meals and intake stay with your account.

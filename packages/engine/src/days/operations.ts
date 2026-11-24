@@ -1,6 +1,7 @@
 import { z as zod } from "zod";
 import { localDay } from "../logging/day.ts";
 import { weightRow } from "../logging/schemas.ts";
+import { doseSchema, readDayDoses } from "../medications/read.ts";
 import { defineOperation, operationPerson } from "../operations/registry.ts";
 import { searchOwnFoods } from "../queries/search-own-foods.ts";
 import { searchSourceFoods } from "../queries/search-source-foods.ts";
@@ -25,6 +26,7 @@ export const dayReadOperations = [
     path: "/api/today",
     input: zod.strictObject({}),
     output: ledgerSchema.extend({
+      doses: zod.array(doseSchema),
       weights: zod.array(weightRow),
       timezone: zod.string(),
       target: targetSchema,
@@ -48,6 +50,7 @@ export const dayReadOperations = [
         status: 200,
         body: {
           ...ledger,
+          doses: readDayDoses(context.database, person, day, now.toISOString()),
           timezone: person.timezone,
           weights: selectTodayWeights(context.database, {
             user_id: person.id,

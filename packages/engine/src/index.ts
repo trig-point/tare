@@ -14,6 +14,7 @@ import { createGrocyClient } from "./grocy/client.ts";
 import { resolveGrocyOwner, safeGrocyText } from "./grocy/config.ts";
 import { createGroceryClient } from "./grocy/grocery.ts";
 import { createMealButtons } from "./home-assistant/meal-buttons.ts";
+import { medicationProvider } from "./home-assistant/medications.ts";
 import { nextSlotProvider } from "./home-assistant/next-slot.ts";
 import { createHomeAssistantPublisher } from "./home-assistant/publisher.ts";
 import { sensorProvider } from "./home-assistant/snapshot.ts";
@@ -146,6 +147,14 @@ async function startEngine(scaleUsers: Map<string, number> | null) {
     nextSlotProvider(connection.database, clock, config),
   );
   homeAssistant?.addProvider(workoutProvider(connection.database, clock));
+  if (homeAssistant)
+    homeAssistant.addProvider(
+      medicationProvider({
+        database: connection.database,
+        publisher: homeAssistant,
+        clock,
+      }),
+    );
   const calendar = createCalendarRefresher({
     database: connection.database,
     clock,

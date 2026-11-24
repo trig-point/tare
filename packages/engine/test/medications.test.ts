@@ -443,3 +443,43 @@ test("undo restores a recent resolution and refuses expired or inactive correcti
     }
   }
 });
+
+test("today and read_day place each dose on its Tare day", async (context) => {
+  const { action, call, doses, save, step } = await setup(context);
+  const { medication } = await save({
+    name: "Example Tonic",
+    days: weekdays,
+    times: ["01:00", "02:00", "09:00"],
+  });
+  const scheduled = doses(medication.id).find(
+    (dose) => dose.slot_time === "09:00",
+  );
+  const [skipped, taken] = doses(medication.id).filter(
+    (dose) => dose.slot_date === "2026-01-02",
+  );
+  assert.ok(scheduled && skipped && taken);
+  step("2026-01-02T04:15:00Z");
+  assert.equal((await action("skip", skipped.id)).status, 200);
+  assert.equal((await action("log", taken.id)).status, 200);
+  const backdated = doses(medication.id).find(
+    (dose) => dose.slot_date === "2026-01-03",
+  );
+  assert.ok(backdated);
+  assert.equal(
+    (await action("log", backdated.id, { taken_at: "0100-01-01T12:00:00Z" }))
+      .status,
+    200,
+  );
+  assert.equal((await call("/api/days/0100-01-01")).doses[0].id, backdated.id);
+  const relevant = new Set([scheduled.id, skipped.id, taken.id]);
+  const read = async (path: string) =>
+    (await call(path)).doses
+      .filter((dose: { id: number }) => relevant.has(dose.id))
+      .map((dose: { id: number; status: string }) => [dose.id, dose.status]);
+  assert.deepEqual(await read("/api/days/2026-01-01"), [
+    [scheduled.id, "late"],
+    [skipped.id, "skipped"],
+  ]);
+  for (const path of ["/api/days/2026-01-02", "/api/today"])
+    assert.deepEqual(await read(path), [[taken.id, "taken"]]);
+});
