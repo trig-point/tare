@@ -618,7 +618,10 @@ test("medication sensor follows the dose clock, replays and removes retained mes
   const step = (at: string) => {
     clock.now().setTime(Date.parse(at));
     for (const timer of [...clock.timers])
-      if (timer.at <= clock.now().getTime()) timer.callback();
+      if (timer.at <= clock.now().getTime()) {
+        clock.timers.delete(timer);
+        timer.callback();
+      }
   };
   await expect("scheduled");
   assert.equal(
@@ -636,6 +639,12 @@ test("medication sensor follows the dose clock, replays and removes retained mes
   const late = state(await retained());
   assert.equal(late.late_count, 1);
   assert.equal(late.next_dose_at, "2026-01-01T08:10:00.000Z");
+  const futureHold = await send(admin.request, "/api/medications/holds/save", {
+    medication_id: medication.id,
+    from_date: "9999-12-31",
+    to_date: "9999-12-31",
+  });
+  assert.ok(futureHold.hold);
   const watcher = await connectAsync(`mqtt://127.0.0.1:${harness.port}`);
   context.after(() => watcher.endAsync(true));
   const command = medicationPressTopic(install, admin.user.id);
@@ -645,6 +654,11 @@ test("medication sensor follows the dose clock, replays and removes retained mes
   const taken = async () =>
     (await send(admin.request, "/api/today", undefined, "GET")).doses;
   const beforePress = await taken();
+  assert.equal(
+    beforePress.find((dose: { status: string }) => dose.status === "taken")
+      .public_key,
+    late.next_dose_key,
+  );
   await watcher.publishAsync(command, press, { qos: 1 });
   while (!refusals.length) await setImmediate();
   assert.deepEqual(refusals, ["dose_exists"]);

@@ -461,6 +461,16 @@ test("today and read_day place each dose on its Tare day", async (context) => {
   step("2026-01-02T04:15:00Z");
   assert.equal((await action("skip", skipped.id)).status, 200);
   assert.equal((await action("log", taken.id)).status, 200);
+  const backdated = doses(medication.id).find(
+    (dose) => dose.slot_date === "2026-01-03",
+  );
+  assert.ok(backdated);
+  assert.equal(
+    (await action("log", backdated.id, { taken_at: "0100-01-01T12:00:00Z" }))
+      .status,
+    200,
+  );
+  assert.equal((await call("/api/days/0100-01-01")).doses[0].id, backdated.id);
   const relevant = new Set([scheduled.id, skipped.id, taken.id]);
   const read = async (path: string) =>
     (await call(path)).doses

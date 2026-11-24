@@ -2,7 +2,6 @@ import type { Database } from "better-sqlite3";
 import { z } from "zod";
 import { calendarDayMs, personDayBounds } from "../calendar/time.ts";
 import { writeTransaction } from "../db.ts";
-import { shiftDay } from "../logging/day.ts";
 import {
   dosesOnDay,
   medicationRows,
@@ -90,9 +89,11 @@ export function medicationProvider({
     const instant = clock.now();
     const now = instant.toISOString();
     const day = tareDay(now, person);
-    const bounds = (date: string) =>
-      personDayBounds(date, person.timezone, person.day_start_hour);
-    let wake = bounds(day).end.getTime();
+    let wake = personDayBounds(
+      day,
+      person.timezone,
+      person.day_start_hour,
+    ).end.getTime();
     const consider = (time: number) => {
       if (time > instant.getTime() && time < wake) wake = time;
     };
@@ -151,12 +152,6 @@ export function medicationProvider({
         consider(at);
         consider(at + medication.late_after_minutes * 60_000);
         consider(at + calendarDayMs + 1);
-      }
-      for (const hold of rows.holds) {
-        if (hold.from_date > day)
-          consider(bounds(hold.from_date).start.getTime());
-        if (hold.to_date >= day && hold.to_date < "9999-12-31")
-          consider(bounds(shiftDay(hold.to_date, 1)).start.getTime());
       }
       consider(Date.parse(medication.generated_until) - calendarDayMs);
     }
