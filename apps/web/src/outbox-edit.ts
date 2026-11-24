@@ -45,6 +45,10 @@ export function editorPatch(
       patch[name] = value;
     else {
       if (name === "weight_kg" && typeof original === "number") {
+        if (value === weightInput(original, units)) {
+          patch[name] = original;
+          continue;
+        }
         const parsed: JsonValue = JSON.parse(value);
         if (
           typeof parsed !== "number" ||
@@ -53,7 +57,7 @@ export function editorPatch(
         )
           throw new Error("Invalid weight");
         const kg = editedWeightKg(value, original, units);
-        if (kg <= 0) throw new Error("Invalid weight");
+        if (!Number.isFinite(kg) || kg <= 0) throw new Error("Invalid weight");
         patch[name] = kg;
       } else patch[name] = JSON.parse(value);
     }

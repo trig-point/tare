@@ -307,6 +307,14 @@ test("units save independently of stale profile edits", async (context) => {
   });
   assert.equal(response.status, 400);
   assert.equal((await readProfile(signal))?.height_cm, 185.4);
+  const smallLoss = await saveProfile({ goal_rate_kg_week: "-0.02" }, "PATCH");
+  assert.equal(weightInput(smallLoss.goal_rate_kg_week, "imperial"), "-0");
+  const maintenance = weightDraftKg(
+    { text: "0", units: "imperial" },
+    smallLoss.goal_rate_kg_week,
+  );
+  await saveProfile({ goal_rate_kg_week: String(maintenance) }, "PATCH");
+  assert.equal((await readProfile(signal))?.goal_rate_kg_week, 0);
 });
 
 test("a draft keeps its units and shares the display rounding", () => {

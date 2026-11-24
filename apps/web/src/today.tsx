@@ -704,7 +704,11 @@ function WeightEntry({
             Weight ({weightUnit(draft.units)})
             <input
               type="number"
-              min="0.01"
+              min={
+                draft.text === weightInput(draft.originalKg, draft.units)
+                  ? undefined
+                  : "0.01"
+              }
               step="any"
               required
               value={draft.text}

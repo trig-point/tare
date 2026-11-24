@@ -76,11 +76,19 @@ test("Remove preserves engine-required fields and valid intake reference shapes"
   }
   assert.equal(removableFields("intake", { kcal: 100 }).has("kcal"), false);
   assert.equal(
-    editorPatch({ weight_kg: 103.2 }, { weight_kg: "227.50" }, "imperial")
+    editorPatch({ weight_kg: 103.2 }, { weight_kg: "227.5" }, "imperial")
       .weight_kg,
     103.2,
   );
 
+  assert.deepEqual(
+    editorPatch(
+      { weight_kg: 0.02, note: "Before" },
+      { weight_kg: "0", note: "After" },
+      "imperial",
+    ),
+    { weight_kg: 0.02, note: "After" },
+  );
   const body = { weight_kg: 103.2 };
   for (const [units, shown, entered, stored] of [
     ["metric", "103.2", "104", 104],
