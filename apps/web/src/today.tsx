@@ -321,7 +321,7 @@ function FoodLog({
             <ul className={list} aria-label="Weights">
               {today.weights.map((entry) => (
                 <WeightEntry
-                  key={`${entry.id}:${units}`}
+                  key={entry.id}
                   units={units}
                   entry={entry}
                   timezone={today.timezone}
@@ -646,6 +646,7 @@ function WeightEntry({
   refresh: () => Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
+  const [editUnits, setEditUnits] = useState(units);
   const [weight, setWeight] = useState(weightInput(entry.weight_kg, units));
   const mutation = useMutation({
     networkMode: "always",
@@ -675,6 +676,7 @@ function WeightEntry({
         label={label}
         disabled={!online || mutation.isPending}
         edit={() => {
+          setEditUnits(units);
           setWeight(weightInput(entry.weight_kg, units));
           setEditing(true);
         }}
@@ -691,12 +693,12 @@ function WeightEntry({
           onSubmit={(event) => {
             event.preventDefault();
             mutation.mutate({
-              weight_kg: editedWeightKg(weight, entry.weight_kg, units),
+              weight_kg: editedWeightKg(weight, entry.weight_kg, editUnits),
             });
           }}
         >
           <label>
-            Weight ({weightUnit(units)})
+            Weight ({weightUnit(editUnits)})
             <input
               type="number"
               min="0.01"

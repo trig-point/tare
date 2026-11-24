@@ -70,8 +70,8 @@ export function RejectedEntries({
             <p>{label(entry.error_code ?? "rejected")}</p>
             {editing === entry.seq && entry.error_code !== "already_saved" ? (
               <EntryEditor
-                key={`${entry.seq}:${entry.revision}:${units}`}
-                units={units}
+                key={`${entry.seq}:${entry.revision}`}
+                preferredUnits={units}
                 entry={entry}
                 busy={busy}
                 save={(patch) =>
@@ -130,14 +130,15 @@ function EntryEditor({
   busy,
   save,
   cancel,
-  units,
+  preferredUnits,
 }: {
   entry: QueueEntry;
   busy: boolean;
   save: (patch: Record<string, JsonValue | undefined>) => Promise<void>;
   cancel: () => void;
-  units: BodyUnits;
+  preferredUnits: BodyUnits;
 }) {
+  const [units] = useState(preferredUnits);
   const fields = Object.entries(entry.body).filter(
     ([name]) => name !== "client_id",
   );

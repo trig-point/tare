@@ -305,7 +305,6 @@ function YouScreen() {
             units={units}
             entry={
               <WeightForm
-                key={units}
                 person={session.user}
                 replay={runtime.queue}
                 units={units}

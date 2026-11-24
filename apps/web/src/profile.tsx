@@ -11,11 +11,12 @@ import type { AlignedData, Legend, Series } from "uplot";
 import { ApiError, type Session } from "./api.ts";
 import {
   type BodyUnits,
+  editedWeightKg,
   formatBodyWeight,
   heightFromCm,
   heightToCm,
   weightFromKg,
-  weightToKg,
+  weightInput,
   weightUnit,
 } from "./body-units.ts";
 import type { OutboxReplay } from "./outbox-replay.ts";
@@ -234,6 +235,10 @@ export function ProfileForm({
   const client = useQueryClient();
   const [values, setValues] = useState(() => profileValues(profile));
   const units = values.units ?? "metric";
+  const [heightBeforeImperialEdit, setHeightBeforeImperialEdit] = useState(
+    values.height_cm,
+  );
+  const originalHeight = heightFromCm(Number(heightBeforeImperialEdit));
   const [heightDraft, setHeightDraft] = useState<{
     feet: string;
     inches: string;
@@ -247,11 +252,12 @@ export function ProfileForm({
   const imperialRate =
     rateDraft ??
     (values.goal_rate_kg_week
-      ? String(weightFromKg(Number(values.goal_rate_kg_week), "imperial"))
+      ? weightInput(Number(values.goal_rate_kg_week), "imperial")
       : "");
   const save = useMutation({
     mutationFn: () => saveProfile(values),
     onSuccess: async (saved) => {
+      await client.cancelQueries({ queryKey: profileKey(person), exact: true });
       client.setQueryData(profileKey(person), saved);
       onSaved?.();
       await refreshToday(client, person);
@@ -299,6 +305,7 @@ export function ProfileForm({
                 units:
                   event.target.value === "imperial" ? "imperial" : "metric",
               });
+              setHeightBeforeImperialEdit(values.height_cm);
               setHeightDraft(undefined);
               setRateDraft(undefined);
             }}
@@ -326,17 +333,23 @@ export function ProfileForm({
                       ...imperialHeight,
                       [part]: event.target.value,
                     };
+                    const restoresOriginal =
+                      heightBeforeImperialEdit &&
+                      Number(draft.feet) === originalHeight.feet &&
+                      Number(draft.inches) === originalHeight.inches;
                     setHeightDraft(draft);
                     setValues({
                       ...values,
                       height_cm:
                         draft.feet && draft.inches
-                          ? String(
-                              heightToCm(
-                                Number(draft.feet),
-                                Number(draft.inches),
-                              ),
-                            )
+                          ? restoresOriginal
+                            ? heightBeforeImperialEdit
+                            : String(
+                                heightToCm(
+                                  Number(draft.feet),
+                                  Number(draft.inches),
+                                ),
+                              )
                           : "",
                     });
                   }}
@@ -390,8 +403,8 @@ export function ProfileForm({
           )}
           <input
             type="number"
-            min={weightFromKg(-1.5, units)}
-            max={weightFromKg(1, units)}
+            min={weightInput(-1.5, units)}
+            max={weightInput(1, units)}
             step="any"
             {...field("goal_rate_kg_week")}
             {...(units === "imperial" && {
@@ -403,7 +416,13 @@ export function ProfileForm({
                 setValues({
                   ...values,
                   goal_rate_kg_week: rate
-                    ? String(weightToKg(Number(rate), units))
+                    ? String(
+                        editedWeightKg(
+                          rate,
+                          Number(values.goal_rate_kg_week),
+                          units,
+                        ),
+                      )
                     : "",
                 });
               },
@@ -644,11 +663,13 @@ export function WeightForm({
   units?: BodyUnits;
 }) {
   const [weight, setWeight] = useState("");
+  const [draftUnits, setDraftUnits] = useState(units);
+  const inputUnits = weight ? draftUnits : units;
   const [note, setNote] = useState("");
   const save = useMutation({
     networkMode: "always",
     mutationFn: async () => {
-      await enqueueWeight(replay, person, weight, note, units);
+      await enqueueWeight(replay, person, weight, note, inputUnits);
     },
     onSuccess: () => {
       setWeight("");
@@ -664,7 +685,7 @@ export function WeightForm({
       }}
     >
       <label htmlFor="weight" className="text-ink">
-        Weight ({weightUnit(units)})
+        Weight ({weightUnit(inputUnits)})
       </label>
       <input
         id="weight"
@@ -675,7 +696,10 @@ export function WeightForm({
         required
         className="m-0"
         value={weight}
-        onChange={(event) => setWeight(event.target.value)}
+        onChange={(event) => {
+          setDraftUnits(inputUnits);
+          setWeight(event.target.value);
+        }}
         disabled={save.isPending}
       />
       <label htmlFor="weight-note" className="text-ink">
