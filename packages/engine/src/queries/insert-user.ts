@@ -16,7 +16,6 @@ export type InsertUserResult = {
   is_admin: number;
   created_at: string;
   access_email: string | null;
-  body_units: string;
 };
 
 export function insertUser(
@@ -25,7 +24,7 @@ export function insertUser(
 ): InsertUserResult | null {
   const sql = `
 	INSERT INTO users (username, password_hash, timezone, created_at)
-	VALUES (?, ?, ?, ?) RETURNING *;
+	VALUES (?, ?, ?, ?) RETURNING id, username, password_hash, timezone, day_start_hour, is_admin, created_at, access_email;
 	
 	`;
   const res = db
@@ -51,7 +50,6 @@ function mapArrayToInsertUserResult(data: any) {
     is_admin: data[5],
     created_at: data[6],
     access_email: data[7],
-    body_units: data[8],
   };
   return result;
 }

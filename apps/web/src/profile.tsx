@@ -329,7 +329,7 @@ export function ProfileForm({
     return patch;
   }
   const save = useMutation({
-    mutationFn: () => saveProfile(changedFields()),
+    mutationFn: () => saveProfile(changedFields(), original ? "PATCH" : "POST"),
     onSuccess: async (saved) => {
       await client.cancelQueries({ queryKey: profileKey(person), exact: true });
       client.setQueryData(profileKey(person), saved);

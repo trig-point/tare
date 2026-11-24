@@ -17,7 +17,6 @@ export type UpdateUserSettingsResult = {
   is_admin: number;
   created_at: string;
   access_email: string | null;
-  body_units: string;
 };
 
 export function updateUserSettings(
@@ -26,7 +25,7 @@ export function updateUserSettings(
   params: UpdateUserSettingsParams,
 ): UpdateUserSettingsResult[] {
   const sql = `
-	UPDATE users SET day_start_hour = ? WHERE id = ? RETURNING *;
+	UPDATE users SET day_start_hour = ? WHERE id = ? RETURNING id, username, password_hash, timezone, day_start_hour, is_admin, created_at, access_email;
 	
 	`;
   const rows = db.prepare(sql).raw(true).all([data.day_start_hour, params.id]);
@@ -44,7 +43,6 @@ function mapArrayToUpdateUserSettingsResult(data: any) {
     is_admin: data[5],
     created_at: data[6],
     access_email: data[7],
-    body_units: data[8],
   };
   return result;
 }

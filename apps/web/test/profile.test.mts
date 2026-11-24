@@ -295,8 +295,8 @@ test("units save independently of stale profile edits", async (context) => {
     height_cm: String(heightToCm(6, 1)),
   });
   await saveBodyUnits("imperial");
-  assert.deepEqual(await saveProfile({}), saved);
-  await saveProfile({ activity_level: "light" });
+  assert.deepEqual(await saveProfile({}, "PATCH"), saved);
+  await saveProfile({ activity_level: "light" }, "PATCH");
   assert.equal(await readBodyUnits(signal), "imperial");
   const response = await fetch("/api/profile/units", {
     method: "POST",

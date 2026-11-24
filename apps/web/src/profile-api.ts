@@ -74,7 +74,10 @@ export function profileValues(profile: Profile | null): ProfileValues {
     protein_factor: profile ? String(profile.protein_factor) : "1.6",
   };
 }
-export async function saveProfile(values: Partial<ProfileValues>) {
+export async function saveProfile(
+  values: Partial<ProfileValues>,
+  method: "POST" | "PATCH" = "POST",
+) {
   const input = profileSchema.partial().parse({
     ...values,
     height_cm:
@@ -90,7 +93,7 @@ export async function saveProfile(values: Partial<ProfileValues>) {
   });
   return z.object({ profile: profileSchema }).parse(
     await api("/api/profile", {
-      method: "POST",
+      method,
       body: JSON.stringify(input),
     }),
   ).profile;
