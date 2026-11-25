@@ -155,10 +155,9 @@ export async function undoGuideSet(
       client_set_id: id,
     }),
   );
-  return {
-    ...activity,
-    sets: activity.sets.filter((set) => set.client_set_id !== id),
-  };
+  const current = await readGuideActivity(workout);
+  if (current?.id !== activity.id) throw new ApiError(409, "stale_session");
+  return current;
 }
 
 export async function discardGuide(

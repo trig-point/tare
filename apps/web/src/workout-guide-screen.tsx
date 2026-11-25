@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
-import { liveRefresh } from "./api.ts";
+import { ApiError, liveRefresh } from "./api.ts";
 import { setInput, setRow } from "./health-api.ts";
 import {
   Button,
@@ -118,6 +118,7 @@ function GuideSession({
     | { kind: "undo"; id: string }
   );
   const [failed, setFailed] = useState<Action | null>(null);
+  const [rowIds, setRowIds] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<string | null>(null);
   const settle = () => {
     client.setQueryData(queryKey, null);
@@ -141,6 +142,11 @@ function GuideSession({
     onSuccess: (result, action) => {
       client.setQueryData(queryKey, result.activity);
       setFailed(null);
+      if (action.kind === "done" && result.saved)
+        setRowIds((previous) => ({
+          ...previous,
+          [action.row]: action.change.id,
+        }));
       setMessage(result.saved ? null : "Not saved");
       setRest(
         result.saved && action.kind === "done"
@@ -149,7 +155,17 @@ function GuideSession({
       );
     },
     onError: (error, action) => {
-      if (!closeStaleGuide(error, settle)) setFailed(action);
+      if (closeStaleGuide(error, settle)) return;
+      if (
+        error instanceof ApiError &&
+        error.status >= 400 &&
+        error.status < 500
+      ) {
+        setFailed(null);
+        setMessage(
+          error.code === "too_many_sets" ? "Set limit reached" : "Not saved",
+        );
+      } else setFailed(action);
     },
   });
   const discard = useMutation({
@@ -187,6 +203,13 @@ function GuideSession({
   const saved = activity.data;
   const blocked = busy || activity.isFetching || saved === undefined;
   const occurrences = new Map<string, number>();
+  const reserved = new Set(Object.values(rowIds));
+  const looseSets = Map.groupBy(
+    saved?.sets.filter(
+      (set) => set.client_set_id && !reserved.has(set.client_set_id),
+    ) ?? [],
+    (set) => set.exercise,
+  );
   return (
     <DialogContent
       className="guide-screen"
@@ -211,9 +234,6 @@ function GuideSession({
           const exercise = prescribedSet(movement).exercise;
           const offset = occurrences.get(exercise) ?? 0;
           occurrences.set(exercise, offset + movement.sets);
-          const sets = saved?.sets.filter(
-            (set) => set.client_set_id && set.exercise === exercise,
-          );
           return (
             <Movement
               key={JSON.stringify([exercise, offset])}
@@ -221,7 +241,10 @@ function GuideSession({
             >
               {Array.from({ length: movement.sets }, (_, setIndex) => {
                 const row = JSON.stringify([exercise, offset + setIndex]);
-                const marked = sets?.[offset + setIndex];
+                const bound = rowIds[row];
+                const marked = bound
+                  ? saved?.sets.find((set) => set.client_set_id === bound)
+                  : looseSets.get(exercise)?.shift();
                 return (
                   <GuideSet
                     key={row}
