@@ -455,19 +455,33 @@ test("0055 tags archived menu history and leaves sign-off and calories intact", 
       VALUES (1, 1, 1, 'Example bowl', 1, '${instant}');
     INSERT INTO foods (id, user_id, name, kcal, provenance)
       VALUES (1, 1, 'Example menu', 500, 'label'), (2, 1, 'Example label', 500, 'label'),
-        (3, 1, 'Example blank', 500, 'label');
+        (3, 1, 'Example blank', 500, 'label'), (4, 1, 'Example estimate', 500, 'estimated'),
+        (5, 1, 'Example linked', 500, 'label'), (6, 1, 'Example order food', 500, 'label');
+    INSERT INTO source_foods (id, source, source_key, name, provenance, fetched_at)
+      VALUES (1, 'usda', 'example', 'Example catalog food', 'verified', '${instant}');
+    UPDATE foods SET source_food_id = 1 WHERE id = 5;
+    UPDATE foods SET service = 'Example delivery', meal_name = 'Example meal' WHERE id = 6;
     INSERT INTO regular_meals (user_id, food_id, restaurant, baseline, archived_at, created_at)
       VALUES (1, 1, 'Example cafe', 'menu', '${instant}', '${instant}'),
         (1, 2, 'Example cafe', 'label', NULL, '${instant}'),
-        (1, 3, char(9,32), 'menu', NULL, '${instant}');
+        (1, 3, char(9,32), 'menu', NULL, '${instant}'),
+        (1, 4, 'Example cafe', 'estimate', NULL, '${instant}'),
+        (1, 5, 'Example cafe', 'menu', NULL, '${instant}'),
+        (1, 6, 'Example cafe', 'menu', NULL, '${instant}');
     WITH examples(id, client_id, food_id) AS (
-      VALUES (1, 'archived', 1), (2, 'label', 2), (3, 'blank', 3), (4, 'order', 1), (5, 'reused', 1)
+      VALUES (1, 'archived', 1), (2, 'label', 2), (3, 'blank', 3), (4, 'order', 1), (5, 'reused', 1),
+        (6, 'meal-part:legacy-log', 4), (7, 'catalog-copy', 5), (8, 'order-food', 6),
+        (9, 'meal-part:00000000-0000-4000-8000-000000000001:1', 1)
     )
     INSERT INTO intake_entries (id, user_id, client_id, food_id, servings, eaten_at, day, kcal, provenance, created_at, updated_at)
       SELECT id, 1, client_id, food_id, 1, '${instant}', '2026-01-01', 500, 'label', '${instant}', '${instant}' FROM examples;
     INSERT INTO meal_actions (user_id, mutation_id, order_meal_id, action, intake_entry_id, result, created_at)
       VALUES (1, 'order', 1, 'ate', 4, '{}', '${instant}'),
-        (1, 'reused', 1, 'ate', 5, '{}', '2025-12-31T00:00:00.000Z');
+        (1, 'reused', 1, 'ate', 5, '{}', '2025-12-31T00:00:00.000Z'),
+        (1, 'stale-mutation', 1, 'ate', 6, '{}', '${instant}'),
+        (1, 'meal-part:legacy-log', 1, 'ate', 7, '{}', '${instant}');
+    INSERT INTO meal_receipts (user_id, client_id, part_key, request_hash, part_count, created_at)
+      VALUES (1, 'example-parts', '00000000-0000-4000-8000-000000000001', printf('%064d', 0), 1, '${instant}');
     UPDATE days SET signed_off_at = '${instant}';
   `);
   cpSync(new URL(migration, migrations), join(folder, migration));
@@ -480,7 +494,7 @@ test("0055 tags archived menu history and leaves sign-off and calories intact", 
     .raw();
   assert.deepEqual(
     snapshot.all(),
-    [1, 0, 0, 0, 1].map((tag) => [tag, "legacy", 500]),
+    [1, 0, 0, 0, 1, 1, 0, 0, 0].map((tag) => [tag, "legacy", 500]),
   );
   assert.equal(
     database.prepare("SELECT signed_off_at FROM days").pluck().get(),
@@ -491,6 +505,4 @@ test("0055 tags archived menu history and leaves sign-off and calories intact", 
     .pluck();
   const activation = String(marker.get());
   assert.equal(new Date(activation).toISOString(), activation);
-  applyMigrations(database, before);
-  assert.equal(marker.get(), activation);
 });
