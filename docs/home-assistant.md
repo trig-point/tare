@@ -1,6 +1,6 @@
 # Connect Home Assistant
 
-Tare publishes its numbers to Home Assistant through an MQTT broker using MQTT discovery. Home Assistant shows them as one Tare device for the account, with sensors, a `target_changed` event and a pair of buttons for each meal on hand.
+Tare publishes its numbers to Home Assistant through an MQTT broker using MQTT discovery. Home Assistant shows them as one Tare device for the account, with sensors, `target_changed` and activity events, and a pair of buttons for each meal on hand.
 
 ## Set up the broker and Tare
 
@@ -36,6 +36,7 @@ The device is named `Tare <username>`. Every entity on it goes unavailable when 
 | Weight trend | kg | The latest smoothed weight. |
 | TDEE estimate | kcal | The latest adaptive estimate of daily energy use. |
 | Target changed | event | Fires when a recompute changes the stored target. Attributes `old_kcal`, `old_protein_g`, `new_kcal` and `new_protein_g`. |
+| Activity | event | Fires once for each food, dose, weight or workout you log. See [Activity events](#activity-events). |
 | `<meal> ate it`, `<meal> ate 3/4` | button | One pair per meal on hand. Pressing one logs that portion. |
 | Last meal press | | Result of the last button press: `logged`, `stale_revision`, `invalid_press` or another error code, with `meal_id`, `action` and `at` attributes. Shows `none` until the first press since Tare started. |
 | Workout today | | Today's session name, or the cardio or rest label. Shows `No schedule` until a schedule is stored. Attributes `today` (the entry with its movements) and `week`. |
@@ -44,7 +45,7 @@ A number can be unknown: no target until the profile is set up and there is a fi
 
 Meal buttons come and go. A meal gets its pair when it is delivered or due today, and loses it when its last serving is eaten. Each press carries the meal's revision. A press sent again with the same revision, such as a double press, logs nothing and reports `logged` again. Any other press with an old revision logs nothing and reports `stale_revision`. A meal whose nutrition is not known yet still has buttons, but a press logs nothing and reports `meal_nutrition_pending` or `meal_nutrition_missing` until you answer its nutrition question in Tare.
 
-`target_changed` is not replayed after a restart. A change that happened while Home Assistant was offline appears in Tare but does not fire the event later.
+`target_changed` and activity events are not replayed after a restart. An event that happens while the broker is unreachable fires when Tare reconnects, as long as Tare keeps running. An event that happens while only Home Assistant is offline is not delivered later.
 
 ## Find the entity ids
 
@@ -69,6 +70,87 @@ lovelace:
 Restart Home Assistant to load it. Alternatively, create a dashboard in the interface, open its raw configuration editor and paste the file in.
 
 The meal buttons sit in an entity filter card that hides ids Home Assistant does not know. List the ids of the meals you expect; any meal without buttons stays hidden. To show new meals without editing the dashboard, the community `auto-entities` card can match `button.tare_example_meal_*` instead.
+
+## Activity events
+
+The Activity entity fires one of these event types, with these attributes. Notes and descriptions are never included.
+
+| Event type | Attributes |
+| --- | --- |
+| `food_logged` | `name`, `kcal`, `protein_g`, `slot` (the meal slot name, or none) |
+| `dose_logged` | `medication`, `status` (`taken` or `skipped`) |
+| `weight_logged` | `kg` |
+| `workout_logged` | `kind`, `duration_minutes` (none for a workout logged by date only) |
+
+Each record fires once, when it is logged. Editing or deleting it fires nothing, and a record deleted before Home Assistant receives its event never fires. Undoing a dose fires nothing; logging that dose again fires a new `dose_logged`. Stopping a medication skips its open doses without firing. Workouts imported from Oura fire when they first arrive, so the first sync after connecting Oura fires one `workout_logged` for each workout in its 30-day backfill. A meal logged in several parts fires one `food_logged` per part.
+
+The examples below use the placeholder `example`. Replace the ids with the ones on your device page and `notify.mobile_app_example` with your phone's notification action.
+
+A protein reminder at 8 PM when more than 40 g is left. It uses the Protein remaining sensor, not an event:
+
+```yaml
+alias: Tare protein reminder
+triggers:
+  - trigger: time
+    at: "20:00:00"
+conditions:
+  - condition: numeric_state
+    entity_id: sensor.tare_example_protein_remaining
+    above: 40
+actions:
+  - action: notify.mobile_app_example
+    data:
+      title: Protein
+      message: "{{ states('sensor.tare_example_protein_remaining') | round(0) }} g left today"
+```
+
+A chime when a dose is taken. Replace the media player and sound with your own; a light can flash instead with `light.turn_on` and `flash: short`:
+
+```yaml
+alias: Tare dose chime
+mode: queued
+triggers:
+  - trigger: state
+    entity_id: event.tare_example_activity
+    not_from: unavailable
+conditions:
+  - condition: template
+    value_template: >
+      {{ trigger.to_state.attributes.event_type == 'dose_logged'
+         and trigger.to_state.attributes.status == 'taken' }}
+actions:
+  - action: media_player.play_media
+    target:
+      entity_id: media_player.example_speaker
+    data:
+      media_content_id: media-source://media_source/local/chime.mp3
+      media_content_type: music
+```
+
+A logbook entry for each workout:
+
+```yaml
+alias: Tare workout log
+mode: queued
+triggers:
+  - trigger: state
+    entity_id: event.tare_example_activity
+    not_from: unavailable
+conditions:
+  - condition: template
+    value_template: "{{ trigger.to_state.attributes.event_type == 'workout_logged' }}"
+actions:
+  - action: logbook.log
+    data:
+      name: Workout
+      message: >
+        {{ trigger.to_state.attributes.kind }}
+        {%- if trigger.to_state.attributes.duration_minutes %},
+        {{ trigger.to_state.attributes.duration_minutes }} min{% endif %}
+      entity_id: event.tare_example_activity
+```
+
+An event entity's state changes each time it fires, so a state trigger on it runs once per event. `mode: queued` keeps events that arrive together, such as the parts of one meal, from being dropped while a run is in progress. Keep `not_from: unavailable` in the trigger: when Tare or Home Assistant restarts, the entity comes back from `unavailable` with the last event's attributes, and without it the automation runs again for an old event.
 
 ## Medication reminders
 
