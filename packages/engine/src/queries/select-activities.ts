@@ -16,6 +16,7 @@ export type SelectActivitiesResult = {
   calories: number | null;
   notes: string | null;
   source: string;
+  client_id: string | null;
 };
 
 export function selectActivities(
@@ -23,7 +24,7 @@ export function selectActivities(
   params: SelectActivitiesParams,
 ): SelectActivitiesResult[] {
   const sql = `
-	SELECT id, timing, started_at, day, duration_minutes, kind, calories, notes, source FROM activity_sessions
+	SELECT id, timing, started_at, day, duration_minutes, kind, calories, notes, source, client_id FROM activity_sessions
 	WHERE user_id = ? AND day BETWEEN ? AND ?
 	ORDER BY day, started_at IS NULL, started_at, id;
 	
@@ -47,6 +48,7 @@ function mapArrayToSelectActivitiesResult(data: any) {
     calories: data[6],
     notes: data[7],
     source: data[8],
+    client_id: data[9],
   };
   return result;
 }

@@ -18,6 +18,7 @@ export type SelectActivitySetsResult = {
   rir_low: number | null;
   rir_high: number | null;
   notes: string | null;
+  client_set_id: string | null;
 };
 
 export function selectActivitySets(
@@ -26,7 +27,7 @@ export function selectActivitySets(
 ): SelectActivitySetsResult[] {
   const sql = `
 	SELECT activity_sets.session_id, activity_sets.set_index, activity_sets.exercise, activity_sets.set_type, activity_sets.reps,
-	  activity_sets.load_kg, activity_sets.load_unit, activity_sets.duration_seconds, activity_sets.rir_low, activity_sets.rir_high, activity_sets.notes
+	  activity_sets.load_kg, activity_sets.load_unit, activity_sets.duration_seconds, activity_sets.rir_low, activity_sets.rir_high, activity_sets.notes, activity_sets.client_set_id
 	FROM activity_sets JOIN activity_sessions
 	  ON activity_sessions.user_id = activity_sets.user_id AND activity_sessions.id = activity_sets.session_id
 	WHERE activity_sets.user_id = ? AND activity_sessions.day BETWEEN ? AND ?
@@ -54,6 +55,7 @@ function mapArrayToSelectActivitySetsResult(data: any) {
     rir_low: data[8],
     rir_high: data[9],
     notes: data[10],
+    client_set_id: data[11],
   };
   return result;
 }

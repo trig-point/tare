@@ -308,22 +308,24 @@ const set = {
   ...{ set_index: 1, exercise: "Goblet squat", set_type: "working" },
   ...{ reps: 8, load: 50, load_unit: "lb", load_kg: 22.68 },
   ...{ duration_seconds: null, rir_low: 3, rir_high: 4, notes: null },
+  client_set_id: "first-set",
 };
 const workout = {
   ...{ id: 7, timing: "exact", started_at: "2026-01-02T18:00:00.000Z" },
   ...{ day: activityDay, duration_minutes: 60, kind: "strength" },
   ...{ category: "strength", calories: 310, notes: null, source: "manual" },
   ...{ tracker: { id: 8, source: "oura" }, sets: [set] },
+  client_id: "sample-workout",
 };
 const dateOnly = {
   ...workout,
   ...{ id: 9, timing: "date_only", started_at: null, duration_minutes: null },
-  ...{ calories: null, tracker: null, sets: [] },
+  ...{ calories: null, tracker: null, sets: [], client_id: null },
 };
 const ouraWalk = {
   ...workout,
   ...{ id: 10, kind: "walk", category: "cardio", source: "oura" },
-  ...{ tracker: null, sets: [] },
+  ...{ tracker: null, sets: [], client_id: null },
 };
 const habit = {
   ...{ habit_key: "evening_alcohol", amount: 2, note: null },
@@ -348,6 +350,20 @@ const renderBody = (response: unknown) =>
 
 test("the client schema keeps sets, trackers and habit notes and accepts a null start and duration", () => {
   assert.deepEqual(health.signalsSchema.parse(dayResponse), dayResponse);
+});
+
+test("editing Body sets keeps each client set ID", () => {
+  const sets = [
+    set,
+    { ...set, client_set_id: "second-set" },
+    { ...set, client_set_id: null },
+  ];
+  assert.deepEqual(
+    sets
+      .map(health.setRow)
+      .map((row) => health.setInput({ ...row, reps: "10" }).client_set_id),
+    ["first-set", "second-set", null],
+  );
 });
 
 test("a paired workout shows once with its sets, and a date-only session shows time not recorded", () => {

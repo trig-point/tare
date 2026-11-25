@@ -66,6 +66,7 @@ export const signalsSchema = z.object({
       calories: z.number().nullable(),
       notes: z.string().nullable(),
       source: z.string(),
+      client_id: z.string().nullable(),
       tracker: z.object({ id: z.number(), source: z.string() }).nullable(),
       sets: z.array(
         z.object({
@@ -80,6 +81,7 @@ export const signalsSchema = z.object({
           rir_low: z.number().nullable(),
           rir_high: z.number().nullable(),
           notes: z.string().nullable(),
+          client_set_id: z.string().nullable(),
         }),
       ),
     }),
@@ -178,13 +180,27 @@ export const blankSet = (): SetRow => ({
   ...{ load_unit: "kg", kept: {} },
 });
 export function setRow(set: StoredSet): SetRow {
-  const { set_type, duration_seconds, rir_low, rir_high, notes } = set;
+  const {
+    set_type,
+    duration_seconds,
+    rir_low,
+    rir_high,
+    notes,
+    client_set_id,
+  } = set;
   return {
     exercise: set.exercise,
     reps: set.reps === null ? "" : String(set.reps),
     load: set.load === null ? "" : String(set.load),
     load_unit: set.load_unit === "lb" ? "lb" : "kg",
-    kept: { set_type, duration_seconds, rir_low, rir_high, notes },
+    kept: {
+      set_type,
+      duration_seconds,
+      rir_low,
+      rir_high,
+      notes,
+      client_set_id,
+    },
   };
 }
 const numberOrNull = (text: string) =>

@@ -13,6 +13,7 @@ export type InsertActivitySetParams = {
   rir_low: number | null;
   rir_high: number | null;
   notes: string | null;
+  client_set_id: string | null;
 };
 
 export type InsertActivitySetResult = {
@@ -25,8 +26,8 @@ export function insertActivitySet(
   params: InsertActivitySetParams,
 ): InsertActivitySetResult {
   const sql = `
-	INSERT INTO activity_sets (user_id, session_id, set_index, exercise, set_type, reps, load_kg, load_unit, duration_seconds, rir_low, rir_high, notes)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+	INSERT INTO activity_sets (user_id, session_id, set_index, exercise, set_type, reps, load_kg, load_unit, duration_seconds, rir_low, rir_high, notes, client_set_id)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 	
 	`;
   return db
@@ -44,5 +45,6 @@ export function insertActivitySet(
       params.rir_low,
       params.rir_high,
       params.notes,
+      params.client_set_id,
     ]) as InsertActivitySetResult;
 }
