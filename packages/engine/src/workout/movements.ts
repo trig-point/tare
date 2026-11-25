@@ -88,7 +88,7 @@ export const movementOperations = [
     ...shared,
     name: "save_movement",
     description:
-      "Save a movement card, replacing any card with the same name (case-insensitive). Lists are ordered strings; pictures are http(s) URLs; rest in seconds.",
+      "Save a movement card, replacing any card with the same name (case-insensitive); omitted fields are cleared. Lists are ordered strings; pictures are http(s) URLs; rest in seconds.",
     method: "POST",
     path: "/api/movements",
     bodyLimit: 65_536,
