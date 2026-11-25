@@ -13,6 +13,7 @@ import { createGroceryService } from "./grocery/flow.ts";
 import { createGrocyClient } from "./grocy/client.ts";
 import { resolveGrocyOwner, safeGrocyText } from "./grocy/config.ts";
 import { createGroceryClient } from "./grocy/grocery.ts";
+import { activityEventProvider } from "./home-assistant/activity-event.ts";
 import { createMealButtons } from "./home-assistant/meal-buttons.ts";
 import { medicationProvider } from "./home-assistant/medications.ts";
 import { nextSlotProvider } from "./home-assistant/next-slot.ts";
@@ -135,6 +136,7 @@ async function startEngine(scaleUsers: Map<string, number> | null) {
     sensorProvider(connection.database, clock, config),
   );
   homeAssistant?.addProvider(targetEventProvider(connection.database));
+  homeAssistant?.addProvider(activityEventProvider(connection.database));
   if (homeAssistant)
     homeAssistant.addProvider(
       createMealButtons({

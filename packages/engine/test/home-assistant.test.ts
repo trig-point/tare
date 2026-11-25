@@ -10,6 +10,7 @@ import { Aedes } from "aedes";
 import { connectAsync } from "mqtt";
 import { personDayBounds } from "../src/calendar/time.ts";
 import { loadConfig } from "../src/config.ts";
+import { activityEventProvider } from "../src/home-assistant/activity-event.ts";
 import {
   createMealButtons,
   planPressTopic,
@@ -32,6 +33,7 @@ import {
   workoutTopic,
 } from "../src/home-assistant/workout.ts";
 import { listPeople } from "../src/queries/home-assistant/list-people.ts";
+import { listDoses } from "../src/queries/medications/list-doses.ts";
 import { createTargetRecomputeJob } from "../src/target/job.ts";
 import { profile, seed } from "./support/adaptive-seed.ts";
 import { brokerPresses } from "./support/broker-presses.ts";
@@ -545,6 +547,92 @@ test("a recompute that changes a target fires one event and sets the TDEE sensor
   const restarted = targetEventProvider(database);
   for (const person of listPeople(database))
     assert.deepEqual(restarted(person, { state: "", events: "" }).events, []);
+});
+
+test("each logged record fires one activity event, once, and none replay after a restart", async (context) => {
+  const harness = await setup(context);
+  const { admin, database, install, send, published, clock } = harness;
+  await planDay(database, admin, "UTC");
+  harness.publisher.addProvider(activityEventProvider(database));
+  const topic = `tare/${install}/${admin.user.id}/events/activity`;
+  const events = () =>
+    published
+      .filter((line) => line.startsWith(`${topic} `))
+      .map((line) => JSON.parse(line.slice(topic.length + 1)));
+  clock.now().setTime(Date.parse("2026-01-01T09:00:00Z"));
+  const { medication } = await send(admin.request, "/api/medications/save", {
+    name: "Example Drops",
+    days: ["thu"],
+    times: ["09:30"],
+  });
+  const [dose] = listDoses(database, { medication_id: medication.id });
+  const writes: [string, unknown][] = [
+    [
+      "/api/intake",
+      { client_id: "a", name: "Example soup", kcal: 500, protein_g: 20 },
+    ],
+    ["/api/weights", { client_id: "w2", weight_kg: 70.5, note: "private" }],
+    [
+      "/api/activities",
+      {
+        client_id: "r",
+        started_at: "2026-01-01T07:00:00Z",
+        duration_minutes: 30,
+        kind: "Run",
+        notes: "private",
+      },
+    ],
+    ["/api/medications/doses/log", { dose: dose?.id }],
+    ["/api/medications/doses/undo", { dose: dose?.id }],
+    ["/api/medications/doses/skip", { dose: dose?.id }],
+  ];
+  const responses = [];
+  for (const [path, body] of writes)
+    responses.push(await send(admin.request, path, body));
+  assert.deepEqual(
+    responses.filter((response) => response.error),
+    [],
+  );
+  const expected = [
+    {
+      event_type: "food_logged",
+      name: "Example soup",
+      kcal: 500,
+      protein_g: 20,
+      slot: "Breakfast",
+    },
+    { event_type: "weight_logged", kg: 70.5 },
+    { event_type: "workout_logged", kind: "Run", duration_minutes: 30 },
+    { event_type: "dose_logged", medication: "Example Drops", status: "taken" },
+    {
+      event_type: "dose_logged",
+      medication: "Example Drops",
+      status: "skipped",
+    },
+  ];
+  while (!events().some((event) => event.status === "skipped"))
+    await setImmediate();
+  assert.deepEqual(events(), expected);
+  const config = JSON.parse(
+    (await harness.retained()).get(
+      `homeassistant/event/tare_${install}_${admin.user.id}/activity/config`,
+    ) ?? "{}",
+  );
+  assert.equal(config.state_topic, topic);
+  assert.deepEqual(config.event_types, [
+    "food_logged",
+    "dose_logged",
+    "weight_logged",
+    "workout_logged",
+  ]);
+  const restarted = activityEventProvider(database);
+  for (const person of listPeople(database))
+    assert.deepEqual(restarted(person, { state: "", events: "" }).events, []);
+  const weightEvents = "SELECT count(*) FROM activity_events WHERE kind = ?";
+  assert.equal(database.prepare(weightEvents).pluck().get("weight"), 2);
+  for (const id of database.prepare("SELECT id FROM weights").pluck().all())
+    await admin.request(`/api/weights/${id}`, { method: "DELETE" });
+  assert.equal(database.prepare(weightEvents).pluck().get("weight"), 0);
 });
 
 test("MQTT settings parse, and the importer refuses while the engine answers", async (context) => {
