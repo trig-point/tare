@@ -5,6 +5,7 @@ import {
   OperationError,
   operationPerson,
 } from "../operations/registry.ts";
+import { selectActivitySets } from "../queries/select-activity-sets.ts";
 import { deleteLimit } from "../queries/training/delete-limit.ts";
 import { deleteMachine } from "../queries/training/delete-machine.ts";
 import { deletePlace } from "../queries/training/delete-place.ts";
@@ -19,7 +20,8 @@ import { recentLoggedSessions } from "../queries/training/recent-logged-sessions
 import { updateLimit } from "../queries/training/update-limit.ts";
 import { updateMachine } from "../queries/training/update-machine.ts";
 import { updatePlace } from "../queries/training/update-place.ts";
-import { readWorkouts, workoutOutput } from "../signals/activities.ts";
+import { workoutOutput } from "../signals/activities.ts";
+import { mergeWorkouts } from "../signals/merged-workouts.ts";
 import { readSchedule } from "./operations.ts";
 import { scheduleDocument } from "./schedule.ts";
 
@@ -59,7 +61,7 @@ const enrichedSchedule = scheduleDocument.safeExtend({
   sessions: z.record(
     scheduleDocument.shape.sessions.keyType,
     scheduleDocument.shape.sessions.valueType.extend({
-      place: placeWithMachines.nullable(),
+      place: placeOutput.nullable(),
     }),
   ),
 });
@@ -99,7 +101,12 @@ export const trainingOperations = [
     path: "/api/training/places",
     description:
       "Create or replace a training place. Include its id to replace it.",
-    input: placeFields.extend({ id: id.optional(), notes: notes.optional() }),
+    input: placeFields
+      .extend({ id: id.optional(), notes: notes.optional() })
+      .refine(
+        (input) => input.id === undefined || input.notes !== undefined,
+        "Replacing a place requires notes (null clears them).",
+      ),
     output: z.strictObject({ place: placeOutput }),
     handler(input, context) {
       const fields = {
@@ -123,12 +130,21 @@ export const trainingOperations = [
     path: "/api/training/machines",
     description:
       "Create or replace a machine at an existing place. Include its id to replace it.",
-    input: machineFields.extend({
-      id: id.optional(),
-      notes: notes.optional(),
-      photo_urls: photoUrls.optional(),
-      movements: movements.optional(),
-    }),
+    input: machineFields
+      .extend({
+        id: id.optional(),
+        notes: notes.optional(),
+        photo_urls: photoUrls.optional(),
+        movements: movements.optional(),
+      })
+      .refine(
+        (input) =>
+          input.id === undefined ||
+          (input.notes !== undefined &&
+            input.photo_urls !== undefined &&
+            input.movements !== undefined),
+        "Replacing a machine requires notes, photo_urls and movements.",
+      ),
     output: z.strictObject({ machine: machineOutput }),
     handler(input, context) {
       const user_id = operationPerson(context).id;
@@ -230,18 +246,14 @@ export const trainingOperations = [
       const limits = listLimits(database, { user_id }).map(limitView);
       const schedule = readSchedule(database, user_id);
       const recent = recentLoggedSessions(database, { user_id });
-      const newest = recent[0];
-      const oldest = recent.at(-1);
-      const workouts =
-        newest && oldest
-          ? readWorkouts(database, {
-              user_id,
-              from: oldest.day,
-              to: newest.day,
-            })
-          : [];
-      const workoutsById = new Map(
-        workouts.map((session) => [session.id, session]),
+      const workouts = mergeWorkouts(
+        recent,
+        [...new Set(recent.map((session) => session.day))].flatMap((day) =>
+          selectActivitySets(database, { user_id, from: day, to: day }),
+        ),
+      );
+      const placesByName = Map.groupBy(places, (place) =>
+        place.name.toLowerCase(),
       );
       return {
         status: 200,
@@ -251,21 +263,19 @@ export const trainingOperations = [
           schedule: schedule && {
             ...schedule,
             sessions: Object.fromEntries(
-              Object.entries(schedule.sessions).map(([sessionId, session]) => [
-                sessionId,
-                {
-                  ...session,
-                  place:
-                    places.find(
-                      (place) =>
-                        place.name.toLowerCase() ===
-                        session.where.toLowerCase(),
-                    ) ?? null,
-                },
-              ]),
+              Object.entries(schedule.sessions).map(([sessionId, session]) => {
+                const matches = placesByName.get(
+                  session.where.trim().toLowerCase(),
+                );
+                const match = matches?.length === 1 ? matches[0] : undefined;
+                const place = match
+                  ? { id: match.id, name: match.name, notes: match.notes }
+                  : null;
+                return [sessionId, { ...session, place }];
+              }),
             ),
           },
-          recent_sessions: recent.map(({ id }) => found(workoutsById.get(id))),
+          recent_sessions: workouts,
         },
       };
     },

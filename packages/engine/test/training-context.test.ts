@@ -23,7 +23,7 @@ test("training records and workout context through MCP", async (context) => {
     recent_sessions: [],
   });
 
-  const place = { id: 1, name: "Home", notes: null };
+  const place = { id: 1, name: "Home", notes: "Upstairs" };
   const machine = {
     id: 1,
     place_id: place.id,
@@ -57,16 +57,29 @@ test("training records and workout context through MCP", async (context) => {
     assert.match(JSON.stringify(result.content), new RegExp(code));
   }
 
-  assert.deepEqual(await call("save_training_place", placeInput), { place });
+  assert.deepEqual(
+    await call("save_training_place", { ...placeInput, notes: null }),
+    { place: { ...place, notes: null } },
+  );
   assert.deepEqual(await call("save_training_place", place), { place });
   const spare = { place_id: place.id, name: "Spare rower" };
-  await call("save_training_machine", machineInput);
+  await call("save_training_machine", { ...machineInput, movements: [] });
+  assert.equal(
+    (
+      await invoke("save_training_machine", {
+        id: machine.id,
+        place_id: place.id,
+        name: "Incomplete replacement",
+      })
+    ).isError,
+    true,
+  );
   assert.deepEqual(await call("save_training_machine", machine), { machine });
   await call("save_training_machine", spare);
   await call("remove_training_machine", { id: 2 });
   assert.deepEqual(await call("save_training_limit", limitInput), { limit });
   await call("replace_workout_schedule", exampleSchedule());
-  for (const day of ["25", "26", "27", "28", "29", "30"]) {
+  for (const day of ["30", "26", "27", "28", "29", "25"]) {
     await call("log_activity", {
       day: `2025-12-${day}`,
       timing: "date_only",
@@ -81,7 +94,10 @@ test("training records and workout context through MCP", async (context) => {
   assert.deepEqual(training.limits, [limit]);
   const matched = training.schedule?.sessions.push_a;
   const unmatched = training.schedule?.sessions.legs_a;
-  assert.deepEqual(matched?.place, placeWithMachines);
+  assert.deepEqual(matched?.place, place);
+  await call("save_training_place", { name: "home" });
+  assert.equal((await read()).schedule?.sessions.push_a?.place, null);
+  await call("remove_training_place", { id: 2 });
   assert.equal(unmatched?.place, null);
   assert.equal(unmatched.where, "example gym");
   const recent = training.recent_sessions;
