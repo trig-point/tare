@@ -251,6 +251,7 @@ test("per-set writes keep other rows, remember removals, and refuse stale sessio
     send("activity-sets/remove", { ...identity, client_set_id });
   const [first] = rows();
   const second = await add("second");
+  const [, secondRow] = rows();
   assert.deepEqual(rows().slice(0, 1), [first]);
   assert.deepEqual(await add("second"), {
     status: 200,
@@ -259,10 +260,19 @@ test("per-set writes keep other rows, remember removals, and refuse stale sessio
   assert.equal(rows().length, 2);
   for (const removed of [true, false])
     assert.deepEqual(await remove("first"), { status: 200, body: { removed } });
-  assert.equal((await add("first")).body.removed, true);
-  assert.equal(rows().length, 1);
+  assert.deepEqual(await add("first"), {
+    status: 200,
+    body: { set: null, removed: true, sets: [second.body.set] },
+  });
+  assert.deepEqual(rows(), [secondRow]);
   assert.equal((await add("fresh")).body.set.set_index, 3);
+  assert.deepEqual(rows().slice(0, 1), [secondRow]);
 
+  assert.deepEqual(await remove("unseen"), {
+    status: 200,
+    body: { removed: false },
+  });
+  assert.equal((await add("unseen")).body.removed, true);
   assert.equal((await add("\ufffd")).status, 200);
   const before = allRows();
   for (const [path, set] of [
@@ -272,9 +282,11 @@ test("per-set writes keep other rows, remember removals, and refuse stale sessio
     const body = { ...identity, client_set_id: "second", ...set };
     for (const [invalid, status, code] of [
       [{ session_client_id: "wrong" }, 409, "stale_session"],
+      [{ session_id: id + 1 }, 409, "stale_session"],
       [{ session_client_id: undefined }, 400, "invalid_request"],
       [{ client_set_id: "" }, 400, "invalid_request"],
       [{ client_set_id: "\ud800" }, 400, "invalid_request"],
+      [{ client_set_id: "x".repeat(41) }, 400, "invalid_request"],
     ] as const)
       assert.deepEqual(await send(path, { ...body, ...invalid }), {
         status,
@@ -285,7 +297,11 @@ test("per-set writes keep other rows, remember removals, and refuse stale sessio
 
   const discard = (client_id: string) =>
     send("activities/discard", { id, client_id });
-  assert.deepEqual((await discard("wrong")).body, { discarded: false });
+  const discarded = (value: boolean) => ({
+    status: 200,
+    body: { discarded: value },
+  });
+  assert.deepEqual(await discard("wrong"), discarded(false));
   assert.deepEqual(allRows(), before);
 
   const sets = ["second", "first", null].map((client_set_id) => ({
@@ -307,12 +323,22 @@ test("per-set writes keep other rows, remember removals, and refuse stale sessio
       ["second", "first", null],
     );
   }
-  assert.equal((await add("fresh")).body.removed, true);
+  const retries = async () => {
+    assert.equal((await add("first")).body.repeat, true);
+    assert.equal((await add("fresh")).body.removed, true);
+  };
+  await retries();
   const full = [...sets, ...Array(setCap - sets.length).fill(strengthSet)];
   await send(`activities/${id}/sets`, { sets: full }, "PATCH");
-  assert.equal((await add("over-cap")).body.error.code, "too_many_sets");
-  assert.deepEqual((await discard("workout-one")).body, { discarded: true });
-  assert.deepEqual((await discard("workout-one")).body, { discarded: false });
+  await retries();
+  const atCap = allRows();
+  assert.deepEqual(await add("over-cap"), {
+    status: 400,
+    body: { error: { code: "too_many_sets" } },
+  });
+  assert.deepEqual(allRows(), atCap);
+  assert.deepEqual(await discard("workout-one"), discarded(true));
+  assert.deepEqual(await discard("workout-one"), discarded(false));
   assert.deepEqual(allRows(), [[], [], []]);
 });
 
