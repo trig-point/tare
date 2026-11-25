@@ -150,11 +150,12 @@ test("mapping screens hide in fallback mode and admin forms hide for members", (
     );
   const accessAdmin = screen("access", true);
   assert.match(accessAdmin, /Day boundary.*Agents/s);
-  assert.doesNotMatch(accessAdmin, /Map a Client ID|Add a person/);
+  assert.match(accessAdmin, /Add an agent/);
+  assert.doesNotMatch(accessAdmin, /Person ID|Add a person/);
   const fallbackAdmin = screen("fallback", true);
   assert.match(fallbackAdmin, /Day boundary/);
-  assert.doesNotMatch(fallbackAdmin, /Agents|Map a Client ID|Add a person/);
-  assert.doesNotMatch(screen("access", false), /Add a person|Map a Client ID/);
+  assert.doesNotMatch(fallbackAdmin, /Agents|Add an agent|Add a person/);
+  assert.doesNotMatch(screen("access", false), /Add a person|Add an agent/);
 });
 
 test("timezone choices always include UTC once", () => {
