@@ -104,6 +104,7 @@ function GuideSession({
     enabled: online,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
+    gcTime: 0,
     refetchOnMount: "always",
   });
   const { refetch } = activity;
@@ -118,7 +119,6 @@ function GuideSession({
     | { kind: "undo"; id: string }
   );
   const [failed, setFailed] = useState<Action | null>(null);
-  const [rowIds, setRowIds] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<string | null>(null);
   const settle = () => {
     client.setQueryData(queryKey, null);
@@ -142,11 +142,6 @@ function GuideSession({
     onSuccess: (result, action) => {
       client.setQueryData(queryKey, result.activity);
       setFailed(null);
-      if (action.kind === "done" && result.saved)
-        setRowIds((previous) => ({
-          ...previous,
-          [action.row]: action.change.id,
-        }));
       setMessage(result.saved ? null : "Not saved");
       setRest(
         result.saved && action.kind === "done"
@@ -201,15 +196,20 @@ function GuideSession({
     };
   }, [busy, online, refetch]);
   const saved = activity.data;
-  const blocked = busy || activity.isFetching || saved === undefined;
+  const blocked =
+    busy ||
+    !online ||
+    activity.isFetching ||
+    activity.isError ||
+    saved === undefined;
   const occurrences = new Map<string, number>();
-  const reserved = new Set(Object.values(rowIds));
-  const looseSets = Map.groupBy(
-    saved?.sets.filter(
-      (set) => set.client_set_id && !reserved.has(set.client_set_id),
-    ) ?? [],
-    (set) => set.exercise,
-  );
+  const setsByExercise = new Map<string, SavedWorkout["sets"]>();
+  for (const set of saved?.sets ?? []) {
+    if (!set.client_set_id) continue;
+    const group = setsByExercise.get(set.exercise) ?? [];
+    group.push(set);
+    setsByExercise.set(set.exercise, group);
+  }
   return (
     <DialogContent
       className="guide-screen"
@@ -223,7 +223,7 @@ function GuideSession({
         )}
       </header>
       <div className="guide-movements">
-        {saved === undefined && activity.isError && (
+        {online && activity.isError && (
           <Button variant="outline" onClick={() => void refetch()}>
             Retry loading workout
           </Button>
@@ -234,6 +234,7 @@ function GuideSession({
           const exercise = prescribedSet(movement).exercise;
           const offset = occurrences.get(exercise) ?? 0;
           occurrences.set(exercise, offset + movement.sets);
+          const sets = setsByExercise.get(exercise) ?? [];
           return (
             <Movement
               key={JSON.stringify([exercise, offset])}
@@ -241,16 +242,16 @@ function GuideSession({
             >
               {Array.from({ length: movement.sets }, (_, setIndex) => {
                 const row = JSON.stringify([exercise, offset + setIndex]);
-                const bound = rowIds[row];
-                const marked = bound
-                  ? saved?.sets.find((set) => set.client_set_id === bound)
-                  : looseSets.get(exercise)?.shift();
+                const position = offset + setIndex;
+                const marked = sets[position];
                 return (
                   <GuideSet
-                    key={row}
+                    key={marked?.client_set_id ?? row}
                     number={setIndex + 1}
                     movement={movement}
                     marked={marked}
+                    next={position === sets.length}
+                    previous={sets.at(-1)}
                     busy={blocked || (failed !== null && failed.row !== row)}
                     failed={failed?.row === row}
                     retry={() => {
@@ -437,6 +438,8 @@ function GuideSet({
   number,
   movement,
   marked,
+  next,
+  previous,
   busy,
   failed,
   retry,
@@ -446,14 +449,30 @@ function GuideSet({
   number: number;
   movement: PlannedMovement;
   marked: SavedWorkout["sets"][number] | undefined;
+  next: boolean;
+  previous: SavedWorkout["sets"][number] | undefined;
   busy: boolean;
   failed: boolean;
   retry: () => void;
   done: (row: ReturnType<typeof prescribedSet>) => void;
   undo: () => void;
 }) {
-  const [input, setInput] = useState(() => prescribedSet(movement));
-  const row = marked ? setRow(marked) : input;
+  const [input, setInput] = useState<ReturnType<typeof prescribedSet> | null>(
+    null,
+  );
+  const base = prescribedSet(movement);
+  const prior = previous && setRow(previous);
+  const row = marked
+    ? setRow(marked)
+    : (input ??
+      (prior
+        ? {
+            ...base,
+            reps: prior.reps,
+            load: prior.load,
+            load_unit: prior.load_unit,
+          }
+        : base));
   const inputId = useId();
   return (
     <form
@@ -461,7 +480,7 @@ function GuideSet({
       aria-label={`${movement.name} set ${number}`}
       onSubmit={(event) => {
         event.preventDefault();
-        if (!busy && !marked && !failed) done(row);
+        if (next && !busy && !marked && !failed) done(row);
       }}
     >
       <span>Set {number}</span>
@@ -474,7 +493,7 @@ function GuideSet({
           min="0"
           max="1000"
           value={row.reps}
-          disabled={busy || !!marked || failed}
+          disabled={busy || !!marked || !next || failed}
           onChange={(event) => setInput({ ...row, reps: event.target.value })}
         />
       </label>
@@ -488,7 +507,7 @@ function GuideSet({
           max="1000"
           step="any"
           value={row.load}
-          disabled={busy || !!marked || failed}
+          disabled={busy || !!marked || !next || failed}
           onChange={(event) => setInput({ ...row, load: event.target.value })}
         />
       </label>
@@ -509,7 +528,7 @@ function GuideSet({
           Undo
         </Button>
       ) : (
-        <Button type="submit" disabled={busy}>
+        <Button type="submit" disabled={busy || !next}>
           Done
         </Button>
       )}
