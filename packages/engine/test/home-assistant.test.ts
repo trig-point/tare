@@ -586,7 +586,13 @@ test("each logged record fires one activity event, once, and none replay after a
     ["/api/medications/doses/undo", { dose: dose?.id }],
     ["/api/medications/doses/skip", { dose: dose?.id }],
   ];
-  for (const [path, body] of writes) await send(admin.request, path, body);
+  const responses = [];
+  for (const [path, body] of writes)
+    responses.push(await send(admin.request, path, body));
+  assert.deepEqual(
+    responses.filter((response) => response.error),
+    [],
+  );
   const expected = [
     {
       event_type: "food_logged",
@@ -622,6 +628,11 @@ test("each logged record fires one activity event, once, and none replay after a
   const restarted = activityEventProvider(database);
   for (const person of listPeople(database))
     assert.deepEqual(restarted(person, { state: "", events: "" }).events, []);
+  const weightEvents = "SELECT count(*) FROM activity_events WHERE kind = ?";
+  assert.equal(database.prepare(weightEvents).pluck().get("weight"), 2);
+  for (const id of database.prepare("SELECT id FROM weights").pluck().all())
+    await admin.request(`/api/weights/${id}`, { method: "DELETE" });
+  assert.equal(database.prepare(weightEvents).pluck().get("weight"), 0);
 });
 
 test("MQTT settings parse, and the importer refuses while the engine answers", async (context) => {

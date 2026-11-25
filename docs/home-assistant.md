@@ -82,7 +82,7 @@ The Activity entity fires one of these event types, with these attributes. Notes
 | `weight_logged` | `kg` |
 | `workout_logged` | `kind`, `duration_minutes` (none for a workout logged by date only) |
 
-Each record fires once, when it is logged. Editing or deleting it fires nothing. Undoing a dose fires nothing; logging that dose again fires a new `dose_logged`. Workouts imported from Oura fire when they first arrive. A meal logged in several parts fires one `food_logged` per part.
+Each record fires once, when it is logged. Editing or deleting it fires nothing, and a record deleted before Home Assistant receives its event never fires. Undoing a dose fires nothing; logging that dose again fires a new `dose_logged`. Stopping a medication skips its open doses without firing. Workouts imported from Oura fire when they first arrive, so the first sync after connecting Oura fires one `workout_logged` for each workout in its 30-day backfill. A meal logged in several parts fires one `food_logged` per part.
 
 The examples below use the placeholder `example`. Replace the ids with the ones on your device page and `notify.mobile_app_example` with your phone's notification action.
 
@@ -111,9 +111,7 @@ alias: Tare dose chime
 triggers:
   - trigger: state
     entity_id: event.tare_example_activity
-    not_from:
-      - unavailable
-      - unknown
+    not_from: unavailable
 conditions:
   - condition: template
     value_template: >
@@ -135,9 +133,7 @@ alias: Tare workout log
 triggers:
   - trigger: state
     entity_id: event.tare_example_activity
-    not_from:
-      - unavailable
-      - unknown
+    not_from: unavailable
 conditions:
   - condition: template
     value_template: "{{ trigger.to_state.attributes.event_type == 'workout_logged' }}"
@@ -152,7 +148,7 @@ actions:
       entity_id: event.tare_example_activity
 ```
 
-An event entity's state changes each time it fires, so a state trigger on it runs once per event. Keep `not_from` in the trigger: when Tare or Home Assistant restarts, the entity comes back from `unavailable` with the last event's attributes, and without it the automation runs again for an old event.
+An event entity's state changes each time it fires, so a state trigger on it runs once per event. Keep `not_from: unavailable` in the trigger: when Tare or Home Assistant restarts, the entity comes back from `unavailable` with the last event's attributes, and without it the automation runs again for an old event.
 
 ## Medication reminders
 
