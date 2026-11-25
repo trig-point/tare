@@ -1,6 +1,6 @@
 # Build workouts with your agent
 
-This guide is for a person running their own Tare with their own agent. The agent reads your training data from Tare, then writes your places, machines, limits, movement cards and weekly schedule back through MCP. Tare stores what the agent writes and shows it. It does not seed any training data and does not choose workouts; building the plan is the agent's job.
+This guide is for a person running their own Tare with their own agent. The agent reads your training data from Tare, then writes your places, machines, limits, movement cards and weekly schedule back through MCP. Tare stores what the agent writes and shows it. It does not seed any training data or choose workouts; building the plan is the agent's job.
 
 Every example uses made-up data. Names, places and dates are placeholders.
 
@@ -63,7 +63,7 @@ On a create, `notes`, `movements` and `photo_urls` may be left out and become em
 
 ## Write limits
 
-A limit records an injury or restriction. `save_training_limit` takes `body_area` (up to 120 characters), `description` (up to 1000), `movements` (the movements it affects, up to 50), `status` (`active` or `resolved`) and `date_noted` (a `YYYY-MM-DD` date). All six fields are required.
+A limit records an injury or restriction. `save_training_limit` takes `body_area` (up to 120 characters), `description` (up to 1000), `movements` (the movements it affects, up to 50), `status` (`active` or `resolved`) and `date_noted` (a `YYYY-MM-DD` date). All five fields are required.
 
 ```json
 {
@@ -116,7 +116,7 @@ The other tools:
 { "name": "Incline dumbbell press" }
 ```
 
-Every card also returns `sessions`: the number of logged sessions that have at least one set with that exact exercise name, ignoring case. It counts sessions, not sets. So log sets under the same name the card uses, and keep card names to 80 characters, the limit for an exercise name on a logged set.
+Every card also returns `sessions`: the number of logged sessions that have at least one set with that exact exercise name, ignoring case. It counts sessions, not sets. Log sets under the same name the card uses, and keep card names to 80 characters, the limit for an exercise name on a logged set.
 
 ## Write the schedule
 
@@ -136,9 +136,9 @@ A week day can name a group instead of one session. A group is the text before t
 
 The session's `where` should be the exact name of a place from `places` (up to 80 characters). That is how the schedule finds the place and its machines.
 
-Two rules protect against overwriting a newer copy:
+Two rules apply to every write:
 
-- Send back the `updated` value you last read. Leave it out only for the very first write. A stale or missing value fails with `schedule_conflict`; read again and retry.
+- Send back the `updated` value you last read. Leave it out only for the first write. A stale or missing value fails with `schedule_conflict`; read again and retry.
 - The document may be at most 60 KB, or the call fails with `schedule_too_large`.
 
 A bad document fails with `invalid_request` and a list of messages, such as `unknown session upper_x`, `duplicate date 2026-12-07` or `no upper in rotation`. Fix every message and send it again.
@@ -207,7 +207,7 @@ The arguments for step 5:
 
 ## How the app uses the cards
 
-Cards are stored and returned now, with `today_workout` attaching each scheduled movement's card and every card carrying its `sessions` count. The app has no workout guide screen yet, and it has not set the rule for when a familiar movement gets a shorter card. Write full cards for now. Because the count already exists, the agent can see which movements you have done often.
+Cards are stored and returned now, with `today_workout` attaching each scheduled movement's card and every card carrying its `sessions` count. The app has no workout guide screen yet, and it has not set the rule for when a familiar movement gets a shorter card. Write full cards for now. The count already lets the agent see which movements you have done often.
 
 ## Optional reference data
 
