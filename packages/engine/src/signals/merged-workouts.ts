@@ -19,24 +19,23 @@ export function setView(row: SelectActivitySetsResult) {
 }
 
 export const loggedSources = new Set(["manual", "agent"]);
-const span = (session: SelectActivitiesResult) => {
+type MergeSession = Omit<SelectActivitiesResult, "client_id">;
+
+const span = (session: MergeSession) => {
   const start = Date.parse(session.started_at ?? "");
   return { start, end: start + (session.duration_minutes ?? 0) * 60_000 };
 };
-const overlapOf = (
-  first: SelectActivitiesResult,
-  second: SelectActivitiesResult,
-) => {
+const overlapOf = (first: MergeSession, second: MergeSession) => {
   const [one, two] = [span(first), span(second)];
   return Math.min(one.end, two.end) - Math.max(one.start, two.start);
 };
 
-export function mergeWorkouts(
-  sessions: SelectActivitiesResult[],
+export function mergeWorkouts<Session extends MergeSession>(
+  sessions: Session[],
   sets: SelectActivitySetsResult[],
 ) {
   const setsBySession = Map.groupBy(sets, (row) => row.session_id);
-  const pairable = (session: SelectActivitiesResult) =>
+  const pairable = (session: Session) =>
     session.timing === "exact" &&
     activityCategory(session.kind).category !== "other";
   const logged = sessions
@@ -45,7 +44,7 @@ export function mergeWorkouts(
   const trackers = sessions.filter(
     (session) => !loggedSources.has(session.source) && pairable(session),
   );
-  const partner = new Map<number, SelectActivitiesResult>();
+  const partner = new Map<number, Session>();
   const taken = new Set<number>();
   for (const session of logged) {
     const category = activityCategory(session.kind).category;

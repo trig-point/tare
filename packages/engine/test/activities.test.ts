@@ -64,6 +64,7 @@ test("sets, timing, cap, replay, replacement and owner isolation over HTTP", asy
     [null, null],
   );
   const range = `/api/activities/${logged.body.day}/${logged.body.day}`;
+  assert.equal((await send(range)).body.workouts[0].client_id, timed.client_id);
   assert.deepEqual(
     (await send(range)).body.workouts.map(
       (workout: { id: number }) => workout.id,
@@ -207,6 +208,7 @@ const session = (
   start: string | null,
   minutes: number | null,
 ): SelectActivitiesResult => ({
+  client_id: null,
   id,
   timing: start === null ? "date_only" : "exact",
   started_at: start === null ? null : at(start),
@@ -268,6 +270,14 @@ test("merged workouts pair one-to-one by largest overlap, then earlier start, th
       ?.category,
     "other",
   );
+  for (const [kind, category] of [
+    ["lift", "strength"],
+    ["cardio", "cardio"],
+  ] as const)
+    assert.equal(
+      mergeWorkouts([session(7, "manual", kind, "10:00", 30)], [])[0]?.category,
+      category,
+    );
   const logged = { ...session(1, "agent", "run", "07:00", 30), calories: 250 };
   const tracker = {
     ...session(2, "oura", "running", "07:00", 30),

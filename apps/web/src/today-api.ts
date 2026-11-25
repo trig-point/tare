@@ -256,11 +256,15 @@ export function sourceName(source: string) {
       : source;
 }
 
+export const scheduledWorkoutKey = (person: number) =>
+  ["scheduled-workout", person] as const;
+
 export async function refreshToday(client: QueryClient, personId: number) {
   const queryKeys = [
     todayKey(personId),
     planKey(personId),
     ["signals", personId],
+    scheduledWorkoutKey(personId),
     usualFoodsQuery(personId).queryKey,
   ];
   // An in-flight first read is reused by invalidation, so cancel it first.

@@ -334,7 +334,9 @@ const readActivities = defineOperation({
   output: zod.strictObject({
     from: zod.iso.date(),
     to: zod.iso.date(),
-    workouts: zod.array(workoutOutput),
+    workouts: zod.array(
+      workoutOutput.extend({ client_id: zod.string().nullable() }),
+    ),
   }),
   handler(input, context) {
     const user_id = operationPerson(context).id;

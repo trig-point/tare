@@ -38,6 +38,7 @@ import {
   totalText,
   type Weight,
 } from "./today-api.ts";
+import { WorkoutGuideEntry } from "./workout-guide-screen.tsx";
 
 export function Today({
   person,
@@ -161,6 +162,13 @@ export function Today({
         </Tabs.Content>
         <Tabs.Content value="body" forceMount className={enter}>
           {status}
+          <WorkoutGuideEntry
+            key={person.id}
+            person={person.id}
+            day={today.data?.day}
+            online={online}
+            refresh={() => refreshToday(client, person.id)}
+          />
           {today.data && (
             <BodyCard
               person={person.id}

@@ -37,6 +37,20 @@ const unitSuffix: Record<string, string> = {
   ms: " ms",
   ml: " ml",
 };
+const activitySet = z.object({
+  set_index: z.number(),
+  exercise: z.string(),
+  set_type: z.string(),
+  reps: z.number().nullable(),
+  load: z.number().nullable(),
+  load_unit: z.string().nullable(),
+  load_kg: z.number().nullable(),
+  duration_seconds: z.number().nullable(),
+  rir_low: z.number().nullable(),
+  rir_high: z.number().nullable(),
+  notes: z.string().nullable(),
+});
+
 export const signalsSchema = z.object({
   day: z.string(),
   signals: z.array(
@@ -67,21 +81,7 @@ export const signalsSchema = z.object({
       notes: z.string().nullable(),
       source: z.string(),
       tracker: z.object({ id: z.number(), source: z.string() }).nullable(),
-      sets: z.array(
-        z.object({
-          set_index: z.number(),
-          exercise: z.string(),
-          set_type: z.string(),
-          reps: z.number().nullable(),
-          load: z.number().nullable(),
-          load_unit: z.string().nullable(),
-          load_kg: z.number().nullable(),
-          duration_seconds: z.number().nullable(),
-          rir_low: z.number().nullable(),
-          rir_high: z.number().nullable(),
-          notes: z.string().nullable(),
-        }),
-      ),
+      sets: z.array(activitySet),
     }),
   ),
   habits: z.array(
@@ -121,11 +121,21 @@ const send = (path: string, method: string, body?: unknown) =>
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
 const stored = z.object({ id: z.number() });
+const storedWorkout = stored.extend({ sets: z.array(activitySet) });
+const guideWorkout = storedWorkout.extend({ client_id: z.string().nullable() });
+export type SavedWorkout = z.infer<typeof storedWorkout>;
+
+export async function readActivities(day: string, signal: AbortSignal) {
+  const path = encodeURIComponent(day);
+  return z
+    .object({ workouts: z.array(guideWorkout) })
+    .parse(await api(`/api/activities/${path}/${path}`, { signal })).workouts;
+}
 export async function logActivity(body: Record<string, unknown>) {
-  return stored.parse(await send("/api/activities", "POST", body));
+  return storedWorkout.parse(await send("/api/activities", "POST", body));
 }
 export async function replaceSets(id: number, sets: SetInput[]) {
-  return stored.parse(
+  return storedWorkout.parse(
     await send(`/api/activities/${id}/sets`, "PATCH", { sets }),
   );
 }
