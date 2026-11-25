@@ -45,7 +45,7 @@ A number can be unknown: no target until the profile is set up and there is a fi
 
 Meal buttons come and go. A meal gets its pair when it is delivered or due today, and loses it when its last serving is eaten. Each press carries the meal's revision. A press sent again with the same revision, such as a double press, logs nothing and reports `logged` again. Any other press with an old revision logs nothing and reports `stale_revision`. A meal whose nutrition is not known yet still has buttons, but a press logs nothing and reports `meal_nutrition_pending` or `meal_nutrition_missing` until you answer its nutrition question in Tare.
 
-`target_changed` and activity events are not replayed after a restart. A change that happened while Home Assistant was offline appears in Tare but does not fire the event later.
+`target_changed` and activity events are not replayed after a restart. An event that happens while the broker is unreachable fires when Tare reconnects, as long as Tare keeps running. An event that happens while only Home Assistant is offline is not delivered later.
 
 ## Find the entity ids
 
@@ -108,6 +108,7 @@ A chime when a dose is taken. Replace the media player and sound with your own; 
 
 ```yaml
 alias: Tare dose chime
+mode: queued
 triggers:
   - trigger: state
     entity_id: event.tare_example_activity
@@ -130,6 +131,7 @@ A logbook entry for each workout:
 
 ```yaml
 alias: Tare workout log
+mode: queued
 triggers:
   - trigger: state
     entity_id: event.tare_example_activity
@@ -148,7 +150,7 @@ actions:
       entity_id: event.tare_example_activity
 ```
 
-An event entity's state changes each time it fires, so a state trigger on it runs once per event. Keep `not_from: unavailable` in the trigger: when Tare or Home Assistant restarts, the entity comes back from `unavailable` with the last event's attributes, and without it the automation runs again for an old event.
+An event entity's state changes each time it fires, so a state trigger on it runs once per event. `mode: queued` keeps events that arrive together, such as the parts of one meal, from being dropped while a run is in progress. Keep `not_from: unavailable` in the trigger: when Tare or Home Assistant restarts, the entity comes back from `unavailable` with the last event's attributes, and without it the automation runs again for an old event.
 
 ## Medication reminders
 
