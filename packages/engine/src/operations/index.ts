@@ -21,6 +21,7 @@ import { targetNoticeOperations } from "../target/operations.ts";
 import { trendOperations } from "../trend/operations.ts";
 import { movementOperations } from "../workout/movements.ts";
 import { workoutOperations } from "../workout/operations.ts";
+import { trainingOperations } from "../workout/training-context.ts";
 import type { Operation } from "./registry.ts";
 
 export const operations: Operation[] = [
@@ -46,6 +47,7 @@ export const operations: Operation[] = [
   ...groceryOperations,
   ...workoutOperations,
   ...movementOperations,
+  ...trainingOperations,
   ...medicationOperations,
 ];
 export const agentOperations = operations.filter(
