@@ -16,7 +16,7 @@ export const weekdays = [
   "sun",
 ] as const;
 
-const movement = zod.strictObject({
+export const movement = zod.strictObject({
   name: text(120),
   load: text(80).optional(),
   sets: zod.number().int().min(1).max(20),

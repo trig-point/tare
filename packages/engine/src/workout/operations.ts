@@ -9,7 +9,9 @@ import {
 } from "../operations/registry.ts";
 import { selectWorkoutSchedule } from "../queries/workout/select-workout-schedule.ts";
 import { upsertWorkoutSchedule } from "../queries/workout/upsert-workout-schedule.ts";
+import { findMovement, type MovementCard, movementCard } from "./movements.ts";
 import {
+  movement,
   resolveToday,
   type ScheduleDocument,
   scheduleDocument,
@@ -17,6 +19,9 @@ import {
 } from "./schedule.ts";
 
 const documentLimit = 60_000;
+const todayWorkout = todayEntry.extend({
+  movements: zod.array(movement.extend({ card: movementCard.nullable() })),
+});
 
 const shared = {
   modes: ["access", "fallback"] as ("access" | "fallback")[],
@@ -100,11 +105,11 @@ export const workoutOperations = [
     ...shared,
     name: "today_workout",
     description:
-      "Today's workout: the dated entry, else the weekday template, with movements. today is null when no schedule is stored.",
+      "Today's workout: the dated entry, else the weekday template, with movements. Each movement's card is its library card, null when none matches its name. today is null when no schedule is stored.",
     method: "GET",
     path: "/api/workout-schedule/today",
     input: zod.strictObject({}),
-    output: zod.strictObject({ today: todayEntry.nullable() }),
+    output: zod.strictObject({ today: todayWorkout.nullable() }),
     handler(_input, context) {
       const person = operationPerson(context);
       return {
@@ -124,8 +129,18 @@ export function workoutToday(
 ) {
   const schedule = readSchedule(database, person.id);
   if (!schedule) return null;
-  return resolveToday(
+  const today = resolveToday(
     schedule,
     localDay(now.toISOString(), person.timezone, person.day_start_hour),
   );
+  const cards = new Map<string, MovementCard | null>();
+  return {
+    ...today,
+    movements: today.movements.map((planned) => {
+      const key = planned.name.trim();
+      if (!cards.has(key))
+        cards.set(key, findMovement(database, person.id, planned.name));
+      return { ...planned, card: cards.get(key) ?? null };
+    }),
+  };
 }
