@@ -1,13 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { liveRefresh } from "./api.ts";
-import {
-  deleteActivity,
-  readActivities,
-  type SavedWorkout,
-  setInput,
-  setRow,
-} from "./health-api.ts";
+import { setInput, setRow } from "./health-api.ts";
 import {
   Button,
   Dialog,
@@ -18,20 +12,22 @@ import {
 } from "./shared/ui/index.ts";
 import { scheduledWorkoutKey } from "./today-api.ts";
 import {
+  closeStaleGuide,
   DEFAULT_REST_SECONDS,
+  discardGuide,
   guideClientId,
-  guideSlot,
-  MAX_GUIDE_SETS,
-  matchesGuideSet,
+  newGuideSet,
   opensShort,
   type PlannedMovement,
   prescribedSet,
+  readGuideActivity,
   readScheduledWorkout,
   restEnd,
   restSeconds,
+  type SavedWorkout,
   type ScheduledWorkout,
-  type SetChange,
   saveGuideSet,
+  undoGuideSet,
 } from "./workout-guide.ts";
 
 export function WorkoutGuideEntry({
@@ -102,69 +98,84 @@ function GuideSession({
   const client = useQueryClient();
   const id = guideClientId(workout);
   const queryKey = ["guide-activity", person, id] as const;
-  async function find(signal: AbortSignal) {
-    const workouts = await readActivities(workout.day, signal);
-    return workouts.find((entry) => entry.client_id === id) ?? null;
-  }
   const activity = useQuery({
     queryKey,
-    queryFn: ({ signal }) => find(signal),
+    queryFn: ({ signal }) => readGuideActivity(workout, signal),
+    enabled: online,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
+    refetchOnMount: "always",
   });
   const { refetch } = activity;
   const [rest, setRest] = useState<number | null>(null);
-  const [confirm, setConfirm] = useState<number | null>(null);
-  const [failed, setFailed] = useState<{
-    change: SetChange;
-    movement: PlannedMovement;
-  } | null>(null);
+  const [confirm, setConfirm] = useState<SavedWorkout | null>(null);
+  type Action = { row: string; activity: SavedWorkout | null } & (
+    | {
+        kind: "done";
+        change: ReturnType<typeof newGuideSet>;
+        movement: PlannedMovement;
+      }
+    | { kind: "undo"; id: string }
+  );
+  const [failed, setFailed] = useState<Action | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const settle = () => {
+    client.setQueryData(queryKey, null);
+    close();
+    void refresh();
+  };
+  const scope = { id: JSON.stringify(queryKey) };
   const save = useMutation({
+    scope,
     networkMode: "always",
-    mutationFn: async ({
-      change,
-    }: {
-      change: SetChange;
-      movement: PlannedMovement;
-    }) => {
+    mutationFn: async (action: Action) => {
       await client.cancelQueries({ queryKey });
-      const current = await find(new AbortController().signal);
-      client.setQueryData(queryKey, current);
-      return saveGuideSet(workout, current, change);
+      if (action.kind === "done")
+        return saveGuideSet(workout, action.activity, action.change);
+      if (!action.activity) throw new Error("Missing saved workout");
+      return {
+        activity: await undoGuideSet(workout, action.activity, action.id),
+        saved: true,
+      };
     },
-    onSuccess: (saved, { change, movement }) => {
-      client.setQueryData(queryKey, saved);
+    onSuccess: (result, action) => {
+      client.setQueryData(queryKey, result.activity);
       setFailed(null);
-      if (change.set && saved?.sets.some((set) => matchesGuideSet(set, change)))
-        setRest(restEnd(movement, Date.now));
-      else setRest(null);
+      setMessage(result.saved ? null : "Not saved");
+      setRest(
+        result.saved && action.kind === "done"
+          ? restEnd(action.movement, Date.now)
+          : null,
+      );
     },
-    onError: (_error, { change, movement }) => setFailed({ change, movement }),
+    onError: (error, action) => {
+      if (!closeStaleGuide(error, settle)) setFailed(action);
+    },
   });
   const discard = useMutation({
+    scope,
     networkMode: "always",
-    mutationFn: async (confirmed: number | null) => {
+    mutationFn: async (confirmed: SavedWorkout | null) => {
       await client.cancelQueries({ queryKey });
-      const current = await find(new AbortController().signal);
-      if (current && current.id === confirmed) {
-        await deleteActivity(confirmed);
+      if (confirmed) {
+        await discardGuide(workout, confirmed);
         return null;
       }
-      return current;
+      return readGuideActivity(workout);
     },
     onSuccess: (current) => {
-      client.setQueryData(queryKey, current);
-      if (current) setConfirm(current.id);
+      if (!current) settle();
       else {
-        close();
-        void refresh();
+        client.setQueryData(queryKey, current);
+        setConfirm(current);
       }
     },
   });
   const busy = save.isPending || discard.isPending;
   useEffect(() => {
     const update = () => {
-      if (document.visibilityState === "visible" && !busy) void refetch();
+      if (document.visibilityState === "visible" && !busy && online)
+        void refetch();
     };
     window.addEventListener("focus", update);
     document.addEventListener("visibilitychange", update);
@@ -172,10 +183,9 @@ function GuideSession({
       window.removeEventListener("focus", update);
       document.removeEventListener("visibilitychange", update);
     };
-  }, [busy, refetch]);
+  }, [busy, online, refetch]);
   const saved = activity.data;
   const blocked = busy || activity.isFetching || saved === undefined;
-  const atLimit = (saved?.sets.length ?? 0) >= MAX_GUIDE_SETS;
   const occurrences = new Map<string, number>();
   return (
     <DialogContent
@@ -195,49 +205,52 @@ function GuideSession({
             Retry loading workout
           </Button>
         )}
-        {atLimit && <p className="body-note">Set limit reached</p>}
+        {!online && <p className="body-note">Offline</p>}
+        {message && <p role="alert">{message}</p>}
         {workout.movements.map((movement) => {
           const exercise = prescribedSet(movement).exercise;
-          const occurrence = occurrences.get(exercise) ?? 0;
-          occurrences.set(exercise, occurrence + 1);
+          const offset = occurrences.get(exercise) ?? 0;
+          occurrences.set(exercise, offset + movement.sets);
+          const sets = saved?.sets.filter(
+            (set) => set.client_set_id && set.exercise === exercise,
+          );
           return (
             <Movement
-              key={JSON.stringify([exercise, occurrence])}
+              key={JSON.stringify([exercise, offset])}
               movement={movement}
             >
               {Array.from({ length: movement.sets }, (_, setIndex) => {
-                const slot = guideSlot(occurrence, setIndex);
-                const identity = { slot, exercise };
-                const marked = saved?.sets.find((set) =>
-                  matchesGuideSet(set, identity),
-                );
-                const failedHere =
-                  failed?.change.slot === slot &&
-                  failed.change.exercise === exercise;
+                const row = JSON.stringify([exercise, offset + setIndex]);
+                const marked = sets?.[offset + setIndex];
                 return (
                   <GuideSet
-                    key={slot}
+                    key={row}
                     number={setIndex + 1}
                     movement={movement}
                     marked={marked}
-                    busy={blocked || (failed !== null && !failedHere)}
-                    atLimit={atLimit}
-                    failed={failedHere}
+                    busy={blocked || (failed !== null && failed.row !== row)}
+                    failed={failed?.row === row}
                     retry={() => {
                       if (failed) save.mutate(failed);
                     }}
-                    done={(row) =>
+                    done={(input) =>
                       save.mutate({
-                        change: { ...identity, set: setInput(row) },
+                        kind: "done",
+                        row,
+                        activity: saved ?? null,
+                        change: newGuideSet(setInput(input)),
                         movement,
                       })
                     }
-                    undo={() =>
-                      save.mutate({
-                        change: { ...identity, set: null },
-                        movement,
-                      })
-                    }
+                    undo={() => {
+                      if (saved && marked?.client_set_id)
+                        save.mutate({
+                          kind: "undo",
+                          row,
+                          activity: saved,
+                          id: marked.client_set_id,
+                        });
+                    }}
                   />
                 );
               })}
@@ -402,7 +415,6 @@ function GuideSet({
   movement,
   marked,
   busy,
-  atLimit,
   failed,
   retry,
   done,
@@ -412,7 +424,6 @@ function GuideSet({
   movement: PlannedMovement;
   marked: SavedWorkout["sets"][number] | undefined;
   busy: boolean;
-  atLimit: boolean;
   failed: boolean;
   retry: () => void;
   done: (row: ReturnType<typeof prescribedSet>) => void;
@@ -427,7 +438,7 @@ function GuideSet({
       aria-label={`${movement.name} set ${number}`}
       onSubmit={(event) => {
         event.preventDefault();
-        if (!busy && !atLimit && !marked && !failed) done(row);
+        if (!busy && !marked && !failed) done(row);
       }}
     >
       <span>Set {number}</span>
@@ -475,7 +486,7 @@ function GuideSet({
           Undo
         </Button>
       ) : (
-        <Button type="submit" disabled={busy || atLimit}>
+        <Button type="submit" disabled={busy}>
           Done
         </Button>
       )}

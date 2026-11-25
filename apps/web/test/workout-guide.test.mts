@@ -1,19 +1,21 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { type SavedWorkout, setInput } from "../src/health-api.ts";
+import { ApiError } from "../src/api.ts";
+import { setInput } from "../src/health-api.ts";
 import {
-  guideSlot,
+  closeStaleGuide,
+  newGuideSet,
   opensShort,
   prescribedSet,
   restEnd,
   restSeconds,
   type ScheduledWorkout,
-  SHORT_CARD_SESSIONS,
   saveGuideSet,
+  undoGuideSet,
 } from "../src/workout-guide.ts";
 
 const card = {
-  equipment: "Bench",
+  equipment: null,
   rest_seconds: 45,
   sessions: 0,
   setup: [],
@@ -22,7 +24,7 @@ const card = {
   safety: [],
   pictures: [],
 };
-const movement = { name: "Step up", sets: 2, reps: "8", load: "20 lb", card };
+const movement = { name: "Step up", sets: 2, reps: "8", card };
 const workout: ScheduledWorkout = {
   day: "2026-01-05",
   kind: "lift",
@@ -30,145 +32,101 @@ const workout: ScheduledWorkout = {
   session: "upper_a",
   movements: [movement],
 };
-const existing: SavedWorkout = {
-  id: 3,
-  sets: [
-    {
-      set_index: 1,
-      exercise: "Step up",
-      reps: 8,
-      load: 20,
-      load_unit: "lb",
-      load_kg: 9.07,
-      set_type: "working",
-      notes: guideSlot(0, 0),
-      duration_seconds: null,
-      rir_low: null,
-      rir_high: null,
-    },
-  ],
-};
-const row = setInput(prescribedSet(movement));
+const clientId = "guide:2026-01-05:upper_a";
+const activity = { id: 3, client_id: clientId, sets: [] };
+const input = setInput(prescribedSet(movement));
 
-test("marking Done starts prescribed rest on a stepped clock", () => {
-  let now = 1000;
-  const clock = () => now;
-  for (const [restCard, seconds] of [
+test("Done uses the card rest or 90 seconds and opens short at three sessions", () => {
+  for (const [cue, seconds] of [
     [card, 45],
     [null, 90],
-    [{ ...card, rest_seconds: null }, 90],
   ] as const) {
-    const end = restEnd({ ...movement, card: restCard }, clock);
-    assert.equal(restSeconds(end, clock), seconds);
-    now += (seconds + 1) * 1000;
-    assert.equal(restSeconds(end, clock), 0);
-  }
-});
-
-test("the short card opens at the session threshold", () => {
-  for (const sessions of [
-    SHORT_CARD_SESSIONS - 1,
-    SHORT_CARD_SESSIONS,
-    SHORT_CARD_SESSIONS + 1,
-  ])
+    const end = restEnd({ ...movement, card: cue }, () => 1000);
     assert.equal(
+      restSeconds(end, () => 1000),
+      seconds,
+    );
+    assert.equal(
+      restSeconds(end, () => end + 1000),
+      0,
+    );
+  }
+  assert.deepEqual(
+    [2, 3, 4].map((sessions) =>
       opensShort({ ...movement, card: { ...card, sessions } }),
-      sessions >= SHORT_CARD_SESSIONS,
-    );
+    ),
+    [false, true, true],
+  );
 });
 
-test("Done patches the full set list and returns the server's sets", async () => {
-  const older = existing.sets[0];
-  assert.ok(older);
-  const slot = guideSlot(0, 1);
-  const response = {
-    ...existing,
-    sets: [...existing.sets, { ...older, set_index: 2, notes: slot, reps: 7 }],
+test("Done mints a fresh ID, retries the same add and uses the server response", async (context) => {
+  const first = newGuideSet(input);
+  const next = newGuideSet(input);
+  assert.notEqual(first.id, next.id);
+  assert.match(first.id, /^[a-f0-9-]{36}$/);
+  const saved = {
+    set_index: 1,
+    exercise: movement.name,
+    set_type: "working",
+    reps: 7,
+    load: null,
+    load_unit: null,
+    load_kg: null,
+    duration_seconds: null,
+    rir_low: null,
+    rir_high: null,
+    notes: null,
+    client_set_id: first.id,
   };
-  const result = await saveGuideSet(
-    workout,
-    existing,
-    { slot, exercise: row.exercise, set: row },
-    undefined,
-    async (id, sets) => {
-      assert.equal(id, existing.id);
-      assert.deepEqual(
-        sets.map(({ notes, reps }) => [notes, reps]),
-        [
-          [older.notes, 8],
-          [slot, 8],
-        ],
-      );
-      return response;
+  const calls: unknown[] = [];
+  context.mock.method(
+    globalThis,
+    "fetch",
+    async (path: string, options: RequestInit) => {
+      assert.equal(path, "/api/activity-sets");
+      calls.push(JSON.parse(String(options.body)));
+      if (calls.length === 1) throw new Error("Response lost");
+      return Response.json({ set: saved, sets: [saved], repeat: true });
     },
   );
-  assert.equal(result, response);
-});
-
-test("starting the same scheduled workout twice posts the same client id", async () => {
-  const ids: unknown[] = [];
-  for (const planned of [workout, { ...workout }])
-    await saveGuideSet(
-      planned,
-      null,
-      { slot: guideSlot(0, 0), exercise: row.exercise, set: row },
-      async (body) => {
-        ids.push(body.client_id);
-        return existing;
-      },
-    );
-  assert.deepEqual(ids, [
-    "guide:2026-01-05:upper_a",
-    "guide:2026-01-05:upper_a",
-  ]);
-});
-
-test("POST replay keeps a different movement at the same slot, and Undo tolerates a missing session", async () => {
-  const slot = guideSlot(0, 0);
-  const renamed = setInput(prescribedSet({ ...movement, name: "  Row  " }));
-  assert.equal(renamed.exercise, "Row");
-  await saveGuideSet(
-    workout,
-    null,
-    { slot, exercise: renamed.exercise, set: renamed },
-    async () => existing,
-    async (id, sets) => {
-      assert.equal(id, existing.id);
-      assert.deepEqual(
-        sets.map(({ exercise }) => exercise),
-        ["Step up", "Row"],
-      );
-      return existing;
-    },
-  );
-  assert.equal(
-    await saveGuideSet(workout, null, {
-      slot,
-      exercise: row.exercise,
-      set: null,
+  await assert.rejects(saveGuideSet(workout, activity, first), /Response lost/);
+  assert.deepEqual(await saveGuideSet(workout, activity, first), {
+    activity: { ...activity, sets: [saved] },
+    saved: true,
+  });
+  assert.deepEqual(
+    calls,
+    Array(2).fill({
+      session_id: 3,
+      session_client_id: clientId,
+      client_set_id: first.id,
+      set: input,
     }),
-    null,
   );
 });
 
-test("Undo removes only the matching set and leaves the other exercise", async () => {
-  const [first] = existing.sets;
-  assert.ok(first);
-  const other = { ...first, exercise: "Row", set_index: 2 };
-  const activity = { ...existing, sets: [first, other] };
-  const response = { ...existing, sets: [other] };
-  const result = await saveGuideSet(
-    workout,
-    activity,
-    { slot: guideSlot(0, 0), exercise: first.exercise, set: null },
-    undefined,
-    async (_id, sets) => {
-      assert.deepEqual(
-        sets.map((set) => set.exercise),
-        ["Row"],
+test("Undo removes by the original identity and stale_session closes the guide", async (context) => {
+  context.mock.method(
+    globalThis,
+    "fetch",
+    async (path: string, options: RequestInit) => {
+      assert.equal(path, "/api/activity-sets/remove");
+      assert.deepEqual(JSON.parse(String(options.body)), {
+        session_id: 3,
+        session_client_id: clientId,
+        client_set_id: "example-set",
+      });
+      return Response.json(
+        { error: { code: "stale_session" } },
+        { status: 409 },
       );
-      return response;
     },
   );
-  assert.equal(result, response);
+  const close = context.mock.fn();
+  await assert.rejects(
+    undoGuideSet(workout, activity, "example-set"),
+    (error) => closeStaleGuide(error, close),
+  );
+  assert.equal(close.mock.callCount(), 1);
+  assert.equal(closeStaleGuide(new ApiError(409, "other"), close), false);
 });

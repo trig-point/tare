@@ -252,12 +252,28 @@ test("MCP keeps different sources and records agent activity on its local day", 
       day: "2025-12-31",
       notes: null,
       category: "cardio",
+      client_id: null,
       tracker: null,
       sets: [],
     },
   ]);
-  const largest = { ...widestSession, sets: Array(setCap).fill(widestSet) };
+  const largest = {
+    ...widestSession,
+    sets: Array(setCap).fill({ ...widestSet, client_set_id: null }),
+  };
   assert.equal((await call("log_activity", largest)).sets.length, setCap);
+  const widestIds = Array.from({ length: setCap }, (_, index) => ({
+    ...widestSet,
+    client_set_id: `${widestSet.client_set_id.slice(1)}${String.fromCharCode(0x800 + index)}`,
+  }));
+  const replaced = await call("replace_activity_sets", {
+    id: first.id,
+    sets: widestIds,
+  });
+  assert.deepEqual(
+    replaced.sets.map((set: { client_set_id: string }) => set.client_set_id),
+    widestIds.map((set) => set.client_set_id),
+  );
   const over = await rpc("tools/call", {
     name: "log_activity",
     arguments: {

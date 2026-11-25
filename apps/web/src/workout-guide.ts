@@ -1,18 +1,9 @@
 import { z } from "zod";
-import { api } from "./api.ts";
-import {
-  blankSet,
-  logActivity,
-  replaceSets,
-  type SavedWorkout,
-  type SetInput,
-  setInput,
-  setRow,
-} from "./health-api.ts";
+import { ApiError, api } from "./api.ts";
+import { activitySetSchema, blankSet, type SetInput } from "./health-api.ts";
 
 export const SHORT_CARD_SESSIONS = 3;
 export const DEFAULT_REST_SECONDS = 90;
-export const MAX_GUIDE_SETS = 56;
 
 const card = z.object({
   equipment: z.string().nullable(),
@@ -84,41 +75,113 @@ export function restEnd(movement: PlannedMovement, clock: () => number) {
   return clock() + (movement.card?.rest_seconds ?? DEFAULT_REST_SECONDS) * 1000;
 }
 
-type SetIdentity = { slot: string; exercise: string };
-export type SetChange = SetIdentity & { set: SetInput | null };
+const setsSchema = z.array(activitySetSchema);
+const activitySchema = z.object({
+  id: z.number(),
+  client_id: z.string().nullable(),
+  sets: setsSchema,
+});
+export type SavedWorkout = z.infer<typeof activitySchema>;
 
-export function matchesGuideSet(
-  set: SavedWorkout["sets"][number],
-  identity: SetIdentity,
+export async function readGuideActivity(
+  workout: ScheduledWorkout,
+  signal?: AbortSignal,
 ) {
-  return set.notes === identity.slot && set.exercise === identity.exercise;
+  const day = encodeURIComponent(workout.day);
+  const result = z
+    .object({ workouts: z.array(activitySchema) })
+    .parse(await api(`/api/activities/${day}/${day}`, { signal }));
+  return (
+    result.workouts.find(
+      (activity) => activity.client_id === guideClientId(workout),
+    ) ?? null
+  );
 }
-export const guideSlot = (occurrence: number, set: number) =>
-  `Guide set ${occurrence + 1}:${set + 1}`;
+
+const post = (path: string, body: unknown) =>
+  api(path, { method: "POST", body: JSON.stringify(body) });
+
+export function newGuideSet(set: SetInput, mint = () => crypto.randomUUID()) {
+  return { set, id: mint() };
+}
 
 export async function saveGuideSet(
   workout: ScheduledWorkout,
   activity: SavedWorkout | null,
-  change: SetChange,
-  post = logActivity,
-  patch = replaceSets,
-): Promise<SavedWorkout | null> {
-  const changed = change.set && { ...change.set, notes: change.slot };
+  change: ReturnType<typeof newGuideSet>,
+) {
+  const clientId = guideClientId(workout);
   if (!activity) {
-    if (!changed) return null;
-    activity = await post({
-      timing: "date_only",
-      day: workout.day,
-      kind: workout.kind,
-      notes: workout.name,
-      client_id: guideClientId(workout),
-      sets: [changed],
-    });
-    if (activity.sets.some((set) => matchesGuideSet(set, change)))
-      return activity;
+    activity = activitySchema.parse(
+      await post("/api/activities", {
+        timing: "date_only",
+        day: workout.day,
+        kind: workout.kind,
+        notes: workout.name,
+        client_id: clientId,
+        sets: [{ ...change.set, client_set_id: change.id }],
+      }),
+    );
+    if (activity.sets.some((set) => set.client_set_id === change.id))
+      return { activity, saved: true };
   }
-  const kept = activity.sets
-    .filter((set) => !matchesGuideSet(set, change))
-    .map((set) => setInput(setRow(set)));
-  return patch(activity.id, changed ? [...kept, changed] : kept);
+  const { sets, set } = z
+    .object({
+      sets: setsSchema,
+      set: activitySetSchema.nullable(),
+      removed: z.literal(true).optional(),
+    })
+    .refine(({ set, removed }) => (set === null) === (removed === true))
+    .parse(
+      await post("/api/activity-sets", {
+        session_id: activity.id,
+        session_client_id: clientId,
+        client_set_id: change.id,
+        set: change.set,
+      }),
+    );
+  return { activity: { ...activity, sets }, saved: set !== null };
+}
+
+export async function undoGuideSet(
+  workout: ScheduledWorkout,
+  activity: SavedWorkout,
+  id: string,
+) {
+  z.object({ removed: z.boolean() }).parse(
+    await post("/api/activity-sets/remove", {
+      session_id: activity.id,
+      session_client_id: guideClientId(workout),
+      client_set_id: id,
+    }),
+  );
+  return {
+    ...activity,
+    sets: activity.sets.filter((set) => set.client_set_id !== id),
+  };
+}
+
+export async function discardGuide(
+  workout: ScheduledWorkout,
+  activity: SavedWorkout,
+) {
+  return z.object({ discarded: z.boolean() }).parse(
+    await post("/api/activities/discard", {
+      id: activity.id,
+      client_id: guideClientId(workout),
+    }),
+  );
+}
+
+export function closeStaleGuide(error: unknown, close: () => void) {
+  if (
+    !(
+      error instanceof ApiError &&
+      error.status === 409 &&
+      error.code === "stale_session"
+    )
+  )
+    return false;
+  close();
+  return true;
 }

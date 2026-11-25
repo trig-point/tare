@@ -193,7 +193,7 @@ const readSignals = defineOperation({
           user_id: owner.user_id,
           from: input.day,
           to: input.day,
-        }).map(({ client_id: _clientId, ...workout }) => workout),
+        }),
         habits: selectHabits(context.database, owner),
       },
     };

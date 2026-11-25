@@ -8,12 +8,17 @@ import {
   operationPerson,
 } from "../operations/registry.ts";
 import { deleteActivity as deleteSession } from "../queries/delete-activity.ts";
+import { deleteActivitySet } from "../queries/delete-activity-set.ts";
+import { deleteActivitySetRemoval } from "../queries/delete-activity-set-removal.ts";
 import { deleteActivitySets } from "../queries/delete-activity-sets.ts";
 import { insertActivity } from "../queries/insert-activity.ts";
 import { insertActivitySet } from "../queries/insert-activity-set.ts";
+import { recordActivitySetRemoval } from "../queries/record-activity-set-removal.ts";
+import { recordActivitySetRemovals } from "../queries/record-activity-set-removals.ts";
 import { selectActivities } from "../queries/select-activities.ts";
 import { selectActivity } from "../queries/select-activity.ts";
 import { selectActivityByClient } from "../queries/select-activity-by-client.ts";
+import { selectActivitySetRemoval } from "../queries/select-activity-set-removal.ts";
 import { selectActivitySets } from "../queries/select-activity-sets.ts";
 import { activityCategories, countUnknownKinds } from "./activity-kinds.ts";
 import {
@@ -52,7 +57,14 @@ const setInput = zod
       ((set.rir_low ?? null) === null) === ((set.rir_high ?? null) === null),
   )
   .refine((set) => (set.rir_low ?? 0) <= (set.rir_high ?? 10));
-type SetInput = zod.output<typeof setInput>;
+const clientSetIdMaxLength = 40;
+const clientSetId = text(clientSetIdMaxLength).refine((id) =>
+  id.isWellFormed(),
+);
+const bulkSetInput = setInput.safeExtend({
+  client_set_id: clientSetId.nullish(),
+});
+type SetInput = zod.output<typeof bulkSetInput>;
 const sessionInput = {
   timing: zod.enum(["exact", "date_only"]).optional(),
   started_at: zod.string().max(40).optional(),
@@ -62,7 +74,7 @@ const sessionInput = {
   calories: zod.number().nonnegative().max(100_000).nullable().optional(),
   notes: text(1000).nullable().optional(),
   client_id: text(100).optional(),
-  sets: zod.array(setInput).optional(),
+  sets: zod.array(bulkSetInput).optional(),
 };
 
 // Widest values per field, at 3 UTF-8 bytes per UTF-16 unit, so the cap holds for any unescaped JSON text.
@@ -78,6 +90,7 @@ export const widestSet = {
   rir_low: 10,
   rir_high: 10,
   notes: wide(200),
+  client_set_id: wide(clientSetIdMaxLength),
 };
 export const widestSession = {
   timing: "exact",
@@ -88,12 +101,8 @@ export const widestSession = {
   notes: wide(1000),
   client_id: wide(100),
 };
-export const activityBodyLimit = 60_000;
-const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value));
-export const setCap = Math.floor(
-  (activityBodyLimit - bytes({ ...widestSession, sets: [] })) /
-    (bytes(widestSet) + 1),
-);
+export const activityBodyLimit = 70_000;
+export const setCap = 56;
 
 const setOutput = zod.strictObject({
   set_index: zod.number(),
@@ -107,6 +116,7 @@ const setOutput = zod.strictObject({
   rir_low: zod.number().nullable(),
   rir_high: zod.number().nullable(),
   notes: zod.string().nullable(),
+  client_set_id: zod.string().nullable(),
 });
 const sessionFields = {
   id: zod.number(),
@@ -118,6 +128,7 @@ const sessionFields = {
   calories: zod.number().nonnegative().nullable(),
   notes: zod.string().nullable(),
   source: zod.string(),
+  client_id: zod.string().nullable(),
   sets: zod.array(setOutput),
 };
 export const workoutOutput = zod.strictObject({
@@ -144,43 +155,64 @@ function sessionSets(
     .map(setView);
 }
 // Tracker rows are written only by sync; a pair takes its sets from the logged session, so sets here would be hidden.
-function ownedLoggedSession(database: Database, user_id: number, id: number) {
+function ownedLoggedSession(
+  database: Database,
+  user_id: number,
+  id: number,
+  clientId?: string,
+) {
   const session = selectActivity(database, { user_id, id });
+  if (clientId !== undefined && session?.client_id !== clientId)
+    throw new OperationError(409, "stale_session");
   if (!session) throw new OperationError(404, "not_found");
   if (!loggedSources.has(session.source))
     throw new OperationError(400, "tracker_session");
   return session;
 }
-function writeSets(
+type SetOwner = { user_id: number; session_id: number };
+
+function insertSet(
   database: Database,
-  owner: { user_id: number; session_id: number },
-  sets: SetInput[],
+  owner: SetOwner,
+  set_index: number,
+  set: SetInput,
 ) {
-  if (sets.length > setCap) throw new OperationError(400, "too_many_sets");
-  deleteActivitySets(database, owner);
-  sets.forEach((set, index) => {
-    const load = set.load ?? null;
-    insertActivitySet(database, {
-      ...owner,
-      set_index: index + 1,
-      exercise: set.exercise,
-      set_type: set.set_type ?? "working",
-      reps: set.reps ?? null,
-      load_kg:
-        load === null ? null : set.load_unit === "lb" ? poundsToKg(load) : load,
-      load_unit: load === null ? null : (set.load_unit ?? null),
-      duration_seconds: set.duration_seconds ?? null,
-      rir_low: set.rir_low ?? null,
-      rir_high: set.rir_high ?? null,
-      notes: set.notes ?? null,
-    });
+  const load = set.load ?? null;
+  insertActivitySet(database, {
+    ...owner,
+    set_index,
+    exercise: set.exercise,
+    set_type: set.set_type ?? "working",
+    reps: set.reps ?? null,
+    load_kg:
+      load === null ? null : set.load_unit === "lb" ? poundsToKg(load) : load,
+    load_unit: load === null ? null : (set.load_unit ?? null),
+    duration_seconds: set.duration_seconds ?? null,
+    rir_low: set.rir_low ?? null,
+    rir_high: set.rir_high ?? null,
+    notes: set.notes ?? null,
+    client_set_id: set.client_set_id ?? null,
   });
+}
+
+function writeSets(database: Database, owner: SetOwner, sets: SetInput[]) {
+  if (sets.length > setCap) throw new OperationError(400, "too_many_sets");
+  const ids = sets.flatMap(({ client_set_id }) => client_set_id ?? []);
+  if (new Set(ids).size !== ids.length)
+    throw new OperationError(400, "invalid_request");
+  recordActivitySetRemovals(database, owner);
+  deleteActivitySets(database, owner);
+  sets.forEach((set, index) => insertSet(database, owner, index + 1, set));
+  for (const client_set_id of ids)
+    deleteActivitySetRemoval(database, { ...owner, client_set_id });
 }
 
 export const logActivity = defineOperation({
   ...base,
   bodyLimit: activityBodyLimit,
   name: "log_activity",
+  description:
+    "Log a workout with optional client set IDs of up to 40 characters.",
   method: "POST",
   path: "/api/activities",
   input: zod
@@ -197,7 +229,6 @@ export const logActivity = defineOperation({
   output: zod.strictObject({
     ...sessionFields,
     user_id: zod.number(),
-    client_id: zod.string().nullable(),
     source_record_id: zod.string().nullable(),
     created_at: zod.string(),
   }),
@@ -261,11 +292,13 @@ const replaceActivitySets = defineOperation({
   ...base,
   bodyLimit: activityBodyLimit,
   name: "replace_activity_sets",
+  description:
+    "Replace a workout's sets and keep any supplied client set IDs of up to 40 characters.",
   method: "PATCH",
   path: "/api/activities/:id/sets",
   input: zod.strictObject({
     id: zod.coerce.number().int().positive(),
-    sets: zod.array(setInput),
+    sets: zod.array(bulkSetInput),
   }),
   output: zod.strictObject({ id: zod.number(), sets: zod.array(setOutput) }),
   handler(input, context) {
@@ -289,6 +322,127 @@ const replaceActivitySets = defineOperation({
   },
 });
 
+const setIdentity = {
+  session_id: zod.number().int().positive(),
+  session_client_id: text(100),
+  client_set_id: clientSetId,
+};
+
+const addActivitySet = defineOperation({
+  ...base,
+  bodyLimit: activityBodyLimit,
+  name: "add_activity_set",
+  description:
+    "Use a fresh random client_set_id of up to 40 characters for each Done and reuse it only for its retries and Undo (removed: true with set: null means nothing was saved). Send one session write at a time from one tab and close and clear the workout on stale_session without retrying.",
+  method: "POST",
+  path: "/api/activity-sets",
+  input: zod.strictObject({ ...setIdentity, set: setInput }),
+  output: zod
+    .strictObject({
+      set: setOutput.nullable(),
+      repeat: zod.boolean().optional(),
+      removed: zod.literal(true).optional(),
+      sets: zod.array(setOutput),
+    })
+    .refine(({ set, repeat, removed }) =>
+      set === null
+        ? removed === true && repeat === undefined
+        : removed === undefined && repeat !== undefined,
+    ),
+  handler(input, context) {
+    const { database } = context;
+    const user_id = operationPerson(context).id;
+    const { session_id, session_client_id, client_set_id } = input;
+    const owner = { user_id, session_id };
+    return writeTransaction(database, () => {
+      const session = ownedLoggedSession(
+        database,
+        user_id,
+        session_id,
+        session_client_id,
+      );
+      const removed = selectActivitySetRemoval(database, {
+        ...owner,
+        client_set_id,
+      });
+      const sets = sessionSets(database, user_id, session_id, session.day);
+      if (removed)
+        return { status: 200, body: { set: null, removed: true, sets } };
+      const existing = sets.find((set) => set.client_set_id === client_set_id);
+      if (existing)
+        return { status: 200, body: { set: existing, repeat: true, sets } };
+      if (sets.length >= setCap) throw new OperationError(400, "too_many_sets");
+      const setIndex = (sets.at(-1)?.set_index ?? 0) + 1;
+      insertSet(database, owner, setIndex, { ...input.set, client_set_id });
+      const updated = sessionSets(database, user_id, session_id, session.day);
+      const set = updated.at(-1);
+      if (set?.client_set_id !== client_set_id)
+        throw new Error("Activity set insert returned no row");
+      return { status: 200, body: { set, repeat: false, sets: updated } };
+    });
+  },
+});
+
+const removeActivitySet = defineOperation({
+  ...base,
+  bodyLimit: activityBodyLimit,
+  name: "remove_activity_set",
+  description:
+    "Undo a set by sending its original client_set_id of up to 40 characters, then use a fresh ID for the next Done. Send one session write at a time from one tab and close and clear the workout on stale_session without retrying.",
+  method: "POST",
+  path: "/api/activity-sets/remove",
+  input: zod.strictObject(setIdentity),
+  output: zod.strictObject({ removed: zod.boolean() }),
+  handler(input, context) {
+    const { database } = context;
+    const user_id = operationPerson(context).id;
+    const { session_id, session_client_id, client_set_id } = input;
+    const identity = { user_id, session_id, client_set_id };
+    const removed = writeTransaction(database, () => {
+      ownedLoggedSession(database, user_id, session_id, session_client_id);
+      const { changes } = deleteActivitySet(database, identity);
+      recordActivitySetRemoval(database, identity);
+      return changes > 0;
+    });
+    return { status: 200, body: { removed } };
+  },
+});
+
+function deleteLoggedSession(database: Database, user_id: number, id: number) {
+  deleteActivitySets(database, { user_id, session_id: id });
+  deleteSession(database, { user_id, id });
+}
+
+const discardActivity = defineOperation({
+  ...base,
+  bodyLimit: activityBodyLimit,
+  name: "discard_activity",
+  description:
+    "Discard a logged workout by its session ID and original client ID, sending one session write at a time from one tab. On discarded: false, close and clear the workout without retrying.",
+  method: "POST",
+  path: "/api/activities/discard",
+  input: zod.strictObject({
+    id: zod.number().int().positive(),
+    client_id: text(100),
+  }),
+  output: zod.strictObject({ discarded: zod.boolean() }),
+  handler(input, context) {
+    const { database } = context;
+    const user_id = operationPerson(context).id;
+    const discarded = writeTransaction(database, () => {
+      const session = selectActivity(database, { user_id, id: input.id });
+      if (
+        session?.client_id !== input.client_id ||
+        !loggedSources.has(session.source)
+      )
+        return false;
+      deleteLoggedSession(database, user_id, input.id);
+      return true;
+    });
+    return { status: 200, body: { discarded } };
+  },
+});
+
 const deleteActivity = defineOperation({
   ...base,
   name: "delete_activity",
@@ -301,8 +455,7 @@ const deleteActivity = defineOperation({
     const user_id = operationPerson(context).id;
     writeTransaction(context.database, () => {
       ownedLoggedSession(context.database, user_id, input.id);
-      deleteActivitySets(context.database, { user_id, session_id: input.id });
-      deleteSession(context.database, { user_id, id: input.id });
+      deleteLoggedSession(context.database, user_id, input.id);
     });
     return { status: 200, body: { deleted: true, id: input.id } };
   },
@@ -334,9 +487,7 @@ const readActivities = defineOperation({
   output: zod.strictObject({
     from: zod.iso.date(),
     to: zod.iso.date(),
-    workouts: zod.array(
-      workoutOutput.extend({ client_id: zod.string().nullable() }),
-    ),
+    workouts: zod.array(workoutOutput),
   }),
   handler(input, context) {
     const user_id = operationPerson(context).id;
@@ -351,6 +502,9 @@ const readActivities = defineOperation({
 });
 export const activityOperations = [
   replaceActivitySets,
+  addActivitySet,
+  removeActivitySet,
+  discardActivity,
   deleteActivity,
   readActivities,
 ];

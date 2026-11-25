@@ -2,9 +2,15 @@ import assert from "node:assert/strict";
 import { mock } from "node:test";
 import type { SelectActivitiesResult } from "../src/queries/select-activities.ts";
 import { upsertSourceActivity } from "../src/queries/upsert-source-activity.ts";
-import { setCap, widestSession, widestSet } from "../src/signals/activities.ts";
+import {
+  activityBodyLimit,
+  setCap,
+  widestSession,
+  widestSet,
+} from "../src/signals/activities.ts";
 import { countUnknownKinds } from "../src/signals/activity-kinds.ts";
 import { mergeWorkouts } from "../src/signals/merged-workouts.ts";
+import { cookie, fixture, requestedWith } from "./auth-support.ts";
 import { test } from "./support/hang-ceiling.ts";
 import { twoUsers } from "./support/two-users.ts";
 
@@ -40,8 +46,11 @@ test("sets, timing, cap, replay, replacement and owner isolation over HTTP", asy
   const logged = await send("/api/activities", timed);
   assert.equal(logged.status, 200);
   assert.deepEqual(
-    logged.body.sets.map((set: Record<string, unknown>) =>
-      Object.values(set).join(" "),
+    logged.body.sets.map(
+      ({ client_set_id, ...set }: Record<string, unknown>) => {
+        assert.equal(client_set_id, null);
+        return Object.values(set).join(" ");
+      },
     ),
     ["warmup", "working", "working"].map(
       (type, index) => `${index + 1} Goblet squat ${type} 8 50 lb 22.68  3 4 `,
@@ -64,7 +73,6 @@ test("sets, timing, cap, replay, replacement and owner isolation over HTTP", asy
     [null, null],
   );
   const range = `/api/activities/${logged.body.day}/${logged.body.day}`;
-  assert.equal((await send(range)).body.workouts[0].client_id, timed.client_id);
   assert.deepEqual(
     (await send(range)).body.workouts.map(
       (workout: { id: number }) => workout.id,
@@ -114,8 +122,15 @@ test("sets, timing, cap, replay, replacement and owner isolation over HTTP", asy
     calories: 310,
     created_at: at("20:00"),
   });
-  const largest = { ...widestSession, sets: Array(setCap).fill(widestSet) };
-  assert.ok(Buffer.byteLength(JSON.stringify(largest)) <= 60_000);
+  const largest = {
+    ...widestSession,
+    sets: Array.from({ length: 56 }, (_, index) => ({
+      ...widestSet,
+      client_set_id: `${widestSet.client_set_id.slice(1)}${String.fromCharCode(0x800 + index)}`,
+    })),
+  };
+  assert.equal(setCap, 56);
+  assert.ok(Buffer.byteLength(JSON.stringify(largest)) <= activityBodyLimit);
   assert.equal(
     (await send("/api/activities", largest)).body.sets.length,
     setCap,
@@ -201,6 +216,159 @@ test("delete_activity removes a logged session with its sets; tracker and foreig
   assert.deepEqual(sets, before[1]?.slice(3));
 });
 
+test("per-set writes preserve other rows, remember Undo, and guard reused session IDs", async (context) => {
+  const { app, database, signIn } = fixture(context);
+  const headers = { ...requestedWith, Cookie: cookie(await signIn()) };
+  const send = async (path: string, body?: unknown, method = "POST") => {
+    const response = await app.request(`/api/${path}`, {
+      headers,
+      method,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    return { status: response.status, body: await response.json() };
+  };
+  const rows = () =>
+    database.prepare("SELECT * FROM activity_sets ORDER BY set_index").all();
+  const allRows = () => [
+    rows(),
+    database
+      .prepare("SELECT * FROM activity_set_removals ORDER BY client_set_id")
+      .all(),
+    database.prepare("SELECT * FROM activity_sessions ORDER BY id").all(),
+  ];
+  const log = (client_id: string, sets: unknown[] = []) =>
+    send("activities", {
+      timing: "date_only",
+      day,
+      kind: "strength",
+      client_id,
+      sets,
+    });
+  const {
+    body: { id },
+  } = await log("workout-one", [{ ...strengthSet, client_set_id: "first" }]);
+  const identity = { session_id: id, session_client_id: "workout-one" };
+  const add = (client_set_id: string) =>
+    send("activity-sets", { ...identity, client_set_id, set: strengthSet });
+  const remove = (client_set_id: string) =>
+    send("activity-sets/remove", { ...identity, client_set_id });
+  const [first] = rows();
+  const second = await add("second");
+  assert.equal(second.status, 200);
+  assert.deepEqual(rows().slice(0, 1), [first]);
+  const [, secondRow] = rows();
+  assert.deepEqual(await add("second"), {
+    status: 200,
+    body: { ...second.body, repeat: true },
+  });
+  for (const removed of [true, false])
+    assert.deepEqual(await remove("first"), { status: 200, body: { removed } });
+  assert.deepEqual(await add("first"), {
+    status: 200,
+    body: { set: null, removed: true, sets: [second.body.set] },
+  });
+  assert.deepEqual(rows(), [secondRow]);
+  const fresh = await add("fresh");
+  assert.equal(fresh.body.set.set_index, 3);
+  assert.deepEqual(rows().slice(0, 1), [secondRow]);
+
+  assert.equal((await add("\ufffd")).status, 200);
+  const before = allRows();
+  for (const [path, set] of [
+    ["activity-sets/remove", {}],
+    ["activity-sets", { set: strengthSet }],
+  ] as const) {
+    const body = { ...identity, client_set_id: "second", ...set };
+    for (const [invalid, status, code] of [
+      [{ session_client_id: "wrong" }, 409, "stale_session"],
+      [{ session_id: id + 1 }, 409, "stale_session"],
+      [{ session_client_id: undefined }, 400, "invalid_request"],
+      [{ client_set_id: "" }, 400, "invalid_request"],
+      [{ client_set_id: "\ud800" }, 400, "invalid_request"],
+      [{ client_set_id: "x".repeat(41) }, 400, "invalid_request"],
+    ] as const)
+      assert.deepEqual(await send(path, { ...body, ...invalid }), {
+        status,
+        body: { error: { code } },
+      });
+  }
+  const discard = (client_id: string) =>
+    send("activities/discard", { id, client_id });
+  const discarded = (value: boolean) => ({
+    status: 200,
+    body: { discarded: value },
+  });
+  assert.deepEqual(await discard("wrong"), discarded(false));
+  assert.deepEqual(allRows(), before);
+
+  const sets = ["second", "first", null].map((client_set_id) => ({
+    ...strengthSet,
+    client_set_id,
+  }));
+  const replacement = await send(`activities/${id}/sets`, { sets }, "PATCH");
+  assert.equal(replacement.status, 200);
+  const expectedIds = ["second", "first", null];
+  const read = await send(`activities/${day}/${day}`, undefined, "GET");
+  const training = await send("training/context", undefined, "GET");
+  for (const workout of [
+    read.body.workouts[0],
+    training.body.recent_sessions[0],
+  ]) {
+    assert.equal(workout.client_id, identity.session_client_id);
+    assert.deepEqual(
+      workout.sets.map(
+        (set: { client_set_id: string | null }) => set.client_set_id,
+      ),
+      expectedIds,
+    );
+  }
+  assert.equal((await add("first")).body.repeat, true);
+  assert.equal((await add("fresh")).body.removed, true);
+  assert.equal(
+    (
+      await send(
+        `activities/${id}/sets`,
+        {
+          sets: [...sets, ...Array(setCap - sets.length).fill(strengthSet)],
+        },
+        "PATCH",
+      )
+    ).status,
+    200,
+  );
+  const atCap = allRows();
+  assert.equal((await add("first")).body.repeat, true);
+  assert.equal((await add("fresh")).body.removed, true);
+  assert.deepEqual(await add("over-cap"), {
+    status: 400,
+    body: { error: { code: "too_many_sets" } },
+  });
+  assert.deepEqual(allRows(), atCap);
+  assert.deepEqual(await discard(identity.session_client_id), discarded(true));
+  assert.deepEqual(await discard(identity.session_client_id), discarded(false));
+  assert.deepEqual(allRows(), [[], [], []]);
+
+  assert.equal((await log("workout-one")).body.id, id);
+  assert.deepEqual(await remove("fresh"), {
+    status: 200,
+    body: { removed: false },
+  });
+  assert.equal((await add("fresh")).body.removed, true);
+  assert.equal(
+    (await send(`activities/${id}`, undefined, "DELETE")).status,
+    200,
+  );
+  assert.equal((await log("workout-two")).body.id, id);
+  assert.deepEqual(await discard(identity.session_client_id), discarded(false));
+  const reused = await send("activity-sets", {
+    ...identity,
+    session_client_id: "workout-two",
+    client_set_id: "fresh",
+    set: strengthSet,
+  });
+  assert.equal(reused.body.set.client_set_id, "fresh");
+});
+
 const session = (
   id: number,
   source: string,
@@ -208,7 +376,6 @@ const session = (
   start: string | null,
   minutes: number | null,
 ): SelectActivitiesResult => ({
-  client_id: null,
   id,
   timing: start === null ? "date_only" : "exact",
   started_at: start === null ? null : at(start),
@@ -218,6 +385,7 @@ const session = (
   calories: source === "oura" ? 100 + id : null,
   notes: null,
   source,
+  client_id: null,
 });
 const pairs = (sessions: SelectActivitiesResult[]) =>
   mergeWorkouts(sessions, [])
