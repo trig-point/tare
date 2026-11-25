@@ -109,7 +109,7 @@ A save replaces the whole card, and any field you leave out is cleared. To chang
 The other tools:
 
 - `list_movements` takes no arguments (`{}`) and returns every card.
-- `get_movement` takes a `name`, ignoring case, and fails with `not_found` when there is none.
+- `get_movement` takes a `name`, matched the same way as a card name, and fails with `not_found` when there is none. It returns `{ "movement": { ... } }`; edit the inner object.
 - `remove_movement` takes a `name`.
 
 ```json
@@ -120,19 +120,19 @@ Every card also returns `sessions`: the number of logged sessions that have at l
 
 ## Write the schedule
 
-`read_workout_schedule` takes no arguments (`{}`) and returns the stored schedule, or `null` before the first write. `replace_workout_schedule` replaces the whole document. It cannot patch one day.
+`read_workout_schedule` takes no arguments (`{}`) and returns `{ "schedule": { ... } }`, with `null` inside before the first write. Edit the inner object and send that, with its `updated` stamp, to `replace_workout_schedule`; do not send the outer `schedule` key. `replace_workout_schedule` replaces the whole document. It cannot patch one day.
 
 The document has these parts:
 
 - `version`: always `1`.
-- `timezone`: an IANA zone such as `America/New_York`. Offsets such as `UTC+5` are refused.
+- `timezone`: an IANA zone such as `America/New_York`. Offsets such as `UTC+5` are refused. Optional `updated_by` (up to 80 characters) says who wrote it.
 - `week`: all seven days, `mon` to `sun`. Each is a lift (`{"kind": "lift", "session": "<key or group>"}`) or a `cardio` or `rest` day with a `label`.
 - `sessions`: the session library, keyed by a lowercase key such as `upper_gym`. Each session has `name`, `where`, an optional `note`, and up to 30 `movements`. A movement has `name`, `sets` (1 to 20) and `reps`, plus optional `load`, `rir`, `rest_s` and `note`. `sets` is a whole number; `reps` and the optional fields are text, so send `"10"`, not `10`.
 - `rotation`: the order sessions come up, as session keys.
 - `next_session`: the session key due next, or `null`.
 - `planned`: dated entries that override the week for one day. Each has a `date` and either a `session` or a `cardio` or `rest` kind with a `label`. Up to 400, one per date.
 
-A week day can name a group instead of one session. A group is the text before the first underscore, so `upper` covers `upper_gym` and `upper_home`. On a group day, Tare picks `next_session` if it is in the group, and otherwise the first group session in `rotation`. A dated entry always names one exact session.
+A week lift day names a session key or a group. If the name is an exact session key, that session is used. Otherwise it is a group: the text before the first underscore, so `upper` covers `upper_gym` and `upper_home`. A group needs at least one member in `rotation`. On a group day, Tare picks `next_session` if it is in the group, and otherwise the first group session in `rotation`. A dated lift entry always names one exact session key; a dated `cardio` or `rest` entry has a `label` instead.
 
 The session's `where` should be the name of a place from `places` (up to 80 characters), spelled the same apart from case and surrounding spaces. That is how `get_training_context` finds the session's place; the place's machines are in `places`.
 
@@ -143,7 +143,7 @@ Two rules apply to every write:
 
 A bad document comes back as an error whose text lists what is wrong, such as `unknown session upper_x`, `duplicate date 2026-12-07` or `no upper in rotation`. Fix every message and send it again.
 
-`today_workout` takes no arguments (`{}`) and returns today's entry: the dated one if there is one, otherwise the week day. Each movement comes with its `card`, the library card with the same name, or `null` when no card matches. Schedule movement names go up to 120 characters but cards stop at 80, so keep scheduled names short enough to match.
+`today_workout` takes no arguments (`{}`) and returns today's entry: the dated one if there is one, otherwise the week day. Today is the date in your Tare account's time zone, using your day start hour; the schedule's own `timezone` field does not change it. Each movement comes with its `card`, the library card with the same name, or `null` when no card matches. Schedule movement names go up to 120 characters but cards stop at 80, so keep scheduled names short enough to match.
 
 ## Worked flow: a session moves from the gym to home
 
@@ -155,7 +155,7 @@ Your Monday session is `upper_gym` at the downtown gym. The gym slot is missed, 
 4. Call `read_workout_schedule` with `{}` to get the writable document and its `updated` stamp. Do not edit the schedule from the context read: its sessions carry `place` fields that a replace rejects.
 5. In that document, add an `upper_home` session and a dated entry that points Monday, `2026-12-07`, at it. The week template stays the same, so the next Monday is back at the gym.
 6. Call `replace_workout_schedule` with the full document and the `updated` value from step 4.
-7. Call `today_workout` with `{}` on that Monday. It returns the `upper_home` session, each movement with its `card`.
+7. Call `today_workout` with `{}` on that Monday, by your account's date. It returns the `upper_home` session, each movement with its `card`.
 
 The arguments for step 6:
 
@@ -215,6 +215,6 @@ Cards are stored and returned now, with `today_workout` attaching each scheduled
 Two open datasets can help an agent write cards. Tare does not bundle, import or require either.
 
 - [free-exercise-db](https://github.com/yuhonas/free-exercise-db) (Unlicense): exercise instructions and about 1,700 images. A good source for `pictures`.
-- [exercises-json](https://github.com/kinetic-place/exercises-json) (MIT): setup steps, form cues and common mistakes for most exercises. It is a young project, so pin a version.
+- [exercises-json](https://github.com/kinetic-place/exercises-json) (MIT): setup steps, form cues and common mistakes for many exercises. It is a young project, so pin a version.
 
 Do not copy from wger (CC-BY-SA, share-alike) or ExerciseDB (AGPL or paid); their licenses place conditions on reuse that Tare does not take on.
