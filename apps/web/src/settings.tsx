@@ -287,6 +287,9 @@ function AgentMappings({
           online={online}
         />
       )}
+      {account.is_admin && (
+        <MapClientIdForm key={account.id} person={account.id} online={online} />
+      )}
     </section>
   );
 }
@@ -427,8 +430,7 @@ export function AddUserForm({
   );
 }
 
-// Mapping Client IDs is cut from V1 (single person); kept for later, not rendered.
-export function MapClientIdForm({
+function MapClientIdForm({
   person,
   online,
 }: {
@@ -436,10 +438,10 @@ export function MapClientIdForm({
   online: boolean;
 }) {
   const client = useQueryClient();
-  const empty = { client_id: "", user_id: "", name: "" };
+  const empty = { client_id: "", name: "" };
   const [values, setValues] = useState(empty);
   const map = useMutation({
-    mutationFn: () => mapClientId(values),
+    mutationFn: () => mapClientId({ ...values, user_id: String(person) }),
     onSuccess: async () => {
       setValues(empty);
       await client.invalidateQueries({ queryKey: mappingsKey(person) });
@@ -447,36 +449,66 @@ export function MapClientIdForm({
   });
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (
+      !online ||
+      map.isPending ||
+      !values.client_id.trim() ||
+      !values.name.trim()
+    )
+      return;
     map.mutate();
   }
+  const duplicate =
+    map.error instanceof ApiError &&
+    map.error.status === 409 &&
+    map.error.code === "client_id_taken";
   const fields = [
     ["client_id", "Client ID", 256],
-    ["user_id", "Person ID", 16],
-    ["name", "Agent name", 64],
+    ["name", "Name", 64],
   ] as const;
   return (
-    <form aria-label="Map a Client ID" onSubmit={submit}>
-      <h3>Map a Client ID</h3>
+    <form
+      aria-labelledby="add-agent-heading"
+      onSubmit={submit}
+      className="mt-4 grid gap-3"
+    >
+      <h3 id="add-agent-heading" className="m-0 font-semibold">
+        Add an agent
+      </h3>
       {fields.map(([key, label, limit]) => (
-        <div key={key}>
+        <div key={key} className="grid gap-1.5">
           <label htmlFor={`map-${key}`}>{label}</label>
           <input
             id={`map-${key}`}
-            inputMode={key === "user_id" ? "numeric" : undefined}
+            className="m-0 min-h-11"
             value={values[key]}
-            onChange={(event) =>
-              setValues({ ...values, [key]: event.target.value })
-            }
+            onChange={(event) => {
+              map.reset();
+              setValues({ ...values, [key]: event.target.value });
+            }}
             required
             maxLength={limit}
+            disabled={!online || map.isPending}
           />
         </div>
       ))}
-      <button type="submit" disabled={!online || map.isPending}>
-        {map.isPending ? "Mapping..." : "Map"}
-      </button>
-      {map.isSuccess && <output>Mapped</output>}
-      {map.isError && <p role="alert">{failure(map.error)}</p>}
+      <Button
+        type="submit"
+        className={cn(press, "min-h-11 justify-self-start px-5")}
+        disabled={
+          !online ||
+          map.isPending ||
+          !values.client_id.trim() ||
+          !values.name.trim()
+        }
+      >
+        {map.isPending ? "Adding..." : "Add"}
+      </Button>
+      {map.isError && (
+        <p role="alert">
+          {duplicate ? "That Client ID is already added." : failure(map.error)}
+        </p>
+      )}
     </form>
   );
 }
