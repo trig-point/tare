@@ -62,7 +62,8 @@ export function BodyCard({
     queryFn: ({ signal }) => readOura(signal),
     enabled: online,
   });
-  if (signals.isError) return <p role="alert">Couldn’t load signals</p>;
+  if (signals.isError && !signals.data)
+    return <p role="alert">Couldn’t load signals</p>;
   if (!signals.data) return online ? <BodySkeleton /> : null;
   const rows = bodyRows(signals.data.signals);
   const { activities, habits } = signals.data;

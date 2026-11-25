@@ -1,6 +1,13 @@
 # tare
 Tare — open-source closed-loop nutrition + body-composition tracker. Mobile-first, self-hosted, Home Assistant. Learns your TDEE from weigh-ins + intake, plans meals from your pantry.
 
+## Guides
+
+- [Deploy Tare](docs/deploy.md)
+- [Connect Home Assistant](docs/home-assistant.md)
+- [Connect Oura](docs/oura.md)
+- [Build workouts with your agent](docs/agent-training-guide.md)
+
 ## Backup and restore
 
 Set `TARE_BACKUP_DIR` to a folder on separate storage from the database volume. Backups run daily at 3:00 AM in `TARE_TIMEZONE`. Empty or unset disables backups. Relative paths resolve from the engine process working directory (`packages/engine` when using the workspace command). Startup rejects a backup folder that is the database folder or inside it; it does not check whether the folders are on separate storage.

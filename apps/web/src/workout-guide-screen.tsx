@@ -1,5 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { ApiError, liveRefresh } from "./api.ts";
 import {
   Button,
   Dialog,
@@ -8,16 +9,19 @@ import {
   DialogTrigger,
   Input,
 } from "./shared/ui/index.ts";
+import { scheduledWorkoutKey } from "./today-api.ts";
 import {
   DEFAULT_REST_SECONDS,
   finishGuide,
   type GuideDraft,
   guidePlan,
+  MAX_GUIDE_SETS,
   markSet,
   newGuideDraft,
   opensShort,
   type PlannedMovement,
   prescribedSet,
+  readGuideDraft,
   readScheduledWorkout,
   restoreGuide,
   restSeconds,
@@ -37,52 +41,71 @@ export function WorkoutGuideEntry({
   refresh: () => Promise<unknown>;
 }) {
   const workout = useQuery({
-    queryKey: ["scheduled-workout", person, day],
+    ...liveRefresh,
+    queryKey: [...scheduledWorkoutKey(person), day],
     queryFn: ({ signal }) => readScheduledWorkout(signal),
     enabled: online,
   });
-  if (workout.isError)
-    return <output className="body-note">Couldn’t load workout</output>;
   const today = workout.data;
-  if (!today || today.day !== day || today.kind === "rest") return null;
-  const storageKey = `tare:workout:${person}:${day}:${today.session ?? today.name}`;
   return (
     <WorkoutGuide
-      key={storageKey}
-      {...{ today, storageKey, online, refresh }}
+      key={person}
+      today={today?.day === day && today.kind !== "rest" ? today : null}
+      loadFailed={workout.isError && workout.data === undefined}
+      storageKey={`tare:workout:${person}`}
+      online={online}
+      refresh={refresh}
     />
   );
 }
 
 function WorkoutGuide({
   today,
+  loadFailed,
   storageKey,
   online,
   refresh,
 }: {
-  today: ScheduledWorkout;
+  today: ScheduledWorkout | null;
+  loadFailed: boolean;
   storageKey: string;
   online: boolean;
   refresh: () => Promise<unknown>;
 }) {
-  const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState(() => restoreGuide(storageKey, today));
+  const [active, setActive] = useState<ScheduledWorkout | null>(null);
+  const [draft, setDraft] = useState(() => readGuideDraft(storageKey));
+  const pending = draft.submission;
+  const retry = pending && { ...pending, session: null, movements: [] };
+  const workout = active ?? retry ?? today;
+  if (!workout)
+    return loadFailed ? (
+      <output className="body-note">Couldn’t load workout</output>
+    ) : null;
   return (
     <div className="guide-tile">
-      <strong>{today.name}</strong>
-      <Dialog open={open} onOpenChange={setOpen}>
+      <strong>{workout.name}</strong>
+      <Dialog
+        open={active !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setActive(null);
+            return;
+          }
+          setDraft(restoreGuide(draft, workout));
+          setActive(workout);
+        }}
+      >
         <DialogTrigger asChild>
-          <Button>Start</Button>
+          <Button>{pending ? "Resume" : "Start"}</Button>
         </DialogTrigger>
-        {open && (
+        {active && (
           <GuideSession
-            today={today}
-            key={guidePlan(today)}
+            today={active}
             draft={draft}
             setDraft={setDraft}
             storageKey={storageKey}
             online={online}
-            onClose={() => setOpen(false)}
+            onClose={() => setActive(null)}
             refresh={refresh}
           />
         )}
@@ -93,7 +116,7 @@ function WorkoutGuide({
 
 function GuideSession({
   today,
-  draft: currentDraft,
+  draft,
   setDraft,
   storageKey,
   online,
@@ -109,14 +132,10 @@ function GuideSession({
   refresh: () => Promise<unknown>;
 }) {
   const plan = guidePlan(today);
-  const [freshDraft] = useState(() => restoreGuide(storageKey, today));
-  const draft =
-    currentDraft.submission || currentDraft.plan === plan
-      ? currentDraft
-      : freshDraft;
+  const [stored, setStored] = useState(true);
   const save = (next: GuideDraft) => {
     setDraft(next);
-    writeGuideDraft(storageKey, next);
+    setStored(writeGuideDraft(storageKey, next));
   };
   function clear() {
     writeGuideDraft(storageKey, null);
@@ -126,6 +145,14 @@ function GuideSession({
   const finish = useMutation({
     networkMode: "always",
     mutationFn: (submitted: GuideDraft) => finishGuide(today, submitted),
+    onError: (error, submittedDraft) => {
+      if (
+        error instanceof ApiError &&
+        error.status === 400 &&
+        today.movements.length > 0
+      )
+        save({ ...submittedDraft, submission: undefined });
+    },
     onSuccess: () => {
       clear();
       void refresh();
@@ -133,8 +160,9 @@ function GuideSession({
   });
   const busy = finish.isPending;
   const submitted = draft.submission;
+  const atLimit = Object.keys(draft.marks).length >= MAX_GUIDE_SETS;
   function submit() {
-    if (!online || busy) return;
+    if (!online || !navigator.onLine || busy) return;
     const { day, kind, name } = today;
     const next = { ...draft, submission: submitted ?? { day, kind, name } };
     save(next);
@@ -170,6 +198,8 @@ function GuideSession({
         )}
       </header>
       <div className="guide-movements">
+        {!stored && <p className="body-note">Keep this page open</p>}
+        {atLimit && !submitted && <p className="body-note">56 sets marked</p>}
         {submitted && <p className="body-note">Finish to retry saving</p>}
         {!submitted &&
           today.movements.map((movement, index) => (
@@ -183,6 +213,7 @@ function GuideSession({
                     movement={movement}
                     marked={draft.marks[id]}
                     busy={busy}
+                    atLimit={atLimit}
                     done={(row) =>
                       save(markSet(draft, id, row, movement, Date.now))
                     }
@@ -324,6 +355,7 @@ function GuideSet({
   movement,
   marked,
   busy,
+  atLimit,
   done,
   undo,
 }: {
@@ -331,6 +363,7 @@ function GuideSet({
   movement: PlannedMovement;
   marked: GuideDraft["marks"][string] | undefined;
   busy: boolean;
+  atLimit: boolean;
   done: (row: ReturnType<typeof prescribedSet>) => void;
   undo: () => void;
 }) {
@@ -352,6 +385,7 @@ function GuideSet({
       aria-label={`${movement.name} set ${number}`}
       onSubmit={(event) => {
         event.preventDefault();
+        if (busy || atLimit || marked) return;
         try {
           done(row);
           setInvalid(false);
@@ -393,7 +427,7 @@ function GuideSet({
           Undo
         </Button>
       ) : (
-        <Button type="submit" disabled={busy}>
+        <Button type="submit" disabled={busy || atLimit}>
           Done
         </Button>
       )}

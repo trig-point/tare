@@ -4,6 +4,7 @@ import { blankSet, logActivity, setInput } from "./health-api.ts";
 
 export const SHORT_CARD_SESSIONS = 3;
 export const DEFAULT_REST_SECONDS = 90;
+export const MAX_GUIDE_SETS = 56;
 
 const card = z.object({
   equipment: z.string().nullable(),
@@ -81,24 +82,28 @@ export function writeGuideDraft(storageKey: string, draft: GuideDraft | null) {
   try {
     if (draft === null) localStorage.removeItem(storageKey);
     else localStorage.setItem(storageKey, JSON.stringify(draft));
+    return true;
   } catch {
-    return;
+    return false;
   }
 }
 
 export function guidePlan(workout: ScheduledWorkout) {
-  return JSON.stringify(
+  return JSON.stringify([
+    workout.day,
+    workout.kind,
+    workout.name,
+    workout.session,
     workout.movements.map(({ name, sets, reps, load }) => [
       name,
       sets,
       reps,
       load,
     ]),
-  );
+  ]);
 }
 
-export function restoreGuide(storageKey: string, workout: ScheduledWorkout) {
-  const draft = readGuideDraft(storageKey);
+export function restoreGuide(draft: GuideDraft, workout: ScheduledWorkout) {
   const plan = guidePlan(workout);
   if (draft.submission || draft.plan === plan) return draft;
   return { ...newGuideDraft(), plan };
@@ -110,7 +115,13 @@ export function prescribedSet(movement: PlannedMovement) {
   );
   return {
     ...blankSet(),
-    exercise: movement.name,
+    exercise:
+      movement.name.length <= 80
+        ? movement.name
+        : movement.name
+            .slice(0, 79)
+            .replace(/[\uD800-\uDBFF]$/, "")
+            .trimEnd() + "…",
     reps: /^\d+$/.test(movement.reps.trim()) ? movement.reps.trim() : "",
     load: load?.[1] ?? "",
     load_unit:
@@ -125,6 +136,12 @@ export function markSet(
   movement: PlannedMovement,
   clock: () => number,
 ) {
+  if (
+    !Object.hasOwn(draft.marks, set) &&
+    Object.keys(draft.marks).length >= MAX_GUIDE_SETS
+  ) {
+    throw new RangeError("Too many marked sets");
+  }
   const marked = markedSet.parse(setInput(row));
   return {
     ...draft,

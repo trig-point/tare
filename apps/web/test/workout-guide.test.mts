@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   finishGuide,
+  MAX_GUIDE_SETS,
   markSet,
   newGuideDraft,
   opensShort,
@@ -125,25 +126,39 @@ test("restored marks belong to the same plan and a submission survives a plan ed
   const changed = { ...workout, movements: [] };
   assert.deepEqual(readGuideDraft(slot).marks, {});
   const draft = markSet(
-    restoreGuide(slot, workout),
+    restoreGuide(readGuideDraft(slot), workout),
     "00:00",
     prescribedSet(planned),
     planned,
     () => 0,
   );
   writeGuideDraft(slot, draft);
-  assert.deepEqual(restoreGuide(slot, workout), draft);
-  assert.deepEqual(restoreGuide(slot, changed).marks, {});
+  assert.deepEqual(restoreGuide(readGuideDraft(slot), workout), draft);
+  assert.deepEqual(restoreGuide(readGuideDraft(slot), changed).marks, {});
   const submitted = {
     ...draft,
     submission: { day: workout.day, kind: workout.kind, name: workout.name },
   };
   writeGuideDraft(slot, submitted);
-  assert.deepEqual(restoreGuide(slot, changed), submitted);
+  assert.deepEqual(restoreGuide(readGuideDraft(slot), changed), submitted);
   writeGuideDraft(slot, null);
   assert.equal(storage.has(slot), false);
   for (const malformed of ["{", "{}"]) {
     storage.set(slot, malformed);
     assert.deepEqual(readGuideDraft(slot).marks, {});
   }
+});
+
+test("the guide can log long movement names and stops at the activity set limit", () => {
+  const movement = { ...planned, name: "A".repeat(78) + "🏋️ loaded step up" };
+  const row = prescribedSet(movement);
+  assert.equal(row.exercise, "A".repeat(78) + "…");
+  let draft = newGuideDraft();
+  for (let index = 0; index < MAX_GUIDE_SETS; index++) {
+    draft = markSet(draft, String(index), row, movement, () => 0);
+  }
+  assert.throws(
+    () => markSet(draft, "excess", row, movement, () => 0),
+    /Too many marked sets/,
+  );
 });
