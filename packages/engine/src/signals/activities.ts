@@ -57,7 +57,10 @@ const setInput = zod
       ((set.rir_low ?? null) === null) === ((set.rir_high ?? null) === null),
   )
   .refine((set) => (set.rir_low ?? 0) <= (set.rir_high ?? 10));
-const clientSetId = text(100);
+const clientSetIdMaxLength = 40;
+const clientSetId = text(clientSetIdMaxLength).refine((id) =>
+  id.isWellFormed(),
+);
 const bulkSetInput = setInput.safeExtend({
   client_set_id: clientSetId.nullish(),
 });
@@ -87,7 +90,7 @@ export const widestSet = {
   rir_low: 10,
   rir_high: 10,
   notes: wide(200),
-  client_set_id: wide(100),
+  client_set_id: wide(clientSetIdMaxLength),
 };
 export const widestSession = {
   timing: "exact",
@@ -98,7 +101,7 @@ export const widestSession = {
   notes: wide(1000),
   client_id: wide(100),
 };
-export const activityBodyLimit = 80_000;
+export const activityBodyLimit = 70_000;
 export const setCap = 56;
 
 const setOutput = zod.strictObject({
@@ -208,6 +211,8 @@ export const logActivity = defineOperation({
   ...base,
   bodyLimit: activityBodyLimit,
   name: "log_activity",
+  description:
+    "Log a workout with optional client set IDs of up to 40 characters.",
   method: "POST",
   path: "/api/activities",
   input: zod
@@ -287,6 +292,8 @@ const replaceActivitySets = defineOperation({
   ...base,
   bodyLimit: activityBodyLimit,
   name: "replace_activity_sets",
+  description:
+    "Replace a workout's sets and keep any supplied client set IDs of up to 40 characters.",
   method: "PATCH",
   path: "/api/activities/:id/sets",
   input: zod.strictObject({
@@ -326,7 +333,7 @@ const addActivitySet = defineOperation({
   bodyLimit: activityBodyLimit,
   name: "add_activity_set",
   description:
-    "Use a fresh random client_set_id for each Done and reuse it only for its retries and Undo (removed: true with set: null means nothing was saved). Send one session write at a time from one tab and close and clear the workout on stale_session without retrying.",
+    "Use a fresh random client_set_id of up to 40 characters for each Done and reuse it only for its retries and Undo (removed: true with set: null means nothing was saved). Send one session write at a time from one tab and close and clear the workout on stale_session without retrying.",
   method: "POST",
   path: "/api/activity-sets",
   input: zod.strictObject({ ...setIdentity, set: setInput }),
@@ -381,7 +388,7 @@ const removeActivitySet = defineOperation({
   bodyLimit: activityBodyLimit,
   name: "remove_activity_set",
   description:
-    "Undo a set by sending the original Done client_set_id, then use a fresh ID for the next Done. Send one session write at a time from one tab and close and clear the workout on stale_session without retrying.",
+    "Undo a set by sending its original client_set_id of up to 40 characters, then use a fresh ID for the next Done. Send one session write at a time from one tab and close and clear the workout on stale_session without retrying.",
   method: "POST",
   path: "/api/activity-sets/remove",
   input: zod.strictObject(setIdentity),

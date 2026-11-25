@@ -272,10 +272,11 @@ test("per-set writes preserve other rows, remember Undo, and guard reused sessio
   assert.equal(fresh.body.set.set_index, 3);
   assert.deepEqual(rows().slice(0, 1), [secondRow]);
 
+  assert.equal((await add("\ufffd")).status, 200);
   const before = allRows();
   for (const [path, set] of [
-    ["activity-sets", { set: strengthSet }],
     ["activity-sets/remove", {}],
+    ["activity-sets", { set: strengthSet }],
   ] as const) {
     const body = { ...identity, client_set_id: "second", ...set };
     for (const [invalid, status, code] of [
@@ -283,6 +284,8 @@ test("per-set writes preserve other rows, remember Undo, and guard reused sessio
       [{ session_id: id + 1 }, 409, "stale_session"],
       [{ session_client_id: undefined }, 400, "invalid_request"],
       [{ client_set_id: "" }, 400, "invalid_request"],
+      [{ client_set_id: "\ud800" }, 400, "invalid_request"],
+      [{ client_set_id: "x".repeat(41) }, 400, "invalid_request"],
     ] as const)
       assert.deepEqual(await send(path, { ...body, ...invalid }), {
         status,
@@ -321,6 +324,26 @@ test("per-set writes preserve other rows, remember Undo, and guard reused sessio
   }
   assert.equal((await add("first")).body.repeat, true);
   assert.equal((await add("fresh")).body.removed, true);
+  assert.equal(
+    (
+      await send(
+        `activities/${id}/sets`,
+        {
+          sets: [...sets, ...Array(setCap - sets.length).fill(strengthSet)],
+        },
+        "PATCH",
+      )
+    ).status,
+    200,
+  );
+  const atCap = allRows();
+  assert.equal((await add("first")).body.repeat, true);
+  assert.equal((await add("fresh")).body.removed, true);
+  assert.deepEqual(await add("over-cap"), {
+    status: 400,
+    body: { error: { code: "too_many_sets" } },
+  });
+  assert.deepEqual(allRows(), atCap);
   assert.deepEqual(await discard(identity.session_client_id), discarded(true));
   assert.deepEqual(await discard(identity.session_client_id), discarded(false));
   assert.deepEqual(allRows(), [[], [], []]);
