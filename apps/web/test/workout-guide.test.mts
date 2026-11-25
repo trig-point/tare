@@ -6,6 +6,7 @@ import {
   closeStaleGuide,
   newGuideSet,
   opensShort,
+  pendingGuideAction,
   prescribedSet,
   restEnd,
   restSeconds,
@@ -129,4 +130,29 @@ test("Undo removes by the original identity and stale_session closes the guide",
   );
   assert.equal(close.mock.callCount(), 1);
   assert.equal(closeStaleGuide(new ApiError(409, "other"), close), false);
+});
+
+test("readback unlocks the guide after a committed Done or Undo loses its response", () => {
+  const set = {
+    set_index: 1,
+    exercise: movement.name,
+    set_type: "working",
+    reps: 8,
+    load: null,
+    load_unit: null,
+    load_kg: null,
+    duration_seconds: null,
+    rir_low: null,
+    rir_high: null,
+    notes: null,
+    client_set_id: "saved-set",
+  };
+  const saved = { ...activity, sets: [set] };
+  for (const [action, before, after] of [
+    [{ kind: "done", change: { id: "saved-set" } }, activity, saved],
+    [{ kind: "undo", id: "saved-set" }, saved, activity],
+  ] as const) {
+    assert.equal(pendingGuideAction(action, before), action);
+    assert.equal(pendingGuideAction(action, after), null);
+  }
 });

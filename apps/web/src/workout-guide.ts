@@ -184,3 +184,18 @@ export function closeStaleGuide(error: unknown, close: () => void) {
   close();
   return true;
 }
+
+export function pendingGuideAction<
+  Action extends
+    | { kind: "done"; change: { id: string } }
+    | { kind: "undo"; id: string },
+>(
+  action: Action | null,
+  activity: SavedWorkout | null | undefined,
+): Action | null {
+  if (!action || activity === undefined) return action;
+  const id = action.kind === "done" ? action.change.id : action.id;
+  const present =
+    activity?.sets.some((set) => set.client_set_id === id) ?? false;
+  return present === (action.kind === "done") ? null : action;
+}

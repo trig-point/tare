@@ -19,6 +19,7 @@ import {
   newGuideSet,
   opensShort,
   type PlannedMovement,
+  pendingGuideAction,
   prescribedSet,
   readGuideActivity,
   readScheduledWorkout,
@@ -118,7 +119,7 @@ function GuideSession({
       }
     | { kind: "undo"; id: string }
   );
-  const [failed, setFailed] = useState<Action | null>(null);
+  const [failedAction, setFailed] = useState<Action | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const settle = () => {
     client.setQueryData(queryKey, null);
@@ -161,6 +162,7 @@ function GuideSession({
           error.code === "too_many_sets" ? "Set limit reached" : "Not saved",
         );
       } else setFailed(action);
+      if (online) void refetch({ cancelRefetch: false });
     },
   });
   const discard = useMutation({
@@ -196,6 +198,10 @@ function GuideSession({
     };
   }, [busy, online, refetch]);
   const saved = activity.data;
+  const failed = pendingGuideAction(failedAction, saved);
+  useEffect(() => {
+    if (failedAction && !failed) setFailed(null);
+  }, [failedAction, failed]);
   const blocked =
     busy ||
     !online ||
