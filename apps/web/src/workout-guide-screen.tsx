@@ -258,7 +258,11 @@ function GuideSession({
                     marked={marked}
                     next={position === sets.length}
                     previous={sets.at(-1)}
-                    busy={blocked || (failed !== null && failed.row !== row)}
+                    busy={
+                      failed?.row === row
+                        ? busy || !online || activity.isFetching
+                        : blocked || failed !== null
+                    }
                     failed={failed?.row === row}
                     retry={() => {
                       if (failed) save.mutate(failed);
