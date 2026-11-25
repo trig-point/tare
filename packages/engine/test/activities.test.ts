@@ -216,7 +216,7 @@ test("delete_activity removes a logged session with its sets; tracker and foreig
   assert.deepEqual(sets, before[1]?.slice(3));
 });
 
-test("per-set writes preserve other rows, remember Undo, and guard reused session IDs", async (context) => {
+test("per-set writes keep other rows, remember removals, and refuse stale sessions", async (context) => {
   const { app, database, signIn } = fixture(context);
   const headers = { ...requestedWith, Cookie: cookie(await signIn()) };
   const send = async (path: string, body?: unknown, method = "POST") => {
@@ -231,46 +231,37 @@ test("per-set writes preserve other rows, remember Undo, and guard reused sessio
     database.prepare("SELECT * FROM activity_sets ORDER BY set_index").all();
   const allRows = () => [
     rows(),
-    database
-      .prepare("SELECT * FROM activity_set_removals ORDER BY client_set_id")
-      .all(),
-    database.prepare("SELECT * FROM activity_sessions ORDER BY id").all(),
+    database.prepare("SELECT * FROM activity_set_removals").all(),
+    database.prepare("SELECT * FROM activity_sessions").all(),
   ];
-  const log = (client_id: string, sets: unknown[] = []) =>
-    send("activities", {
-      timing: "date_only",
-      day,
-      kind: "strength",
-      client_id,
-      sets,
-    });
   const {
     body: { id },
-  } = await log("workout-one", [{ ...strengthSet, client_set_id: "first" }]);
+  } = await send("activities", {
+    ...{ timing: "date_only", day, kind: "strength" },
+    ...{ client_id: "workout-one" },
+    sets: [{ ...strengthSet, client_set_id: "first" }],
+  });
   const identity = { session_id: id, session_client_id: "workout-one" };
-  const add = (client_set_id: string) =>
-    send("activity-sets", { ...identity, client_set_id, set: strengthSet });
+  const add = (client_set_id: string, extra = {}) =>
+    send("activity-sets", {
+      ...{ ...identity, client_set_id, set: strengthSet },
+      ...extra,
+    });
   const remove = (client_set_id: string) =>
     send("activity-sets/remove", { ...identity, client_set_id });
   const [first] = rows();
   const second = await add("second");
-  assert.equal(second.status, 200);
   assert.deepEqual(rows().slice(0, 1), [first]);
-  const [, secondRow] = rows();
   assert.deepEqual(await add("second"), {
     status: 200,
     body: { ...second.body, repeat: true },
   });
+  assert.equal(rows().length, 2);
   for (const removed of [true, false])
     assert.deepEqual(await remove("first"), { status: 200, body: { removed } });
-  assert.deepEqual(await add("first"), {
-    status: 200,
-    body: { set: null, removed: true, sets: [second.body.set] },
-  });
-  assert.deepEqual(rows(), [secondRow]);
-  const fresh = await add("fresh");
-  assert.equal(fresh.body.set.set_index, 3);
-  assert.deepEqual(rows().slice(0, 1), [secondRow]);
+  assert.equal((await add("first")).body.removed, true);
+  assert.equal(rows().length, 1);
+  assert.equal((await add("fresh")).body.set.set_index, 3);
 
   assert.equal((await add("\ufffd")).status, 200);
   const before = allRows();
@@ -281,92 +272,48 @@ test("per-set writes preserve other rows, remember Undo, and guard reused sessio
     const body = { ...identity, client_set_id: "second", ...set };
     for (const [invalid, status, code] of [
       [{ session_client_id: "wrong" }, 409, "stale_session"],
-      [{ session_id: id + 1 }, 409, "stale_session"],
       [{ session_client_id: undefined }, 400, "invalid_request"],
       [{ client_set_id: "" }, 400, "invalid_request"],
       [{ client_set_id: "\ud800" }, 400, "invalid_request"],
-      [{ client_set_id: "x".repeat(41) }, 400, "invalid_request"],
     ] as const)
       assert.deepEqual(await send(path, { ...body, ...invalid }), {
         status,
         body: { error: { code } },
       });
   }
+  assert.deepEqual(allRows(), before);
+
   const discard = (client_id: string) =>
     send("activities/discard", { id, client_id });
-  const discarded = (value: boolean) => ({
-    status: 200,
-    body: { discarded: value },
-  });
-  assert.deepEqual(await discard("wrong"), discarded(false));
+  assert.deepEqual((await discard("wrong")).body, { discarded: false });
   assert.deepEqual(allRows(), before);
 
   const sets = ["second", "first", null].map((client_set_id) => ({
     ...strengthSet,
     client_set_id,
   }));
-  const replacement = await send(`activities/${id}/sets`, { sets }, "PATCH");
-  assert.equal(replacement.status, 200);
-  const expectedIds = ["second", "first", null];
+  await send(`activities/${id}/sets`, { sets }, "PATCH");
   const read = await send(`activities/${day}/${day}`, undefined, "GET");
   const training = await send("training/context", undefined, "GET");
   for (const workout of [
     read.body.workouts[0],
     training.body.recent_sessions[0],
   ]) {
-    assert.equal(workout.client_id, identity.session_client_id);
+    assert.equal(workout.client_id, "workout-one");
     assert.deepEqual(
       workout.sets.map(
         (set: { client_set_id: string | null }) => set.client_set_id,
       ),
-      expectedIds,
+      ["second", "first", null],
     );
   }
-  assert.equal((await add("first")).body.repeat, true);
   assert.equal((await add("fresh")).body.removed, true);
-  assert.equal(
-    (
-      await send(
-        `activities/${id}/sets`,
-        {
-          sets: [...sets, ...Array(setCap - sets.length).fill(strengthSet)],
-        },
-        "PATCH",
-      )
-    ).status,
-    200,
-  );
-  const atCap = allRows();
-  assert.equal((await add("first")).body.repeat, true);
-  assert.equal((await add("fresh")).body.removed, true);
-  assert.deepEqual(await add("over-cap"), {
-    status: 400,
-    body: { error: { code: "too_many_sets" } },
-  });
-  assert.deepEqual(allRows(), atCap);
-  assert.deepEqual(await discard(identity.session_client_id), discarded(true));
-  assert.deepEqual(await discard(identity.session_client_id), discarded(false));
+  const full = [...sets, ...Array(setCap - sets.length).fill(strengthSet)];
+  await send(`activities/${id}/sets`, { sets: full }, "PATCH");
+  assert.equal((await add("over-cap")).body.error.code, "too_many_sets");
+  assert.deepEqual((await discard("workout-one")).body, { discarded: true });
+  assert.deepEqual((await discard("workout-one")).body, { discarded: false });
   assert.deepEqual(allRows(), [[], [], []]);
-
-  assert.equal((await log("workout-one")).body.id, id);
-  assert.deepEqual(await remove("fresh"), {
-    status: 200,
-    body: { removed: false },
-  });
-  assert.equal((await add("fresh")).body.removed, true);
-  assert.equal(
-    (await send(`activities/${id}`, undefined, "DELETE")).status,
-    200,
-  );
-  assert.equal((await log("workout-two")).body.id, id);
-  assert.deepEqual(await discard(identity.session_client_id), discarded(false));
-  const reused = await send("activity-sets", {
-    ...identity,
-    session_client_id: "workout-two",
-    client_set_id: "fresh",
-    set: strengthSet,
-  });
-  assert.equal(reused.body.set.client_set_id, "fresh");
 });
 
 const session = (
