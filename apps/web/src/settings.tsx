@@ -444,7 +444,9 @@ function MapClientIdForm({
     mutationFn: () => mapClientId({ ...values, user_id: String(person) }),
     onSuccess: async () => {
       setValues(empty);
-      await client.invalidateQueries({ queryKey: mappingsKey(person) });
+      const queryKey = mappingsKey(person);
+      await client.cancelQueries({ queryKey, exact: true });
+      await client.invalidateQueries({ queryKey, exact: true });
     },
   });
   function submit(event: FormEvent<HTMLFormElement>) {
