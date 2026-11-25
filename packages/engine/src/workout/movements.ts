@@ -26,7 +26,8 @@ const text = (max: number) =>
 const steps = zod.array(text(300)).max(20);
 const listFields = ["setup", "cues", "mistakes", "safety", "pictures"] as const;
 
-const movementName = text(120);
+// Matches log_activity's exercise limit, so every card can gain sessions.
+const movementName = text(80);
 const movementInput = zod.strictObject({
   name: movementName,
   setup: steps.optional(),

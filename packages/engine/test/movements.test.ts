@@ -63,6 +63,7 @@ test("save, get, list and remove a movement card by name", async (context) => {
   const malformed: [string, Record<string, unknown>][] = [
     ["blank name", { name: " \t " }],
     ["missing name", { cues: ["Brace"] }],
+    ["name over 80", { name: "x".repeat(81) }],
     ["NUL in a cue", { name: "Example row", cues: ["Bra\u0000ce"] }],
     [
       "non-http picture",
