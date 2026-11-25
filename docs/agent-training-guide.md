@@ -208,7 +208,7 @@ The arguments for step 6:
 
 ## How the app uses the cards
 
-Cards are stored and returned now, with `today_workout` attaching each scheduled movement's card and every card carrying its `sessions` count. The app has no workout guide screen yet, and it has not set the rule for when a familiar movement gets a shorter card. Write full cards for now. The count already lets the agent see which movements you have done often.
+Select Start on the Body tab to open today's workout guide. A movement with three or more logged sessions opens in the short view (`SHORT_CARD_SESSIONS`), and marking a set done starts the card's rest timer or a 90-second timer if no rest is set.
 
 ## Optional reference data
 

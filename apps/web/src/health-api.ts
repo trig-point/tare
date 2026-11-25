@@ -37,6 +37,21 @@ const unitSuffix: Record<string, string> = {
   ms: " ms",
   ml: " ml",
 };
+export const activitySetSchema = z.object({
+  set_index: z.number(),
+  exercise: z.string(),
+  set_type: z.string(),
+  reps: z.number().nullable(),
+  load: z.number().nullable(),
+  load_unit: z.string().nullable(),
+  load_kg: z.number().nullable(),
+  duration_seconds: z.number().nullable(),
+  rir_low: z.number().nullable(),
+  rir_high: z.number().nullable(),
+  notes: z.string().nullable(),
+  client_set_id: z.string().nullable(),
+});
+
 export const signalsSchema = z.object({
   day: z.string(),
   signals: z.array(
@@ -68,22 +83,7 @@ export const signalsSchema = z.object({
       source: z.string(),
       client_id: z.string().nullable(),
       tracker: z.object({ id: z.number(), source: z.string() }).nullable(),
-      sets: z.array(
-        z.object({
-          set_index: z.number(),
-          exercise: z.string(),
-          set_type: z.string(),
-          reps: z.number().nullable(),
-          load: z.number().nullable(),
-          load_unit: z.string().nullable(),
-          load_kg: z.number().nullable(),
-          duration_seconds: z.number().nullable(),
-          rir_low: z.number().nullable(),
-          rir_high: z.number().nullable(),
-          notes: z.string().nullable(),
-          client_set_id: z.string().nullable(),
-        }),
-      ),
+      sets: z.array(activitySetSchema),
     }),
   ),
   habits: z.array(

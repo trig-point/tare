@@ -438,6 +438,14 @@ test("merged workouts pair one-to-one by largest overlap, then earlier start, th
       ?.category,
     "other",
   );
+  for (const [kind, category] of [
+    ["lift", "strength"],
+    ["cardio", "cardio"],
+  ] as const)
+    assert.equal(
+      mergeWorkouts([session(7, "manual", kind, "10:00", 30)], [])[0]?.category,
+      category,
+    );
   const logged = { ...session(1, "agent", "run", "07:00", 30), calories: 250 };
   const tracker = {
     ...session(2, "oura", "running", "07:00", 30),
