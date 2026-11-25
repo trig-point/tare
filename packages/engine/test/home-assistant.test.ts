@@ -639,6 +639,11 @@ test("medication sensor follows the dose clock, replays and removes retained mes
   const late = state(await retained());
   assert.equal(late.late_count, 1);
   assert.equal(late.next_dose_at, "2026-01-01T08:10:00.000Z");
+  await send(admin.request, "/api/medications/holds/save", {
+    medication_id: medication.id,
+    from_date: "2026-01-02",
+    to_date: "2026-01-02",
+  });
   const watcher = await connectAsync(`mqtt://127.0.0.1:${harness.port}`);
   context.after(() => watcher.endAsync(true));
   const command = medicationPressTopic(install, admin.user.id);
@@ -667,11 +672,6 @@ test("medication sensor follows the dose clock, replays and removes retained mes
     published.slice(before).some((line) => line.startsWith(`${topic} `)),
   );
 
-  await send(admin.request, "/api/medications/holds/save", {
-    medication_id: medication.id,
-    from_date: "2026-01-02",
-    to_date: "2026-01-02",
-  });
   step("2026-01-02T08:10:00Z");
   await expect("held");
   await send(admin.request, "/api/medications/save", {
