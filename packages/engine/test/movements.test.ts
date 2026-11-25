@@ -93,13 +93,19 @@ test("today gives a scheduled movement with a library match its card, and one wi
   const call = await setup(context);
   const legs = exampleSchedule().sessions.legs_a;
   const unknown = { name: "Example unknown lift", sets: 2, reps: "10" };
+  // SQLite folds ASCII case only, so these two names are different movements.
+  const accented = { name: "\u00c9lan row", sets: 2, reps: "10" };
+  const lowerAccented = { ...accented, name: "\u00e9lan row" };
   await call(
     "POST",
     "/api/workout-schedule",
     exampleSchedule({
       sessions: {
         ...exampleSchedule().sessions,
-        legs_a: { ...legs, movements: [...legs.movements, unknown] },
+        legs_a: {
+          ...legs,
+          movements: [...legs.movements, unknown, accented, lowerAccented],
+        },
       },
     }),
   );
@@ -107,10 +113,13 @@ test("today gives a scheduled movement with a library match its card, and one wi
     ...press,
     name: "EXAMPLE PRESS",
   });
+  const row = await call("POST", "/api/movements", { name: accented.name });
   const { today } = await call("GET", "/api/workout-schedule/today");
   assert.deepEqual(today.movements, [
     { ...legs.movements[0], card: movement },
     { ...unknown, card: null },
+    { ...accented, card: row.movement },
+    { ...lowerAccented, card: null },
   ]);
 });
 

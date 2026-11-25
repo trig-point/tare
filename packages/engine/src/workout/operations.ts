@@ -137,7 +137,7 @@ export function workoutToday(
   return {
     ...today,
     movements: today.movements.map((planned) => {
-      const key = planned.name.trim().toLowerCase();
+      const key = planned.name.trim();
       if (!cards.has(key))
         cards.set(key, findMovement(database, person.id, planned.name));
       return { ...planned, card: cards.get(key) ?? null };
