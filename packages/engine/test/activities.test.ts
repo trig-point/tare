@@ -234,10 +234,14 @@ test("per-set writes keep other rows, remember removals, and refuse stale sessio
     database.prepare("SELECT * FROM activity_set_removals").all(),
     database.prepare("SELECT * FROM activity_sessions").all(),
   ];
+  const emptyWorkout = {
+    ...{ timing: "date_only", day, kind: "strength" },
+    client_id: "workout-two",
+  };
   const {
     body: { id },
   } = await send("activities", {
-    ...{ timing: "date_only", day, kind: "strength" },
+    ...emptyWorkout,
     ...{ client_id: "workout-one" },
     sets: [{ ...strengthSet, client_set_id: "first" }],
   });
@@ -308,7 +312,10 @@ test("per-set writes keep other rows, remember removals, and refuse stale sessio
     ...strengthSet,
     client_set_id,
   }));
-  await send(`activities/${id}/sets`, { sets }, "PATCH");
+  assert.equal(
+    (await send(`activities/${id}/sets`, { sets }, "PATCH")).status,
+    200,
+  );
   const read = await send(`activities/${day}/${day}`, undefined, "GET");
   const training = await send("training/context", undefined, "GET");
   for (const workout of [
@@ -329,7 +336,10 @@ test("per-set writes keep other rows, remember removals, and refuse stale sessio
   };
   await retries();
   const full = [...sets, ...Array(setCap - sets.length).fill(strengthSet)];
-  await send(`activities/${id}/sets`, { sets: full }, "PATCH");
+  assert.equal(
+    (await send(`activities/${id}/sets`, { sets: full }, "PATCH")).status,
+    200,
+  );
   await retries();
   const atCap = allRows();
   assert.deepEqual(await add("over-cap"), {
@@ -337,8 +347,22 @@ test("per-set writes keep other rows, remember removals, and refuse stale sessio
     body: { error: { code: "too_many_sets" } },
   });
   assert.deepEqual(allRows(), atCap);
+  await send(`activities/${id}/sets`, { sets: [] }, "PATCH");
+  assert.deepEqual(await remove("gone"), {
+    status: 200,
+    body: { removed: false },
+  });
+  assert.equal((await add("gone")).body.removed, true);
+  assert.equal((await add("after-empty")).body.set.set_index, 1);
   assert.deepEqual(await discard("workout-one"), discarded(true));
   assert.deepEqual(await discard("workout-one"), discarded(false));
+  assert.deepEqual(allRows(), [[], [], []]);
+
+  const emptyId = (await send("activities", emptyWorkout)).body.id;
+  assert.equal(
+    (await send(`activities/${emptyId}`, undefined, "DELETE")).status,
+    200,
+  );
   assert.deepEqual(allRows(), [[], [], []]);
 });
 
