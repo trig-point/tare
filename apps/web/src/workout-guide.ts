@@ -2,6 +2,8 @@ import { z } from "zod";
 import { ApiError, api } from "./api.ts";
 import { activitySetSchema, blankSet, type SetInput } from "./health-api.ts";
 
+import { clientId as newClientId } from "./outbox-store.ts";
+
 export const SHORT_CARD_SESSIONS = 3;
 export const DEFAULT_REST_SECONDS = 90;
 
@@ -101,7 +103,10 @@ export async function readGuideActivity(
 const post = (path: string, body: unknown) =>
   api(path, { method: "POST", body: JSON.stringify(body) });
 
-export function newGuideSet(set: SetInput, mint = () => crypto.randomUUID()) {
+export function newGuideSet(
+  set: SetInput,
+  mint = () => newClientId(globalThis.crypto),
+) {
   return { set, id: mint() };
 }
 

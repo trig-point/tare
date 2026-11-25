@@ -329,7 +329,7 @@ function GuideSession({
               Discard
             </Button>
             <Button
-              disabled={busy}
+              disabled={busy || failed !== null}
               onClick={() => {
                 close();
                 void refresh();

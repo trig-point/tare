@@ -330,7 +330,8 @@
   grid-column: 1 / -1;
 }
 @media (prefers-reduced-motion: reduce) {
-  .guide-screen {
+  .guide-screen,
+  [data-slot="dialog-overlay"]:has(+ .guide-screen) {
     animation: none;
   }
 }
