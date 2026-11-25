@@ -41,6 +41,7 @@ import {
 } from "./shared/ui/index.ts";
 import { press } from "./slots.tsx";
 import { displayNumber, refreshToday } from "./today-api.ts";
+import { WorkoutGuideEntry } from "./workout-guide-screen.tsx";
 import "./health.css";
 
 export function BodyCard({
@@ -124,6 +125,7 @@ export function BodyCard({
             <h2 id="body-workouts">Workouts</h2>
             <LogWorkout day={day} {...entry} />
           </div>
+          <WorkoutGuideEntry person={person} day={day} {...entry} />
           {activities.length === 0 ? (
             <p className="body-note">No workouts today</p>
           ) : (
