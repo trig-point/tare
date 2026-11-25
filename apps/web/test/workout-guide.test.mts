@@ -150,3 +150,25 @@ test("POST replay keeps a different movement at the same slot, and Undo tolerate
     null,
   );
 });
+
+test("Undo removes only the matching set and leaves the other exercise", async () => {
+  const [first] = existing.sets;
+  assert.ok(first);
+  const other = { ...first, exercise: "Row", set_index: 2 };
+  const activity = { ...existing, sets: [first, other] };
+  const response = { ...existing, sets: [other] };
+  const result = await saveGuideSet(
+    workout,
+    activity,
+    { slot: guideSlot(0, 0), exercise: first.exercise, set: null },
+    undefined,
+    async (_id, sets) => {
+      assert.deepEqual(
+        sets.map((set) => set.exercise),
+        ["Row"],
+      );
+      return response;
+    },
+  );
+  assert.equal(result, response);
+});

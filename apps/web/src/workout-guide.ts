@@ -93,8 +93,8 @@ export function matchesGuideSet(
 ) {
   return set.notes === identity.slot && set.exercise === identity.exercise;
 }
-export const guideSlot = (movement: number, set: number) =>
-  `Guide set ${movement + 1}:${set + 1}`;
+export const guideSlot = (occurrence: number, set: number) =>
+  `Guide set ${occurrence + 1}:${set + 1}`;
 
 export async function saveGuideSet(
   workout: ScheduledWorkout,

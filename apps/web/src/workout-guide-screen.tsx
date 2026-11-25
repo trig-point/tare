@@ -54,7 +54,8 @@ export function WorkoutGuideEntry({
   const [active, setActive] = useState<ScheduledWorkout | null>(null);
   const today = schedule.data;
   const workout =
-    active ?? (today?.day === day && today?.kind !== "rest" ? today : null);
+    active ??
+    (today && today.day === day && today.movements.length ? today : null);
   if (!workout)
     return schedule.isError ? (
       <output className="body-note">Couldn’t load workout</output>
@@ -113,7 +114,7 @@ function GuideSession({
   });
   const { refetch } = activity;
   const [rest, setRest] = useState<number | null>(null);
-  const [confirm, setConfirm] = useState(false);
+  const [confirm, setConfirm] = useState<number | null>(null);
   const [failed, setFailed] = useState<{
     change: SetChange;
     movement: PlannedMovement;
@@ -142,15 +143,18 @@ function GuideSession({
   });
   const discard = useMutation({
     networkMode: "always",
-    mutationFn: async (confirmed: boolean) => {
+    mutationFn: async (confirmed: number | null) => {
       await client.cancelQueries({ queryKey });
       const current = await find(new AbortController().signal);
-      if (current && confirmed) await deleteActivity(current.id);
-      return confirmed ? null : current;
+      if (current && current.id === confirmed) {
+        await deleteActivity(confirmed);
+        return null;
+      }
+      return current;
     },
     onSuccess: (current) => {
       client.setQueryData(queryKey, current);
-      if (current) setConfirm(true);
+      if (current) setConfirm(current.id);
       else {
         close();
         void refresh();
@@ -172,6 +176,7 @@ function GuideSession({
   const saved = activity.data;
   const blocked = busy || activity.isFetching || saved === undefined;
   const atLimit = (saved?.sets.length ?? 0) >= MAX_GUIDE_SETS;
+  const occurrences = new Map<string, number>();
   return (
     <DialogContent
       className="guide-screen"
@@ -190,51 +195,59 @@ function GuideSession({
             Retry loading workout
           </Button>
         )}
-        {workout.movements.map((movement, movementIndex) => (
-          <Movement key={guideSlot(movementIndex, 0)} movement={movement}>
-            {Array.from({ length: movement.sets }, (_, setIndex) => {
-              const slot = guideSlot(movementIndex, setIndex);
-              const identity = {
-                slot,
-                exercise: prescribedSet(movement).exercise,
-              };
-              const marked = saved?.sets.find((set) =>
-                matchesGuideSet(set, identity),
-              );
-              const failedHere = failed?.change.slot === slot;
-              return (
-                <GuideSet
-                  key={slot}
-                  number={setIndex + 1}
-                  movement={movement}
-                  marked={marked}
-                  busy={blocked || (failed !== null && !failedHere)}
-                  atLimit={atLimit}
-                  failed={failedHere}
-                  retry={() => {
-                    if (failed) save.mutate(failed);
-                  }}
-                  done={(row) =>
-                    save.mutate({
-                      change: { ...identity, set: setInput(row) },
-                      movement,
-                    })
-                  }
-                  undo={() =>
-                    save.mutate({
-                      change: { ...identity, set: null },
-                      movement,
-                    })
-                  }
-                />
-              );
-            })}
-          </Movement>
-        ))}
+        {atLimit && <p className="body-note">Set limit reached</p>}
+        {workout.movements.map((movement) => {
+          const exercise = prescribedSet(movement).exercise;
+          const occurrence = occurrences.get(exercise) ?? 0;
+          occurrences.set(exercise, occurrence + 1);
+          return (
+            <Movement
+              key={JSON.stringify([exercise, occurrence])}
+              movement={movement}
+            >
+              {Array.from({ length: movement.sets }, (_, setIndex) => {
+                const slot = guideSlot(occurrence, setIndex);
+                const identity = { slot, exercise };
+                const marked = saved?.sets.find((set) =>
+                  matchesGuideSet(set, identity),
+                );
+                const failedHere =
+                  failed?.change.slot === slot &&
+                  failed.change.exercise === exercise;
+                return (
+                  <GuideSet
+                    key={slot}
+                    number={setIndex + 1}
+                    movement={movement}
+                    marked={marked}
+                    busy={blocked || (failed !== null && !failedHere)}
+                    atLimit={atLimit}
+                    failed={failedHere}
+                    retry={() => {
+                      if (failed) save.mutate(failed);
+                    }}
+                    done={(row) =>
+                      save.mutate({
+                        change: { ...identity, set: setInput(row) },
+                        movement,
+                      })
+                    }
+                    undo={() =>
+                      save.mutate({
+                        change: { ...identity, set: null },
+                        movement,
+                      })
+                    }
+                  />
+                );
+              })}
+            </Movement>
+          );
+        })}
       </div>
       <footer className="guide-actions">
         {discard.isError && <p role="alert">Couldn’t discard workout</p>}
-        {confirm ? (
+        {confirm !== null ? (
           <>
             <p className="body-note">Delete saved workout?</p>
             <Button
@@ -242,7 +255,7 @@ function GuideSession({
               disabled={busy}
               onClick={() => {
                 discard.reset();
-                setConfirm(false);
+                setConfirm(null);
               }}
             >
               Cancel
@@ -250,7 +263,7 @@ function GuideSession({
             <Button
               disabled={blocked || !online || !saved}
               onClick={() => {
-                if (saved) discard.mutate(true);
+                discard.mutate(confirm);
               }}
             >
               Delete
@@ -262,14 +275,14 @@ function GuideSession({
               variant="outline"
               disabled={blocked}
               onClick={() => {
-                if (saved || failed) discard.mutate(false);
+                if (saved || failed) discard.mutate(null);
                 else close();
               }}
             >
               Discard
             </Button>
             <Button
-              disabled={busy || failed !== null}
+              disabled={busy}
               onClick={() => {
                 close();
                 void refresh();
