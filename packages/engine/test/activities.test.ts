@@ -359,6 +359,11 @@ test("per-set writes keep other rows, remember removals, and refuse stale sessio
   assert.deepEqual(allRows(), [[], [], []]);
 
   const emptyId = (await send("activities", emptyWorkout)).body.id;
+  assert.deepEqual(
+    await send("activities/discard", { id: emptyId, client_id: "workout-one" }),
+    discarded(false),
+  );
+  assert.equal(allRows()[2]?.length, 1);
   assert.equal(
     (await send(`activities/${emptyId}`, undefined, "DELETE")).status,
     200,
