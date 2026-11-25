@@ -22,10 +22,10 @@ One call returns:
 | --- | --- | --- |
 | `places` | Each training place, with its `machines` nested inside. | What equipment exists where. |
 | `limits` | Active limits only. Resolved limits are left out. | Movements to avoid or modify. |
-| `schedule` | The stored weekly schedule, or `null`. Each session also carries `place`: the matching place, or `null`. | What is planned now, and where. |
+| `schedule` | The stored weekly schedule, or `null`. Each session also carries a read-only `place` (`id`, `name` and `notes`): the matching place, or `null`. | What is planned now, and where. |
 | `recent_sessions` | The last five logged sessions, with their sets. | Current loads and what you have actually done. |
 
-A session's `place` is found by matching the session's `where` text to a place name, ignoring case and surrounding spaces. It is `null` when no place matches or when two places share the name. Keep place names unique.
+A session's `place` is found by matching the session's `where` text to a place name, ignoring case and surrounding spaces. It is `null` when no place matches or when two places share the name. Keep place names unique. The `place` field exists only in this read. `replace_workout_schedule` rejects it, so to edit the schedule start from `read_workout_schedule`, not from `get_training_context`.
 
 ## Write places and machines
 
@@ -83,7 +83,7 @@ A movement card is the how-to for one movement. `save_movement` takes:
 
 | Field | Rule |
 | --- | --- |
-| `name` | Required, up to 80 characters. This is the key: a card with the same name, ignoring case, is replaced. |
+| `name` | Required, up to 80 characters. This is the key: a card with the same name is replaced. Case is ignored for the letters A to Z only, so keep accented names spelled and cased the same everywhere. |
 | `setup`, `cues`, `mistakes`, `safety` | Ordered lists of up to 20 steps, each up to 300 characters. |
 | `pictures` | Up to 10 http or https URLs. |
 | `rest_seconds` | Whole seconds from 0 to 3600, or `null`. |
@@ -104,7 +104,7 @@ A movement card is the how-to for one movement. `save_movement` takes:
 }
 ```
 
-A save replaces the whole card, and any field you leave out is cleared. To change one step, read the card with `get_movement`, edit it and send all of it back.
+A save replaces the whole card, and any field you leave out is cleared. To change one step, read the card with `get_movement`, edit it and send back every writable field. Leave out `id` and `sessions`, which `save_movement` rejects.
 
 The other tools:
 
@@ -116,7 +116,7 @@ The other tools:
 { "name": "Incline dumbbell press" }
 ```
 
-Every card also returns `sessions`: the number of logged sessions that have at least one set with that exact exercise name, ignoring case. It counts sessions, not sets. Log sets under the same name the card uses, and keep card names to 80 characters, the limit for an exercise name on a logged set.
+Every card also returns `sessions`: the number of logged sessions that have at least one set with that exercise name, matched the same way as a card name. It counts sessions, not sets. Log sets under the same name the card uses, and keep card names to 80 characters, the limit for an exercise name on a logged set.
 
 ## Write the schedule
 
@@ -127,21 +127,21 @@ The document has these parts:
 - `version`: always `1`.
 - `timezone`: an IANA zone such as `America/New_York`. Offsets such as `UTC+5` are refused.
 - `week`: all seven days, `mon` to `sun`. Each is a lift (`{"kind": "lift", "session": "<key or group>"}`) or a `cardio` or `rest` day with a `label`.
-- `sessions`: the session library, keyed by a lowercase key such as `upper_gym`. Each session has `name`, `where`, an optional `note`, and up to 30 `movements`. A movement has `name`, `sets` (1 to 20) and `reps`, plus optional `load`, `rir`, `rest_s` and `note`, all text.
+- `sessions`: the session library, keyed by a lowercase key such as `upper_gym`. Each session has `name`, `where`, an optional `note`, and up to 30 `movements`. A movement has `name`, `sets` (1 to 20) and `reps`, plus optional `load`, `rir`, `rest_s` and `note`. `sets` is a whole number; `reps` and the optional fields are text, so send `"10"`, not `10`.
 - `rotation`: the order sessions come up, as session keys.
 - `next_session`: the session key due next, or `null`.
 - `planned`: dated entries that override the week for one day. Each has a `date` and either a `session` or a `cardio` or `rest` kind with a `label`. Up to 400, one per date.
 
 A week day can name a group instead of one session. A group is the text before the first underscore, so `upper` covers `upper_gym` and `upper_home`. On a group day, Tare picks `next_session` if it is in the group, and otherwise the first group session in `rotation`. A dated entry always names one exact session.
 
-The session's `where` should be the exact name of a place from `places` (up to 80 characters). That is how the schedule finds the place and its machines.
+The session's `where` should be the name of a place from `places` (up to 80 characters), spelled the same apart from case and surrounding spaces. That is how `get_training_context` finds the session's place; the place's machines are in `places`.
 
 Two rules apply to every write:
 
 - Send back the `updated` value you last read. Leave it out only for the first write. A stale or missing value fails with `schedule_conflict`; read again and retry.
-- The document may be at most 60 KB, or the call fails with `schedule_too_large`.
+- The document, without `updated`, may be at most 60,000 bytes, or the call fails with `schedule_too_large`. A request body over 65,536 bytes fails earlier with `body_too_large`.
 
-A bad document fails with `invalid_request` and a list of messages, such as `unknown session upper_x`, `duplicate date 2026-12-07` or `no upper in rotation`. Fix every message and send it again.
+A bad document comes back as an error whose text lists what is wrong, such as `unknown session upper_x`, `duplicate date 2026-12-07` or `no upper in rotation`. Fix every message and send it again.
 
 `today_workout` takes no arguments (`{}`) and returns today's entry: the dated one if there is one, otherwise the week day. Each movement comes with its `card`, the library card with the same name, or `null` when no card matches. Schedule movement names go up to 120 characters but cards stop at 80, so keep scheduled names short enough to match.
 
@@ -149,14 +149,15 @@ A bad document fails with `invalid_request` and a list of messages, such as `unk
 
 Your Monday session is `upper_gym` at the downtown gym. The gym slot is missed, so the session happens at home in the evening. The agent should keep to your limits and the equipment at home.
 
-1. Call `get_training_context` with `{}`. In `places`, Home has one machine, the adjustable bench, which supports `Incline dumbbell press` and `Chest-supported row`. In `limits`, one active limit lists `Overhead press`. In `schedule`, `upper_gym` has `Overhead press` in it, and `updated` holds the stamp to send back.
+1. Call `get_training_context` with `{}`. In `places`, Home has one machine, the adjustable bench, which supports `Incline dumbbell press` and `Chest-supported row`. In `limits`, one active limit lists `Overhead press`. In `schedule`, `upper_gym` has `Overhead press` in it.
 2. Check each movement in `upper_gym` against the Home machines and the limit. Drop `Overhead press` because of the limit. Keep the movements the bench supports.
 3. Call `list_movements` with `{}` to see which names already have a card. For a movement with no card, call `save_movement`, as in the card example above.
-4. Add an `upper_home` session and a dated entry that points Monday, `2026-12-07`, at it. The week template stays the same, so the next Monday is back at the gym.
-5. Call `replace_workout_schedule` with the full document and the `updated` value from step 1.
-6. Call `today_workout` with `{}` on that Monday. It returns the `upper_home` session, each movement with its `card`.
+4. Call `read_workout_schedule` with `{}` to get the writable document and its `updated` stamp. Do not edit the schedule from the context read: its sessions carry `place` fields that a replace rejects.
+5. In that document, add an `upper_home` session and a dated entry that points Monday, `2026-12-07`, at it. The week template stays the same, so the next Monday is back at the gym.
+6. Call `replace_workout_schedule` with the full document and the `updated` value from step 4.
+7. Call `today_workout` with `{}` on that Monday. It returns the `upper_home` session, each movement with its `card`.
 
-The arguments for step 5:
+The arguments for step 6:
 
 ```json
 {
