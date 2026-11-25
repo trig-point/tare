@@ -6,8 +6,11 @@ import {
   newGuideDraft,
   opensShort,
   prescribedSet,
+  readGuideDraft,
+  restoreGuide,
   restSeconds,
   type ScheduledWorkout,
+  writeGuideDraft,
 } from "../src/workout-guide.ts";
 
 const card = {
@@ -98,4 +101,49 @@ test("Finish posts marked sets as one session and reuses the client id", async (
   ]);
   await finishGuide(workout, draft, post);
   assert.deepEqual(calls[1], calls[0]);
+});
+
+test("restored marks belong to the same plan and a submission survives a plan edit", (context) => {
+  const storage = new Map<string, string>();
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: {
+      getItem: storage.get.bind(storage),
+      setItem: storage.set.bind(storage),
+      removeItem: storage.delete.bind(storage),
+    },
+  });
+  context.after(() => Reflect.deleteProperty(globalThis, "localStorage"));
+  const slot = "guide";
+  const workout: ScheduledWorkout = {
+    day: "2026-01-05",
+    kind: "lift",
+    name: "Upper A",
+    session: "upper-a",
+    movements: [planned],
+  };
+  const changed = { ...workout, movements: [] };
+  assert.deepEqual(readGuideDraft(slot).marks, {});
+  const draft = markSet(
+    restoreGuide(slot, workout),
+    "00:00",
+    prescribedSet(planned),
+    planned,
+    () => 0,
+  );
+  writeGuideDraft(slot, draft);
+  assert.deepEqual(restoreGuide(slot, workout), draft);
+  assert.deepEqual(restoreGuide(slot, changed).marks, {});
+  const submitted = {
+    ...draft,
+    submission: { day: workout.day, kind: workout.kind, name: workout.name },
+  };
+  writeGuideDraft(slot, submitted);
+  assert.deepEqual(restoreGuide(slot, changed), submitted);
+  writeGuideDraft(slot, null);
+  assert.equal(storage.has(slot), false);
+  for (const malformed of ["{", "{}"]) {
+    storage.set(slot, malformed);
+    assert.deepEqual(readGuideDraft(slot).marks, {});
+  }
 });

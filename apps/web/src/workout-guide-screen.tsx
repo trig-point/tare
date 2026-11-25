@@ -12,12 +12,14 @@ import {
   DEFAULT_REST_SECONDS,
   finishGuide,
   type GuideDraft,
+  guidePlan,
   markSet,
+  newGuideDraft,
   opensShort,
   type PlannedMovement,
   prescribedSet,
-  readGuideDraft,
   readScheduledWorkout,
+  restoreGuide,
   restSeconds,
   type ScheduledWorkout,
   writeGuideDraft,
@@ -64,6 +66,7 @@ function WorkoutGuide({
   refresh: () => Promise<unknown>;
 }) {
   const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(() => restoreGuide(storageKey, today));
   return (
     <div className="guide-tile">
       <strong>{today.name}</strong>
@@ -74,6 +77,9 @@ function WorkoutGuide({
         {open && (
           <GuideSession
             today={today}
+            key={guidePlan(today)}
+            draft={draft}
+            setDraft={setDraft}
             storageKey={storageKey}
             online={online}
             onClose={() => setOpen(false)}
@@ -87,6 +93,8 @@ function WorkoutGuide({
 
 function GuideSession({
   today,
+  draft: currentDraft,
+  setDraft,
   storageKey,
   online,
   onClose,
@@ -95,26 +103,43 @@ function GuideSession({
   today: ScheduledWorkout;
   storageKey: string;
   online: boolean;
+  draft: GuideDraft;
+  setDraft: (draft: GuideDraft) => void;
   onClose: () => void;
   refresh: () => Promise<unknown>;
 }) {
-  const [draft, setDraft] = useState(() => readGuideDraft(storageKey));
+  const plan = guidePlan(today);
+  const [freshDraft] = useState(() => restoreGuide(storageKey, today));
+  const draft =
+    currentDraft.submission || currentDraft.plan === plan
+      ? currentDraft
+      : freshDraft;
   const save = (next: GuideDraft) => {
     setDraft(next);
     writeGuideDraft(storageKey, next);
   };
   function clear() {
     writeGuideDraft(storageKey, null);
+    setDraft({ ...newGuideDraft(), plan });
     onClose();
   }
   const finish = useMutation({
-    mutationFn: () => finishGuide(today, draft),
+    networkMode: "always",
+    mutationFn: (submitted: GuideDraft) => finishGuide(today, submitted),
     onSuccess: () => {
       clear();
       void refresh();
     },
   });
   const busy = finish.isPending;
+  const submitted = draft.submission;
+  function submit() {
+    if (!online || busy) return;
+    const { day, kind, name } = today;
+    const next = { ...draft, submission: submitted ?? { day, kind, name } };
+    save(next);
+    finish.mutate(next);
+  }
   function undo(set: string) {
     const marks = { ...draft.marks };
     delete marks[set];
@@ -129,12 +154,14 @@ function GuideSession({
       className="guide-screen"
       aria-describedby={undefined}
       showCloseButton={false}
-      onEscapeKeyDown={(event) => event.preventDefault()}
+      onEscapeKeyDown={(event) => {
+        if (busy) event.preventDefault();
+      }}
       onInteractOutside={(event) => event.preventDefault()}
     >
       <header className="body-head">
         <DialogTitle>{today.name}</DialogTitle>
-        {draft.rest && (
+        {draft.rest && !submitted && (
           <RestTimer
             key={`${draft.rest.set}:${draft.rest.end}`}
             end={draft.rest.end}
@@ -143,29 +170,34 @@ function GuideSession({
         )}
       </header>
       <div className="guide-movements">
-        {today.movements.map((movement, index) => (
-          <Movement key={`${movement.name}:${index}`} movement={movement}>
-            {Array.from({ length: movement.sets }, (_, setIndex) => {
-              const id = `${String(index).padStart(2, "0")}:${String(setIndex).padStart(2, "0")}`;
-              return (
-                <GuideSet
-                  key={id}
-                  number={setIndex + 1}
-                  movement={movement}
-                  marked={draft.marks[id]}
-                  busy={busy}
-                  done={(row) =>
-                    save(markSet(draft, id, row, movement, Date.now))
-                  }
-                  undo={() => undo(id)}
-                />
-              );
-            })}
-          </Movement>
-        ))}
+        {submitted && <p className="body-note">Finish to retry saving</p>}
+        {!submitted &&
+          today.movements.map((movement, index) => (
+            <Movement key={`${movement.name}:${index}`} movement={movement}>
+              {Array.from({ length: movement.sets }, (_, setIndex) => {
+                const id = `${String(index).padStart(2, "0")}:${String(setIndex).padStart(2, "0")}`;
+                return (
+                  <GuideSet
+                    key={id}
+                    number={setIndex + 1}
+                    movement={movement}
+                    marked={draft.marks[id]}
+                    busy={busy}
+                    done={(row) =>
+                      save(markSet(draft, id, row, movement, Date.now))
+                    }
+                    undo={() => undo(id)}
+                  />
+                );
+              })}
+            </Movement>
+          ))}
       </div>
       <footer className="guide-actions">
         {finish.isError && <p role="alert">Couldn’t save workout</p>}
+        <Button variant="ghost" disabled={busy} onClick={onClose}>
+          Close
+        </Button>
         <Button variant="outline" disabled={busy} onClick={clear}>
           Discard
         </Button>
@@ -173,9 +205,11 @@ function GuideSession({
           disabled={
             busy ||
             !online ||
-            (today.movements.length > 0 && !Object.keys(draft.marks).length)
+            (!submitted &&
+              today.movements.length > 0 &&
+              !Object.keys(draft.marks).length)
           }
-          onClick={() => finish.mutate()}
+          onClick={submit}
         >
           {busy ? "Saving…" : "Finish"}
         </Button>
@@ -187,13 +221,15 @@ function GuideSession({
 function RestTimer({ end, onEnd }: { end: number; onEnd: () => void }) {
   const [remaining, setRemaining] = useState(() => restSeconds(end, Date.now));
   const ended = useRef(false);
+  const wasRunning = useRef(remaining > 0);
   useEffect(() => {
     const update = () => {
       const seconds = restSeconds(end, Date.now);
       setRemaining(seconds);
       if (seconds === 0 && !ended.current) {
         ended.current = true;
-        if (document.visibilityState === "visible") navigator.vibrate?.(200);
+        if (wasRunning.current && document.visibilityState === "visible")
+          navigator.vibrate?.(200);
         onEnd();
       }
     };

@@ -18,8 +18,10 @@ const kindTable: Record<
     "weightlifting",
     "weights",
     "lifting",
+    "lift",
   ],
   cardio: [
+    "cardio",
     "walk",
     "walking",
     "run",

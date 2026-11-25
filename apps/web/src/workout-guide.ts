@@ -53,6 +53,10 @@ const markedSet = z
 
 const draftSchema = z.object({
   clientId: z.uuid(),
+  plan: z.string().optional(),
+  submission: z
+    .object({ day: z.iso.date(), kind: today.shape.kind, name: z.string() })
+    .optional(),
   marks: z.record(z.string(), markedSet),
   rest: z.object({ set: z.string(), end: z.number().nonnegative() }).nullable(),
 });
@@ -80,6 +84,24 @@ export function writeGuideDraft(storageKey: string, draft: GuideDraft | null) {
   } catch {
     return;
   }
+}
+
+export function guidePlan(workout: ScheduledWorkout) {
+  return JSON.stringify(
+    workout.movements.map(({ name, sets, reps, load }) => [
+      name,
+      sets,
+      reps,
+      load,
+    ]),
+  );
+}
+
+export function restoreGuide(storageKey: string, workout: ScheduledWorkout) {
+  const draft = readGuideDraft(storageKey);
+  const plan = guidePlan(workout);
+  if (draft.submission || draft.plan === plan) return draft;
+  return { ...newGuideDraft(), plan };
 }
 
 export function prescribedSet(movement: PlannedMovement) {
@@ -124,14 +146,15 @@ export function finishGuide(
   draft: GuideDraft,
   post = logActivity,
 ) {
+  const session = draft.submission ?? workout;
   const sets = Object.entries(draft.marks)
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([, set]) => set);
   return post({
     timing: "date_only",
-    day: workout.day,
-    kind: workout.kind,
-    notes: workout.name,
+    day: session.day,
+    kind: session.kind,
+    notes: session.name,
     client_id: draft.clientId,
     sets,
   });
