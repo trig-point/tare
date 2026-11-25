@@ -22,6 +22,7 @@ import {
   guideClientId,
   guideSlot,
   MAX_GUIDE_SETS,
+  matchesGuideSet,
   opensShort,
   type PlannedMovement,
   prescribedSet,
@@ -108,6 +109,7 @@ function GuideSession({
     queryKey,
     queryFn: ({ signal }) => find(signal),
     refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
   const { refetch } = activity;
   const [rest, setRest] = useState<number | null>(null);
@@ -120,22 +122,19 @@ function GuideSession({
     networkMode: "always",
     mutationFn: async ({
       change,
-      retry,
     }: {
       change: SetChange;
       movement: PlannedMovement;
-      retry?: boolean;
     }) => {
       await client.cancelQueries({ queryKey });
-      const current = retry
-        ? await find(new AbortController().signal)
-        : (client.getQueryData<SavedWorkout | null>(queryKey) ?? null);
+      const current = await find(new AbortController().signal);
+      client.setQueryData(queryKey, current);
       return saveGuideSet(workout, current, change);
     },
     onSuccess: (saved, { change, movement }) => {
       client.setQueryData(queryKey, saved);
       setFailed(null);
-      if (change.set && saved.sets.some((set) => set.notes === change.slot))
+      if (change.set && saved?.sets.some((set) => matchesGuideSet(set, change)))
         setRest(restEnd(movement, Date.now));
       else setRest(null);
     },
@@ -143,11 +142,19 @@ function GuideSession({
   });
   const discard = useMutation({
     networkMode: "always",
-    mutationFn: deleteActivity,
-    onSuccess: () => {
-      client.setQueryData(queryKey, null);
-      close();
-      void refresh();
+    mutationFn: async (confirmed: boolean) => {
+      await client.cancelQueries({ queryKey });
+      const current = await find(new AbortController().signal);
+      if (current && confirmed) await deleteActivity(current.id);
+      return confirmed ? null : current;
+    },
+    onSuccess: (current) => {
+      client.setQueryData(queryKey, current);
+      if (current) setConfirm(true);
+      else {
+        close();
+        void refresh();
+      }
     },
   });
   const busy = save.isPending || discard.isPending;
@@ -187,10 +194,12 @@ function GuideSession({
           <Movement key={guideSlot(movementIndex, 0)} movement={movement}>
             {Array.from({ length: movement.sets }, (_, setIndex) => {
               const slot = guideSlot(movementIndex, setIndex);
-              const marked = saved?.sets.find(
-                (set) =>
-                  set.notes === slot &&
-                  set.exercise === prescribedSet(movement).exercise,
+              const identity = {
+                slot,
+                exercise: prescribedSet(movement).exercise,
+              };
+              const marked = saved?.sets.find((set) =>
+                matchesGuideSet(set, identity),
               );
               const failedHere = failed?.change.slot === slot;
               return (
@@ -203,16 +212,19 @@ function GuideSession({
                   atLimit={atLimit}
                   failed={failedHere}
                   retry={() => {
-                    if (failed) save.mutate({ ...failed, retry: true });
+                    if (failed) save.mutate(failed);
                   }}
                   done={(row) =>
                     save.mutate({
-                      change: { slot, set: setInput(row) },
+                      change: { ...identity, set: setInput(row) },
                       movement,
                     })
                   }
                   undo={() =>
-                    save.mutate({ change: { slot, set: null }, movement })
+                    save.mutate({
+                      change: { ...identity, set: null },
+                      movement,
+                    })
                   }
                 />
               );
@@ -228,14 +240,17 @@ function GuideSession({
             <Button
               variant="outline"
               disabled={busy}
-              onClick={() => setConfirm(false)}
+              onClick={() => {
+                discard.reset();
+                setConfirm(false);
+              }}
             >
               Cancel
             </Button>
             <Button
-              disabled={busy || !online || !saved}
+              disabled={blocked || !online || !saved}
               onClick={() => {
-                if (saved) discard.mutate(saved.id);
+                if (saved) discard.mutate(true);
               }}
             >
               Delete
@@ -246,12 +261,15 @@ function GuideSession({
             <Button
               variant="outline"
               disabled={blocked}
-              onClick={() => (saved ? setConfirm(true) : close())}
+              onClick={() => {
+                if (saved || failed) discard.mutate(false);
+                else close();
+              }}
             >
               Discard
             </Button>
             <Button
-              disabled={busy}
+              disabled={busy || failed !== null}
               onClick={() => {
                 close();
                 void refresh();

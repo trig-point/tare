@@ -88,7 +88,7 @@ test("Done patches the full set list and returns the server's sets", async () =>
   const result = await saveGuideSet(
     workout,
     existing,
-    { slot, set: row },
+    { slot, exercise: row.exercise, set: row },
     undefined,
     async (id, sets) => {
       assert.equal(id, existing.id);
@@ -111,7 +111,7 @@ test("starting the same scheduled workout twice posts the same client id", async
     await saveGuideSet(
       planned,
       null,
-      { slot: guideSlot(0, 0), set: row },
+      { slot: guideSlot(0, 0), exercise: row.exercise, set: row },
       async (body) => {
         ids.push(body.client_id);
         return existing;
@@ -121,4 +121,32 @@ test("starting the same scheduled workout twice posts the same client id", async
     "guide:2026-01-05:upper_a",
     "guide:2026-01-05:upper_a",
   ]);
+});
+
+test("POST replay keeps a different movement at the same slot, and Undo tolerates a missing session", async () => {
+  const slot = guideSlot(0, 0);
+  const renamed = setInput(prescribedSet({ ...movement, name: "  Row  " }));
+  assert.equal(renamed.exercise, "Row");
+  await saveGuideSet(
+    workout,
+    null,
+    { slot, exercise: renamed.exercise, set: renamed },
+    async () => existing,
+    async (id, sets) => {
+      assert.equal(id, existing.id);
+      assert.deepEqual(
+        sets.map(({ exercise }) => exercise),
+        ["Step up", "Row"],
+      );
+      return existing;
+    },
+  );
+  assert.equal(
+    await saveGuideSet(workout, null, {
+      slot,
+      exercise: row.exercise,
+      set: null,
+    }),
+    null,
+  );
 });

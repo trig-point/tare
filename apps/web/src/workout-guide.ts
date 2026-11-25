@@ -52,15 +52,16 @@ export function opensShort(movement: PlannedMovement) {
 }
 
 export function prescribedSet(movement: PlannedMovement) {
+  const name = movement.name.trim();
   const load = /^(\d+(?:\.\d+)?)\s*(kg|lb)?$/i.exec(
     movement.load?.trim() ?? "",
   );
   return {
     ...blankSet(),
     exercise:
-      movement.name.length <= 80
-        ? movement.name
-        : `${movement.name
+      name.length <= 80
+        ? name
+        : `${name
             .slice(0, 79)
             .replace(/[\uD800-\uDBFF]$/, "")
             .trimEnd()}…`,
@@ -83,7 +84,15 @@ export function restEnd(movement: PlannedMovement, clock: () => number) {
   return clock() + (movement.card?.rest_seconds ?? DEFAULT_REST_SECONDS) * 1000;
 }
 
-export type SetChange = { slot: string; set: SetInput | null };
+type SetIdentity = { slot: string; exercise: string };
+export type SetChange = SetIdentity & { set: SetInput | null };
+
+export function matchesGuideSet(
+  set: SavedWorkout["sets"][number],
+  identity: SetIdentity,
+) {
+  return set.notes === identity.slot && set.exercise === identity.exercise;
+}
 export const guideSlot = (movement: number, set: number) =>
   `Guide set ${movement + 1}:${set + 1}`;
 
@@ -93,10 +102,10 @@ export async function saveGuideSet(
   change: SetChange,
   post = logActivity,
   patch = replaceSets,
-): Promise<SavedWorkout> {
+): Promise<SavedWorkout | null> {
   const changed = change.set && { ...change.set, notes: change.slot };
   if (!activity) {
-    if (!changed) throw new Error("No workout to update");
+    if (!changed) return null;
     activity = await post({
       timing: "date_only",
       day: workout.day,
@@ -105,10 +114,11 @@ export async function saveGuideSet(
       client_id: guideClientId(workout),
       sets: [changed],
     });
-    if (activity.sets.some((set) => set.notes === change.slot)) return activity;
+    if (activity.sets.some((set) => matchesGuideSet(set, change)))
+      return activity;
   }
   const kept = activity.sets
-    .filter((set) => set.notes !== change.slot)
+    .filter((set) => !matchesGuideSet(set, change))
     .map((set) => setInput(setRow(set)));
   return patch(activity.id, changed ? [...kept, changed] : kept);
 }
