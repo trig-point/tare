@@ -14,6 +14,7 @@ export type RecentLoggedSessionsResult = {
   calories: number | null;
   notes: string | null;
   source: string;
+  client_id: string | null;
 };
 
 export function recentLoggedSessions(
@@ -21,7 +22,7 @@ export function recentLoggedSessions(
   params: RecentLoggedSessionsParams,
 ): RecentLoggedSessionsResult[] {
   const sql = `
-	SELECT id, timing, started_at, day, duration_minutes, kind, calories, notes, source
+	SELECT id, timing, started_at, day, duration_minutes, kind, calories, notes, source, client_id
 	FROM activity_sessions
 	WHERE user_id = ? AND source IN ('manual', 'agent')
 	ORDER BY day DESC, started_at DESC, id DESC
@@ -44,6 +45,7 @@ function mapArrayToRecentLoggedSessionsResult(data: any) {
     calories: data[6],
     notes: data[7],
     source: data[8],
+    client_id: data[9],
   };
   return result;
 }
