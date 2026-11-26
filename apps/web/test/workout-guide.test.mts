@@ -1,19 +1,32 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { twoUsers } from "../../../packages/engine/test/support/two-users.ts";
+import { exampleSchedule } from "../../../packages/engine/test/support/workout-schedule.ts";
 import { ApiError } from "../src/api.ts";
 import { setInput } from "../src/health-api.ts";
+import { scheduledWorkoutKey } from "../src/today-api.ts";
 import {
   closeStaleGuide,
+  guideChoices,
   newGuideSet,
+  openGuideChoice,
   opensShort,
   pendingGuideAction,
   prescribedSet,
+  readGuideActivity,
+  readScheduledWorkout,
   restEnd,
   restSeconds,
   type ScheduledWorkout,
   saveGuideSet,
   undoGuideSet,
 } from "../src/workout-guide.ts";
+import "./tsx.mts";
+
+const { WorkoutGuideEntry } = await import("../src/workout-guide-screen.tsx");
 
 const card = {
   equipment: null,
@@ -31,6 +44,8 @@ const workout: ScheduledWorkout = {
   kind: "lift",
   name: "Upper A",
   session: "upper_a",
+  where: "home",
+  alternates: [],
   movements: [movement],
 };
 const clientId = "guide:2026-01-05:upper_a";
@@ -155,4 +170,55 @@ test("readback unlocks the guide after a committed Done or Undo loses its respon
     assert.equal(pendingGuideAction(action, before), action);
     assert.equal(pendingGuideAction(action, after), null);
   }
+});
+
+test("the guide offers each version by where and logs the chosen one", async (context) => {
+  const { admin } = await twoUsers(context, "fallback");
+  context.mock.method(globalThis, "fetch", (path: string, init: RequestInit) =>
+    admin.request(path, init),
+  );
+  const { sessions } = exampleSchedule();
+  const body = exampleSchedule({
+    sessions: {
+      ...sessions,
+      legs_a: { ...sessions.legs_a, alternates: ["legs_a_home"] },
+      legs_a_home: { ...sessions.push_a, name: "Legs A home" },
+    },
+  });
+  const stored = await admin.request("/api/workout-schedule", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  assert.equal(stored.status, 200);
+  const scheduled = await readScheduledWorkout();
+  assert.ok(scheduled);
+  assert.deepEqual(guideChoices({ ...scheduled, alternates: [] }), []);
+  const client = new QueryClient();
+  client.setQueryData(
+    [...scheduledWorkoutKey(admin.user.id), scheduled.day],
+    scheduled,
+  );
+  const entry = createElement(WorkoutGuideEntry, {
+    person: admin.user.id,
+    day: scheduled.day,
+    online: true,
+    refresh: async () => {},
+  });
+  assert.match(
+    renderToStaticMarkup(createElement(QueryClientProvider, { client }, entry)),
+    /^<div class="guide-tile"><strong>Legs A<\/strong><button[^>]*>example gym<\/button><button[^>]*>home<\/button><\/div>$/,
+  );
+  assert.equal(await openGuideChoice(scheduled, "legs_a"), scheduled);
+  const chosen = await openGuideChoice(scheduled, "legs_a_home");
+  await saveGuideSet(chosen, null, newGuideSet(input));
+  const saved = await readGuideActivity(chosen);
+  const [logged] = (
+    await (
+      await admin.request(`/api/activities/${chosen.day}/${chosen.day}`)
+    ).json()
+  ).workouts;
+  assert.deepEqual(
+    [chosen.movements[0]?.name, saved?.client_id, logged.notes],
+    ["Example press", `guide:${chosen.day}:legs_a_home`, "Legs A home"],
+  );
 });

@@ -15,8 +15,10 @@ import {
   closeStaleGuide,
   DEFAULT_REST_SECONDS,
   discardGuide,
+  guideChoices,
   guideClientId,
   newGuideSet,
+  openGuideChoice,
   opensShort,
   type PlannedMovement,
   pendingGuideAction,
@@ -49,6 +51,11 @@ export function WorkoutGuideEntry({
     enabled: online && day !== undefined,
   });
   const [active, setActive] = useState<ScheduledWorkout | null>(null);
+  const choose = useMutation({
+    mutationFn: (choice: { workout: ScheduledWorkout; key: string }) =>
+      openGuideChoice(choice.workout, choice.key),
+    onSuccess: setActive,
+  });
   const today = schedule.data;
   const workout =
     active ??
@@ -57,18 +64,32 @@ export function WorkoutGuideEntry({
     return schedule.isError ? (
       <output className="body-note">Couldn’t load workout</output>
     ) : null;
+  const choices = guideChoices(workout);
   return (
     <div className="guide-tile">
       <strong>{workout.name}</strong>
+      {choose.isError && <p role="alert">Couldn’t load workout</p>}
       <Dialog
         open={active !== null}
         onOpenChange={(open) => {
           if (open) setActive(workout);
         }}
       >
-        <DialogTrigger asChild>
-          <Button>Start</Button>
-        </DialogTrigger>
+        {choices.length ? (
+          choices.map((choice) => (
+            <Button
+              key={choice.key}
+              disabled={choose.isPending || !online}
+              onClick={() => choose.mutate({ workout, key: choice.key })}
+            >
+              {choice.where}
+            </Button>
+          ))
+        ) : (
+          <DialogTrigger asChild>
+            <Button>Start</Button>
+          </DialogTrigger>
+        )}
         {active && (
           <GuideSession
             person={person}

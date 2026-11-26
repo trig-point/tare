@@ -2,7 +2,7 @@ import { z as zod } from "zod";
 
 const text = (max: number) =>
   zod.string().max(max).regex(/\S/, "must not be blank");
-const sessionKey = zod
+export const sessionKey = zod
   .string()
   .regex(/^[a-z0-9]+(_[a-z0-9]+)*$/)
   .max(40);
@@ -29,6 +29,7 @@ const session = zod.strictObject({
   name: text(80),
   where: text(80),
   note: text(200).optional(),
+  alternates: zod.array(sessionKey).max(10).optional(),
   movements: zod.array(movement).max(30),
 });
 const lift = zod.strictObject({
@@ -82,6 +83,10 @@ export const scheduleDocument = zod
       if (!keys.has(key)) refuse(path, `unknown session ${key}`);
     };
     document.rotation.forEach((key, index) => known(key, ["rotation", index]));
+    for (const [name, entry] of Object.entries(document.sessions))
+      entry.alternates?.forEach((key, index) =>
+        known(key, ["sessions", name, "alternates", index]),
+      );
     if (document.next_session !== null)
       known(document.next_session, ["next_session"]);
     const dates = new Set<string>();
@@ -154,18 +159,42 @@ export function resolveToday(
       movements: [],
     };
   const key = dated ? entry.session : pickSession(document, entry.session);
+  return { day, source, ...sessionFields(document, key) };
+}
+
+function sessionFields(document: ScheduleDocument, key: string) {
   const picked = document.sessions[key];
   if (!picked) throw new Error("Schedule session missing");
   return {
-    day,
-    source,
-    kind: "lift",
+    kind: "lift" as const,
     name: picked.name,
     session: key,
     where: picked.where,
     note: picked.note ?? null,
     movements: picked.movements,
   };
+}
+
+export function sessionAlternates(
+  document: ScheduleDocument,
+  today: TodayEntry,
+) {
+  const scheduled = today.session ? document.sessions[today.session] : null;
+  return (scheduled?.alternates ?? []).map((key) => {
+    const { name, where } = sessionFields(document, key);
+    return { key, name, where };
+  });
+}
+
+export function chooseSession(
+  document: ScheduleDocument,
+  today: TodayEntry,
+  key: string,
+): TodayEntry | null {
+  if (key === today.session) return today;
+  if (!sessionAlternates(document, today).some((entry) => entry.key === key))
+    return null;
+  return { ...today, ...sessionFields(document, key) };
 }
 
 function pickSession(document: ScheduleDocument, name: string): string {

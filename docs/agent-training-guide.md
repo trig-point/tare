@@ -143,7 +143,9 @@ Two rules apply to every write:
 
 A bad document comes back as an error whose text lists what is wrong, such as `unknown session upper_x`, `duplicate date 2026-12-07` or `no upper in rotation`. Fix every message and send it again.
 
-`today_workout` takes no arguments (`{}`) and returns `{ "today": { ... } }`, where `today` is `null` when no schedule is stored. The entry is the dated one if there is one, otherwise the week day. Today is the date in your Tare account's time zone, using your day start hour; the schedule's own `timezone` field does not change it. Each movement comes with its `card`, the library card with the same name, or `null` when no card matches. Schedule movement names go up to 120 characters but cards stop at 80, so keep scheduled names short enough to match.
+`today_workout` takes `{}` and returns `{ "today": { ... } }`, where `today` is `null` when no schedule is stored. The entry is the dated one if there is one, otherwise the week day. Today is the date in your Tare account's time zone, using your day start hour; the schedule's own `timezone` field does not change it. Each movement comes with its `card`, the library card with the same name, or `null` when no card matches. Schedule movement names go up to 120 characters but cards stop at 80, so keep scheduled names short enough to match.
+
+A session may list up to 10 `alternates`: keys of other sessions that can stand in for it, such as a home version of a gym session (`"alternates": ["upper_home"]` on `upper_gym`). Each key must name a session in the library. `today_workout` returns the scheduled session's `alternates` as `key`, `name` and `where`, and the guide screen offers a choice by `where`. To get an alternate's movements, call `today_workout` with `{ "session": "upper_home" }`; it accepts only the scheduled key or one of its alternates and fails with `session_not_scheduled` for any other. Home Assistant always shows the scheduled session.
 
 ## Worked flow: a session moves from the gym to home
 
