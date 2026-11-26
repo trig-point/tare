@@ -55,6 +55,7 @@ test("registry constrains public and administrator operations and inventories ev
     agentOperations.map((operation) => operation.name),
     [
       "whoami",
+      "oura_backfill",
       "log_food",
       "log_meal_parts",
       "edit_intake",

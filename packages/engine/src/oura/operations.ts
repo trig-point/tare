@@ -5,6 +5,7 @@ import {
   OperationError,
   operationPerson,
 } from "../operations/registry.ts";
+import { backfillOura } from "./backfill.ts";
 import { readOuraConnection } from "./connections.ts";
 import { createOura } from "./service.ts";
 
@@ -61,6 +62,44 @@ export const ouraOperations = [
           context.config.ouraTokenKey,
           context.config.oura !== null,
         ),
+      };
+    },
+  }),
+  defineOperation({
+    name: "oura_backfill",
+    description:
+      "One-off import of older Oura history: fetches only sleep, HRV, resting heart rate and readiness from since (YYYY-MM-DD) up to the earliest day Tare already holds. Activity, workouts and stress are not fetched. Running it again changes nothing.",
+    method: "POST",
+    path: "/api/oura/backfill",
+    modes: ["access", "fallback"],
+    callerClass: "browser_and_agent",
+    admin: false,
+    bodyLimit: 1024,
+    input: zod.strictObject({ since: zod.iso.date() }),
+    output: zod.strictObject({
+      days_written: zod.number().int().nonnegative(),
+      first_day: zod.iso.date().nullable(),
+      last_day: zod.iso.date().nullable(),
+      failure: zod
+        .enum([
+          "oura_rate_limited",
+          "oura_membership_required",
+          "oura_unauthorized",
+          "oura_unavailable",
+          "oura_invalid_response",
+        ])
+        .nullable(),
+    }),
+    async handler(input, context) {
+      return {
+        status: 200,
+        body: await backfillOura({
+          database: context.database,
+          oura: context.oura ?? createOura(context),
+          clock: context.clock,
+          person: operationPerson(context),
+          since: input.since,
+        }),
       };
     },
   }),

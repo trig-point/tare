@@ -34,6 +34,8 @@ export interface OuraFetchOptions {
   endDate: string;
   /** Earlier first days for some endpoints, for a one-off backfill. */
   startDates?: Partial<Record<Endpoint, string>>;
+  /** Endpoints to request; the others come back empty. Defaults to all. */
+  endpoints?: readonly Endpoint[];
   signal: AbortSignal;
   fetch?: typeof fetch;
   wait(milliseconds: number, signal: AbortSignal): Promise<void>;
@@ -57,7 +59,10 @@ export function fetchOura(
   return failureCode(options, async () => {
     const data: Partial<Record<Endpoint, unknown[]>> = {};
     for (const name of Object.keys(ouraEndpoints) as Endpoint[])
-      data[name] = await fetchCollection(options, name);
+      data[name] =
+        !options.endpoints || options.endpoints.includes(name)
+          ? await fetchCollection(options, name)
+          : [];
     return data as OuraData;
   });
 }
