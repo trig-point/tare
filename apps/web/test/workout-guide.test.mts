@@ -26,7 +26,9 @@ import {
 } from "../src/workout-guide.ts";
 import "./tsx.mts";
 
-const { WorkoutGuideEntry } = await import("../src/workout-guide-screen.tsx");
+const { GuideTile, WorkoutGuideEntry } = await import(
+  "../src/workout-guide-screen.tsx"
+);
 
 const card = {
   equipment: null,
@@ -182,7 +184,11 @@ test("the guide offers each version by where and logs the chosen one", async (co
     sessions: {
       ...sessions,
       legs_a: { ...sessions.legs_a, alternates: ["legs_a_home"] },
-      legs_a_home: { ...sessions.push_a, name: "Legs A home" },
+      legs_a_home: {
+        ...sessions.push_a,
+        name: "Legs A home",
+        movements: [{ name: "Example squat", sets: 2, reps: "10" }],
+      },
     },
   });
   const stored = await admin.request("/api/workout-schedule", {
@@ -204,12 +210,37 @@ test("the guide offers each version by where and logs the chosen one", async (co
     online: true,
     refresh: async () => {},
   });
-  assert.match(
-    renderToStaticMarkup(createElement(QueryClientProvider, { client }, entry)),
-    /^<div class="guide-tile"><strong>Legs A<\/strong><button[^>]*>example gym<\/button><button[^>]*>home<\/button><\/div>$/,
+  const tile = (markup: string) => [
+    /<strong>([^<]*)<\/strong>/.exec(markup)?.[1],
+    ...Array.from(
+      markup.matchAll(/<button[^>]*>([^<]*)<\/button>/g),
+      (match) => match[1],
+    ),
+  ];
+  assert.deepEqual(
+    tile(
+      renderToStaticMarkup(
+        createElement(QueryClientProvider, { client }, entry),
+      ),
+    ),
+    ["Legs A", "example gym", "home"],
   );
   assert.equal(await openGuideChoice(scheduled, "legs_a"), scheduled);
   const chosen = await openGuideChoice(scheduled, "legs_a_home");
+  const open = createElement(GuideTile, {
+    scheduled,
+    active: chosen,
+    online: true,
+    pending: false,
+    failed: false,
+    open: () => {},
+    choose: () => {},
+  });
+  assert.deepEqual(tile(renderToStaticMarkup(open)), [
+    "Legs A",
+    "example gym",
+    "home",
+  ]);
   await saveGuideSet(chosen, null, newGuideSet(input));
   const saved = await readGuideActivity(chosen);
   const [logged] = (
@@ -219,6 +250,6 @@ test("the guide offers each version by where and logs the chosen one", async (co
   ).workouts;
   assert.deepEqual(
     [chosen.movements[0]?.name, saved?.client_id, logged.notes],
-    ["Example press", `guide:${chosen.day}:legs_a_home`, "Legs A home"],
+    ["Example squat", `guide:${chosen.day}:legs_a_home`, "Legs A home"],
   );
 });

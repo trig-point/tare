@@ -51,36 +51,98 @@ export function WorkoutGuideEntry({
     enabled: online && day !== undefined,
   });
   const [active, setActive] = useState<ScheduledWorkout | null>(null);
+  const latest = useRef({ day, request: 0 });
   const choose = useMutation({
-    mutationFn: (choice: { workout: ScheduledWorkout; key: string }) =>
-      openGuideChoice(choice.workout, choice.key),
-    onSuccess: setActive,
+    networkMode: "always",
+    mutationFn: (choice: {
+      workout: ScheduledWorkout;
+      key: string;
+      request: number;
+    }) => openGuideChoice(choice.workout, choice.key),
+    onSuccess: (chosen, { request }) => {
+      if (
+        request === latest.current.request &&
+        chosen.day === latest.current.day
+      )
+        setActive((open) => open ?? chosen);
+    },
   });
+  const { reset } = choose;
+  useEffect(() => {
+    latest.current = { day, request: latest.current.request + 1 };
+    reset();
+  }, [day, reset]);
   const today = schedule.data;
-  const workout =
-    active ??
-    (today && today.day === day && today.movements.length ? today : null);
-  if (!workout)
+  const scheduled =
+    today && today.day === day && today.movements.length ? today : null;
+  if (!scheduled && !active)
     return schedule.isError ? (
       <output className="body-note">Couldn’t load workout</output>
     ) : null;
-  const choices = guideChoices(workout);
+  return (
+    <GuideTile
+      scheduled={scheduled}
+      active={active}
+      online={online}
+      pending={choose.isPending}
+      failed={choose.isError}
+      open={setActive}
+      choose={(workout, key) => {
+        latest.current.request += 1;
+        choose.mutate({ workout, key, request: latest.current.request });
+      }}
+    >
+      {active && (
+        <GuideSession
+          person={person}
+          workout={active}
+          online={online}
+          refresh={refresh}
+          close={() => setActive(null)}
+        />
+      )}
+    </GuideTile>
+  );
+}
+
+export function GuideTile({
+  scheduled,
+  active,
+  online,
+  pending,
+  failed,
+  open,
+  choose,
+  children,
+}: {
+  scheduled: ScheduledWorkout | null;
+  active: ScheduledWorkout | null;
+  online: boolean;
+  pending: boolean;
+  failed: boolean;
+  open: (workout: ScheduledWorkout) => void;
+  choose: (workout: ScheduledWorkout, key: string) => void;
+  children?: ReactNode;
+}) {
+  const workout = scheduled ?? active;
+  if (!workout) return null;
+  const choices = scheduled ? guideChoices(scheduled) : [];
   return (
     <div className="guide-tile">
       <strong>{workout.name}</strong>
-      {choose.isError && <p role="alert">Couldn’t load workout</p>}
+      {failed && <p role="alert">Couldn’t load workout</p>}
       <Dialog
         open={active !== null}
-        onOpenChange={(open) => {
-          if (open) setActive(workout);
+        onOpenChange={(isOpen) => {
+          if (isOpen) open(workout);
         }}
       >
         {choices.length ? (
           choices.map((choice) => (
             <Button
               key={choice.key}
-              disabled={choose.isPending || !online}
-              onClick={() => choose.mutate({ workout, key: choice.key })}
+              disabled={pending || (!online && choice.key !== workout.session)}
+              onClick={() => choose(workout, choice.key)}
             >
               {choice.where}
             </Button>
@@ -90,15 +152,7 @@ export function WorkoutGuideEntry({
             <Button>Start</Button>
           </DialogTrigger>
         )}
-        {active && (
-          <GuideSession
-            person={person}
-            workout={active}
-            online={online}
-            refresh={refresh}
-            close={() => setActive(null)}
-          />
-        )}
+        {children}
       </Dialog>
     </div>
   );
