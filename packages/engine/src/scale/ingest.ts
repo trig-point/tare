@@ -2,7 +2,6 @@ import { setTimeout as delay } from "node:timers/promises";
 import type { Database } from "better-sqlite3";
 import { z as zod } from "zod";
 import type { Person } from "../auth/middleware.ts";
-import { personDayBounds } from "../calendar/time.ts";
 import type { ScaleConfig } from "../config.ts";
 import {
   afterCommit,
@@ -10,7 +9,7 @@ import {
   type WriteScope,
   writeTransaction,
 } from "../db.ts";
-import { canonicalInstant, localDay, shiftDay } from "../logging/day.ts";
+import { canonicalInstant, personDayAt } from "../logging/day.ts";
 import { insertWeight } from "../logging/weight.ts";
 import { insertScaleReading } from "../queries/scale/insert-scale-reading.ts";
 import { selectDayReceipt } from "../queries/scale/select-day-receipt.ts";
@@ -126,26 +125,6 @@ function logScaleWeight(
   ).created;
 }
 
-function scaleDay(measuredAt: string, person: Person) {
-  const instant = new Date(measuredAt);
-  const candidate = localDay(
-    measuredAt,
-    person.timezone,
-    person.day_start_hour,
-  );
-  const boundsFor = (day: string) =>
-    personDayBounds(day, person.timezone, person.day_start_hour);
-  const candidateBounds = boundsFor(candidate);
-  const day =
-    instant < candidateBounds.start
-      ? shiftDay(candidate, -1)
-      : instant >= candidateBounds.end
-        ? shiftDay(candidate, 1)
-        : candidate;
-  const { start, end } = day === candidate ? candidateBounds : boundsFor(day);
-  return { day, start: start.toISOString(), end: end.toISOString() };
-}
-
 function compareTrend(
   database: Database,
   person: Person,
@@ -219,7 +198,12 @@ export function scaleQuestionKinds(clock: Clock): [string, QuestionKind][] {
               clock,
               selectScaleReading(database, {
                 client_id: question.subject_ref,
-              })?.day ?? scaleDay(scale_reading.measured_at, person).day,
+              })?.day ??
+                personDayAt(
+                  scale_reading.measured_at,
+                  person.timezone,
+                  person.day_start_hour,
+                ).day,
             );
           return { status: "applied", weight_logged };
         },
@@ -307,20 +291,24 @@ export function createScaleSubscriber({
           })
         )
           return "duplicate";
-        const measuredDay = scaleDay(reading.measured_at, person);
-        const ownerDay = { user_id: userId, day: measuredDay.day };
+        const { day, start, end } = personDayAt(
+          reading.measured_at,
+          person.timezone,
+          person.day_start_hour,
+        );
+        const ownerDay = { user_id: userId, day };
         const { problem, trendText } = compareTrend(
           scoped,
           person,
           reading,
-          measuredDay.day,
+          day,
         );
         const autoLog =
           problem === null &&
           !selectDayReceipt(scoped, {
             ...ownerDay,
-            start: measuredDay.start,
-            end: measuredDay.end,
+            start: start.toISOString(),
+            end: end.toISOString(),
           }) &&
           selectTodayWeights(scoped, ownerDay).length === 0 &&
           selectPriorFood(scoped, {
@@ -333,7 +321,7 @@ export function createScaleSubscriber({
           created_at: clock.now().toISOString(),
         });
         if (autoLog) {
-          if (!logScaleWeight(scope, person, reading, clock, measuredDay.day))
+          if (!logScaleWeight(scope, person, reading, clock, day))
             throw new Error("Scale weight already exists");
           afterCommit(scope, onLogged, () => log("scale_refresh_failed"));
           return "logged";

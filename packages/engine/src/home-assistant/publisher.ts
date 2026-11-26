@@ -81,7 +81,7 @@ export function createHomeAssistantPublisher({
   let stopped = false;
   let outage = false;
   let stopping: Promise<void> | undefined;
-  let delivery: Promise<void> | undefined;
+  const deliveries = new Set<Promise<void>>();
 
   const client: MqttClient = connect(config.url, {
     clientId: `tare-${install}`,
@@ -114,24 +114,36 @@ export function createHomeAssistantPublisher({
       if (topicMatches(filter, topic)) await handler(payload, topic);
   }
 
-  // MQTT.js waits for this callback before sending PUBACK.
+  // Packet IDs can be reused after a reconnect.
   client.handleMessage = ({ topic, payload }, acknowledge) => {
     if (stopped) {
       acknowledge(new Error("mqtt_stopping"));
       return;
     }
-    delivery = handleDelivery(
+    const connection = client.stream;
+    const acknowledgeOnConnection = (error?: Error) => {
+      if (
+        client.connected &&
+        client.stream === connection &&
+        !connection.destroyed
+      )
+        acknowledge(error);
+    };
+    const delivery = handleDelivery(
       topic,
       typeof payload === "string" ? Buffer.from(payload) : payload,
-    ).then(
-      () => acknowledge(),
-      (error: unknown) => {
-        log("mqtt_handler_failed", errorName(error));
-        acknowledge(
-          error instanceof Error ? error : new Error("mqtt_handler_failed"),
-        );
-      },
-    );
+    )
+      .then(
+        () => acknowledgeOnConnection(),
+        (error: unknown) => {
+          log("mqtt_handler_failed", errorName(error));
+          acknowledgeOnConnection(
+            error instanceof Error ? error : new Error("mqtt_handler_failed"),
+          );
+        },
+      )
+      .finally(() => deliveries.delete(delivery));
+    deliveries.add(delivery);
   };
 
   function refreshAll(replayRequested = false) {
@@ -289,7 +301,7 @@ export function createHomeAssistantPublisher({
     stop() {
       stopping ??= (async () => {
         stopped = true;
-        await delivery;
+        await Promise.all(deliveries);
         for (const timer of timers.values()) timer.cancel();
         timers.clear();
         let confirmed = false;

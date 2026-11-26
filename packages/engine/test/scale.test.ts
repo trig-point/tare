@@ -239,6 +239,69 @@ test("0056 seeds food history and preserves undated and answered legacy receipts
   );
 });
 
+test("food logged during a rollback uses the same Tare day as the scale", async (context) => {
+  const times = {
+    food: "2026-10-25T01:15:00.000Z",
+    reading: "2026-10-25T01:30:00.000Z",
+  };
+  for (const timezone of ["America/New_York", "Antarctica/Troll"]) {
+    const { database, app, signIn, admin, setNow } = auth.fixture(context);
+    setNow(times.food);
+    database
+      .prepare("UPDATE users SET timezone = ?, day_start_hour = 2")
+      .run(timezone);
+    const response = await app.request("/api/intake", {
+      method: "POST",
+      headers: { ...auth.requestedWith, Cookie: auth.cookie(await signIn()) },
+      body: JSON.stringify({
+        client_id: "example-food",
+        name: "Example oats",
+        kcal: 150,
+      }),
+    });
+    assert.equal(response.status, 201);
+    const readingClock = { now: () => new Date(times.reading) };
+    const ingest = createScaleSubscriber({
+      database,
+      topic: BASE,
+      users: new Map([["alex", admin.id]]),
+      clock: readingClock,
+      questionKinds: createOrderQuestionKinds({ clock: readingClock }),
+    });
+    const result = await ingest(
+      Buffer.from(JSON.stringify(fixture(times.reading, 72))),
+      `${BASE}/alex`,
+    );
+    assert.equal(result.status, "question_review", timezone);
+  }
+});
+
+test("0056 assigns rollback-era food to the Tare day that contained it", async (context) => {
+  const migrations = new URL("../migrations/", import.meta.url);
+  const previous = join(scratch(context), "migrations");
+  cpSync(migrations, previous, {
+    recursive: true,
+    filter: (path) => !path.includes("0056_"),
+  });
+  const database = new Database(":memory:");
+  context.after(() => database.close());
+  applyMigrations(database, pathToFileURL(`${previous}/`));
+  const scale = setup(database);
+  database.exec(`
+    UPDATE users SET timezone = 'Antarctica/Troll', day_start_hour = 2 WHERE id = 1;
+    INSERT INTO intake_entries
+      (user_id, client_id, name, eaten_at, day, provenance, created_at, updated_at)
+    VALUES (1, 'fold-food', 'Example oats', '2026-10-25T01:15:00.000Z', '2026-10-24',
+      'estimated', '2026-10-25T01:15:00.000Z', '2026-10-25T01:15:00.000Z');
+  `);
+  applyMigrations(database, migrations);
+  database.exec("DELETE FROM intake_entries");
+  assert.equal(
+    await scale.send(fixture("2026-10-25T01:30:00.000Z", 72)),
+    "question_review",
+  );
+});
+
 test("Keep records on the frozen day and Discard reports no weight", async (context) => {
   const questionKinds = createOrderQuestionKinds({ clock });
   const { database, app, admin, signIn } = auth.fixture(context, {
@@ -364,7 +427,10 @@ test("scale settings fail startup when invalid and need a mapping to enable", ()
 
 async function brokerFixture(context: TestContext) {
   const broker = (await Aedes.createBroker()) as Aedes & {
-    clients: Record<string, { id: string; conn: { destroy(): void } }>;
+    clients: Record<
+      string,
+      { id: string; conn: { destroy(): void }; _nextId: number }
+    >;
   };
   const server = createServer(broker.handle).listen(0);
   await once(server, "listening");
@@ -489,4 +555,88 @@ test("MQTT ACK follows a successful BUSY retry or a logged terminal failure", as
     weights: 1,
     log: `scale_reading_failed SQLITE_CONSTRAINT_TRIGGER 72 kg at ${at}`,
   });
+});
+
+test("a BUSY retry cannot acknowledge a reused packet ID on a replacement connection", async (context) => {
+  const file = join(scratch(context), "reconnect.sqlite");
+  const connection = openDatabase(file);
+  const lock = new Database(file);
+  const { broker, producer, url } = await brokerFixture(context);
+  const steps = new EventEmitter();
+  const pending = new Set<() => void>();
+  let closing = false;
+  const scale = setup(connection.database, () => {
+    if (closing) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      pending.add(resolve);
+      steps.emit("retry", resolve);
+    });
+  });
+  const incoming: number[] = [];
+  const outgoing: number[] = [];
+  const publisher = createHomeAssistantPublisher({
+    database: scale.database,
+    config: load({ TARE_MQTT_URL: url }).mqtt as MqttConfig,
+    clientOptions: {
+      reconnectPeriod: 10,
+      log(format, packet) {
+        if (
+          format === "handlePublish: packet %o" &&
+          packet.topic === `${BASE}/alex`
+        )
+          incoming.push(packet.messageId);
+        if (format === "_writePacket :: packet: %O" && packet.cmd === "puback")
+          outgoing.push(packet.messageId);
+      },
+    },
+  });
+  context.after(async () => {
+    closing = true;
+    if (lock.inTransaction) lock.exec("ROLLBACK");
+    for (const resume of pending) resume();
+    await publisher.stop();
+    lock.close();
+    connection.close();
+  });
+  publisher.subscribe(`${BASE}/alex`, async (payload, topic) => {
+    const result = await scale.send(payload.toString(), topic);
+    steps.emit("settled", result);
+  });
+  let subscribed = once(broker, "subscribe");
+  const send = async (hour: string) => {
+    await subscribed;
+    const receiver = Object.values(broker.clients).find((client) =>
+      client.id.startsWith("tare-"),
+    );
+    assert.ok(receiver);
+    receiver._nextId = 300;
+    const retry = once(steps, "retry");
+    await producer.publishAsync(
+      `${BASE}/alex`,
+      JSON.stringify(fixture(`2026-03-10T${hour}:00:00Z`, 72)),
+      { qos: 1 },
+    );
+    const [resume] = await retry;
+    return { receiver, resume };
+  };
+  lock.exec("BEGIN IMMEDIATE");
+  const first = await send("07");
+  subscribed = once(broker, "subscribe");
+  first.receiver.conn.destroy();
+  const second = await send("08");
+  assert.notEqual(first.receiver, second.receiver);
+  assert.deepEqual(incoming, [300, 300]);
+  lock.exec("ROLLBACK");
+  const settled = once(steps, "settled");
+  first.resume();
+  assert.deepEqual(await settled, ["logged"]);
+  await setImmediate();
+  assert.deepEqual(outgoing, []);
+
+  const acknowledged = once(broker, "ack");
+  second.resume();
+  await acknowledged;
+  assert.deepEqual(outgoing, [300]);
+  assert.equal(scale.weights().length, 1);
+  assert.equal(scale.questions().length, 1);
 });

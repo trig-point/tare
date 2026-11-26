@@ -37,7 +37,12 @@ CREATE TABLE first_food_times (
 ) STRICT;
 
 INSERT INTO first_food_times (user_id, day, created_at)
-SELECT user_id, day, min(created_at) FROM intake_entries GROUP BY user_id, day;
+SELECT user_id, food_day, min(created_at) FROM (
+  SELECT intake_entries.user_id, intake_entries.created_at,
+    tare_backfill_food_day(intake_entries.eaten_at, intake_entries.day, users.timezone, users.day_start_hour) AS food_day
+  FROM intake_entries JOIN users ON users.id = intake_entries.user_id
+)
+GROUP BY user_id, food_day;
 
 CREATE TRIGGER record_first_food_insert AFTER INSERT ON intake_entries
 BEGIN

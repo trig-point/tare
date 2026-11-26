@@ -304,7 +304,11 @@ function useAnswer(person: number, question: Question, onAnswered: () => void) {
     // Someone else may have answered, or the save landed and its reply was lost.
     onError: (error) => {
       if (!(error instanceof ApiError && error.status === 400))
-        void refreshAnswered(client, person);
+        void refreshAnswered(
+          client,
+          person,
+          question.kind === "scale_implausible",
+        );
     },
   });
 }

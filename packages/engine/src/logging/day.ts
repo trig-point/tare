@@ -1,3 +1,4 @@
+import { personDayBounds } from "../calendar/time.ts";
 import { OperationError } from "../operations/registry.ts";
 
 export function canonicalInstant(input: string): string {
@@ -55,4 +56,23 @@ export function shiftDay(day: string, days: number) {
   const date = new Date(`${day}T00:00:00.000Z`);
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+export function personDayAt(
+  timestamp: string,
+  timezone: string,
+  dayStartHour: number,
+) {
+  const instant = new Date(timestamp);
+  const candidate = localDay(timestamp, timezone, dayStartHour);
+  const boundsFor = (day: string) =>
+    personDayBounds(day, timezone, dayStartHour);
+  const candidateBounds = boundsFor(candidate);
+  const day =
+    instant < candidateBounds.start
+      ? shiftDay(candidate, -1)
+      : instant >= candidateBounds.end
+        ? shiftDay(candidate, 1)
+        : candidate;
+  return { day, ...(day === candidate ? candidateBounds : boundsFor(day)) };
 }

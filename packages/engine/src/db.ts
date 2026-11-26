@@ -1,12 +1,26 @@
 import { mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import Database from "better-sqlite3";
+import { localDay, personDayAt } from "./logging/day.ts";
 import { markBackup } from "./queries/pantry/mark-backup.ts";
 
 export function applyMigrations(
   database: Database.Database,
   migrationsFolder = new URL("../migrations/", import.meta.url),
 ) {
+  database.function(
+    "tare_backfill_food_day",
+    { deterministic: true },
+    (
+      eatenAt: string,
+      storedDay: string,
+      timezone: string,
+      dayStartHour: number,
+    ) =>
+      storedDay === localDay(eatenAt, timezone, dayStartHour)
+        ? personDayAt(eatenAt, timezone, dayStartHour).day
+        : storedDay,
+  );
   database.exec(
     "CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY NOT NULL, content_hash TEXT NOT NULL)",
   );

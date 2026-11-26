@@ -14,7 +14,7 @@ import { selectWeight } from "../queries/select-weight.ts";
 import { updateEatingOut } from "../queries/update-eating-out.ts";
 import { updateIntake } from "../queries/update-intake.ts";
 import { updateWeight } from "../queries/update-weight.ts";
-import { canonicalInstant, localDay } from "./day.ts";
+import { canonicalInstant, localDay, personDayAt } from "./day.ts";
 import {
   adHocBasis,
   canTagEatingOut,
@@ -272,7 +272,8 @@ const editIntake = defineOperation({
       merged.day =
         input.eaten_at === undefined
           ? stored.day
-          : localDay(merged.eaten_at, person.timezone, person.day_start_hour);
+          : personDayAt(merged.eaten_at, person.timezone, person.day_start_hour)
+              .day;
       merged.updated_at = context.clock.now().toISOString();
       if (merged.eaten_at !== stored.eaten_at) {
         merged.slot_template_id = null;
