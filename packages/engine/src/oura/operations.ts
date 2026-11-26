@@ -68,7 +68,7 @@ export const ouraOperations = [
   defineOperation({
     name: "oura_backfill",
     description:
-      "One-off import of older Oura history: fetches only sleep, HRV, resting heart rate and readiness from since (YYYY-MM-DD) up to the earliest day Tare already holds. Activity, workouts and stress are not fetched. Running it again changes nothing.",
+      "One-off import of older Oura history: fetches only sleep, HRV, resting heart rate and readiness from since (YYYY-MM-DD) up to the earliest day Tare already holds, and never later than the hourly sync window start. Activity, workouts and stress are not fetched. Running it again adds no new days.",
     method: "POST",
     path: "/api/oura/backfill",
     modes: ["access", "fallback"],
