@@ -241,7 +241,9 @@ test("the guide offers each version by where and logs the chosen one", async (co
     "example gym",
     "home",
   ]);
-  await saveGuideSet(chosen, null, newGuideSet(input));
+  const [squat] = chosen.movements;
+  assert.ok(squat);
+  await saveGuideSet(chosen, null, newGuideSet(setInput(prescribedSet(squat))));
   const saved = await readGuideActivity(chosen);
   const [logged] = (
     await (
@@ -249,7 +251,7 @@ test("the guide offers each version by where and logs the chosen one", async (co
     ).json()
   ).workouts;
   assert.deepEqual(
-    [chosen.movements[0]?.name, saved?.client_id, logged.notes],
+    [logged.sets[0]?.exercise, saved?.client_id, logged.notes],
     ["Example squat", `guide:${chosen.day}:legs_a_home`, "Legs A home"],
   );
 });
