@@ -3,6 +3,7 @@ import { Plus } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { ApiError } from "./api.ts";
 import { refreshDays } from "./days-api.ts";
+import { EatingOutSwitch, useFoodChoiceTag } from "./eating-out.tsx";
 import {
   acceptShares,
   actOnItem,
@@ -317,11 +318,12 @@ function ItemRow({
       refreshToday(client, person),
       refreshDays(client, person),
     ]);
+  const tag = useFoodChoiceTag(item);
   const act = useMutation({
     networkMode: "always",
     mutationFn: async (action: ItemAction) => {
       if (!online || !navigator.onLine) throw new Error("Offline");
-      await actOnItem(item, action);
+      await actOnItem(item, action, tag.override);
     },
     onSuccess: refresh,
     // The item changed elsewhere; reload to show its current state.
@@ -352,6 +354,12 @@ function ItemRow({
                 : "Nutrition missing"}
             </p>
           )}
+          <EatingOutSwitch
+            checked={tag.checked}
+            eligible={item.can_tag_eating_out === true}
+            disabled={!online || act.isPending}
+            onChange={tag.setSelected}
+          />
           <div className="mt-3 grid grid-cols-3 gap-2">
             {actions.map(([action, label, variant]) => (
               <Button

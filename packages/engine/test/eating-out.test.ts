@@ -343,3 +343,35 @@ test("archived legacy tags can be restored after clearing", async (context) => {
     .run(entry.user_id, key, instant);
   await patch(entry.id, { eating_out: true }, 400);
 });
+
+test("food choices report the default of a fresh log, independent of past overrides", async (context) => {
+  const { database, admin, request, send, save, log } = await setup(context);
+  await planDay(database, { user: admin, request }, "UTC");
+  const meal = await save();
+  const body = { food_id: meal.id, servings: 1 };
+  const { entry: cleared } = await log({
+    ...body,
+    client_id: "choice-history",
+    eating_out: false,
+  });
+  const { entry: fresh } = await log({ ...body, client_id: "choice-default" });
+  await send("/api/plan/slot", { position: 0, ...body }, 201);
+  const plan = await send("/api/plan");
+  const catalog = await send("/api/foods/find", { name: menu.name });
+  const search = await send("/api/foods/search", { name: menu.name });
+  const usual = await send("/api/foods/usual");
+  const today = await send("/api/today");
+  const choice = today.entries.find(
+    (entry: { id: number }) => entry.id === cleared.id,
+  );
+  for (const [surface, fields] of [
+    ["catalog", catalog.foods[0]],
+    ["search", search.foods[0]],
+    ["usual", usual.foods[0]],
+    ["Today", choice?.food_choice],
+    ["plan", plan.planned_items[0]],
+  ] as const) {
+    assert.equal(fields?.eating_out_default, fresh.eating_out === 1, surface);
+    assert.equal(fields?.can_tag_eating_out, fresh.can_tag_eating_out, surface);
+  }
+});

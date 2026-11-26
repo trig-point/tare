@@ -2,9 +2,11 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Fragment, type ReactNode, useMemo, useState } from "react";
 import type { Session } from "./api.ts";
 import { BarcodeScanner } from "./barcode-scan.tsx";
+import { EatingOutSwitch, useFoodChoiceTag } from "./eating-out.tsx";
 import {
   type CatalogResult,
   catalogQuery,
+  choiceTags,
   enqueueFood,
   enqueueNumbers,
   type FoodChoice,
@@ -70,11 +72,29 @@ export function AddFood({ person, replay, online }: Props) {
   const photo = (probe.data ?? savedPhotoProbe(person.id)) !== false;
   const shown = !photo && tab === "photo" ? "search" : tab;
   const searched = lookup.variables === term ? lookup : undefined;
+  const catalogMatches =
+    catalog.data?.result === "match" ? catalog.data.foods : [];
+  const recent = todayFoods(today.data?.entries ?? []);
+  const live = [
+    ...(searched?.data ?? []),
+    ...catalogMatches,
+    ...(usual.data ?? []),
+    ...recent,
+  ];
+  const refreshTags = (food: FoodChoice) => {
+    const current = live.find(
+      (choice) =>
+        choice.reference.kind === food.reference.kind &&
+        choice.reference.id === food.reference.id &&
+        choice.can_tag_eating_out !== undefined,
+    );
+    return current ? { ...food, ...choiceTags(current) } : food;
+  };
   const choices = mergeChoices(
     matchingFoods(usualList ?? [], term),
-    catalog.data?.result === "match" ? catalog.data.foods : [],
+    catalogMatches,
     searched?.data ?? [],
-  );
+  ).map(refreshTags);
   const catalogMissed =
     term !== "" &&
     catalog.data !== undefined &&
@@ -155,10 +175,7 @@ export function AddFood({ person, replay, online }: Props) {
                       ? "offline"
                       : "loading"
               }
-              foods={mergeChoices(
-                usualList ?? [],
-                todayFoods(today.data?.entries ?? []),
-              )}
+              foods={mergeChoices(usualList ?? [], recent).map(refreshTags)}
               rows={rows}
             />
           ) : (
@@ -283,6 +300,7 @@ export function todayFoods(entries: Intake[]): FoodChoice[] {
           serving: null,
           kcal: perServing(entry.kcal),
           protein_g: perServing(entry.protein_g),
+          ...choiceTags(entry.food_choice ?? {}),
         },
       ];
     });
@@ -363,11 +381,13 @@ function FoodRow({
 }) {
   const usualServings = String(food.servings ?? 1);
   const [servings, setServings] = useState(usualServings);
+  const tag = useFoodChoiceTag(food);
   const log = useMutation({
     networkMode: "always",
-    mutationFn: () => enqueueFood(replay, person, food, servings),
+    mutationFn: () => enqueueFood(replay, person, food, servings, tag.override),
     onSuccess: () => {
       setServings(usualServings);
+      tag.setSelected(undefined);
       onLogged(food.name);
     },
   });
@@ -432,6 +452,12 @@ function FoodRow({
           Log
         </Button>
       </div>
+      <EatingOutSwitch
+        checked={tag.checked}
+        eligible={food.can_tag_eating_out === true}
+        disabled={log.isPending}
+        onChange={tag.setSelected}
+      />
       {log.isError && <p role="alert">Couldn’t log food</p>}
     </li>
   );
@@ -510,12 +536,26 @@ function NumbersForm({
   const empty = () => Object.fromEntries(nutrients.map((key) => [key, ""]));
   const [name, setName] = useState(initialName ?? "");
   const [values, setValues] = useState<Record<string, string>>(empty);
+  const [eatingOut, setEatingOut] = useState(false);
+  const [postedMenu, setPostedMenu] = useState(false);
+  const hasKcal = Boolean(values.kcal?.trim()) && Number(values.kcal) >= 0;
   const saved = initialName === undefined ? title : name;
   const save = useMutation({
     networkMode: "always",
-    mutationFn: () => enqueueNumbers(replay, person, saved, values, required),
+    mutationFn: () =>
+      enqueueNumbers(
+        replay,
+        person,
+        saved,
+        values,
+        required,
+        eatingOut,
+        hasKcal && postedMenu,
+      ),
     onSuccess: () => {
       setValues(empty());
+      setEatingOut(false);
+      setPostedMenu(false);
       done(saved.trim());
     },
   });
@@ -552,6 +592,20 @@ function NumbersForm({
             </label>
           </>
         )}
+        <EatingOutSwitch checked={eatingOut} eligible onChange={setEatingOut} />
+        <label
+          className={cn(
+            "flex items-center gap-2 text-sm",
+            !hasKcal && "invisible",
+          )}
+        >
+          <input
+            type="checkbox"
+            checked={hasKcal && postedMenu}
+            onChange={(event) => setPostedMenu(event.target.checked)}
+          />
+          Posted menu kcal
+        </label>
         <div className="grid grid-cols-2 gap-3">
           {nutrients.map((key) => {
             const [label, unit] = fieldNames[key];

@@ -5,6 +5,10 @@ import {
 } from "@tare/nutrition";
 import type { Database } from "better-sqlite3";
 import { z as zod } from "zod";
+import {
+  foodChoiceEatingOut,
+  foodChoiceFields,
+} from "../logging/eating-out.ts";
 import type { Reference } from "../logging/intake.ts";
 import { selectCachedFoodCandidates } from "../queries/select-cached-food-candidates.ts";
 import { selectOwnFoodCandidates } from "../queries/select-own-food-candidates.ts";
@@ -25,6 +29,7 @@ export const findFoodOutput = zod.strictObject({
         kind: zod.enum(["food", "source_food"]),
         id: zod.number().int().positive(),
       }),
+      ...foodChoiceFields,
       name: zod.string(),
       brand: zod.string().nullable(),
       serving: zod.strictObject({
@@ -117,6 +122,12 @@ export function findFood(
       if (!stored) throw new Error("Lookup returned an unknown food reference");
       return {
         ...stored,
+        ...foodChoiceEatingOut(
+          database,
+          personId,
+          stored.reference.kind === "food" ? stored.reference.id : null,
+          stored.reference.kind === "source_food" ? stored.reference.id : null,
+        ),
         name: record.name,
         brand: record.brand,
         serving: record.basis,

@@ -7,10 +7,14 @@ const nutrientBudget = z.object({
   budget: z.number().nullable(),
   remaining: z.number().nullable(),
 });
+
+import { eatingOutOverride, foodChoiceFields } from "./eating-out-fields.ts";
+
 export const plannedItemSchema = z.object({
   id: z.number().int().positive(),
   revision: z.number().int().positive(),
   state: z.enum(["planned", "eaten", "skipped"]),
+  ...foodChoiceFields,
   position: z.number().int().nonnegative(),
   reference: z.object({ name: z.string() }),
   servings: z.number().positive().nullable(),
@@ -61,7 +65,13 @@ export const planQuery = (person: number) => ({
   ...liveRefresh,
 });
 
-export async function actOnItem(item: PlannedItem, action: ItemAction) {
+export async function actOnItem(
+  item: PlannedItem,
+  action: ItemAction,
+  checked?: boolean,
+) {
+  const eating_out =
+    action === "skip" ? undefined : eatingOutOverride(item, checked);
   return z
     .object({
       item: z.object({
@@ -76,6 +86,7 @@ export async function actOnItem(item: PlannedItem, action: ItemAction) {
           item_id: item.id,
           revision: item.revision,
           action,
+          ...(eating_out === undefined ? {} : { eating_out }),
           mutation_id: crypto.randomUUID(),
         }),
       }),

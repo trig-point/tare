@@ -206,7 +206,19 @@ for (const mode of ["fallback", "access"] as const)
     assert.equal(before.timezone, "Asia/Dubai");
     assert.deepEqual(
       [before.day, before.entries, before.totals.kcal.total],
-      ["2025-12-31", [entry], 200],
+      [
+        "2025-12-31",
+        [
+          {
+            ...entry,
+            food_choice: {
+              eating_out_default: false,
+              can_tag_eating_out: true,
+            },
+          },
+        ],
+        200,
+      ],
     );
     assert.deepEqual((await send(member, "/api/today")).entries, []);
     assert.deepEqual(
@@ -237,6 +249,8 @@ test("food search matches part of a name in the person's own foods and cached fo
   cache.run("example-oats", "Example oats");
   const match = (kind: string, id: number, name: string, serving: unknown) => ({
     reference: { kind, id },
+    eating_out_default: false,
+    can_tag_eating_out: false,
     source: kind === "food" ? null : "off",
     name,
     brand: kind === "food" ? null : "Example brand",

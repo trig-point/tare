@@ -333,6 +333,9 @@ function EntryRow({ entry, timezone }: { entry: Intake; timezone: string }) {
     <li className={cn(row, "justify-between")}>
       <div className="grid min-w-0 gap-0.5">
         <strong className="font-medium">{entry.name ?? "Food"}</strong>
+        {entry.eating_out && (
+          <span className="text-sm text-ink-2">Eating out</span>
+        )}
         {!Number.isNaN(eaten.getTime()) && (
           <span className="text-sm text-ink-2">
             {eaten.toLocaleTimeString([], {

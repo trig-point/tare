@@ -206,9 +206,16 @@ test("a matched food logs by reference with servings", async (context) => {
   };
   for (const servings of ["", "0", "-1", "abc"])
     await assert.rejects(enqueueFood(replay, owner, food, servings));
-  await enqueueFood(replay, owner, food, "0.5");
+  await enqueueFood(
+    replay,
+    owner,
+    { ...food, eating_out_default: true, can_tag_eating_out: true },
+    "0.5",
+    false,
+  );
   const [entry] = await store.entries(owner.id);
   assert.ok(entry);
+  assert.equal(entry.body.eating_out, false);
   const response = await setup.admin.request("/api/intake", {
     method: "POST",
     body: JSON.stringify(entry.body),
@@ -229,6 +236,7 @@ function entry(id: number, fields: Partial<Intake>): Intake {
     eaten_at: `2026-11-01T0${id}:00:00.000Z`,
     provenance: "label",
     source: null,
+    eating_out: false,
     kcal_low: null,
     kcal_high: null,
     kcal: 200,

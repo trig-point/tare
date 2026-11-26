@@ -131,7 +131,9 @@ for (const mode of ["fallback", "access"] as const) {
     });
     assert.deepEqual(await read(), {
       ...before,
-      planned_items: [first],
+      planned_items: [
+        { ...first, eating_out_default: false, can_tag_eating_out: false },
+      ],
       suggested_shares: null,
     });
     assert.equal(before.budgets.status, "ready");
@@ -187,7 +189,10 @@ for (const mode of ["fallback", "access"] as const) {
     const { item: today } = await plan({ position: 0, food_id: food }, 201);
     assert.notEqual(today.id, first.id);
     assert.deepEqual(rows()[0], yesterday);
-    assert.deepEqual((await read()).planned_items, [today]);
+    const foodChoice = { eating_out_default: false, can_tag_eating_out: true };
+    assert.deepEqual((await read()).planned_items, [
+      { ...today, ...foodChoice },
+    ]);
     const foreignTemplate = await other(
       "plan/templates",
       { action: "create", name: "Other day", slots },
@@ -241,15 +246,17 @@ for (const mode of ["fallback", "access"] as const) {
     const { item: third } = await plan({ position: 0, food_id: food }, 201);
     assert.notEqual(third.id, first.id);
     await plan({ ...replace, revision: 1 }, 409, "stale_revision");
-    assert.deepEqual((await read()).planned_items, [third]);
+    assert.deepEqual((await read()).planned_items, [
+      { ...third, ...foodChoice },
+    ]);
     database
       .prepare("UPDATE planned_items SET state = 'eaten' WHERE id = ?")
       .run(third.id);
     const { item: fourth } = await plan({ position: 0, food_id: food }, 201);
     assert.notEqual(fourth.id, third.id);
     assert.deepEqual((await read()).planned_items, [
-      { ...third, state: "eaten" },
-      fourth,
+      { ...third, ...foodChoice, state: "eaten" },
+      { ...fourth, ...foodChoice },
     ]);
     database.exec(
       "DELETE FROM day_type_choices; DELETE FROM default_day_types",

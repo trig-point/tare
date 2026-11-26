@@ -13,6 +13,7 @@ import {
   changeWeight,
   enqueueWeight,
   intakeChanges,
+  intakeSchema,
   nutrients,
   readToday,
   settledSince,
@@ -317,4 +318,36 @@ test("intake changes preserve label claims and clear only exceeded calorie bound
       intakeChanges(original, { ...values, ...patch }),
       expected,
     );
+});
+
+test("intake tag bits normalize before a sparse edit", async (context) => {
+  const { entry: original } = await setup(context);
+  for (const [stored, checked] of [
+    [0, false],
+    [1, true],
+  ] as const) {
+    const entry = intakeSchema.parse({ ...original, eating_out: stored });
+    const values = Object.fromEntries(
+      nutrients.map((key) => [key, entry[key]?.toString() ?? ""]),
+    );
+    assert.equal(entry.eating_out, checked);
+    assert.deepEqual(intakeChanges(entry, values, checked), {});
+    assert.deepEqual(intakeChanges(entry, values, !checked), {
+      eating_out: !checked,
+    });
+  }
+});
+
+test("the switch blocks enabling an ineligible tag and allows clearing it", async () => {
+  const { EatingOutSwitch } = await import("../src/eating-out.tsx");
+  const markup = (checked: boolean) =>
+    renderToStaticMarkup(
+      createElement(EatingOutSwitch, {
+        checked,
+        eligible: false,
+        onChange: () => undefined,
+      }),
+    );
+  assert.match(markup(false), /<button[^>]* disabled=""/);
+  assert.doesNotMatch(markup(true), /<button[^>]* disabled=""/);
 });

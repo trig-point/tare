@@ -3,6 +3,7 @@ import type { z as zod } from "zod";
 import { writeTransaction } from "../db.ts";
 import { resolveGrocyOwner } from "../grocy/config.ts";
 import { localDay } from "../logging/day.ts";
+import { foodChoiceEatingOut } from "../logging/eating-out.ts";
 import { mealNutritionState } from "../meal-nutrition/index.ts";
 import {
   type OperationContext,
@@ -72,7 +73,16 @@ export function readPlannedItems(
   template_id: number,
 ) {
   return listPlannedItems(database, { user_id, day, template_id }).map((row) =>
-    itemView(database, row),
+    plannedItemSchema.parse({
+      ...itemView(database, row),
+      ...foodChoiceEatingOut(
+        database,
+        user_id,
+        row.food_id,
+        null,
+        row.order_meal_id !== null,
+      ),
+    }),
   );
 }
 

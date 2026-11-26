@@ -173,7 +173,10 @@ for (const mode of ["fallback", "access"] as const)
     );
     assert.deepEqual(
       (await (await admin.request("/api/today")).json()).entries,
-      [first.entry, second.entry],
+      [first.entry, second.entry].map((entry) => ({
+        ...entry,
+        food_choice: { eating_out_default: true, can_tag_eating_out: true },
+      })),
     );
     assert.throws(
       () =>

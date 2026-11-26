@@ -1,6 +1,10 @@
 import type { Database } from "better-sqlite3";
 import { z as zod } from "zod";
 import { shiftDay } from "../logging/day.ts";
+import {
+  foodChoiceEatingOut,
+  foodChoiceFields,
+} from "../logging/eating-out.ts";
 import { selectUsualFoods } from "../queries/select-usual-foods.ts";
 
 export const usualFoodsWindowDays = 30;
@@ -14,6 +18,7 @@ export const usualFoodsOutput = zod.strictObject({
         kind: zod.enum(["food", "source_food"]),
         id: zod.number().int().positive(),
       }),
+      ...foodChoiceFields,
       name: zod.string(),
       brand: zod.string().nullable(),
       times_logged: zod.number().int().positive(),
@@ -48,6 +53,12 @@ export function listUsualFoods(
         throw new Error("Usual food row has no food");
       return {
         reference: { kind: row.food_id !== null ? "food" : "source_food", id },
+        ...foodChoiceEatingOut(
+          database,
+          personId,
+          row.food_id,
+          row.source_food_id,
+        ),
         name: row.name,
         brand: row.brand,
         times_logged: row.times,
