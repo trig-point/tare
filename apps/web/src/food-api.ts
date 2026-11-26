@@ -2,6 +2,7 @@ import { z } from "zod";
 import { api, type Session } from "./api.ts";
 import { eatingOutOverride, foodChoiceFields } from "./eating-out-fields.ts";
 import type { OutboxReplay } from "./outbox-replay.ts";
+import type { Intake } from "./today-api.ts";
 
 const catalogNutrient = z
   .object({ amount: z.number().nonnegative() })
@@ -321,4 +322,31 @@ export async function enqueueNumbers(
     },
     person,
   );
+}
+
+/** Food-backed entries already loaded for today, newest first, one row per food. */
+export function todayFoods(entries: Intake[]): FoodChoice[] {
+  const foods = [...entries]
+    .sort((left, right) => right.eaten_at.localeCompare(left.eaten_at))
+    .flatMap((entry): FoodChoice[] => {
+      const id = entry.food_id ?? entry.source_food_id;
+      if (id === null || entry.name === null) return [];
+      const perServing = (value: number | null) =>
+        value === null || !entry.servings ? null : value / entry.servings;
+      return [
+        {
+          reference: {
+            kind: entry.food_id !== null ? "food" : "source_food",
+            id,
+          },
+          name: entry.name,
+          brand: null,
+          serving: null,
+          kcal: perServing(entry.kcal),
+          protein_g: perServing(entry.protein_g),
+          ...choiceTags(entry.food_choice ?? {}),
+        },
+      ];
+    });
+  return mergeChoices(foods);
 }

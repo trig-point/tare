@@ -6,7 +6,6 @@ import { EatingOutSwitch, useFoodChoiceTag } from "./eating-out.tsx";
 import {
   type CatalogResult,
   catalogQuery,
-  choiceTags,
   enqueueFood,
   enqueueNumbers,
   type FoodChoice,
@@ -15,8 +14,10 @@ import {
   mergeChoices,
   savedUsualFoods,
   searchOnline,
+  todayFoods,
   usualFoodsQuery,
 } from "./food-api.ts";
+import { useFoodChoiceTags } from "./food-choice-tags.ts";
 import type { OutboxReplay } from "./outbox-replay.ts";
 import { photoProbeQuery, savedPhotoProbe } from "./photo-api.ts";
 import { PhotoMeal } from "./photo-meal.tsx";
@@ -29,12 +30,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "./shared/ui/index.ts";
-import {
-  displayNumber,
-  type Intake,
-  nutrients,
-  todayQuery,
-} from "./today-api.ts";
+import { displayNumber, nutrients, todayQuery } from "./today-api.ts";
 
 type Props = {
   person: Session["user"];
@@ -73,7 +69,13 @@ export function AddFood({ person, replay, online }: Props) {
     },
     retry: 0,
   });
-  const barcode = useMutation({ mutationFn: lookupBarcode, retry: 0 });
+  const barcode = useMutation({
+    mutationFn: async (code: string) => {
+      const foods = await lookupBarcode(code);
+      return { foods, updatedAt: Date.now() };
+    },
+    retry: 0,
+  });
   const probe = useQuery({ ...photoProbeQuery(person.id), enabled: online });
   const photo = (probe.data ?? savedPhotoProbe(person.id)) !== false;
   const shown = !photo && tab === "photo" ? "search" : tab;
@@ -81,31 +83,18 @@ export function AddFood({ person, replay, online }: Props) {
   const catalogMatches =
     catalog.data?.result === "match" ? catalog.data.foods : [];
   const recent = todayFoods(today.data?.entries ?? []);
-  const live = [
-    {
-      foods: searched?.data?.foods ?? [],
-      updatedAt: searched?.data?.updatedAt ?? 0,
-    },
+  const refreshTags = useFoodChoiceTags(person.id, [
     { foods: catalogMatches, updatedAt: catalog.dataUpdatedAt },
     { foods: recent, updatedAt: today.dataUpdatedAt },
     { foods: usual.data ?? [], updatedAt: usual.dataUpdatedAt },
-  ]
-    .sort((left, right) => right.updatedAt - left.updatedAt)
-    .flatMap(({ foods }) => foods);
-  const refreshTags = (food: FoodChoice) => {
-    const current = live.find(
-      (choice) =>
-        choice.reference.kind === food.reference.kind &&
-        choice.reference.id === food.reference.id &&
-        choice.can_tag_eating_out !== undefined,
-    );
-    return current ? { ...food, ...choiceTags(current) } : food;
-  };
+    ...(lookup.data ? [lookup.data] : []),
+    ...(barcode.data ? [barcode.data] : []),
+  ]);
   const choices = mergeChoices(
     matchingFoods(usualList ?? [], term),
     catalogMatches,
     searched?.data?.foods ?? [],
-  ).map(refreshTags);
+  );
   const catalogMissed =
     term !== "" &&
     catalog.data !== undefined &&
@@ -119,7 +108,7 @@ export function AddFood({ person, replay, online }: Props) {
   const rows = (foods: FoodChoice[], label: string) => (
     <FoodRows
       label={label}
-      foods={foods}
+      foods={foods.map(refreshTags)}
       person={person}
       replay={replay}
       onLogged={onLogged}
@@ -186,7 +175,7 @@ export function AddFood({ person, replay, online }: Props) {
                       ? "offline"
                       : "loading"
               }
-              foods={mergeChoices(usualList ?? [], recent).map(refreshTags)}
+              foods={mergeChoices(usualList ?? [], recent)}
               rows={rows}
             />
           ) : (
@@ -235,12 +224,12 @@ export function AddFood({ person, replay, online }: Props) {
           <BarcodeScanner online={online} onCode={barcode.mutate} />
           {barcode.isPending && <RowSkeleton />}
           {barcode.isError && <p role="alert">Couldn’t look up barcode</p>}
-          {barcode.data?.length === 0 && (
+          {barcode.data?.foods.length === 0 && (
             <OnlineMiss enterManually={() => setManual("")} />
           )}
           {barcode.data &&
-            barcode.data.length > 0 &&
-            rows(barcode.data, "Barcode match")}
+            barcode.data.foods.length > 0 &&
+            rows(barcode.data.foods, "Barcode match")}
         </TabsContent>
         <TabsContent
           value="quick-add"
@@ -289,33 +278,6 @@ export function AddFood({ person, replay, online }: Props) {
       )}
     </section>
   );
-}
-
-/** Food-backed entries already loaded for today, newest first, one row per food. */
-export function todayFoods(entries: Intake[]): FoodChoice[] {
-  const foods = [...entries]
-    .sort((left, right) => right.eaten_at.localeCompare(left.eaten_at))
-    .flatMap((entry): FoodChoice[] => {
-      const id = entry.food_id ?? entry.source_food_id;
-      if (id === null || entry.name === null) return [];
-      const perServing = (value: number | null) =>
-        value === null || !entry.servings ? null : value / entry.servings;
-      return [
-        {
-          reference: {
-            kind: entry.food_id !== null ? "food" : "source_food",
-            id,
-          },
-          name: entry.name,
-          brand: null,
-          serving: null,
-          kcal: perServing(entry.kcal),
-          protein_g: perServing(entry.protein_g),
-          ...choiceTags(entry.food_choice ?? {}),
-        },
-      ];
-    });
-  return mergeChoices(foods);
 }
 
 function UsualFoods({

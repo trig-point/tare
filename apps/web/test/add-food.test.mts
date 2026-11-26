@@ -14,6 +14,7 @@ import {
   mergeChoices,
   savedUsualFoods,
   searchOnline,
+  todayFoods,
   usualFoodsQuery,
 } from "../src/food-api.ts";
 import { OutboxReplay } from "../src/outbox-replay.ts";
@@ -23,7 +24,7 @@ import "fake-indexeddb/auto";
 import { test } from "./support.mts";
 import "./tsx.mts";
 
-const { AddFood, CatalogMiss, OnlineMiss, QuickAdd, todayFoods } = await import(
+const { AddFood, CatalogMiss, OnlineMiss, QuickAdd } = await import(
   "../src/add-food.tsx"
 );
 const onlineFood = {

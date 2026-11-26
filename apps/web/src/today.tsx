@@ -14,6 +14,8 @@ import {
 } from "./body-units.ts";
 import { refreshDays } from "./days-api.ts";
 import { EatingOutSwitch } from "./eating-out.tsx";
+import { todayFoods } from "./food-api.ts";
+import { useFoodChoiceTags } from "./food-choice-tags.ts";
 import { BodyCard } from "./health.tsx";
 import type { OutboxReplay } from "./outbox-replay.ts";
 import type { QueueEntry } from "./outbox-store.ts";
@@ -55,6 +57,12 @@ export function Today({
 }) {
   const client = useQueryClient();
   const today = useQuery({ ...todayQuery(person.id), enabled: online });
+  useFoodChoiceTags(person.id, [
+    {
+      foods: todayFoods(today.data?.entries ?? []),
+      updatedAt: today.dataUpdatedAt,
+    },
+  ]);
   const questions = useQuery({
     queryKey: questionsKey(person.id),
     queryFn: ({ signal }) => readQuestions(signal),

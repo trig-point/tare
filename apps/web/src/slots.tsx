@@ -4,6 +4,7 @@ import { type ReactNode, useState } from "react";
 import { ApiError } from "./api.ts";
 import { refreshDays } from "./days-api.ts";
 import { EatingOutSwitch, useFoodChoiceTag } from "./eating-out.tsx";
+import { useFoodChoiceTags } from "./food-choice-tags.ts";
 import {
   acceptShares,
   actOnItem,
@@ -32,10 +33,18 @@ export const press =
 
 export function Slots({ person, online }: { person: number; online: boolean }) {
   const plan = useQuery({ ...planQuery(person), enabled: online });
+  const tags = useFoodChoiceTags(person, [
+    { foods: plan.data?.planned_items ?? [], updatedAt: plan.dataUpdatedAt },
+  ]);
   return (
     <SlotList
       person={person}
-      plan={plan.data}
+      plan={
+        plan.data && {
+          ...plan.data,
+          planned_items: plan.data.planned_items.map(tags),
+        }
+      }
       failed={plan.isError}
       online={online}
     />
