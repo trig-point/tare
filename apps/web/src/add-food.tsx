@@ -647,9 +647,11 @@ function NumbersForm({
                   required={needed}
                   className="numeric"
                   value={values[key]}
-                  onChange={(event) =>
-                    setValues({ ...values, [key]: event.target.value })
-                  }
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setValues({ ...values, [key]: value });
+                    if (key === "kcal" && value === "") setPostedMenu(false);
+                  }}
                 />
               </label>
             );
