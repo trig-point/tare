@@ -219,8 +219,7 @@ export function scaleQuestionKinds(clock: Clock): [string, QuestionKind][] {
               clock,
               selectScaleReading(database, {
                 client_id: question.subject_ref,
-              })?.day ??
-                scaleDay(scale_reading.measured_at, person).day,
+              })?.day ?? scaleDay(scale_reading.measured_at, person).day,
             );
           return { status: "applied", weight_logged };
         },

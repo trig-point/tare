@@ -1,4 +1,11 @@
 ALTER TABLE scale_readings ADD COLUMN day TEXT CHECK (date(day, '+0 days') IS day);
+ALTER TABLE scale_readings ADD COLUMN possible_measured_at TEXT GENERATED ALWAYS AS (
+  CASE
+    WHEN strftime('%Y-%m-%dT%H:%M:%fZ', substr(client_id, -24), '+0 seconds') = substr(client_id, -24)
+    THEN substr(client_id, -24)
+    ELSE created_at
+  END
+) VIRTUAL;
 
 UPDATE scale_readings
 SET day = (
@@ -21,16 +28,6 @@ GROUP BY subject_ref, user_id
 ON CONFLICT (client_id) DO NOTHING;
 
 CREATE INDEX scale_readings_user_day ON scale_readings (user_id, day);
-
-CREATE VIEW undated_scale_readings AS
-SELECT client_id, user_id,
-  CASE
-    WHEN strftime('%Y-%m-%dT%H:%M:%fZ', substr(client_id, -24), '+0 seconds') = substr(client_id, -24)
-    THEN substr(client_id, -24)
-    ELSE created_at
-  END AS possible_measured_at
-FROM scale_readings
-WHERE day IS NULL;
 
 CREATE TABLE first_food_times (
   user_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,

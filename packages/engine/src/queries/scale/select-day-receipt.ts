@@ -3,8 +3,8 @@ import type { Database } from "better-sqlite3";
 export type SelectDayReceiptParams = {
   user_id: number;
   day: string;
-  start: any;
-  end: any;
+  start: string;
+  end: string;
 };
 
 export type SelectDayReceiptResult = {
@@ -19,8 +19,9 @@ export function selectDayReceipt(
 	SELECT client_id FROM scale_readings
 	WHERE user_id = ? AND day = ?
 	UNION ALL
-	SELECT client_id FROM undated_scale_readings
-	WHERE user_id = ? AND possible_measured_at >= ? AND possible_measured_at < ?
+	SELECT client_id FROM scale_readings
+	WHERE user_id = ? AND day IS NULL
+	  AND possible_measured_at >= ? AND possible_measured_at < ?
 	LIMIT 1;
 	
 	`;
