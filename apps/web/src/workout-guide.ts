@@ -29,15 +29,40 @@ const today = z.object({
   kind: z.enum(["lift", "cardio", "rest"]),
   name: z.string(),
   session: z.string().nullable(),
+  where: z.string().nullable(),
+  alternates: z.array(
+    z.object({ key: z.string(), name: z.string(), where: z.string() }),
+  ),
   movements: z.array(movement),
 });
 export type ScheduledWorkout = z.infer<typeof today>;
 export type PlannedMovement = z.infer<typeof movement>;
 
-export async function readScheduledWorkout(signal: AbortSignal) {
+export async function readScheduledWorkout(
+  signal?: AbortSignal,
+  session?: string,
+) {
+  const path = session
+    ? `/api/workout-schedule/today/${encodeURIComponent(session)}`
+    : "/api/workout-schedule/today";
   return z
     .object({ today: today.nullable() })
-    .parse(await api("/api/workout-schedule/today", { signal })).today;
+    .parse(await api(path, { signal })).today;
+}
+
+export function guideChoices(workout: ScheduledWorkout) {
+  if (!workout.session || !workout.alternates.length) return [];
+  return [
+    { key: workout.session, where: workout.where ?? workout.name },
+    ...workout.alternates.map(({ key, where }) => ({ key, where })),
+  ];
+}
+
+export async function openGuideChoice(workout: ScheduledWorkout, key: string) {
+  if (key === workout.session) return workout;
+  const chosen = await readScheduledWorkout(undefined, key);
+  if (chosen?.day !== workout.day) throw new Error("Workout day changed");
+  return chosen;
 }
 
 export function opensShort(movement: PlannedMovement) {

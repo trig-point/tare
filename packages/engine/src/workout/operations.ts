@@ -11,15 +11,25 @@ import { selectWorkoutSchedule } from "../queries/workout/select-workout-schedul
 import { upsertWorkoutSchedule } from "../queries/workout/upsert-workout-schedule.ts";
 import { findMovement, type MovementCard, movementCard } from "./movements.ts";
 import {
+  chooseSession,
   movement,
   resolveToday,
   type ScheduleDocument,
   scheduleDocument,
+  sessionAlternates,
+  sessionKey,
   todayEntry,
 } from "./schedule.ts";
 
 const documentLimit = 60_000;
 const todayWorkout = todayEntry.extend({
+  alternates: zod.array(
+    zod.strictObject({
+      key: zod.string(),
+      name: zod.string(),
+      where: zod.string(),
+    }),
+  ),
   movements: zod.array(movement.extend({ card: movementCard.nullable() })),
 });
 
@@ -105,17 +115,22 @@ export const workoutOperations = [
     ...shared,
     name: "today_workout",
     description:
-      "Today's workout: the dated entry, else the weekday template, with movements. Each movement's card is its library card, null when none matches its name. today is null when no schedule is stored.",
+      "Today's workout: the dated entry, else the weekday template, with movements. Each movement's card is its library card, null when none matches its name. alternates lists the sessions that can stand in for it; pass one as session to get its movements. today is null when no schedule is stored.",
     method: "GET",
-    path: "/api/workout-schedule/today",
-    input: zod.strictObject({}),
+    path: "/api/workout-schedule/today/:session?",
+    input: zod.strictObject({ session: sessionKey.optional() }),
     output: zod.strictObject({ today: todayWorkout.nullable() }),
-    handler(_input, context) {
+    handler(input, context) {
       const person = operationPerson(context);
       return {
         status: 200,
         body: {
-          today: workoutToday(context.database, person, context.clock.now()),
+          today: workoutToday(
+            context.database,
+            person,
+            context.clock.now(),
+            input.session,
+          ),
         },
       };
     },
@@ -126,16 +141,25 @@ export function workoutToday(
   database: Database,
   person: { id: number; timezone: string; day_start_hour: number },
   now: Date,
+  session?: string,
 ) {
   const schedule = readSchedule(database, person.id);
+  if (!schedule && session !== undefined)
+    throw new OperationError(400, "session_not_scheduled");
   if (!schedule) return null;
-  const today = resolveToday(
+  const scheduled = resolveToday(
     schedule,
     localDay(now.toISOString(), person.timezone, person.day_start_hour),
   );
+  const today =
+    session === undefined
+      ? scheduled
+      : chooseSession(schedule, scheduled, session);
+  if (!today) throw new OperationError(400, "session_not_scheduled");
   const cards = new Map<string, MovementCard | null>();
   return {
     ...today,
+    alternates: sessionAlternates(schedule, scheduled),
     movements: today.movements.map((planned) => {
       const key = planned.name.trim();
       if (!cards.has(key))

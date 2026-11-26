@@ -168,7 +168,7 @@ test("registry constrains public and administrator operations and inventories ev
       const params = Object.fromEntries(
         [...operation.path.matchAll(/:(\w+)/g)].map((match) => [
           match[1],
-          "2026-01-01",
+          match[1] === "session" ? "example_session" : "2026-01-01",
         ]),
       );
       assert.deepEqual(operation.input.parse(params), params);

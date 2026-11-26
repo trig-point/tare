@@ -257,9 +257,11 @@
 .guide-tile {
   margin-bottom: var(--spacing-3);
 }
+.guide-tile,
 .guide-actions {
   flex-wrap: wrap;
 }
+.guide-tile [role="alert"],
 .guide-actions [role="alert"] {
   flex-basis: 100%;
   margin: 0;
