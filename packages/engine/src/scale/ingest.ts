@@ -1,16 +1,25 @@
+import { setTimeout as delay } from "node:timers/promises";
 import type { Database } from "better-sqlite3";
 import { z as zod } from "zod";
 import type { Person } from "../auth/middleware.ts";
 import type { ScaleConfig } from "../config.ts";
-import { scopeDatabase, type WriteScope, writeTransaction } from "../db.ts";
-import { canonicalInstant, localDay } from "../logging/day.ts";
+import {
+  afterCommit,
+  scopeDatabase,
+  type WriteScope,
+  writeTransaction,
+} from "../db.ts";
+import { canonicalInstant, personDayAt } from "../logging/day.ts";
 import { insertWeight } from "../logging/weight.ts";
+import { OperationError } from "../operations/registry.ts";
 import { insertScaleReading } from "../queries/scale/insert-scale-reading.ts";
+import { selectDayReceipt } from "../queries/scale/select-day-receipt.ts";
+import { selectPriorFood } from "../queries/scale/select-prior-food.ts";
 import { selectScaleReading } from "../queries/scale/select-scale-reading.ts";
-import { selectScaleWindow } from "../queries/scale/select-scale-window.ts";
 import { selectSubjectQuestion } from "../queries/scale/select-subject-question.ts";
 import { selectWeightsBefore } from "../queries/scale/select-weights-before.ts";
 import { selectPerson } from "../queries/select-person.ts";
+import { selectTodayWeights } from "../queries/select-today-weights.ts";
 import { selectUserByUsername } from "../queries/select-user-by-username.ts";
 import { selectWeightByClient } from "../queries/select-weight-by-client.ts";
 import { createQuestion, type QuestionKind } from "../questions/kinds.ts";
@@ -26,14 +35,15 @@ export type ScaleReading = {
 type Stored =
   | "logged"
   | "duplicate"
-  | "repeat"
   | "question_unmapped"
+  | "question_review"
   | "question_implausible";
 export type ScaleResult =
   | { status: Stored | "ignored" }
   | { status: "invalid_input" | "failed"; reason: string };
 
-const WINDOW_MS = 10 * 60 * 1000;
+// Match SQLite's normal five-second busy window without blocking the event loop.
+const RETRY_DELAYS_MS = [100, 250, 500, 1000, 1000, 1000, 1150];
 const TREND_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const MIN_KG = 20;
 const MAX_KG = 350;
@@ -95,41 +105,14 @@ function parsePayload(payload: Buffer):
   };
 }
 
-/** Runs inside the caller's transaction; used by the subscriber and by a kept question. */
-export function acceptScaleReading(
+function logScaleWeight(
   scope: WriteScope,
   person: Person,
   reading: ScaleReading,
   clock: Clock,
-): "logged" | "duplicate" | "repeat" {
-  const database = scopeDatabase(scope);
-  // The ledger outlives the weight row, so a deleted or edited weight is not re-logged on replay.
-  if (
-    selectScaleReading(database, { client_id: reading.clientId }) ||
-    selectWeightByClient(database, {
-      user_id: person.id,
-      client_id: reading.clientId,
-    })
-  )
-    return "duplicate";
-  const settle = <Status extends "logged" | "repeat">(status: Status) => {
-    insertScaleReading(database, {
-      client_id: reading.clientId,
-      user_id: person.id,
-      created_at: clock.now().toISOString(),
-    });
-    return status;
-  };
-  const instant = Date.parse(reading.measured_at);
-  if (
-    selectScaleWindow(database, {
-      user_id: person.id,
-      from: new Date(instant - WINDOW_MS).toISOString(),
-      to: new Date(instant + WINDOW_MS).toISOString(),
-    })
-  )
-    return settle("repeat");
-  insertWeight(
+  day: string,
+) {
+  return insertWeight(
     scope,
     person,
     {
@@ -140,21 +123,20 @@ export function acceptScaleReading(
       source: "scale",
     },
     clock,
-  );
-  return settle("logged");
+    day,
+  ).created;
 }
 
-function implausibility(
+function compareTrend(
   database: Database,
   person: Person,
   reading: ScaleReading,
-): string | null {
+  day: string,
+) {
   const kg = (value: number) => `${Number(value.toFixed(1))} kg`;
-  if (reading.weight_kg < MIN_KG || reading.weight_kg > MAX_KG)
-    return `is outside ${MIN_KG} to ${MAX_KG} kg`;
   const history = selectWeightsBefore(database, {
     user_id: person.id,
-    day: localDay(reading.measured_at, person.timezone, person.day_start_hour),
+    day,
     measured_at: reading.measured_at,
   });
   const instant = Date.parse(reading.measured_at);
@@ -162,10 +144,19 @@ function implausibility(
     (row) => instant - Date.parse(row.measured_at) <= TREND_MAX_AGE_MS,
   );
   const trend = weightTrend(recent).at(-1)?.trend_kg;
-  if (trend === undefined) return null;
-  return Math.abs(reading.weight_kg - trend) > MAX_TREND_GAP_KG
-    ? `is more than ${MAX_TREND_GAP_KG} kg from your trend of ${kg(trend)}`
-    : null;
+  const trendText =
+    trend === undefined ? "No recent trend." : `Trend ${kg(trend)}.`;
+  if (reading.weight_kg < MIN_KG || reading.weight_kg > MAX_KG)
+    return {
+      problem: `is outside ${MIN_KG} to ${MAX_KG} kg. ${trendText}`,
+      trendText,
+    };
+  const problem =
+    trend !== undefined &&
+    Math.abs(reading.weight_kg - trend) > MAX_TREND_GAP_KG
+      ? `is more than ${MAX_TREND_GAP_KG} kg from your trend of ${kg(trend)}.`
+      : null;
+  return { problem, trendText };
 }
 
 const localTime = (instant: string, timeZone: string) =>
@@ -191,7 +182,13 @@ export function scaleQuestionKinds(clock: Clock): [string, QuestionKind][] {
         name: "scale_implausible",
         answer: keepAnswer,
         apply(scope, question, value) {
+          if (!keepAnswer.parse(value).keep)
+            return { status: "applied", weight_logged: false };
           const database = scopeDatabase(scope);
+          const day = selectScaleReading(database, {
+            client_id: question.subject_ref,
+          })?.day;
+          if (day == null) throw new OperationError(409, "scale_day_unknown");
           const person =
             question.user_id === null
               ? null
@@ -200,14 +197,14 @@ export function scaleQuestionKinds(clock: Clock): [string, QuestionKind][] {
           const { scale_reading } = storedReading.parse(
             JSON.parse(question.answer_schema),
           );
-          if (keepAnswer.parse(value).keep)
-            acceptScaleReading(
-              scope,
-              person,
-              { ...scale_reading, clientId: question.subject_ref },
-              clock,
-            );
-          return { status: "applied" };
+          const weight_logged = logScaleWeight(
+            scope,
+            person,
+            { ...scale_reading, clientId: question.subject_ref },
+            clock,
+            day,
+          );
+          return { status: "applied", weight_logged };
         },
       },
     ],
@@ -230,6 +227,7 @@ export function createScaleSubscriber({
   users,
   questionKinds,
   clock,
+  waitForRetry = delay,
   log = console.error,
   onLogged = () => {},
 }: {
@@ -238,101 +236,157 @@ export function createScaleSubscriber({
   users: ReadonlyMap<string, number>;
   questionKinds: ReadonlyMap<string, QuestionKind>;
   clock: Clock;
+  waitForRetry?: (delayMs: number) => Promise<void>;
   log?: (code: string, detail?: string) => void;
   onLogged?: () => void;
 }) {
   const counts = new Map<string, number>();
-  const report = (
-    status: "invalid_input" | "failed",
-    reason: string,
-  ): ScaleResult => {
-    const count = (counts.get(`${status} ${reason}`) ?? 0) + 1;
-    counts.set(`${status} ${reason}`, count);
-    log(
-      status === "failed" ? "scale_reading_failed" : "scale_reading_invalid",
-      `${reason} ${count}`,
-    );
-    return { status, reason };
+  const invalid = (reason: string): ScaleResult => {
+    const count = (counts.get(reason) ?? 0) + 1;
+    counts.set(reason, count);
+    log("scale_reading_invalid", `${reason} ${count}`);
+    return { status: "invalid_input", reason };
   };
 
-  return (payload: Buffer, topic: string): ScaleResult => {
+  return async (payload: Buffer, topic: string): Promise<ScaleResult> => {
     if (topic === `${baseTopic}/status`) return { status: "ignored" };
-    if (topic === baseTopic) return report("invalid_input", "missing_slug");
+    if (topic === baseTopic) return invalid("missing_slug");
     const slug = topic.slice(baseTopic.length + 1);
     const parsed = parsePayload(payload);
-    if ("reason" in parsed) return report("invalid_input", parsed.reason);
+    if ("reason" in parsed) return invalid(parsed.reason);
     const reading = {
       ...parsed.reading,
       clientId: `scale:${slug}:${parsed.reading.measured_at}`,
     };
-    let status: Stored;
-    try {
-      status = writeTransaction(database, (scope): Stored => {
-        const scoped = scopeDatabase(scope);
-        if (
-          selectSubjectQuestion(scoped, { subject_ref: reading.clientId }) ||
-          selectScaleReading(scoped, { client_id: reading.clientId })
-        )
-          return "duplicate";
-        const userId = users.get(slug);
-        if (userId === undefined) {
-          createQuestion(
-            scoped,
-            {
-              userId: null,
-              kind: "scale_unmapped",
-              subjectRef: reading.clientId,
-              prompt: `Scale user "${slug}" has no person. Add it to TARE_SCALE_USERS to log later readings.`,
-            },
-            clock,
-            questionKinds,
-          );
-          return "question_unmapped";
-        }
-        const person = selectPerson(scoped, { id: userId });
-        if (!person) throw new Error("Mapped person missing");
-        if (
-          selectWeightByClient(scoped, {
-            user_id: person.id,
-            client_id: reading.clientId,
-          })
-        )
-          return "duplicate";
-        const problem = implausibility(scoped, person, reading);
-        if (problem) {
-          createQuestion(
-            scoped,
-            {
-              userId: person.id,
-              kind: "scale_implausible",
-              subjectRef: reading.clientId,
-              prompt: `Scale reading of ${Number(reading.weight_kg.toFixed(1))} kg at ${localTime(reading.measured_at, person.timezone)} ${problem}. Keep it?`,
-              answerSchema: {
-                ...zod.toJSONSchema(keepAnswer, {
-                  target: "draft-7",
-                  io: "input",
-                }),
-                scale_reading: {
-                  measured_at: reading.measured_at,
-                  weight_kg: reading.weight_kg,
-                  body_fat_pct: reading.body_fat_pct,
-                },
-              },
-            },
-            clock,
-            questionKinds,
-          );
-          return "question_implausible";
-        }
-        return acceptScaleReading(scope, person, reading, clock);
-      });
-    } catch (error) {
-      return report(
-        "failed",
-        error instanceof Error ? error.name : "UnknownError",
+    const ingest = (scope: WriteScope): Stored => {
+      const scoped = scopeDatabase(scope);
+      if (
+        selectSubjectQuestion(scoped, { subject_ref: reading.clientId }) ||
+        selectScaleReading(scoped, { client_id: reading.clientId })
+      )
+        return "duplicate";
+      const userId = users.get(slug);
+      if (userId === undefined) {
+        createQuestion(
+          scoped,
+          {
+            userId: null,
+            kind: "scale_unmapped",
+            subjectRef: reading.clientId,
+            prompt: `Scale user "${slug}" has no person. Add it to TARE_SCALE_USERS to log later readings.`,
+          },
+          clock,
+          questionKinds,
+        );
+        return "question_unmapped";
+      }
+      const person = selectPerson(scoped, { id: userId });
+      if (!person) throw new Error("Mapped person missing");
+      if (
+        selectWeightByClient(scoped, {
+          user_id: person.id,
+          client_id: reading.clientId,
+        })
+      )
+        return "duplicate";
+      const { day, start, end } = personDayAt(
+        reading.measured_at,
+        person.timezone,
+        person.day_start_hour,
       );
+      const ownerDay = { user_id: userId, day };
+      const bounds = {
+        start: start.toISOString(),
+        end: end.toISOString(),
+      };
+      const { problem, trendText } = compareTrend(scoped, person, reading, day);
+      const autoLog =
+        problem === null &&
+        !selectDayReceipt(scoped, {
+          ...ownerDay,
+          ...bounds,
+        }) &&
+        selectTodayWeights(scoped, ownerDay).length === 0 &&
+        !selectPriorFood(scoped, {
+          ...ownerDay,
+          ...bounds,
+          measured_at: reading.measured_at,
+        });
+      insertScaleReading(scoped, {
+        ...ownerDay,
+        client_id: reading.clientId,
+        created_at: clock.now().toISOString(),
+      });
+      if (autoLog) {
+        if (!logScaleWeight(scope, person, reading, clock, day))
+          throw new Error("Scale weight already exists");
+        afterCommit(scope, onLogged, () => log("scale_refresh_failed"));
+        return "logged";
+      }
+      const amount = Number(reading.weight_kg.toFixed(1));
+      const time = localTime(reading.measured_at, person.timezone);
+      createQuestion(
+        scoped,
+        {
+          userId: person.id,
+          kind: "scale_implausible",
+          subjectRef: reading.clientId,
+          prompt: `Scale reading of ${amount} kg at ${time}${problem ? ` ${problem}` : `. ${trendText}`} Keep it?`,
+          answerSchema: {
+            ...zod.toJSONSchema(keepAnswer, {
+              target: "draft-7",
+              io: "input",
+            }),
+            scale_reading: {
+              measured_at: reading.measured_at,
+              weight_kg: reading.weight_kg,
+              body_fat_pct: reading.body_fat_pct,
+            },
+          },
+        },
+        clock,
+        questionKinds,
+      );
+      return problem ? "question_implausible" : "question_review";
+    };
+
+    const failed = (error: unknown): ScaleResult => {
+      const reason =
+        errorCode(error) ??
+        (error instanceof Error ? error.name : "UnknownError");
+      log(
+        "scale_reading_failed",
+        `${reason} ${reading.weight_kg} kg at ${reading.measured_at}`,
+      );
+      return { status: "failed", reason };
+    };
+    for (let attempt = 0; ; attempt++) {
+      const retryDelay = RETRY_DELAYS_MS[attempt];
+      try {
+        return {
+          status: writeTransaction(database, ingest, { noBusyWait: true }),
+        };
+      } catch (error) {
+        const code = errorCode(error)?.split("_", 2).join("_");
+        if (
+          retryDelay === undefined ||
+          (code !== "SQLITE_BUSY" && code !== "SQLITE_LOCKED")
+        )
+          return failed(error);
+      }
+      try {
+        await waitForRetry(retryDelay);
+      } catch (error) {
+        return failed(error);
+      }
     }
-    if (status === "logged") onLogged();
-    return { status };
   };
+}
+
+function errorCode(error: unknown) {
+  return error instanceof Error &&
+    "code" in error &&
+    typeof error.code === "string"
+    ? error.code
+    : undefined;
 }

@@ -39,7 +39,7 @@ export type HomeAssistantPublisher = ReturnType<
 const errorName = (error: unknown) =>
   error instanceof Error ? error.name : "UnknownError";
 
-export type MessageHandler = (payload: Buffer, topic: string) => void;
+export type MessageHandler = (payload: Buffer, topic: string) => unknown;
 
 function topicMatches(filter: string, topic: string) {
   const filterLevels = filter.split("/");
@@ -81,6 +81,7 @@ export function createHomeAssistantPublisher({
   let stopped = false;
   let outage = false;
   let stopping: Promise<void> | undefined;
+  const deliveries = new Set<Promise<void>>();
 
   const client: MqttClient = connect(config.url, {
     clientId: `tare-${install}`,
@@ -104,18 +105,46 @@ export function createHomeAssistantPublisher({
   });
   client.on("close", markOffline);
   client.on("error", markOffline);
-  client.on("message", (topic, payload) => {
-    if (topic === config.statusTopic) {
-      if (payload.toString() === "online") refreshAll(true);
-    } else
-      for (const [filter, handler] of handlers)
-        if (topicMatches(filter, topic))
-          try {
-            handler(payload, topic);
-          } catch (error) {
-            log("mqtt_handler_failed", errorName(error));
-          }
-  });
+  async function handleDelivery(topic: string, payload: Buffer) {
+    if (topic === config.statusTopic && payload.toString() === "online")
+      refreshAll(true);
+    for (const [filter, handler] of handlers) {
+      if (!topicMatches(filter, topic)) continue;
+      try {
+        await handler(payload, topic);
+      } catch (error) {
+        log("mqtt_handler_failed", errorName(error));
+      }
+    }
+  }
+
+  // Packet IDs can be reused after a reconnect.
+  client.handleMessage = ({ topic, payload }, acknowledge) => {
+    const connection = client.stream;
+    const acknowledgeOnConnection = () => {
+      if (
+        client.connected &&
+        client.stream === connection &&
+        !connection.destroyed
+      )
+        acknowledge();
+    };
+    if (stopped) {
+      log("mqtt_handler_failed", "mqtt_stopping");
+      acknowledge(new Error("mqtt_stopping"));
+      return;
+    }
+    const delivery = handleDelivery(
+      topic,
+      typeof payload === "string" ? Buffer.from(payload) : payload,
+    )
+      .then(acknowledgeOnConnection, (error: unknown) => {
+        log("mqtt_handler_failed", errorName(error));
+        acknowledgeOnConnection();
+      })
+      .finally(() => deliveries.delete(delivery));
+    deliveries.add(delivery);
+  };
 
   function refreshAll(replayRequested = false) {
     if (stopped) return;
@@ -272,6 +301,7 @@ export function createHomeAssistantPublisher({
     stop() {
       stopping ??= (async () => {
         stopped = true;
+        await Promise.all(deliveries);
         for (const timer of timers.values()) timer.cancel();
         timers.clear();
         let confirmed = false;

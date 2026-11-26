@@ -5,7 +5,9 @@ import { OperationError } from "../operations/registry.ts";
 import { insertQuestion } from "../queries/insert-question.ts";
 import type { SelectQuestionResult } from "../queries/select-question.ts";
 
-export type ApplyOutcome = { status: "applied" } | { status: "superseded" };
+export type ApplyOutcome =
+  | { status: "applied"; weight_logged?: boolean }
+  | { status: "superseded" };
 export interface QuestionKind {
   name: string;
   answer: zod.ZodType;
