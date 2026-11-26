@@ -711,3 +711,41 @@ test("a BUSY retry cannot acknowledge a reused packet ID on a replacement connec
   assert.equal(scale.weights().length, 1);
   assert.equal(scale.questions().length, 1);
 });
+
+test("MQTT acknowledges a rejected handler after logging the failure", async (context) => {
+  const { broker, producer, url } = await brokerFixture(context);
+  const connection = openDatabase(":memory:");
+  const logs: string[] = [];
+  const sentAcks: string[][] = [];
+  const steps = new EventEmitter();
+  const publisher = createHomeAssistantPublisher({
+    database: connection.database,
+    config: load({ TARE_MQTT_URL: url }).mqtt as MqttConfig,
+    log(code, detail) {
+      logs.push(`${code} ${detail}`);
+      if (code === "mqtt_handler_failed") steps.emit("failure");
+    },
+    clientOptions: {
+      log(format, packet) {
+        if (format === "_writePacket :: packet: %O" && packet.cmd === "puback")
+          sentAcks.push([...logs]);
+      },
+    },
+  });
+  context.after(async () => {
+    await publisher.stop();
+    connection.close();
+  });
+  const topic = `${BASE}/alex`;
+  const subscribed = once(broker, "subscribe");
+  publisher.subscribe(topic, async () => {
+    throw new Error("Example terminal failure");
+  });
+  await subscribed;
+  const failed = once(steps, "failure");
+  const acknowledged = once(broker, "ack");
+  await producer.publishAsync(topic, "example", { qos: 1 });
+  await failed;
+  assert.deepEqual(sentAcks, [["mqtt_handler_failed Error"]]);
+  await acknowledged;
+});

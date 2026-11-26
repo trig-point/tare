@@ -116,32 +116,28 @@ export function createHomeAssistantPublisher({
 
   // Packet IDs can be reused after a reconnect.
   client.handleMessage = ({ topic, payload }, acknowledge) => {
-    if (stopped) {
-      acknowledge(new Error("mqtt_stopping"));
-      return;
-    }
     const connection = client.stream;
-    const acknowledgeOnConnection = (error?: Error) => {
+    const acknowledgeOnConnection = () => {
       if (
         client.connected &&
         client.stream === connection &&
         !connection.destroyed
       )
-        acknowledge(error);
+        acknowledge();
     };
+    if (stopped) {
+      log("mqtt_handler_failed", "mqtt_stopping");
+      acknowledgeOnConnection();
+      return;
+    }
     const delivery = handleDelivery(
       topic,
       typeof payload === "string" ? Buffer.from(payload) : payload,
     )
-      .then(
-        () => acknowledgeOnConnection(),
-        (error: unknown) => {
-          log("mqtt_handler_failed", errorName(error));
-          acknowledgeOnConnection(
-            error instanceof Error ? error : new Error("mqtt_handler_failed"),
-          );
-        },
-      )
+      .then(acknowledgeOnConnection, (error: unknown) => {
+        log("mqtt_handler_failed", errorName(error));
+        acknowledgeOnConnection();
+      })
       .finally(() => deliveries.delete(delivery));
     deliveries.add(delivery);
   };
