@@ -11,6 +11,7 @@ import {
   type SignOffValues,
   signOffDay,
   signOffValues,
+  skipDay,
   unsignedKey,
 } from "./days-api.ts";
 import { Button, cn, Textarea } from "./shared/ui/index.ts";
@@ -42,6 +43,12 @@ export function DaySignOff({
   online: boolean;
 }) {
   const [open, setOpen] = useState<string | null>(null);
+  const client = useQueryClient();
+  const skip = useMutation({
+    mutationFn: skipDay,
+    onSuccess: () =>
+      client.invalidateQueries({ queryKey: unsignedKey(person) }),
+  });
   const unsigned = useQuery({
     queryKey: unsignedKey(person),
     queryFn: ({ signal }) => readUnsignedDays(signal),
@@ -91,11 +98,18 @@ export function DaySignOff({
               Review today
             </Button>
           </div>
+          {skip.isError && (
+            <p role="alert" className="m-0 text-needs-human">
+              Couldn’t skip day
+            </p>
+          )}
           <UnsignedDays
             days={unsigned.data}
             failed={unsigned.isError}
             online={online}
             open={setOpen}
+            skip={skip.mutate}
+            skipping={skip.isPending}
           />
         </div>
       )}
@@ -108,11 +122,15 @@ export function UnsignedDays({
   failed,
   online,
   open,
+  skip,
+  skipping,
 }: {
   days: DayMetadata[] | undefined;
   failed: boolean;
   online: boolean;
   open: (day: string) => void;
+  skip: (day: string) => void;
+  skipping: boolean;
 }) {
   const heading = (
     <h3 className="m-0 flex items-baseline justify-between text-base font-semibold">
@@ -148,7 +166,7 @@ export function UnsignedDays({
     return (
       <div className="grid gap-2">
         {heading}
-        <p className={cn(hint, "m-0")}>All past days signed off</p>
+        <p className={cn(hint, "m-0")}>No past days to review</p>
       </div>
     );
   return (
@@ -170,6 +188,17 @@ export function UnsignedDays({
               onClick={() => open(entry.day)}
             >
               Review
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className={cn(press, "min-h-9 px-4")}
+              aria-label={`Skip ${entry.day}`}
+              disabled={!online || skipping}
+              onClick={() => skip(entry.day)}
+            >
+              Skip
             </Button>
           </li>
         ))}

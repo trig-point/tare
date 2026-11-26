@@ -44,6 +44,36 @@ const log = (person: Person, client_id: string, date = day) =>
     eaten_at: `${date}T12:00:00.000Z`,
   });
 
+test("skipping hides a past day until sign-off and preserves its entries", async (context) => {
+  const { admin, database } = await twoUsers(context, "fallback");
+  const stored = () =>
+    database
+      .prepare("SELECT skipped_at FROM days WHERE user_id = ? AND day = ?")
+      .pluck()
+      .get(admin.user.id, day);
+  const today = await admin.request("/api/days/skip", {
+    method: "POST",
+    body: JSON.stringify({ day: "2026-01-01" }),
+  });
+  assert.equal(today.status, 400);
+  assert.deepEqual(await today.json(), { error: { code: "day_not_past" } });
+  const skip = () => send(admin, "/api/days/skip", { day });
+  assert.deepEqual(await skip(), { skipped: false });
+  const logged = await log(admin, "skip");
+  assert.equal((await send(admin, "/api/days/unsigned")).days[0].day, day);
+  assert.deepEqual(await skip(), { skipped: true });
+  assert.deepEqual((await send(admin, "/api/days/unsigned")).days, []);
+  const ledger = await read(admin);
+  assert.deepEqual(ledger.entries, [logged.entry]);
+  assert.equal(ledger.signed_off_at, null);
+  assert.equal(stored(), "2026-01-01T00:00:00.000Z");
+  const signed = await sign(admin);
+  assert.equal(stored(), null);
+  assert.deepEqual(await skip(), { skipped: false });
+  assert.equal(stored(), null);
+  assert.equal((await read(admin)).signed_off_at, signed.signed_off_at);
+});
+
 test("browser sign-off preserves, clears and replaces fields; reads and lists belong to the caller", async (context) => {
   const setup = await twoUsers(context, "fallback");
   const { admin, member } = setup;
@@ -133,7 +163,7 @@ test("browser sign-off preserves, clears and replaces fields; reads and lists be
     verifyPassword: async () => false,
     signInLimiter: { waiting: 0 },
   };
-  for (const name of ["sign_off_day", "add_day_note", "read_day"]) {
+  for (const name of ["sign_off_day", "skip_day", "add_day_note", "read_day"]) {
     const operation = operations.find((item) => item.name === name);
     assert.ok(operation);
     for (const invalid of ["2026-02-30", "unsigned", ""])
@@ -151,6 +181,8 @@ test("browser sign-off preserves, clears and replaces fields; reads and lists be
       );
   }
   for (const [path, input, code] of [
+    ["skip", {}, "invalid_request"],
+    ["skip", { day: future }, "day_not_past"],
     ["sign-off", {}, "invalid_request"],
     ["sign-off", { day, hunger: 0 }, "invalid_request"],
     ["sign-off", { day, hunger: 6 }, "invalid_request"],

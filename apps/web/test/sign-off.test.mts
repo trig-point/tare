@@ -15,6 +15,7 @@ import {
   readUnsignedDays,
   signOffDay,
   signOffValues,
+  skipDay,
 } from "../src/days-api.ts";
 import { test } from "./support.mts";
 import "./tsx.mts";
@@ -110,9 +111,11 @@ test("unsigned days are listed and reviewed in turn", async (context) => {
         failed: false,
         online: true,
         open: () => {},
+        skip: () => {},
+        skipping: false,
       }),
     ),
-    /All past days signed off/,
+    /No past days to review/,
   );
   for (const day of ["2025-12-28", "2025-12-29", "2025-12-30"])
     await eat(day, "Example rice");
@@ -128,9 +131,12 @@ test("unsigned days are listed and reviewed in turn", async (context) => {
       failed: false,
       online: true,
       open: () => {},
+      skip: () => {},
+      skipping: false,
     }),
   );
   assert.equal(list.match(/aria-label="Review 2025-12-\d\d"/g)?.length, 3);
+  assert.equal(list.match(/aria-label="Skip 2025-12-\d\d"/g)?.length, 3);
   const next = nextUnsignedDay(days, "2025-12-30");
   assert.equal(next, "2025-12-29");
   assert.match(await review(person, "2025-12-30", next), /Next day/);
@@ -146,6 +152,11 @@ test("unsigned days are listed and reviewed in turn", async (context) => {
   const last = nextUnsignedDay(remaining, "2025-12-28");
   assert.equal(last, null);
   assert.doesNotMatch(await review(person, "2025-12-28", last), /Next day/);
+  assert.deepEqual(await skipDay("2025-12-28"), { skipped: true });
+  assert.deepEqual(
+    (await readUnsignedDays(signal)).map((entry) => entry.day),
+    ["2025-12-29"],
+  );
 });
 
 test("imported days are listed until signed off", async (context) => {

@@ -19,7 +19,7 @@ export function selectUnsignedDays(
 ): SelectUnsignedDaysResult[] {
   const sql = `
 	SELECT day, signed_off_at, hunger, fullness, notes FROM days
-	WHERE user_id = ? AND signed_off_at IS NULL AND day < ?
+	WHERE user_id = ? AND signed_off_at IS NULL AND skipped_at IS NULL AND day < ?
 	ORDER BY day DESC LIMIT 90;
 	
 	`;
