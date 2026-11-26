@@ -120,7 +120,7 @@ for (const kind of ["intake", "weight", "days"] as const)
         { packaged_food: true },
       ]) {
         const result = await run(kind, [{ ...intake, ...field }]);
-        assert.deepEqual(result.errors, [{ line: 1, code: "invalid_row" }]);
+        assert.deepEqual(result?.errors, [{ line: 1, code: "invalid_row" }]);
       }
       const stored = selectIntakeByClient(database, {
         user_id: 1,

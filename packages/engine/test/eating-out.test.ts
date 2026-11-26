@@ -192,15 +192,13 @@ test("package and label identity excludes direct and copied foods and survives a
       database
         .prepare("UPDATE foods SET provenance = 'label' WHERE id = ?")
         .run(owned.id);
-      await log(
-        {
-          food_id: owned.id,
-          servings: 1,
-          client_id: "copied-label",
-          eating_out: true,
-        },
-        400,
-      );
+      const args = {
+        food_id: owned.id,
+        servings: 1,
+        client_id: "copied-label",
+        eating_out: true,
+      };
+      await log(args, 400);
     }
   }
 
@@ -219,11 +217,11 @@ test("package and label identity excludes direct and copied foods and survives a
   }
   const packageClaim = { ...adhoc, packaged_food: true, kcal_basis: "menu" };
   await log({ ...packageClaim, client_id: "impossible-menu" }, 400);
+  const label = { provenance: "label", source: "Example label" };
   const { entry: legacyLabel } = await log({
     ...adhoc,
+    ...label,
     client_id: "legacy-label",
-    provenance: "label",
-    source: "Example label",
   });
   database
     .prepare("UPDATE intake_entries SET kcal_basis = 'legacy' WHERE id = ?")
@@ -252,11 +250,7 @@ test("package and label identity excludes direct and copied foods and survives a
   assert.equal(corrected.kcal_basis, "menu");
   const { entry: macros } = await patch(manual.id, { protein_g: 5 });
   assert.deepEqual([macros.kcal_basis, macros.eating_out], ["menu", 1]);
-  const labelClaim = {
-    protein_g: 6,
-    provenance: "label",
-    source: "Example label",
-  };
+  const labelClaim = { ...label, protein_g: 6 };
   await patch(manual.id, { ...labelClaim, eating_out: true }, 400);
   const cleared = await patch(manual.id, { eating_out: false });
   assert.equal(cleared.entry.kcal_basis, "menu");
