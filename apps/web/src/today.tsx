@@ -13,6 +13,7 @@ import {
   weightUnit,
 } from "./body-units.ts";
 import { refreshDays } from "./days-api.ts";
+import { EatingOutSwitch } from "./eating-out.tsx";
 import { BodyCard } from "./health.tsx";
 import type { OutboxReplay } from "./outbox-replay.ts";
 import type { QueueEntry } from "./outbox-store.ts";
@@ -28,6 +29,7 @@ import {
   displayNumber,
   type Intake,
   intakeChanges,
+  intakeTagChanges,
   nutrientLabels,
   nutrients,
   refreshToday,
@@ -485,6 +487,7 @@ function IntakeEntry({
         <span className={meta}>
           {timeOf(entry.eaten_at, timezone)} · {entry.provenance}
           {entry.source && ` · ${sourceName(entry.source)}`}
+          {entry.eating_out && " · Eating out"}
         </span>
       </div>
       <div className="numeric text-right whitespace-nowrap">
@@ -580,27 +583,43 @@ function IntakeForm({
     ),
   );
   const [servings, setServings] = useState(String(original.servings ?? 1));
+  const servingsChanged = Number(servings) !== original.servings;
+  const [eatingOut, setEatingOut] = useState(original.eating_out);
+  const [postedMenu, setPostedMenu] = useState(original.kcal_basis === "menu");
+  const canSetMenu =
+    !reference && entry.can_tag_eating_out === true && values.kcal !== "";
   return (
     <form
       onSubmit={(event) => {
         event.preventDefault();
         const changes = reference
-          ? Number(servings) === original.servings
-            ? {}
-            : { servings: Number(servings) }
-          : intakeChanges(original, values);
+          ? {
+              ...intakeTagChanges(original, eatingOut),
+              ...(servingsChanged ? { servings: Number(servings) } : {}),
+            }
+          : intakeChanges(
+              original,
+              values,
+              eatingOut,
+              canSetMenu ? postedMenu : undefined,
+            );
         if (Object.keys(changes).length === 0) cancel();
         else save(changes);
       }}
     >
       <fieldset disabled={disabled}>
         <legend>Edit {entry.name ?? "food"}</legend>
+        <EatingOutSwitch
+          checked={eatingOut}
+          eligible={entry.can_tag_eating_out === true}
+          onChange={setEatingOut}
+        />
         {reference ? (
           <label>
             Servings
             <input
               type="number"
-              min="0.01"
+              min={servingsChanged ? "0.01" : undefined}
               step="any"
               required
               value={servings}
@@ -622,6 +641,23 @@ function IntakeForm({
               />
             </label>
           ))
+        )}
+        {!reference && (
+          <label
+            className={cn(
+              "flex items-center gap-2 text-sm",
+              !canSetMenu && "invisible",
+            )}
+          >
+            <input
+              type="checkbox"
+              data-slot="checkbox"
+              className="size-4 shrink-0 accent-accent"
+              checked={canSetMenu && postedMenu}
+              onChange={(event) => setPostedMenu(event.target.checked)}
+            />
+            Posted menu kcal
+          </label>
         )}
       </fieldset>
       <div className="flex gap-2">

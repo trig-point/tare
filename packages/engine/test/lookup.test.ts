@@ -202,10 +202,25 @@ test("HTTP skips USDA without a key and migration backfills OFF", async (context
     body: JSON.stringify({ barcode }),
   });
   assert.equal(response.status, 200);
-  assert.deepEqual((await response.json()).sources, {
-    usda: "skipped",
-    off: "ok",
+  const {
+    foods: [choice],
+    sources,
+  } = await response.json();
+  assert.deepEqual(sources, { usda: "skipped", off: "ok" });
+  const logged = await setup.app.request("/api/intake", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      client_id: "barcode-choice",
+      source_food_id: choice.source_food_id,
+      servings: 1,
+    }),
   });
+  assert.equal(logged.status, 201);
+  const { entry } = await logged.json();
+  assert.equal(choice.eating_out_default, entry.eating_out === 1);
+  assert.equal(choice.can_tag_eating_out, entry.can_tag_eating_out);
+  assert.equal(choice.can_tag_eating_out, false);
   assert.deepEqual(peer.calls, ["off"]);
   const oversized = await setup.app.request("/api/lookup/search", {
     method: "POST",

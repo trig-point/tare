@@ -1,7 +1,8 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Fragment, type ReactNode, useMemo, useState } from "react";
 import type { Session } from "./api.ts";
 import { BarcodeScanner } from "./barcode-scan.tsx";
+import { EatingOutSwitch, useFoodChoiceTag } from "./eating-out.tsx";
 import {
   type CatalogResult,
   catalogQuery,
@@ -13,8 +14,13 @@ import {
   mergeChoices,
   savedUsualFoods,
   searchOnline,
+  todayFoods,
   usualFoodsQuery,
 } from "./food-api.ts";
+import {
+  rememberFoodChoiceTags,
+  useFoodChoiceTags,
+} from "./food-choice-tags.ts";
 import type { OutboxReplay } from "./outbox-replay.ts";
 import { photoProbeQuery, savedPhotoProbe } from "./photo-api.ts";
 import { PhotoMeal } from "./photo-meal.tsx";
@@ -27,12 +33,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "./shared/ui/index.ts";
-import {
-  displayNumber,
-  type Intake,
-  nutrients,
-  todayQuery,
-} from "./today-api.ts";
+import { displayNumber, nutrients, todayQuery } from "./today-api.ts";
 
 type Props = {
   person: Session["user"];
@@ -53,6 +54,7 @@ export function AddFood({ person, replay, online }: Props) {
   const [manual, setManual] = useState<string | null>(null);
   const [logged, setLogged] = useState("");
   const term = name.trim();
+  const client = useQueryClient();
   const today = useQuery({ ...todayQuery(person.id), enabled: online });
   const usual = useQuery({ ...usualFoodsQuery(person.id), enabled: online });
   const saved = useMemo(
@@ -64,15 +66,33 @@ export function AddFood({ person, replay, online }: Props) {
     ...catalogQuery(person.id, name),
     enabled: online && term !== "",
   });
-  const lookup = useMutation({ mutationFn: searchOnline, retry: 0 });
-  const barcode = useMutation({ mutationFn: lookupBarcode, retry: 0 });
+  const lookup = useMutation({
+    mutationFn: async (name: string) => {
+      const foods = await searchOnline(name);
+      rememberFoodChoiceTags(client, person.id, foods);
+      return foods;
+    },
+    retry: 0,
+  });
+  const barcode = useMutation({
+    mutationFn: async (code: string) => {
+      const foods = await lookupBarcode(code);
+      rememberFoodChoiceTags(client, person.id, foods);
+      return foods;
+    },
+    retry: 0,
+  });
   const probe = useQuery({ ...photoProbeQuery(person.id), enabled: online });
   const photo = (probe.data ?? savedPhotoProbe(person.id)) !== false;
   const shown = !photo && tab === "photo" ? "search" : tab;
   const searched = lookup.variables === term ? lookup : undefined;
+  const catalogMatches =
+    catalog.data?.result === "match" ? catalog.data.foods : [];
+  const recent = todayFoods(today.data?.entries ?? []);
+  const refreshTags = useFoodChoiceTags(person.id);
   const choices = mergeChoices(
     matchingFoods(usualList ?? [], term),
-    catalog.data?.result === "match" ? catalog.data.foods : [],
+    catalogMatches,
     searched?.data ?? [],
   );
   const catalogMissed =
@@ -88,7 +108,7 @@ export function AddFood({ person, replay, online }: Props) {
   const rows = (foods: FoodChoice[], label: string) => (
     <FoodRows
       label={label}
-      foods={foods}
+      foods={foods.map(refreshTags)}
       person={person}
       replay={replay}
       onLogged={onLogged}
@@ -155,10 +175,7 @@ export function AddFood({ person, replay, online }: Props) {
                       ? "offline"
                       : "loading"
               }
-              foods={mergeChoices(
-                usualList ?? [],
-                todayFoods(today.data?.entries ?? []),
-              )}
+              foods={mergeChoices(usualList ?? [], recent)}
               rows={rows}
             />
           ) : (
@@ -263,32 +280,6 @@ export function AddFood({ person, replay, online }: Props) {
   );
 }
 
-/** Food-backed entries already loaded for today, newest first, one row per food. */
-export function todayFoods(entries: Intake[]): FoodChoice[] {
-  const foods = [...entries]
-    .sort((left, right) => right.eaten_at.localeCompare(left.eaten_at))
-    .flatMap((entry): FoodChoice[] => {
-      const id = entry.food_id ?? entry.source_food_id;
-      if (id === null || entry.name === null) return [];
-      const perServing = (value: number | null) =>
-        value === null || !entry.servings ? null : value / entry.servings;
-      return [
-        {
-          reference: {
-            kind: entry.food_id !== null ? "food" : "source_food",
-            id,
-          },
-          name: entry.name,
-          brand: null,
-          serving: null,
-          kcal: perServing(entry.kcal),
-          protein_g: perServing(entry.protein_g),
-        },
-      ];
-    });
-  return mergeChoices(foods);
-}
-
 function UsualFoods({
   state,
   foods,
@@ -363,11 +354,13 @@ function FoodRow({
 }) {
   const usualServings = String(food.servings ?? 1);
   const [servings, setServings] = useState(usualServings);
+  const tag = useFoodChoiceTag(food);
   const log = useMutation({
     networkMode: "always",
-    mutationFn: () => enqueueFood(replay, person, food, servings),
+    mutationFn: () => enqueueFood(replay, person, food, servings, tag.override),
     onSuccess: () => {
       setServings(usualServings);
+      tag.setSelected(undefined);
       onLogged(food.name);
     },
   });
@@ -432,6 +425,12 @@ function FoodRow({
           Log
         </Button>
       </div>
+      <EatingOutSwitch
+        checked={tag.checked}
+        eligible={food.can_tag_eating_out === true}
+        disabled={log.isPending}
+        onChange={tag.setSelected}
+      />
       {log.isError && <p role="alert">Couldn’t log food</p>}
     </li>
   );
@@ -510,12 +509,26 @@ function NumbersForm({
   const empty = () => Object.fromEntries(nutrients.map((key) => [key, ""]));
   const [name, setName] = useState(initialName ?? "");
   const [values, setValues] = useState<Record<string, string>>(empty);
+  const [eatingOut, setEatingOut] = useState(false);
+  const [postedMenu, setPostedMenu] = useState(false);
+  const hasKcal = Boolean(values.kcal?.trim()) && Number(values.kcal) >= 0;
   const saved = initialName === undefined ? title : name;
   const save = useMutation({
     networkMode: "always",
-    mutationFn: () => enqueueNumbers(replay, person, saved, values, required),
+    mutationFn: () =>
+      enqueueNumbers(
+        replay,
+        person,
+        saved,
+        values,
+        required,
+        eatingOut,
+        hasKcal && postedMenu,
+      ),
     onSuccess: () => {
       setValues(empty());
+      setEatingOut(false);
+      setPostedMenu(false);
       done(saved.trim());
     },
   });
@@ -552,6 +565,22 @@ function NumbersForm({
             </label>
           </>
         )}
+        <EatingOutSwitch checked={eatingOut} eligible onChange={setEatingOut} />
+        <label
+          className={cn(
+            "flex items-center gap-2 text-sm",
+            !hasKcal && "invisible",
+          )}
+        >
+          <input
+            type="checkbox"
+            data-slot="checkbox"
+            className="size-4 shrink-0 accent-accent"
+            checked={hasKcal && postedMenu}
+            onChange={(event) => setPostedMenu(event.target.checked)}
+          />
+          Posted menu kcal
+        </label>
         <div className="grid grid-cols-2 gap-3">
           {nutrients.map((key) => {
             const [label, unit] = fieldNames[key];
@@ -580,9 +609,11 @@ function NumbersForm({
                   required={needed}
                   className="numeric"
                   value={values[key]}
-                  onChange={(event) =>
-                    setValues({ ...values, [key]: event.target.value })
-                  }
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setValues({ ...values, [key]: value });
+                    if (key === "kcal" && value === "") setPostedMenu(false);
+                  }}
                 />
               </label>
             );

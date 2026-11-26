@@ -62,6 +62,8 @@ export function editorPatch(
       } else patch[name] = JSON.parse(value);
     }
   }
+  if (patch.kcal == null && patch.kcal_basis === "menu")
+    patch.kcal_basis = undefined;
   return patch;
 }
 

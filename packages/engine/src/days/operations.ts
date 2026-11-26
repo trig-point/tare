@@ -1,6 +1,10 @@
 import { z as zod } from "zod";
 import { localDay } from "../logging/day.ts";
-import { weightRow } from "../logging/schemas.ts";
+import {
+  foodChoiceEatingOut,
+  foodChoiceFields,
+} from "../logging/eating-out.ts";
+import { intakeReadRow, weightRow } from "../logging/schemas.ts";
 import { doseSchema, readDayDoses } from "../medications/read.ts";
 import { defineOperation, operationPerson } from "../operations/registry.ts";
 import { searchOwnFoods } from "../queries/search-own-foods.ts";
@@ -26,6 +30,11 @@ export const dayReadOperations = [
     path: "/api/today",
     input: zod.strictObject({}),
     output: ledgerSchema.extend({
+      entries: zod.array(
+        intakeReadRow.extend({
+          food_choice: zod.object(foodChoiceFields).optional(),
+        }),
+      ),
       doses: zod.array(doseSchema),
       weights: zod.array(weightRow),
       timezone: zod.string(),
@@ -50,6 +59,15 @@ export const dayReadOperations = [
         status: 200,
         body: {
           ...ledger,
+          entries: ledger.entries.map((entry) => ({
+            ...entry,
+            food_choice: foodChoiceEatingOut(
+              context.database,
+              person.id,
+              entry.food_id,
+              entry.source_food_id,
+            ),
+          })),
           doses: readDayDoses(context.database, person, day, now.toISOString()),
           timezone: person.timezone,
           weights: selectTodayWeights(context.database, {
@@ -120,6 +138,7 @@ export const dayReadOperations = [
             kind: zod.enum(["food", "source_food"]),
             id: zod.number().int().positive(),
           }),
+          ...foodChoiceFields,
           source: zod.enum(["usda", "off"]).nullable(),
           name: zod.string(),
           brand: zod.string().nullable(),
@@ -131,11 +150,13 @@ export const dayReadOperations = [
       const pattern = input.name.replace(/[!%_]/g, "!$&");
       const serving = (size: number | null, unit: string | null) =>
         size === null ? null : `${size} ${unit ?? ""}`.trim();
+      const person = operationPerson(context);
       const own = searchOwnFoods(context.database, {
-        user_id: operationPerson(context).id,
+        user_id: person.id,
         pattern,
       }).map((food) => ({
         reference: { kind: "food" as const, id: food.id },
+        ...foodChoiceEatingOut(context.database, person.id, food.id, null),
         source: null,
         name: food.name,
         brand: null,
@@ -144,6 +165,7 @@ export const dayReadOperations = [
       const cached = searchSourceFoods(context.database, { pattern }).map(
         (food) => ({
           reference: { kind: "source_food" as const, id: food.id },
+          ...foodChoiceEatingOut(context.database, person.id, null, food.id),
           source: food.source,
           name: food.name,
           brand: food.brand,

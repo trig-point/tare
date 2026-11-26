@@ -3,7 +3,9 @@ import { z } from "zod";
 import type { Session } from "./api.ts";
 import { api, liveRefresh } from "./api.ts";
 import { type BodyUnits, weightToKg } from "./body-units.ts";
-import { usualFoodsQuery } from "./food-api.ts";
+import { foodChoiceFields } from "./eating-out-fields.ts";
+import { todayFoods, usualFoodsQuery } from "./food-api.ts";
+import { rememberFoodChoiceTags } from "./food-choice-tags.ts";
 import type { OutboxReplay, QueueSnapshot } from "./outbox-replay.ts";
 import { planKey } from "./plan-api.ts";
 
@@ -37,6 +39,13 @@ export const intakeSchema = z.object({
   eaten_at: z.string(),
   provenance: z.enum(["verified", "label", "estimated"]),
   source: z.string().nullable(),
+  eating_out: z
+    .union([z.literal(0), z.literal(1)])
+    .optional()
+    .transform((value) => value === 1),
+  can_tag_eating_out: z.boolean().optional(),
+  food_choice: z.object(foodChoiceFields).optional(),
+  kcal_basis: z.enum(["legacy", "menu", "label", "other"]).optional(),
   kcal_low: nutrient,
   kcal_high: nutrient,
   kcal: nutrient,
@@ -114,7 +123,17 @@ export async function readToday(signal: AbortSignal) {
 }
 export const todayQuery = (person: number) => ({
   queryKey: todayKey(person),
-  queryFn: ({ signal }: { signal: AbortSignal }) => readToday(signal),
+  queryFn: async ({
+    client,
+    signal,
+  }: {
+    client: QueryClient;
+    signal: AbortSignal;
+  }) => {
+    const today = await readToday(signal);
+    rememberFoodChoiceTags(client, person, todayFoods(today.entries));
+    return today;
+  },
   ...liveRefresh,
 });
 export function totalText(value: z.infer<typeof total>) {
@@ -200,13 +219,27 @@ export function settledSince(
     settled: [...previousPending].some((clientId) => !pending.has(clientId)),
   };
 }
-export function intakeChanges(entry: Intake, values: Record<string, string>) {
+export function intakeChanges(
+  entry: Intake,
+  values: Record<string, string>,
+  eatingOut?: boolean,
+  postedMenu?: boolean,
+) {
   const changes: Record<string, unknown> = {};
   for (const key of nutrients) {
     const value = values[key] === "" ? null : Number(values[key]);
     if (value !== entry[key]) changes[key] = value;
   }
-  if (Object.keys(changes).length === 0) return changes;
+  if (
+    postedMenu !== undefined &&
+    (postedMenu !== (entry.kcal_basis === "menu") ||
+      (postedMenu && "kcal" in changes))
+  ) {
+    changes.kcal = Number(values.kcal);
+    changes.kcal_basis = postedMenu ? "menu" : "other";
+  }
+  const tag = intakeTagChanges(entry, eatingOut);
+  if (Object.keys(changes).length === 0) return tag;
   if (entry.provenance === "label")
     Object.assign(changes, { provenance: "label", source: entry.source });
   const kcal = changes.kcal;
@@ -216,8 +249,18 @@ export function intakeChanges(entry: Intake, values: Record<string, string>) {
       (entry.kcal_high !== null && kcal > entry.kcal_high))
   )
     Object.assign(changes, { kcal_low: null, kcal_high: null });
-  return changes;
+  return { ...changes, ...tag };
 }
+
+export function intakeTagChanges(
+  entry: Intake,
+  eatingOut: boolean | undefined,
+) {
+  return eatingOut !== undefined && eatingOut !== entry.eating_out
+    ? { eating_out: eatingOut }
+    : {};
+}
+
 export function bonusLines(base: number, bonus: Bonus, timezone: string) {
   const credited = bonus.mode === "same-day" ? "today's" : "yesterday's";
   if (bonus.status === "no_source")

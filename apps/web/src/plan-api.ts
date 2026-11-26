@@ -1,5 +1,8 @@
+import type { QueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { api, liveRefresh } from "./api.ts";
+import { eatingOutOverride, foodChoiceFields } from "./eating-out-fields.ts";
+import { rememberFoodChoiceTags } from "./food-choice-tags.ts";
 
 const nutrientBudget = z.object({
   known_subtotal: z.number(),
@@ -7,12 +10,18 @@ const nutrientBudget = z.object({
   budget: z.number().nullable(),
   remaining: z.number().nullable(),
 });
+
 export const plannedItemSchema = z.object({
   id: z.number().int().positive(),
   revision: z.number().int().positive(),
   state: z.enum(["planned", "eaten", "skipped"]),
+  ...foodChoiceFields,
   position: z.number().int().nonnegative(),
-  reference: z.object({ name: z.string() }),
+  reference: z.object({
+    kind: z.enum(["food", "meal"]).optional(),
+    id: z.number().int().positive().optional(),
+    name: z.string(),
+  }),
   servings: z.number().positive().nullable(),
   nutrition: z.object({ status: z.enum(["known", "pending", "unknown"]) }),
 });
@@ -57,11 +66,27 @@ export async function readPlan(signal: AbortSignal) {
 }
 export const planQuery = (person: number) => ({
   queryKey: planKey(person),
-  queryFn: ({ signal }: { signal: AbortSignal }) => readPlan(signal),
+  queryFn: async ({
+    client,
+    signal,
+  }: {
+    client: QueryClient;
+    signal: AbortSignal;
+  }) => {
+    const plan = await readPlan(signal);
+    rememberFoodChoiceTags(client, person, plan.planned_items);
+    return plan;
+  },
   ...liveRefresh,
 });
 
-export async function actOnItem(item: PlannedItem, action: ItemAction) {
+export async function actOnItem(
+  item: PlannedItem,
+  action: ItemAction,
+  checked?: boolean,
+) {
+  const eating_out =
+    action === "skip" ? undefined : eatingOutOverride(item, checked);
   return z
     .object({
       item: z.object({
@@ -76,6 +101,7 @@ export async function actOnItem(item: PlannedItem, action: ItemAction) {
           item_id: item.id,
           revision: item.revision,
           action,
+          ...(eating_out === undefined ? {} : { eating_out }),
           mutation_id: crypto.randomUUID(),
         }),
       }),

@@ -1,5 +1,10 @@
 import { z } from "zod";
+import {
+  foodChoiceEatingOut,
+  foodChoiceFields,
+} from "../logging/eating-out.ts";
 import { defineOperation, OperationError } from "../operations/registry.ts";
+import type { OnlineLookupResult } from "./index.ts";
 import {
   addSourceFood,
   CandidateError,
@@ -35,7 +40,7 @@ const sourceFood = z.strictObject({
 });
 const output = z.strictObject({
   result: z.enum(["match", "ambiguous", "no_match"]),
-  foods: z.array(sourceFood),
+  foods: z.array(sourceFood.extend(foodChoiceFields)),
   sources: z.strictObject({ usda: sourceStatus, off: sourceStatus }),
 });
 const shared = {
@@ -66,6 +71,20 @@ async function candidateCall<Result>(call: () => Promise<Result>) {
   }
 }
 
+async function lookupChoiceView(
+  database: Parameters<typeof foodChoiceEatingOut>[0],
+  result: Promise<OnlineLookupResult>,
+) {
+  const lookup = await result;
+  return {
+    ...lookup,
+    foods: lookup.foods.map((food) => ({
+      ...food,
+      ...foodChoiceEatingOut(database, 0, null, food.source_food_id),
+    })),
+  };
+}
+
 export const lookupOperations = [
   defineOperation({
     ...shared,
@@ -76,10 +95,9 @@ export const lookupOperations = [
       if (!context.lookup) throw new OperationError(503, "lookup_unavailable");
       return {
         status: 200,
-        body: await lookupBarcode(
+        body: await lookupChoiceView(
           context.database,
-          context.lookup,
-          input.barcode,
+          lookupBarcode(context.database, context.lookup, input.barcode),
         ),
       };
     },
@@ -96,11 +114,14 @@ export const lookupOperations = [
       if (!context.lookup) throw new OperationError(503, "lookup_unavailable");
       return {
         status: 200,
-        body: await searchOnline(
+        body: await lookupChoiceView(
           context.database,
-          context.lookup,
-          input.name,
-          input.brand,
+          searchOnline(
+            context.database,
+            context.lookup,
+            input.name,
+            input.brand,
+          ),
         ),
       };
     },

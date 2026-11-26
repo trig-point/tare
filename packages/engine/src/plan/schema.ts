@@ -1,4 +1,5 @@
 import { z as zod } from "zod";
+import { foodChoiceFields } from "../logging/eating-out.ts";
 import { OperationError } from "../operations/registry.ts";
 
 export const identifier = zod.number().int().positive();
@@ -28,6 +29,7 @@ export const plannedItemSchema = zod.strictObject({
     id: identifier,
     name: zod.string(),
   }),
+  ...foodChoiceFields,
   servings: zod.number().positive().nullable(),
   nutrition: zod.strictObject({
     status: zod.enum(["known", "pending", "unknown"]),

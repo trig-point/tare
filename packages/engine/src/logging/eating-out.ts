@@ -1,4 +1,5 @@
 import type { Database } from "better-sqlite3";
+import { z as zod } from "zod";
 import { OperationError } from "../operations/registry.ts";
 import { selectMealAction } from "../queries/orders/select-meal-action.ts";
 import { type SelectFoodResult, selectFood } from "../queries/select-food.ts";
@@ -59,6 +60,36 @@ export function referenceEatingOut(
   return {
     kcal_basis,
     defaultTag: Boolean(meal?.restaurant?.trim()) && kcal_basis !== "label",
+  };
+}
+
+export const foodChoiceFields = {
+  eating_out_default: zod.boolean().optional(),
+  can_tag_eating_out: zod.boolean().optional(),
+};
+
+export function foodChoiceEatingOut(
+  database: Database,
+  personId: number,
+  foodId: number | null,
+  sourceFoodId: number | null,
+  orderMeal = false,
+) {
+  const food =
+    foodId !== null
+      ? selectFood(database, { user_id: personId, id: foodId })
+      : sourceFoodId !== null
+        ? selectSourceFood(database, { id: sourceFoodId })
+        : null;
+  if (!food) return { eating_out_default: false, can_tag_eating_out: false };
+  const { kcal_basis, defaultTag } = referenceEatingOut(
+    database,
+    food,
+    orderMeal,
+  );
+  return {
+    eating_out_default: defaultTag,
+    can_tag_eating_out: kcal_basis !== "label",
   };
 }
 

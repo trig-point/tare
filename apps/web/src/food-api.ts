@@ -1,6 +1,10 @@
+import type { QueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { api, type Session } from "./api.ts";
+import { eatingOutOverride, foodChoiceFields } from "./eating-out-fields.ts";
+import { rememberFoodChoiceTags } from "./food-choice-tags.ts";
 import type { OutboxReplay } from "./outbox-replay.ts";
+import type { Intake } from "./today-api.ts";
 
 const catalogNutrient = z
   .object({ amount: z.number().nonnegative() })
@@ -17,6 +21,7 @@ const catalogSchema = z.object({
       name: z.string(),
       brand: z.string().nullable(),
       serving: z.object({ amount: z.number().positive(), unit: z.string() }),
+      ...foodChoiceFields,
       nutrients: z.object({
         kcal: catalogNutrient,
         protein_g: catalogNutrient,
@@ -29,6 +34,7 @@ const onlineSchema = z.object({
   result: z.enum(["match", "ambiguous", "no_match"]),
   foods: z.array(
     z.object({
+      ...foodChoiceFields,
       source_food_id: z.number().int().positive(),
       name: z.string(),
       brand: z.string().nullable(),
@@ -48,6 +54,8 @@ export type FoodChoice = {
   kcal: number | null;
   protein_g: number | null;
   servings?: number;
+  eating_out_default?: boolean | undefined;
+  can_tag_eating_out?: boolean | undefined;
 };
 export type CatalogResult = {
   result: "match" | "ambiguous" | "no_match";
@@ -73,6 +81,7 @@ const usualSchema = z.object({
       }),
       name: z.string(),
       brand: z.string().nullable(),
+      ...foodChoiceFields,
       usual_servings: z.number().positive(),
       serving: z.object({ amount: z.number(), unit: z.string() }).nullable(),
       kcal: z.number().nonnegative().nullable(),
@@ -91,6 +100,7 @@ const savedUsualSchema = z.array(
     serving: z.string().nullable(),
     kcal: z.number().nullable(),
     protein_g: z.number().nullable(),
+    ...foodChoiceFields,
     servings: z.number().positive().optional(),
   }),
 );
@@ -100,7 +110,13 @@ const usualStorageKey = (person: number) => `tare:usual-foods:${person}`;
 export function usualFoodsQuery(person: number) {
   return {
     queryKey: ["list_usual_foods", person] as const,
-    queryFn: async ({ signal }: { signal: AbortSignal }) => {
+    queryFn: async ({
+      client,
+      signal,
+    }: {
+      client: QueryClient;
+      signal: AbortSignal;
+    }) => {
       const foods = usualSchema
         .parse(await api("/api/foods/usual", { signal }))
         .foods.map(
@@ -115,6 +131,7 @@ export function usualFoodsQuery(person: number) {
             kcal: food.kcal,
             protein_g: food.protein_g,
             servings: food.usual_servings,
+            ...choiceTags(food),
           }),
         );
       try {
@@ -122,6 +139,7 @@ export function usualFoodsQuery(person: number) {
       } catch {
         // Blocked storage only loses the offline copy.
       }
+      rememberFoodChoiceTags(client, person, foods);
       return foods;
     },
   };
@@ -150,8 +168,18 @@ export function catalogQuery(person: number, name: string) {
   const term = name.trim();
   return {
     queryKey: ["find_food", person, term] as const,
-    queryFn: async ({ signal }: { signal: AbortSignal }) =>
-      findFood(term, signal),
+    queryFn: async ({
+      client,
+      signal,
+    }: {
+      client: QueryClient;
+      signal: AbortSignal;
+    }) => {
+      const result = await findFood(term, signal);
+      if (result.result === "match")
+        rememberFoodChoiceTags(client, person, result.foods);
+      return result;
+    },
   };
 }
 
@@ -206,6 +234,7 @@ export async function findFood(
       serving: `${food.serving.amount} ${food.serving.unit}`,
       kcal: food.nutrients.kcal,
       protein_g: food.nutrients.protein_g,
+      ...choiceTags(food),
     })),
   };
 }
@@ -242,7 +271,18 @@ function onlineChoices(body: unknown): FoodChoice[] {
         : `${food.serving_size} ${food.serving_unit ?? ""}`.trim(),
     kcal: food.kcal,
     protein_g: food.protein_g,
+    ...choiceTags(food),
   }));
+}
+
+export function choiceTags(
+  food: Pick<FoodChoice, "eating_out_default" | "can_tag_eating_out">,
+) {
+  const { eating_out_default, can_tag_eating_out } = food;
+  return {
+    ...(eating_out_default === undefined ? {} : { eating_out_default }),
+    ...(can_tag_eating_out === undefined ? {} : { can_tag_eating_out }),
+  };
 }
 
 export async function enqueueFood(
@@ -250,16 +290,19 @@ export async function enqueueFood(
   person: Session["user"],
   food: FoodChoice,
   servings: string,
+  checked?: boolean,
 ) {
   const value = Number(servings);
   if (!servings.trim() || !Number.isFinite(value) || value <= 0)
     throw new Error("Invalid servings");
+  const eating_out = eatingOutOverride(food, checked);
   await replay.enqueue(
     "intake",
     {
       [food.reference.kind === "food" ? "food_id" : "source_food_id"]:
         food.reference.id,
       servings: value,
+      ...(eating_out === undefined ? {} : { eating_out }),
     },
     person,
   );
@@ -271,6 +314,8 @@ export async function enqueueNumbers(
   name: string,
   values: Record<string, string>,
   required: readonly string[] = [],
+  eatingOut = false,
+  postedMenu = false,
 ) {
   if (required.some((key) => !values[key]?.trim()))
     throw new Error("Missing required number");
@@ -285,7 +330,42 @@ export async function enqueueNumbers(
     throw new Error("Invalid entry");
   await replay.enqueue(
     "intake",
-    { name: name.trim(), ...numbers, provenance: "estimated" },
+    {
+      name: name.trim(),
+      ...numbers,
+      provenance: "estimated",
+      ...(eatingOut ? { eating_out: true } : {}),
+      ...(postedMenu && numbers.kcal !== undefined
+        ? { kcal_basis: "menu" }
+        : {}),
+    },
     person,
   );
+}
+
+/** Food-backed entries already loaded for today, newest first, one row per food. */
+export function todayFoods(entries: Intake[]): FoodChoice[] {
+  const foods = [...entries]
+    .sort((left, right) => right.eaten_at.localeCompare(left.eaten_at))
+    .flatMap((entry): FoodChoice[] => {
+      const id = entry.food_id ?? entry.source_food_id;
+      if (id === null || entry.name === null) return [];
+      const perServing = (value: number | null) =>
+        value === null || !entry.servings ? null : value / entry.servings;
+      return [
+        {
+          reference: {
+            kind: entry.food_id !== null ? "food" : "source_food",
+            id,
+          },
+          name: entry.name,
+          brand: null,
+          serving: null,
+          kcal: perServing(entry.kcal),
+          protein_g: perServing(entry.protein_g),
+          ...choiceTags(entry.food_choice ?? {}),
+        },
+      ];
+    });
+  return mergeChoices(foods);
 }
