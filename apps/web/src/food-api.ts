@@ -1,6 +1,8 @@
+import type { QueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { api, type Session } from "./api.ts";
 import { eatingOutOverride, foodChoiceFields } from "./eating-out-fields.ts";
+import { rememberFoodChoiceTags } from "./food-choice-tags.ts";
 import type { OutboxReplay } from "./outbox-replay.ts";
 import type { Intake } from "./today-api.ts";
 
@@ -108,7 +110,13 @@ const usualStorageKey = (person: number) => `tare:usual-foods:${person}`;
 export function usualFoodsQuery(person: number) {
   return {
     queryKey: ["list_usual_foods", person] as const,
-    queryFn: async ({ signal }: { signal: AbortSignal }) => {
+    queryFn: async ({
+      client,
+      signal,
+    }: {
+      client: QueryClient;
+      signal: AbortSignal;
+    }) => {
       const foods = usualSchema
         .parse(await api("/api/foods/usual", { signal }))
         .foods.map(
@@ -131,6 +139,7 @@ export function usualFoodsQuery(person: number) {
       } catch {
         // Blocked storage only loses the offline copy.
       }
+      rememberFoodChoiceTags(client, person, foods);
       return foods;
     },
   };
@@ -159,8 +168,18 @@ export function catalogQuery(person: number, name: string) {
   const term = name.trim();
   return {
     queryKey: ["find_food", person, term] as const,
-    queryFn: async ({ signal }: { signal: AbortSignal }) =>
-      findFood(term, signal),
+    queryFn: async ({
+      client,
+      signal,
+    }: {
+      client: QueryClient;
+      signal: AbortSignal;
+    }) => {
+      const result = await findFood(term, signal);
+      if (result.result === "match")
+        rememberFoodChoiceTags(client, person, result.foods);
+      return result;
+    },
   };
 }
 

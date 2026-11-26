@@ -19,7 +19,7 @@ import {
 } from "../src/food-api.ts";
 import { OutboxReplay } from "../src/outbox-replay.ts";
 import { openOutboxStore } from "../src/outbox-store.ts";
-import { type Intake, readToday, todayKey } from "../src/today-api.ts";
+import { type Intake, todayKey, todayQuery } from "../src/today-api.ts";
 import "fake-indexeddb/auto";
 import { test } from "./support.mts";
 import "./tsx.mts";
@@ -73,13 +73,14 @@ test("typing calls find_food only", async (context) => {
       return setup.admin.request(path, init);
     },
   );
+  const client = new QueryClient();
   const typed = "Example rolled oats";
   const results = [];
   for (let length = 1; length <= typed.length; length++)
     results.push(
-      await catalogQuery(setup.admin.user.id, typed.slice(0, length)).queryFn({
-        signal: new AbortController().signal,
-      }),
+      await client.fetchQuery(
+        catalogQuery(setup.admin.user.id, typed.slice(0, length)),
+      ),
     );
   const last = results.at(-1);
   assert.ok(last);
@@ -282,9 +283,7 @@ test("usual foods load, stay on the device and rank first while typing", async (
   context.after(() => Reflect.deleteProperty(globalThis, "localStorage"));
   assert.equal(savedUsualFoods(admin.user.id), null);
   assert.deepEqual(
-    await usualFoodsQuery(admin.user.id).queryFn({
-      signal: new AbortController().signal,
-    }),
+    await new QueryClient().fetchQuery(usualFoodsQuery(admin.user.id)),
     [],
   );
   assert.deepEqual(savedUsualFoods(admin.user.id), []);
@@ -337,39 +336,44 @@ function renderAddFood(
 
 test("add food opens on Search with usual foods before typing", async (context) => {
   const { admin } = await twoUsers(context, "fallback");
-  context.mock.method(globalThis, "fetch", (path: string, init: RequestInit) =>
-    admin.request(path, init),
+  context.mock.method(
+    globalThis,
+    "fetch",
+    async (path: string, init: RequestInit) => {
+      if (path === "/api/foods/usual")
+        return Response.json({
+          foods: [
+            {
+              ...exampleChoice,
+              reference: { kind: "food", id: 5 },
+              serving: null,
+              usual_servings: 1.5,
+              eating_out_default: true,
+              can_tag_eating_out: true,
+            },
+          ],
+        });
+      const response = await admin.request(path, init);
+      assert.equal(response.status, 200);
+      return Response.json({
+        ...(await response.json()),
+        entries: [
+          entry(1, {
+            food_id: 5,
+            name: "Example oats",
+            food_choice: {
+              eating_out_default: false,
+              can_tag_eating_out: false,
+            },
+          }),
+          entry(2, { food_id: 6, kcal: null }),
+        ].map((food) => ({ ...food, eating_out: 0 })),
+      });
+    },
   );
   const client = new QueryClient();
-  const today = await readToday(new AbortController().signal);
-  client.setQueryData(
-    todayKey(admin.user.id),
-    {
-      ...today,
-      entries: [
-        entry(1, {
-          food_id: 5,
-          name: "Example oats",
-          food_choice: { eating_out_default: false, can_tag_eating_out: false },
-        }),
-        entry(2, { food_id: 6, kcal: null }),
-      ],
-    },
-    { updatedAt: 200 },
-  );
-  client.setQueryData(
-    usualFoodsQuery(admin.user.id).queryKey,
-    [
-      {
-        ...exampleChoice,
-        reference: { kind: "food", id: 5 },
-        servings: 1.5,
-        eating_out_default: true,
-        can_tag_eating_out: true,
-      },
-    ],
-    { updatedAt: 100 },
-  );
+  await client.fetchQuery(usualFoodsQuery(admin.user.id));
+  await client.fetchQuery(todayQuery(admin.user.id));
   const html = renderAddFood(admin.user, client);
   const oatsRow = html
     .split("</li>")

@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Fragment, type ReactNode, useMemo, useState } from "react";
 import type { Session } from "./api.ts";
 import { BarcodeScanner } from "./barcode-scan.tsx";
@@ -17,7 +17,10 @@ import {
   todayFoods,
   usualFoodsQuery,
 } from "./food-api.ts";
-import { useFoodChoiceTags } from "./food-choice-tags.ts";
+import {
+  rememberFoodChoiceTags,
+  useFoodChoiceTags,
+} from "./food-choice-tags.ts";
 import type { OutboxReplay } from "./outbox-replay.ts";
 import { photoProbeQuery, savedPhotoProbe } from "./photo-api.ts";
 import { PhotoMeal } from "./photo-meal.tsx";
@@ -51,6 +54,7 @@ export function AddFood({ person, replay, online }: Props) {
   const [manual, setManual] = useState<string | null>(null);
   const [logged, setLogged] = useState("");
   const term = name.trim();
+  const client = useQueryClient();
   const today = useQuery({ ...todayQuery(person.id), enabled: online });
   const usual = useQuery({ ...usualFoodsQuery(person.id), enabled: online });
   const saved = useMemo(
@@ -65,14 +69,16 @@ export function AddFood({ person, replay, online }: Props) {
   const lookup = useMutation({
     mutationFn: async (name: string) => {
       const foods = await searchOnline(name);
-      return { foods, updatedAt: Date.now() };
+      rememberFoodChoiceTags(client, person.id, foods);
+      return foods;
     },
     retry: 0,
   });
   const barcode = useMutation({
     mutationFn: async (code: string) => {
       const foods = await lookupBarcode(code);
-      return { foods, updatedAt: Date.now() };
+      rememberFoodChoiceTags(client, person.id, foods);
+      return foods;
     },
     retry: 0,
   });
@@ -83,17 +89,11 @@ export function AddFood({ person, replay, online }: Props) {
   const catalogMatches =
     catalog.data?.result === "match" ? catalog.data.foods : [];
   const recent = todayFoods(today.data?.entries ?? []);
-  const refreshTags = useFoodChoiceTags(person.id, [
-    { foods: catalogMatches, updatedAt: catalog.dataUpdatedAt },
-    { foods: recent, updatedAt: today.dataUpdatedAt },
-    { foods: usual.data ?? [], updatedAt: usual.dataUpdatedAt },
-    ...(lookup.data ? [lookup.data] : []),
-    ...(barcode.data ? [barcode.data] : []),
-  ]);
+  const refreshTags = useFoodChoiceTags(person.id);
   const choices = mergeChoices(
     matchingFoods(usualList ?? [], term),
     catalogMatches,
-    searched?.data?.foods ?? [],
+    searched?.data ?? [],
   );
   const catalogMissed =
     term !== "" &&
@@ -207,7 +207,7 @@ export function AddFood({ person, replay, online }: Props) {
                 </Button>
               )}
               {searched?.isError && <p role="alert">Couldn’t search online</p>}
-              {searched?.data?.foods.length === 0 && (
+              {searched?.data?.length === 0 && (
                 <OnlineMiss
                   enterManually={
                     catalogMissed ? undefined : () => setManual(term)
@@ -224,12 +224,12 @@ export function AddFood({ person, replay, online }: Props) {
           <BarcodeScanner online={online} onCode={barcode.mutate} />
           {barcode.isPending && <RowSkeleton />}
           {barcode.isError && <p role="alert">Couldn’t look up barcode</p>}
-          {barcode.data?.foods.length === 0 && (
+          {barcode.data?.length === 0 && (
             <OnlineMiss enterManually={() => setManual("")} />
           )}
           {barcode.data &&
-            barcode.data.foods.length > 0 &&
-            rows(barcode.data.foods, "Barcode match")}
+            barcode.data.length > 0 &&
+            rows(barcode.data, "Barcode match")}
         </TabsContent>
         <TabsContent
           value="quick-add"

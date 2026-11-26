@@ -4,7 +4,8 @@ import type { Session } from "./api.ts";
 import { api, liveRefresh } from "./api.ts";
 import { type BodyUnits, weightToKg } from "./body-units.ts";
 import { foodChoiceFields } from "./eating-out-fields.ts";
-import { usualFoodsQuery } from "./food-api.ts";
+import { todayFoods, usualFoodsQuery } from "./food-api.ts";
+import { rememberFoodChoiceTags } from "./food-choice-tags.ts";
 import type { OutboxReplay, QueueSnapshot } from "./outbox-replay.ts";
 import { planKey } from "./plan-api.ts";
 
@@ -122,7 +123,17 @@ export async function readToday(signal: AbortSignal) {
 }
 export const todayQuery = (person: number) => ({
   queryKey: todayKey(person),
-  queryFn: ({ signal }: { signal: AbortSignal }) => readToday(signal),
+  queryFn: async ({
+    client,
+    signal,
+  }: {
+    client: QueryClient;
+    signal: AbortSignal;
+  }) => {
+    const today = await readToday(signal);
+    rememberFoodChoiceTags(client, person, todayFoods(today.entries));
+    return today;
+  },
   ...liveRefresh,
 });
 export function totalText(value: z.infer<typeof total>) {

@@ -33,9 +33,7 @@ export const press =
 
 export function Slots({ person, online }: { person: number; online: boolean }) {
   const plan = useQuery({ ...planQuery(person), enabled: online });
-  const tags = useFoodChoiceTags(person, [
-    { foods: plan.data?.planned_items ?? [], updatedAt: plan.dataUpdatedAt },
-  ]);
+  const tags = useFoodChoiceTags(person);
   return (
     <SlotList
       person={person}

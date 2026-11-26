@@ -1,6 +1,8 @@
+import type { QueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { api, liveRefresh } from "./api.ts";
 import { eatingOutOverride, foodChoiceFields } from "./eating-out-fields.ts";
+import { rememberFoodChoiceTags } from "./food-choice-tags.ts";
 
 const nutrientBudget = z.object({
   known_subtotal: z.number(),
@@ -64,7 +66,17 @@ export async function readPlan(signal: AbortSignal) {
 }
 export const planQuery = (person: number) => ({
   queryKey: planKey(person),
-  queryFn: ({ signal }: { signal: AbortSignal }) => readPlan(signal),
+  queryFn: async ({
+    client,
+    signal,
+  }: {
+    client: QueryClient;
+    signal: AbortSignal;
+  }) => {
+    const plan = await readPlan(signal);
+    rememberFoodChoiceTags(client, person, plan.planned_items);
+    return plan;
+  },
   ...liveRefresh,
 });
 
