@@ -264,7 +264,27 @@ function writeIntake(
   mealPartFood?: ReferenceFood,
 ) {
   const database = scopeDatabase(scope);
-  if (!("reference" in input)) resolveProvenance(input.claim, null);
+  let adHoc:
+    | {
+        provenance: ReturnType<typeof resolveProvenance>;
+        kcal_basis: ReturnType<typeof adHocBasis>;
+      }
+    | undefined;
+  if ("reference" in input) {
+    if (input.kcal_basis !== undefined || input.packaged_food !== undefined)
+      throw new OperationError(400, "invalid_kcal_basis");
+  } else {
+    const provenance = resolveProvenance(input.claim, null);
+    adHoc = {
+      provenance,
+      kcal_basis: adHocBasis(
+        input.kcal_basis,
+        input.numbers.kcal,
+        provenance === "label",
+        input.packaged_food === true,
+      ),
+    };
+  }
   const replay = selectIntakeByClient(database, {
     user_id: person.id,
     client_id: input.client_id,
@@ -277,8 +297,6 @@ function writeIntake(
   const eaten_at = canonicalInstant(input.eaten_at ?? now);
   let snapshot: ReturnType<typeof referenceSnapshot>;
   if ("reference" in input) {
-    if (input.kcal_basis !== undefined || input.packaged_food !== undefined)
-      throw new OperationError(400, "invalid_kcal_basis");
     snapshot = referenceSnapshot(
       scope,
       person,
@@ -290,19 +308,14 @@ function writeIntake(
       mealPartFood,
     );
   } else {
+    if (!adHoc) throw new Error("Ad hoc nutrition was not classified");
     validateNumbers(input.numbers);
     snapshot = {
       ...measuredAmount,
       ...input.numbers,
       name: input.name.trim(),
-      provenance: resolveProvenance(input.claim, null),
+      ...adHoc,
       source: input.claim.source ?? null,
-      kcal_basis: adHocBasis(
-        input.kcal_basis,
-        input.numbers.kcal,
-        input.claim.provenance === "label",
-        input.packaged_food === true,
-      ),
       defaultTag: false,
     };
     if (!snapshot.name) throw new OperationError(400, "invalid_request");

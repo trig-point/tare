@@ -234,6 +234,18 @@ test("package and label identity excludes direct and copied foods and survives a
     client_id: "old-queued-shape",
     eating_out: true,
   });
+  const replay = { client_id: manual.client_id, name: adhoc.name };
+  for (const invalid of [
+    { ...replay, protein_g: 5, kcal_basis: "menu" },
+    { ...replay, kcal: 100, kcal_basis: "menu", packaged_food: true },
+    {
+      client_id: manual.client_id,
+      food_id: 1,
+      servings: 1,
+      packaged_food: true,
+    },
+  ])
+    await log(invalid, 400);
   assert.equal(manual.kcal_basis, "other");
   for (const invalid of [
     { kcal_basis: "menu" },
