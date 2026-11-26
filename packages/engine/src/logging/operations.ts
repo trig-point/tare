@@ -49,7 +49,7 @@ const logFood = defineOperation({
   ...base,
   name: "log_food",
   description:
-    "Use one food_id or source_food_id with servings and no name, source or nutrients. For ad hoc food, omit servings and provide a name and at least one of kcal, protein_g, carbs_g, fat_g or fiber_g. Use amount_estimated: true for a guessed portion, with both servings bounds or neither. Omit provenance for an estimated amount.",
+    "Use one food_id or source_food_id with servings and no name, source or nutrients. For ad hoc food, omit servings and provide a name and at least one of kcal, protein_g, carbs_g, fat_g or fiber_g. Use amount_estimated: true for a guessed portion, with both servings bounds or neither. Omit provenance for an estimated amount. Eligible restaurant meals default to eating out. Use eating_out to override. For ad hoc entries, send packaged_food for a package or kcal_basis with non-null kcal for a posted menu.",
   method: "POST",
   path: "/api/intake",
   input: logFoodInput,
@@ -120,7 +120,7 @@ const editIntake = defineOperation({
   ...base,
   name: "edit_intake",
   description:
-    "Edit an intake entry's eaten_at or portion_note, servings for a referenced food, or name and nutrition numbers for ad hoc food. For an estimated amount, set both serving bounds to bracket servings or use amount_measured: true to clear the estimate without sending bounds.",
+    "Edit an intake entry's eaten_at or portion_note, servings for a referenced food, or name and nutrition numbers for ad hoc food. For an estimated amount, set both serving bounds to bracket servings or use amount_measured: true to clear the estimate without sending bounds. Send only eating_out to preserve sign-off. For a posted menu correction, send kcal and kcal_basis: menu together.",
   method: "PATCH",
   path: "/api/intake/:id",
   input: editIntakeInput,
@@ -128,11 +128,15 @@ const editIntake = defineOperation({
   handler(input, context) {
     const person = operationPerson(context);
     const body = writeTransaction(context.database, (scope) => {
-      const owner = { user_id: person.id, id: input.id };
+      const { id, eating_out, kcal_basis, ...changes } = input;
+      const owner = { user_id: person.id, id };
       const stored = selectIntakeEntry(context.database, owner);
       if (!stored) throw new OperationError(404, "not_found");
-      const { eating_out, kcal_basis, ...changes } = input;
-      if (eating_out !== undefined && Object.keys(input).length === 2) {
+      if (
+        eating_out !== undefined &&
+        kcal_basis === undefined &&
+        Object.values(changes).every((value) => value === undefined)
+      ) {
         const tag = eatingOutValue(
           eating_out,
           false,
@@ -240,11 +244,13 @@ const editIntake = defineOperation({
           input.source === undefined ? stored.source : input.source;
       }
       const replacesKcal = !reference && input.kcal !== undefined;
-      if (replacesKcal) {
-        const label =
-          stored.kcal_basis === "label" ||
+      const label =
+        !reference &&
+        changesNumbers &&
+        (stored.kcal_basis === "label" ||
           (stored.kcal_basis === "legacy" && stored.provenance === "label") ||
-          input.provenance === "label";
+          input.provenance === "label");
+      if (replacesKcal || label) {
         merged.kcal_basis = adHocBasis(
           kcal_basis,
           merged.kcal,
@@ -252,7 +258,7 @@ const editIntake = defineOperation({
           stored.packaged_food === 1,
         );
       }
-      if (eating_out !== undefined || resnapshot || replacesKcal)
+      if (eating_out !== undefined || resnapshot || replacesKcal || label)
         merged.eating_out = eatingOutValue(
           eating_out,
           stored.eating_out === 1,

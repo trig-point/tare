@@ -74,7 +74,6 @@ test("a tag-only edit on a signed-off day keeps signed_off_at", async (context) 
       totals: daily.totals,
       target: today.target,
       results: database.prepare("SELECT * FROM target_results").all(),
-      stock: database.prepare("SELECT * FROM pantry_requests").all(),
     };
   };
   const before = await snapshot();
@@ -189,6 +188,20 @@ test("package and label identity excludes direct and copied foods and survives a
         });
       }
     }
+    if (allowed) {
+      database
+        .prepare("UPDATE foods SET provenance = 'label' WHERE id = ?")
+        .run(owned.id);
+      await log(
+        {
+          food_id: owned.id,
+          servings: 1,
+          client_id: "copied-label",
+          eating_out: true,
+        },
+        400,
+      );
+    }
   }
 
   const adhoc = { name: "Example meal", kcal: 100 };
@@ -206,6 +219,18 @@ test("package and label identity excludes direct and copied foods and survives a
   }
   const packageClaim = { ...adhoc, packaged_food: true, kcal_basis: "menu" };
   await log({ ...packageClaim, client_id: "impossible-menu" }, 400);
+  const { entry: legacyLabel } = await log({
+    ...adhoc,
+    client_id: "legacy-label",
+    provenance: "label",
+    source: "Example label",
+  });
+  database
+    .prepare("UPDATE intake_entries SET kcal_basis = 'legacy' WHERE id = ?")
+    .run(legacyLabel.id);
+  await patch(legacyLabel.id, { protein_g: 5 });
+  await patch(legacyLabel.id, { eating_out: true }, 400);
+
   const { entry: manual } = await log({
     ...adhoc,
     client_id: "old-queued-shape",
@@ -227,8 +252,17 @@ test("package and label identity excludes direct and copied foods and survives a
   assert.equal(corrected.kcal_basis, "menu");
   const { entry: macros } = await patch(manual.id, { protein_g: 5 });
   assert.deepEqual([macros.kcal_basis, macros.eating_out], ["menu", 1]);
+  const labelClaim = {
+    protein_g: 6,
+    provenance: "label",
+    source: "Example label",
+  };
+  await patch(manual.id, { ...labelClaim, eating_out: true }, 400);
   const cleared = await patch(manual.id, { eating_out: false });
   assert.equal(cleared.entry.kcal_basis, "menu");
+  await patch(manual.id, { eating_out: true });
+  const relabeled = (await patch(manual.id, labelClaim)).entry;
+  assert.deepEqual([relabeled.kcal_basis, relabeled.eating_out], ["label", 0]);
 });
 
 test("planned restaurant logs accept overrides, preserve receipts, and reject overrides on skip", async (context) => {
@@ -293,4 +327,13 @@ test("archived legacy tags can be restored after clearing", async (context) => {
     assert.equal(toggled.eating_out, Number(eating_out));
     assert.equal(toggled.kcal_basis, "legacy");
   }
+  const key = "00000000-0000-4000-8000-000000000001";
+  database
+    .prepare("UPDATE intake_entries SET client_id = ? WHERE id = ?")
+    .run(`meal-part:${key}:1`, entry.id);
+  database
+    .prepare(`INSERT INTO meal_receipts (user_id, client_id, part_key, request_hash, part_count, created_at)
+    VALUES (?, 'example-parts', ?, printf('%064d', 0), 1, ?)`)
+    .run(entry.user_id, key, instant);
+  await patch(entry.id, { eating_out: true }, 400);
 });

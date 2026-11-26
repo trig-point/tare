@@ -31,6 +31,9 @@ const intake = zod
     source_food_id: true,
     servings: true,
     portion_note: true,
+    eating_out: true,
+    kcal_basis: true,
+    packaged_food: true,
   });
 const weight = logWeightInput.extend({
   client_id: clientId,

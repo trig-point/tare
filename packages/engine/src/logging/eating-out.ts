@@ -47,7 +47,8 @@ export function referenceEatingOut(
       kcal_basis:
         source.source === "off" ||
         source.barcode !== null ||
-        source.provenance === "label"
+        source.provenance === "label" ||
+        food.provenance === "label"
           ? "label"
           : "other",
       defaultTag: false,
