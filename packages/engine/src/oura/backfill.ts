@@ -9,6 +9,7 @@ import {
 import type { Database } from "better-sqlite3";
 import { writeTransaction } from "../db.ts";
 import { localDay } from "../logging/day.ts";
+import { OperationError } from "../operations/registry.ts";
 import { selectEarliestOuraDay } from "../queries/oura/select-earliest-oura-day.ts";
 import type { OuraService } from "./service.ts";
 import { syncWindowStart, writeSignalsAndSleep } from "./sync.ts";
@@ -20,12 +21,20 @@ export interface OuraBackfillResult {
   days_written: number;
   first_day: string | null;
   last_day: string | null;
-  failure: OuraFailure | null;
 }
+
+const failureStatus = {
+  oura_rate_limited: 503,
+  oura_unavailable: 503,
+  oura_invalid_response: 503,
+  oura_unauthorized: 409,
+  oura_membership_required: 409,
+} as const satisfies Record<OuraFailure, 503 | 409>;
 
 /**
  * Reads sleep, HRV, resting heart rate and readiness from `since` up to the
- * earliest day already held, so it never overlaps the hourly sync's days.
+ * earliest held day, capped at the sync window start, so it never overlaps
+ * the hourly sync's days.
  */
 export async function backfillOura({
   database,
@@ -51,10 +60,10 @@ export async function backfillOura({
     person.timezone,
     person.day_start_hour,
   );
-  const end =
-    selectEarliestOuraDay(database, { user_id: person.id })?.day ??
-    syncWindowStart(today);
-  if (since >= end) return { ...empty, failure: null };
+  const windowStart = syncWindowStart(today);
+  const held = selectEarliestOuraDay(database, { user_id: person.id })?.day;
+  const end = held && held < windowStart ? held : windowStart;
+  if (since >= end) return empty;
   const access = await oura.refreshAccess(person.id);
   const signal = AbortSignal.timeout(timeoutMilliseconds);
   let fetched: Awaited<ReturnType<typeof fetchOura>>;
@@ -75,7 +84,8 @@ export async function backfillOura({
   } catch {
     fetched = "oura_unavailable";
   }
-  if (typeof fetched === "string") return { ...empty, failure: fetched };
+  if (typeof fetched === "string")
+    throw new OperationError(failureStatus[fetched], fetched);
   const mapped = mapOura(fetched);
   // Oura can return records outside the requested range; keep the held days untouched.
   const inRange = (day: string) => day >= since && day < end;
@@ -97,6 +107,5 @@ export async function backfillOura({
     days_written: sorted.length,
     first_day: sorted[0] ?? null,
     last_day: sorted.at(-1) ?? null,
-    failure: null,
   };
 }

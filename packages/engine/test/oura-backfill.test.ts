@@ -17,7 +17,6 @@ const none = {
   days_written: 0,
   first_day: null,
   last_day: null,
-  failure: null,
 };
 const sleepSide = (days: string[], heart = 52) => ({
   daily_sleep: days.map((day) => ({ day, score: 81 })),
@@ -150,14 +149,32 @@ test("never writes on or after the earliest held Oura day; a later since is a no
   );
 });
 
-test("an Oura refusal returns its code and leaves no partial writes", async (context) => {
+test("an Oura refusal rejects with its code and leaves no partial writes", async (context) => {
   const backfill = harness(context);
   backfill.stub.bodies = sleepSide(["2025-11-10"]);
-  backfill.stub.failing = { daily_sleep: 500 };
-  const failure = "oura_unavailable";
-  assert.deepEqual(await backfill.run("2025-11-01"), { ...none, failure });
-  assert.equal(backfill.requests.length, 3);
-  assert.deepEqual([backfill.signals(), backfill.periods()], [[], []]);
+  for (const [status, code, httpStatus] of [
+    [500, "oura_unavailable", 503],
+    [401, "oura_unauthorized", 409],
+  ] as const) {
+    backfill.stub.failing = { daily_sleep: status };
+    await assert.rejects(
+      backfill.run("2025-11-01"),
+      new OperationError(httpStatus, code),
+    );
+    assert.deepEqual([backfill.signals(), backfill.periods()], [[], []]);
+  }
+});
+
+test("stops at the sync window start even when the earliest held day is later", async (context) => {
+  const backfill = harness(context);
+  backfill.hold("2025-12-10", 30);
+  backfill.stub.bodies = sleepSide(["2025-11-10", windowStart, "2025-12-05"]);
+  assert.equal((await backfill.run("2025-11-01")).last_day, "2025-11-10");
+  assert.equal(backfill.requests[0], `sleep 2025-11-01 ${windowStart}`);
+  assert.deepEqual(
+    backfill.periods().map((row) => row.day),
+    ["2025-11-10"],
+  );
 });
 
 test("the oura_backfill tool rejects a missing or malformed since before touching Oura", async (context) => {

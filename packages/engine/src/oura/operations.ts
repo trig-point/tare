@@ -80,15 +80,6 @@ export const ouraOperations = [
       days_written: zod.number().int().nonnegative(),
       first_day: zod.iso.date().nullable(),
       last_day: zod.iso.date().nullable(),
-      failure: zod
-        .enum([
-          "oura_rate_limited",
-          "oura_membership_required",
-          "oura_unauthorized",
-          "oura_unavailable",
-          "oura_invalid_response",
-        ])
-        .nullable(),
     }),
     async handler(input, context) {
       return {
