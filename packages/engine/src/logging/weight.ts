@@ -12,6 +12,7 @@ export function insertWeight(
   person: Person,
   input: zod.output<typeof logWeightInput>,
   clock: Clock,
+  day?: string,
 ) {
   const database = scopeDatabase(scope);
   const replay = selectWeightByClient(database, {
@@ -25,7 +26,7 @@ export function insertWeight(
     ...input,
     user_id: person.id,
     measured_at,
-    day: localDay(measured_at, person.timezone, person.day_start_hour),
+    day: day ?? localDay(measured_at, person.timezone, person.day_start_hour),
     body_fat_pct: input.body_fat_pct ?? null,
     source: input.source ?? null,
     note: input.note ?? null,

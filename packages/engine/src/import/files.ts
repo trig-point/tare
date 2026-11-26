@@ -36,7 +36,7 @@ const intake = zod
     packaged_food: true,
   });
 const weight = logWeightInput.extend({
-  client_id: clientId,
+  client_id: logWeightInput.shape.client_id.max(200),
   measured_at: zod.string(),
   source: zod.string().trim().min(1),
 });

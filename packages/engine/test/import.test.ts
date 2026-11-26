@@ -166,6 +166,15 @@ for (const kind of ["intake", "weight", "days"] as const)
     });
   });
 
+test("weight imports reject reserved scale replay keys after trimming", async (context) => {
+  const { run, snapshot } = setup(context);
+  const result = await run("weight", [
+    { ...weight, client_id: " scale:alex:2025-06-03T12:00:00.000Z " },
+  ]);
+  assert.deepEqual(result?.errors, [{ line: 1, code: "invalid_row" }]);
+  assert.deepEqual(snapshot()[1], []);
+});
+
 test("days conflicts are atomic and preserve sign-off; writer failures skip only their line", async (context) => {
   const { database, run, snapshot, sign } = setup(context);
   await run("days", [days]);

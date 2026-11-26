@@ -2,6 +2,8 @@ import type { QueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { api } from "./api.ts";
 import { planKey } from "./plan-api.ts";
+import { historyKey } from "./profile-api.ts";
+import { todayKey } from "./today-api.ts";
 
 export const questionSchema = z.object({
   id: z.number(),
@@ -38,12 +40,18 @@ export async function readQuestions(signal: AbortSignal) {
 }
 
 export async function answerQuestion(id: number, answer: unknown) {
-  return z.object({ id: z.number(), status: z.literal("answered") }).parse(
-    await api("/api/questions/answer", {
-      method: "POST",
-      body: JSON.stringify({ id, answer }),
-    }),
-  );
+  return z
+    .object({
+      id: z.number(),
+      status: z.literal("answered"),
+      weight_logged: z.boolean().optional(),
+    })
+    .parse(
+      await api("/api/questions/answer", {
+        method: "POST",
+        body: JSON.stringify({ id, answer }),
+      }),
+    );
 }
 
 export function labelAnswer(values: LabelValues) {
@@ -75,10 +83,20 @@ export function lateTargetIsNew(question: Question) {
   return parsed.success && parsed.data.target.type === "new";
 }
 
-export async function refreshAnswered(client: QueryClient, person: number) {
+export async function refreshAnswered(
+  client: QueryClient,
+  person: number,
+  weightLogged = false,
+) {
   await Promise.all([
     client.invalidateQueries({ queryKey: questionsKey(person) }),
     client.invalidateQueries({ queryKey: ["find_food", person] }),
     client.invalidateQueries({ queryKey: planKey(person) }),
+    ...(weightLogged
+      ? [
+          client.invalidateQueries({ queryKey: todayKey(person) }),
+          client.invalidateQueries({ queryKey: historyKey(person) }),
+        ]
+      : []),
   ]);
 }

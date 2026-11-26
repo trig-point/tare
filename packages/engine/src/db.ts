@@ -194,21 +194,31 @@ export function scopeDatabase(scope: WriteScope): Database.Database {
 export function writeTransaction<Result>(
   database: Database.Database,
   callback: (scope: WriteScope) => Result,
+  options?: { noBusyWait: true },
 ): Result {
   if (database.inTransaction) throw new Error("Write transaction cannot nest");
   const committed: (() => void)[] = [];
-  const result = database
-    .transaction(() => {
-      const scope: WriteScope = { database, [scopeBrand]: true };
-      liveScopes.add(scope);
-      commitQueues.set(scope, committed);
-      try {
-        return callback(scope);
-      } finally {
-        liveScopes.delete(scope);
-      }
-    })
-    .immediate();
+  const transaction = database.transaction(() => {
+    const scope: WriteScope = { database, [scopeBrand]: true };
+    liveScopes.add(scope);
+    commitQueues.set(scope, committed);
+    try {
+      return callback(scope);
+    } finally {
+      liveScopes.delete(scope);
+    }
+  });
+  const previousTimeout = options
+    ? Number(database.pragma("busy_timeout", { simple: true }))
+    : undefined;
+  if (options) database.pragma("busy_timeout = 0");
+  let result: Result;
+  try {
+    result = transaction.immediate();
+  } finally {
+    if (previousTimeout !== undefined)
+      database.pragma(`busy_timeout = ${previousTimeout}`);
+  }
   for (const run of committed) run();
   return result;
 }

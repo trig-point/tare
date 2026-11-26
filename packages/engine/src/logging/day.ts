@@ -1,3 +1,4 @@
+import { personDayBounds, wallTime } from "../calendar/time.ts";
 import { OperationError } from "../operations/registry.ts";
 
 export function canonicalInstant(input: string): string {
@@ -22,37 +23,36 @@ export function canonicalInstant(input: string): string {
 }
 
 export function localDay(
-  instant: string,
-  timeZone: string,
+  timestamp: string,
+  timezone: string,
   dayStartHour: number,
 ): string {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    calendar: "gregory",
-    numberingSystem: "latn",
-    era: "short",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(new Date(instant));
-  const values = Object.fromEntries(
-    parts.map((part) => [part.type, part.value]),
-  );
-  const year = Number(values.year);
-  const day = new Date(0);
-  day.setUTCFullYear(
-    values.era === "BC" ? 1 - year : year,
-    Number(values.month) - 1,
-    Number(values.day),
-  );
-  if (Number(values.hour) < dayStartHour) day.setUTCDate(day.getUTCDate() - 1);
-  return day.toISOString().slice(0, 10);
+  return personDayAt(timestamp, timezone, dayStartHour).day;
 }
 
 export function shiftDay(day: string, days: number) {
   const date = new Date(`${day}T00:00:00.000Z`);
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+export function personDayAt(
+  timestamp: string,
+  timezone: string,
+  dayStartHour: number,
+) {
+  const instant = new Date(timestamp);
+  const wall = wallTime(instant, timezone);
+  if (wall.getUTCHours() < dayStartHour) wall.setUTCDate(wall.getUTCDate() - 1);
+  const candidate = wall.toISOString().slice(0, 10);
+  const boundsFor = (day: string) =>
+    personDayBounds(day, timezone, dayStartHour);
+  const candidateBounds = boundsFor(candidate);
+  const day =
+    instant < candidateBounds.start
+      ? shiftDay(candidate, -1)
+      : instant >= candidateBounds.end
+        ? shiftDay(candidate, 1)
+        : candidate;
+  return { day, ...(day === candidate ? candidateBounds : boundsFor(day)) };
 }

@@ -293,18 +293,22 @@ function useAnswer(person: number, question: Question, onAnswered: () => void) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (answer: unknown) => answerQuestion(question.id, answer),
-    onSuccess: async () => {
+    onSuccess: async ({ weight_logged }) => {
       // Drop it now so a failed refetch cannot leave it waiting.
       client.setQueryData<Question[]>(questionsKey(person), (list) =>
         list?.filter(({ id }) => id !== question.id),
       );
       onAnswered();
-      await refreshAnswered(client, person);
+      await refreshAnswered(client, person, weight_logged);
     },
     // Someone else may have answered, or the save landed and its reply was lost.
     onError: (error) => {
       if (!(error instanceof ApiError && error.status === 400))
-        void refreshAnswered(client, person);
+        void refreshAnswered(
+          client,
+          person,
+          question.kind === "scale_implausible",
+        );
     },
   });
 }
@@ -376,9 +380,12 @@ function QuestionForm({
       {!online && <p className="question-hint">Answers need a connection.</p>}
       {answer.isError && (
         <p role="alert">
-          {answer.error instanceof ApiError && answer.error.status === 400
-            ? "Check the answer"
-            : "Couldn’t save answer"}
+          {answer.error instanceof ApiError &&
+          answer.error.code === "scale_day_unknown"
+            ? "Log this weight manually."
+            : answer.error instanceof ApiError && answer.error.status === 400
+              ? "Check the answer"
+              : "Couldn’t save answer"}
         </p>
       )}
     </>
