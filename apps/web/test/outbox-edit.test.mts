@@ -184,3 +184,16 @@ test("unchanged null text fields stay null and resend while typed null stays tex
   await queue.wake();
   assert.deepEqual(await store.entries(person.id), []);
 });
+
+test("clearing queued calories also removes the menu claim", () => {
+  const body = { kcal: 500, kcal_basis: "menu", protein_g: 20 };
+  for (const kcal of [undefined, null])
+    assert.deepEqual(
+      editorPatch(body, { kcal, kcal_basis: "menu", protein_g: "20" }),
+      {
+        kcal,
+        kcal_basis: undefined,
+        protein_g: 20,
+      },
+    );
+});

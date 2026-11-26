@@ -583,6 +583,7 @@ function IntakeForm({
     ),
   );
   const [servings, setServings] = useState(String(original.servings ?? 1));
+  const servingsChanged = Number(servings) !== original.servings;
   const [eatingOut, setEatingOut] = useState(original.eating_out);
   const [postedMenu, setPostedMenu] = useState(original.kcal_basis === "menu");
   const canSetMenu =
@@ -594,9 +595,7 @@ function IntakeForm({
         const changes = reference
           ? {
               ...intakeTagChanges(original, eatingOut),
-              ...(Number(servings) === original.servings
-                ? {}
-                : { servings: Number(servings) }),
+              ...(servingsChanged ? { servings: Number(servings) } : {}),
             }
           : intakeChanges(
               original,
@@ -620,7 +619,7 @@ function IntakeForm({
             Servings
             <input
               type="number"
-              min="0.01"
+              min={servingsChanged ? "0.01" : undefined}
               step="any"
               required
               value={servings}
