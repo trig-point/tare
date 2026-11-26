@@ -40,6 +40,15 @@ export async function readUnsignedDays(signal: AbortSignal) {
     .parse(await api("/api/days/unsigned", { signal })).days;
 }
 
+export async function skipDay(day: string) {
+  return z.object({ skipped: z.boolean() }).parse(
+    await api("/api/days/skip", {
+      method: "POST",
+      body: JSON.stringify({ day }),
+    }),
+  );
+}
+
 export function signOffValues(day: DayMetadata): SignOffValues {
   return {
     hunger: day.hunger === null ? "" : String(day.hunger),

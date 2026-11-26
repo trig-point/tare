@@ -110,9 +110,11 @@ test("unsigned days are listed and reviewed in turn", async (context) => {
         failed: false,
         online: true,
         open: () => {},
+        skip: () => {},
+        skipping: false,
       }),
     ),
-    /All past days signed off/,
+    /No past days to review/,
   );
   for (const day of ["2025-12-28", "2025-12-29", "2025-12-30"])
     await eat(day, "Example rice");
@@ -128,9 +130,12 @@ test("unsigned days are listed and reviewed in turn", async (context) => {
       failed: false,
       online: true,
       open: () => {},
+      skip: () => {},
+      skipping: false,
     }),
   );
   assert.equal(list.match(/aria-label="Review 2025-12-\d\d"/g)?.length, 3);
+  assert.equal(list.match(/aria-label="Skip 2025-12-\d\d"/g)?.length, 3);
   const next = nextUnsignedDay(days, "2025-12-30");
   assert.equal(next, "2025-12-29");
   assert.match(await review(person, "2025-12-30", next), /Next day/);

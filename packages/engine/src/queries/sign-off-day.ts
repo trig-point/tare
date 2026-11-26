@@ -29,6 +29,7 @@ export function signOffDay(
 	VALUES (?, ?, ?, ?, ?, ?)
 	ON CONFLICT (user_id, day) DO UPDATE SET
 	    signed_off_at = ?,
+	    skipped_at = NULL,
 	    hunger = CASE WHEN ? THEN ? ELSE days.hunger END,
 	    fullness = CASE WHEN ? THEN ? ELSE days.fullness END,
 	    notes = CASE WHEN ? THEN ? ELSE days.notes END

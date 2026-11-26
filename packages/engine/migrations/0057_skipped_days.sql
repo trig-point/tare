@@ -1,0 +1,1 @@
+ALTER TABLE days ADD COLUMN skipped_at TEXT;

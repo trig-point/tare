@@ -65,6 +65,7 @@ test("registry constrains public and administrator operations and inventories ev
       "today",
       "find_food",
       "list_usual_foods",
+      "skip_day",
       "add_day_note",
       "list_unsigned_days",
       "read_day",

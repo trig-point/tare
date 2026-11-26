@@ -24,7 +24,8 @@ export function insertDay(
 ): InsertDayResult | null {
   const sql = `
 	INSERT INTO days (user_id, day, signed_off_at, hunger, fullness, notes)
-	VALUES (?, ?, ?, ?, ?, ?) RETURNING *;
+	VALUES (?, ?, ?, ?, ?, ?)
+	RETURNING user_id, day, signed_off_at, hunger, fullness, notes;
 	
 	`;
   const res = db

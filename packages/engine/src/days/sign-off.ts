@@ -12,6 +12,7 @@ import { appendDayNote } from "../queries/append-day-note.ts";
 import { selectDay } from "../queries/select-day.ts";
 import { selectUnsignedDays } from "../queries/select-unsigned-days.ts";
 import { signOffDay } from "../queries/sign-off-day.ts";
+import { skipDay } from "../queries/skip-day.ts";
 import { ledgerSchema, readLedgerView } from "./ledger.ts";
 
 const dayInput = zod.strictObject({ day: zod.iso.date() });
@@ -74,6 +75,25 @@ export const daySignOffOperations = [
         return result;
       });
       return { status: 200, body };
+    },
+  }),
+  defineOperation({
+    ...shared,
+    name: "skip_day",
+    description: "Hide an unsigned day from the review list.",
+    method: "POST",
+    path: "/api/days/skip",
+    bodyLimit: 8192,
+    input: dayInput,
+    output: zod.strictObject({ skipped: zod.boolean() }),
+    handler(input, context) {
+      rejectFuture(input.day, context);
+      const updated = skipDay(
+        context.database,
+        { skipped_at: context.clock.now().toISOString() },
+        { user_id: operationPerson(context).id, day: input.day },
+      );
+      return { status: 200, body: { skipped: updated.length > 0 } };
     },
   }),
   defineOperation({

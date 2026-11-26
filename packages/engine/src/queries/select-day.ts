@@ -19,7 +19,7 @@ export function selectDay(
   params: SelectDayParams,
 ): SelectDayResult | null {
   const sql = `
-	SELECT * FROM days WHERE user_id = ? AND day = ? LIMIT 1;
+	SELECT user_id, day, signed_off_at, hunger, fullness, notes FROM days WHERE user_id = ? AND day = ? LIMIT 1;
 	
 	`;
   const res = db.prepare(sql).raw(true).get([params.user_id, params.day]);
