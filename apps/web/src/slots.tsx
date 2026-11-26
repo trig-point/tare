@@ -183,7 +183,12 @@ function SlotBlock({
         <p className="m-0 mt-3 text-ink-2">Nothing planned</p>
       )}
       {items.map((item) => (
-        <ItemRow key={item.id} person={person} item={item} online={online} />
+        <ItemRow
+          key={`${item.id}:${item.reference.kind}:${item.reference.id}`}
+          person={person}
+          item={item}
+          online={online}
+        />
       ))}
     </div>
   );

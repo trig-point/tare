@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { api, liveRefresh } from "./api.ts";
+import { eatingOutOverride, foodChoiceFields } from "./eating-out-fields.ts";
 
 const nutrientBudget = z.object({
   known_subtotal: z.number(),
@@ -8,15 +9,17 @@ const nutrientBudget = z.object({
   remaining: z.number().nullable(),
 });
 
-import { eatingOutOverride, foodChoiceFields } from "./eating-out-fields.ts";
-
 export const plannedItemSchema = z.object({
   id: z.number().int().positive(),
   revision: z.number().int().positive(),
   state: z.enum(["planned", "eaten", "skipped"]),
   ...foodChoiceFields,
   position: z.number().int().nonnegative(),
-  reference: z.object({ name: z.string() }),
+  reference: z.object({
+    kind: z.enum(["food", "meal"]).optional(),
+    id: z.number().int().positive().optional(),
+    name: z.string(),
+  }),
   servings: z.number().positive().nullable(),
   nutrition: z.object({ status: z.enum(["known", "pending", "unknown"]) }),
 });

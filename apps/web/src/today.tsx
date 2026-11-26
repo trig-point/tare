@@ -652,6 +652,8 @@ function IntakeForm({
           >
             <input
               type="checkbox"
+              data-slot="checkbox"
+              className="size-4 shrink-0 accent-accent"
               checked={canSetMenu && postedMenu}
               onChange={(event) => setPostedMenu(event.target.checked)}
             />

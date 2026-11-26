@@ -76,11 +76,13 @@ export function AddFood({ person, replay, online }: Props) {
     catalog.data?.result === "match" ? catalog.data.foods : [];
   const recent = todayFoods(today.data?.entries ?? []);
   const live = [
-    ...(searched?.data ?? []),
-    ...catalogMatches,
-    ...(usual.data ?? []),
-    ...recent,
-  ];
+    { foods: searched?.data ?? [], updatedAt: searched?.submittedAt ?? 0 },
+    { foods: catalogMatches, updatedAt: catalog.dataUpdatedAt },
+    { foods: recent, updatedAt: today.dataUpdatedAt },
+    { foods: usual.data ?? [], updatedAt: usual.dataUpdatedAt },
+  ]
+    .sort((left, right) => right.updatedAt - left.updatedAt)
+    .flatMap(({ foods }) => foods);
   const refreshTags = (food: FoodChoice) => {
     const current = live.find(
       (choice) =>
@@ -601,6 +603,8 @@ function NumbersForm({
         >
           <input
             type="checkbox"
+            data-slot="checkbox"
+            className="size-4 shrink-0 accent-accent"
             checked={hasKcal && postedMenu}
             onChange={(event) => setPostedMenu(event.target.checked)}
           />

@@ -341,17 +341,39 @@ test("add food opens on Search with usual foods before typing", async (context) 
   );
   const client = new QueryClient();
   const today = await readToday(new AbortController().signal);
-  client.setQueryData(todayKey(admin.user.id), {
-    ...today,
-    entries: [
-      entry(1, { food_id: 5, name: "Example oats" }),
-      entry(2, { food_id: 6, kcal: null }),
+  client.setQueryData(
+    todayKey(admin.user.id),
+    {
+      ...today,
+      entries: [
+        entry(1, {
+          food_id: 5,
+          name: "Example oats",
+          food_choice: { eating_out_default: false, can_tag_eating_out: false },
+        }),
+        entry(2, { food_id: 6, kcal: null }),
+      ],
+    },
+    { updatedAt: 200 },
+  );
+  client.setQueryData(
+    usualFoodsQuery(admin.user.id).queryKey,
+    [
+      {
+        ...exampleChoice,
+        reference: { kind: "food", id: 5 },
+        servings: 1.5,
+        eating_out_default: true,
+        can_tag_eating_out: true,
+      },
     ],
-  });
-  client.setQueryData(usualFoodsQuery(admin.user.id).queryKey, [
-    { ...exampleChoice, reference: { kind: "food", id: 5 }, servings: 1.5 },
-  ]);
+    { updatedAt: 100 },
+  );
   const html = renderAddFood(admin.user, client);
+  const oatsRow = html
+    .split("</li>")
+    .find((row) => row.includes('id="servings-food-5"'));
+  assert.match(oatsRow ?? "", /<button[^>]*aria-checked="false" disabled=""/);
   const tabs = [...html.matchAll(/role="tab"[^>]*>([^<]+)</g)].map(
     (match) => match[1],
   );
