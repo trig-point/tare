@@ -4,6 +4,7 @@ export type InsertScaleReadingParams = {
   client_id: string;
   user_id: number;
   created_at: string;
+  day: string | null;
 };
 
 export type InsertScaleReadingResult = {
@@ -16,8 +17,8 @@ export function insertScaleReading(
   params: InsertScaleReadingParams,
 ): InsertScaleReadingResult {
   const sql = `
-	INSERT INTO scale_readings (client_id, user_id, created_at)
-	VALUES (?, ?, ?)
+	INSERT INTO scale_readings (client_id, user_id, created_at, day)
+	VALUES (?, ?, ?, ?)
 	ON CONFLICT (client_id) DO NOTHING;
 	
 	`;
@@ -27,5 +28,6 @@ export function insertScaleReading(
       params.client_id,
       params.user_id,
       params.created_at,
+      params.day,
     ]) as InsertScaleReadingResult;
 }

@@ -75,6 +75,7 @@ export const questionOperations = [
     output: zod.strictObject({
       id: zod.number().int(),
       status: zod.literal("answered"),
+      weight_logged: zod.boolean().optional(),
     }),
     handler(input, context) {
       const { database, clock } = context;
@@ -106,7 +107,13 @@ export const questionOperations = [
         throw new OperationError(409, "order_superseded");
       return {
         status: 200 as const,
-        body: { id: result.id, status: "answered" },
+        body: {
+          id: result.id,
+          status: "answered",
+          ...(result.outcome.weight_logged === undefined
+            ? {}
+            : { weight_logged: result.outcome.weight_logged }),
+        },
       };
     },
   }),

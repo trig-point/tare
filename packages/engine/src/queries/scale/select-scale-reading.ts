@@ -5,7 +5,7 @@ export type SelectScaleReadingParams = {
 };
 
 export type SelectScaleReadingResult = {
-  client_id: string;
+  day: string | null;
 };
 
 export function selectScaleReading(
@@ -13,7 +13,7 @@ export function selectScaleReading(
   params: SelectScaleReadingParams,
 ): SelectScaleReadingResult | null {
   const sql = `
-	SELECT client_id FROM scale_readings WHERE client_id = ? LIMIT 1;
+	SELECT day FROM scale_readings WHERE client_id = ? LIMIT 1;
 	
 	`;
   const res = db.prepare(sql).raw(true).get([params.client_id]);
@@ -23,7 +23,7 @@ export function selectScaleReading(
 
 function mapArrayToSelectScaleReadingResult(data: any) {
   const result: SelectScaleReadingResult = {
-    client_id: data[0],
+    day: data[0],
   };
   return result;
 }

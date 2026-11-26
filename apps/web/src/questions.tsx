@@ -293,13 +293,13 @@ function useAnswer(person: number, question: Question, onAnswered: () => void) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (answer: unknown) => answerQuestion(question.id, answer),
-    onSuccess: async () => {
+    onSuccess: async ({ weight_logged }) => {
       // Drop it now so a failed refetch cannot leave it waiting.
       client.setQueryData<Question[]>(questionsKey(person), (list) =>
         list?.filter(({ id }) => id !== question.id),
       );
       onAnswered();
-      await refreshAnswered(client, person);
+      await refreshAnswered(client, person, weight_logged);
     },
     // Someone else may have answered, or the save landed and its reply was lost.
     onError: (error) => {

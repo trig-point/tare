@@ -39,7 +39,7 @@ export type HomeAssistantPublisher = ReturnType<
 const errorName = (error: unknown) =>
   error instanceof Error ? error.name : "UnknownError";
 
-export type MessageHandler = (payload: Buffer, topic: string) => void;
+export type MessageHandler = (payload: Buffer, topic: string) => unknown;
 
 function topicMatches(filter: string, topic: string) {
   const filterLevels = filter.split("/");
@@ -81,6 +81,7 @@ export function createHomeAssistantPublisher({
   let stopped = false;
   let outage = false;
   let stopping: Promise<void> | undefined;
+  let delivery: Promise<void> | undefined;
 
   const client: MqttClient = connect(config.url, {
     clientId: `tare-${install}`,
@@ -104,18 +105,34 @@ export function createHomeAssistantPublisher({
   });
   client.on("close", markOffline);
   client.on("error", markOffline);
-  client.on("message", (topic, payload) => {
+  async function handleDelivery(topic: string, payload: Buffer) {
     if (topic === config.statusTopic) {
       if (payload.toString() === "online") refreshAll(true);
-    } else
-      for (const [filter, handler] of handlers)
-        if (topicMatches(filter, topic))
-          try {
-            handler(payload, topic);
-          } catch (error) {
-            log("mqtt_handler_failed", errorName(error));
-          }
-  });
+      return;
+    }
+    for (const [filter, handler] of handlers)
+      if (topicMatches(filter, topic)) await handler(payload, topic);
+  }
+
+  // MQTT.js waits for this callback before sending PUBACK.
+  client.handleMessage = ({ topic, payload }, acknowledge) => {
+    if (stopped) {
+      acknowledge(new Error("mqtt_stopping"));
+      return;
+    }
+    delivery = handleDelivery(
+      topic,
+      typeof payload === "string" ? Buffer.from(payload) : payload,
+    ).then(
+      () => acknowledge(),
+      (error: unknown) => {
+        log("mqtt_handler_failed", errorName(error));
+        acknowledge(
+          error instanceof Error ? error : new Error("mqtt_handler_failed"),
+        );
+      },
+    );
+  };
 
   function refreshAll(replayRequested = false) {
     if (stopped) return;
@@ -272,6 +289,7 @@ export function createHomeAssistantPublisher({
     stop() {
       stopping ??= (async () => {
         stopped = true;
+        await delivery;
         for (const timer of timers.values()) timer.cancel();
         timers.clear();
         let confirmed = false;

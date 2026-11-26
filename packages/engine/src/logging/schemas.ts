@@ -132,7 +132,7 @@ export const editIntakeInput = zod
   })
   .refine((input) => Object.keys(input).length > 1);
 export const logWeightInput = zod.strictObject({
-  client_id: text,
+  client_id: text.refine((value) => !value.startsWith("scale:")),
   measured_at: zod.string().optional(),
   weight_kg: zod.number().positive(),
   body_fat_pct: zod.number().min(0).max(100).nullable().optional(),
