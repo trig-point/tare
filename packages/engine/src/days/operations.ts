@@ -10,7 +10,7 @@ import { selectTodayWeights } from "../queries/select-today-weights.ts";
 import { targetNoticeSchema } from "../target/operations.ts";
 import { readTarget, targetSchema } from "../target/reader.ts";
 import { findFood, findFoodInput, findFoodOutput } from "./find-food.ts";
-import { ledgerSchema, readLedger, remainingFor } from "./ledger.ts";
+import { ledgerSchema, readLedgerView, remainingFor } from "./ledger.ts";
 import { listUsualFoods, usualFoodsOutput } from "./usual-foods.ts";
 
 const shared = {
@@ -44,7 +44,7 @@ export const dayReadOperations = [
         person.timezone,
         person.day_start_hour,
       );
-      const ledger = readLedger(context.database, person.id, day);
+      const ledger = readLedgerView(context.database, person.id, day);
       const target = readTarget(context.database, person, now, context.config);
       return {
         status: 200,

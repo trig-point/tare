@@ -31,6 +31,9 @@ const intake = zod
     source_food_id: true,
     servings: true,
     portion_note: true,
+    eating_out: true,
+    kcal_basis: true,
+    packaged_food: true,
   });
 const weight = logWeightInput.extend({
   client_id: clientId,
@@ -100,6 +103,7 @@ export async function importFiles(
                 person,
                 {
                   client_id: input.client_id,
+                  historicalImport: true,
                   eaten_at: checkedInstant(input.eaten_at, clock),
                   name: input.name,
                   numbers: numbersFrom(input),

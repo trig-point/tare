@@ -42,6 +42,7 @@ const claim = {
   provenance: zod.enum(["verified", "label", "estimated"]).optional(),
   source: text.nullable().optional(),
 };
+const kcalBasisClaim = zod.enum(["menu", "other"]).optional();
 const common = {
   client_id: text,
   eaten_at: zod.string().optional(),
@@ -56,6 +57,9 @@ export const logFoodInput = zod
     ...common,
     ...claim,
     ...optionalNumbers,
+    eating_out: zod.boolean().optional(),
+    kcal_basis: kcalBasisClaim,
+    packaged_food: zod.boolean().optional(),
     food_id: zod.number().int().positive().optional(),
     source_food_id: zod.number().int().positive().optional(),
     servings: zod.number().positive().optional(),
@@ -115,6 +119,8 @@ export const idInput = zod.strictObject({
 export const editIntakeInput = zod
   .strictObject({
     ...idInput.shape,
+    eating_out: zod.boolean().optional(),
+    kcal_basis: kcalBasisClaim,
     ...optionalNumbers,
     ...claim,
     name: text.optional(),
@@ -151,6 +157,7 @@ export const editWeightInput = zod
       .partial().shape,
   })
   .refine((input) => Object.keys(input).length > 1);
+const bit = zod.union([zod.literal(0), zod.literal(1)]);
 export const intakeRow = zod.strictObject({
   id: zod.number(),
   user_id: zod.number(),
@@ -159,7 +166,10 @@ export const intakeRow = zod.strictObject({
   food_id: zod.number().nullable(),
   source_food_id: zod.number().nullable(),
   servings: zod.number().nullable(),
-  amount_estimated: zod.union([zod.literal(0), zod.literal(1)]).default(0),
+  amount_estimated: bit.default(0),
+  eating_out: bit.default(0),
+  kcal_basis: zod.enum(["legacy", "menu", "label", "other"]).default("legacy"),
+  packaged_food: bit.default(0),
   servings_low: zod.number().nullable().default(null),
   servings_high: zod.number().nullable().default(null),
   eaten_at: zod.string(),
@@ -172,6 +182,9 @@ export const intakeRow = zod.strictObject({
   updated_at: zod.string(),
   slot_template_id: zod.number().nullable().optional(),
   slot_position: zod.number().nullable().optional(),
+});
+export const intakeReadRow = intakeRow.extend({
+  can_tag_eating_out: zod.boolean(),
 });
 export const weightRow = zod.strictObject({
   id: zod.number(),

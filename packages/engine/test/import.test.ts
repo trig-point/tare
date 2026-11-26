@@ -114,12 +114,21 @@ for (const kind of ["intake", "weight", "days"] as const)
       ],
     });
     if (kind === "intake") {
+      for (const field of [
+        { eating_out: true },
+        { kcal_basis: "menu" },
+        { packaged_food: true },
+      ]) {
+        const result = await run(kind, [{ ...intake, ...field }]);
+        assert.deepEqual(result?.errors, [{ line: 1, code: "invalid_row" }]);
+      }
       const stored = selectIntakeByClient(database, {
         user_id: 1,
         client_id: intake.client_id,
       });
       assert.equal(stored?.protein_g, null);
       assert.equal(stored?.provenance, "estimated");
+      assert.deepEqual([stored?.kcal_basis, stored?.eating_out], ["legacy", 0]);
       assert.equal(stored?.day, day);
       // History is never consumed from the pantry, not even as a disabled outcome.
       const outcomes = "SELECT count(*) FROM pantry_outcomes";

@@ -12,7 +12,7 @@ import { appendDayNote } from "../queries/append-day-note.ts";
 import { selectDay } from "../queries/select-day.ts";
 import { selectUnsignedDays } from "../queries/select-unsigned-days.ts";
 import { signOffDay } from "../queries/sign-off-day.ts";
-import { ledgerSchema, readLedger } from "./ledger.ts";
+import { ledgerSchema, readLedgerView } from "./ledger.ts";
 
 const dayInput = zod.strictObject({ day: zod.iso.date() });
 const rating = zod.number().int().min(1).max(5).nullable();
@@ -135,7 +135,7 @@ export const daySignOffOperations = [
       return {
         status: 200,
         body: {
-          ...readLedger(context.database, person.id, input.day),
+          ...readLedgerView(context.database, person.id, input.day),
           doses: readDayDoses(
             context.database,
             person,

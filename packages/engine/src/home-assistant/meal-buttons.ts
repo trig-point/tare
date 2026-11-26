@@ -7,7 +7,7 @@ import {
   actOnPlannedItem,
   eatMealInput,
   eatOrderMeal,
-  plannedItemActionInput,
+  planPressPayload,
 } from "../orders/eat.ts";
 import { listMealsOnHand } from "../orders/index.ts";
 import type { PantryStock } from "../pantry/requests.ts";
@@ -26,7 +26,6 @@ const actions = [
 const planActions = [...actions, ["skip", "skip"]] as const;
 
 const pressPayload = eatMealInput.omit({ mutation_id: true });
-const planPressPayload = plannedItemActionInput.omit({ mutation_id: true });
 
 export const pressTopic = (install: string, userId: number) =>
   `tare/${install}/${userId}/meal_press`;

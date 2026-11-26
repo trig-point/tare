@@ -28,14 +28,16 @@ test("takeout lunch logs two estimated source foods and totals their ranges", as
   assert.deepEqual(
     entries.map((entry: (typeof entries)[number]) => [
       entry.source_food_id,
+      entry.kcal_basis,
+      entry.eating_out,
       entry.amount_estimated,
       entry.provenance,
       entry.kcal_low,
       entry.kcal_high,
     ]),
     [
-      [1, 1, "estimated", 325, 455],
-      [2, 1, "estimated", 224, 320],
+      [1, "other", 0, 1, "estimated", 325, 455],
+      [2, "other", 0, 1, "estimated", 224, 320],
     ],
   );
   assert.equal(entries[0].eaten_at, entries[1].eaten_at);

@@ -11,9 +11,17 @@ import { deleteIntake } from "../queries/delete-intake.ts";
 import { deleteWeight } from "../queries/delete-weight.ts";
 import { selectIntakeEntry } from "../queries/select-intake-entry.ts";
 import { selectWeight } from "../queries/select-weight.ts";
+import { updateEatingOut } from "../queries/update-eating-out.ts";
 import { updateIntake } from "../queries/update-intake.ts";
 import { updateWeight } from "../queries/update-weight.ts";
 import { canonicalInstant, localDay } from "./day.ts";
+import {
+  adHocBasis,
+  canTagEatingOut,
+  eatingOutValue,
+  intakeRead,
+  isOrderEntry,
+} from "./eating-out.ts";
 import { insertIntake, readServingRange, referenceSnapshot } from "./intake.ts";
 import { logMealParts } from "./meal-parts.ts";
 import { resolveProvenance } from "./provenance.ts";
@@ -21,7 +29,7 @@ import {
   editIntakeInput,
   editWeightInput,
   idInput,
-  intakeRow,
+  intakeReadRow,
   logFoodInput,
   logWeightInput,
   numbersFrom,
@@ -41,13 +49,13 @@ const logFood = defineOperation({
   ...base,
   name: "log_food",
   description:
-    "Use one food_id or source_food_id with servings and no name, source or nutrients. For ad hoc food, omit servings and provide a name and at least one of kcal, protein_g, carbs_g, fat_g or fiber_g. Use amount_estimated: true for a guessed portion, with both servings bounds or neither. Omit provenance for an estimated amount.",
+    "Use one food_id or source_food_id with servings and no name, source or nutrients. For ad hoc food, omit servings and provide a name and at least one of kcal, protein_g, carbs_g, fat_g or fiber_g. Use amount_estimated: true for a guessed portion, with both servings bounds or neither. Omit provenance for an estimated amount. Eligible restaurant meals default to eating out. Use eating_out to override. For ad hoc entries, send packaged_food for a package or kcal_basis with non-null kcal for a posted menu.",
   method: "POST",
   path: "/api/intake",
   input: logFoodInput,
   inputIssues: true,
   output: zod.object({
-    entry: intakeRow,
+    entry: intakeReadRow,
     created: zod.boolean(),
     stock: stockResult.optional(),
   }),
@@ -85,7 +93,11 @@ const logFood = defineOperation({
     );
     return {
       status: body.created ? 201 : 200,
-      body: { ...body, stock: stockView(context.database, stock) },
+      body: {
+        ...body,
+        entry: intakeRead(context.database, body.entry),
+        stock: stockView(context.database, stock),
+      },
     };
   },
 });
@@ -108,17 +120,36 @@ const editIntake = defineOperation({
   ...base,
   name: "edit_intake",
   description:
-    "Edit an intake entry's eaten_at or portion_note, servings for a referenced food, or name and nutrition numbers for ad hoc food. For an estimated amount, set both serving bounds to bracket servings or use amount_measured: true to clear the estimate without sending bounds.",
+    "Edit an intake entry's eaten_at or portion_note, servings for a referenced food, or name and nutrition numbers for ad hoc food. For an estimated amount, set both serving bounds to bracket servings or use amount_measured: true to clear the estimate without sending bounds. Send only eating_out to preserve sign-off. For a posted menu correction, send kcal and kcal_basis: menu together.",
   method: "PATCH",
   path: "/api/intake/:id",
   input: editIntakeInput,
-  output: zod.object({ entry: intakeRow, stock: stockResult.optional() }),
+  output: zod.object({ entry: intakeReadRow, stock: stockResult.optional() }),
   handler(input, context) {
     const person = operationPerson(context);
     const body = writeTransaction(context.database, (scope) => {
-      const owner = { user_id: person.id, id: input.id };
+      const { id, eating_out, kcal_basis, ...changes } = input;
+      const owner = { user_id: person.id, id };
       const stored = selectIntakeEntry(context.database, owner);
       if (!stored) throw new OperationError(404, "not_found");
+      if (
+        eating_out !== undefined &&
+        kcal_basis === undefined &&
+        Object.values(changes).every((value) => value === undefined)
+      ) {
+        const tag = eatingOutValue(
+          eating_out,
+          false,
+          canTagEatingOut(context.database, stored),
+        );
+        const updated = updateEatingOut(
+          context.database,
+          { eating_out: tag },
+          owner,
+        )[0];
+        if (!updated) throw new Error("Eating-out update returned no entry");
+        return { entry: intakeRead(context.database, updated) };
+      }
       const reference =
         stored.food_id !== null || stored.source_food_id !== null;
       const estimated = stored.amount_estimated === 1;
@@ -141,6 +172,7 @@ const editIntake = defineOperation({
               "eaten_at",
               "servings",
               "portion_note",
+              "eating_out",
               "amount_measured",
               "servings_low",
               "servings_high",
@@ -156,17 +188,19 @@ const editIntake = defineOperation({
         (input.provenance !== undefined || input.source !== undefined)
       )
         throw new OperationError(400, "invalid_request");
+      if (kcal_basis !== undefined && input.kcal == null)
+        throw new OperationError(400, "invalid_kcal_basis");
       let merged = {
         ...stored,
-        ...input,
+        ...changes,
         ...owner,
         provenance: stored.provenance,
         source: stored.source,
       };
-      if (
+      const resnapshot =
         reference &&
-        (input.servings !== undefined || changesRange || input.amount_measured)
-      ) {
+        (input.servings !== undefined || changesRange || input.amount_measured);
+      if (resnapshot) {
         const ref =
           stored.food_id !== null
             ? { kind: "food" as const, id: stored.food_id }
@@ -201,6 +235,7 @@ const editIntake = defineOperation({
             servings,
             {},
             estimatedRange,
+            isOrderEntry(context.database, stored),
           ),
         };
       } else if (changesNumbers) {
@@ -208,6 +243,27 @@ const editIntake = defineOperation({
         merged.source =
           input.source === undefined ? stored.source : input.source;
       }
+      const replacesKcal = !reference && input.kcal !== undefined;
+      const label =
+        !reference &&
+        changesNumbers &&
+        (stored.kcal_basis === "label" ||
+          (stored.kcal_basis === "legacy" && stored.provenance === "label") ||
+          input.provenance === "label");
+      if (replacesKcal || label) {
+        merged.kcal_basis = adHocBasis(
+          kcal_basis,
+          merged.kcal,
+          label,
+          stored.packaged_food === 1,
+        );
+      }
+      if (eating_out !== undefined || resnapshot || replacesKcal || label)
+        merged.eating_out = eatingOutValue(
+          eating_out,
+          stored.eating_out === 1,
+          canTagEatingOut(context.database, merged),
+        );
       if (!reference) validateNumbers(numbersFrom(merged));
       merged.eaten_at =
         input.eaten_at === undefined
@@ -229,7 +285,7 @@ const editIntake = defineOperation({
         ? null
         : operationStock(context).record(scope, person.id, updated, false);
       return {
-        entry: updated,
+        entry: intakeRead(context.database, updated),
         stock: stockView(context.database, outcome),
       };
     });

@@ -14,6 +14,7 @@ import {
   selectIntakeByClient,
 } from "../queries/select-intake-by-client.ts";
 import { selectMealReceipt } from "../queries/select-meal-receipt.ts";
+import { intakeRead } from "./eating-out.ts";
 import {
   type Clock,
   foodPartError,
@@ -22,7 +23,7 @@ import {
   mealPartClientId,
   readWeighedFood,
 } from "./intake.ts";
-import { intakeRow, nutrientKeys } from "./schemas.ts";
+import { intakeReadRow, nutrientKeys } from "./schemas.ts";
 
 const foodId = zod.number().int().positive();
 const grams = zod.number().positive();
@@ -52,7 +53,7 @@ const mealInput = zod.strictObject({
   parts: zod.array(mealPart).min(1).max(12),
 });
 const mealOutput = zod.strictObject({
-  entries: zod.array(intakeRow),
+  entries: zod.array(intakeReadRow),
   totals: ledgerTotalsSchema,
   kcal_range: zod
     .strictObject({ low: zod.number(), high: zod.number() })
@@ -119,7 +120,10 @@ function finiteAmount(amount: number, part: number) {
     throw foodPartError("amount_out_of_range", part);
 }
 
-function mealSummary(entries: SelectIntakeByClientResult[]) {
+function mealSummary(
+  database: Parameters<typeof intakeRead>[0],
+  entries: SelectIntakeByClientResult[],
+) {
   const bounds = entries.map((entry, index) => {
     for (const key of nutrientKeys) {
       const value = entry[key];
@@ -140,7 +144,11 @@ function mealSummary(entries: SelectIntakeByClientResult[]) {
       finiteAmount(kcal_range.high, index + 1);
     }
   }
-  return { entries, totals, kcal_range };
+  return {
+    entries: entries.map((entry) => intakeRead(database, entry)),
+    totals,
+    kcal_range,
+  };
 }
 
 export const logMealParts = defineOperation({
@@ -194,7 +202,7 @@ export const logMealParts = defineOperation({
             return entry;
           },
         );
-        return { status: 200, body: mealSummary(entries) };
+        return { status: 200, body: mealSummary(context.database, entries) };
       }
 
       const now = context.clock.now();
@@ -212,7 +220,7 @@ export const logMealParts = defineOperation({
       const entries = input.parts.map((part, index) =>
         writePart(scope, person, clock, input, part, index + 1, part_key),
       );
-      return { status: 201, body: mealSummary(entries) };
+      return { status: 201, body: mealSummary(context.database, entries) };
     });
   },
 });
