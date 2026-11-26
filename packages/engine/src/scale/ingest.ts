@@ -9,7 +9,7 @@ import {
   type WriteScope,
   writeTransaction,
 } from "../db.ts";
-import { canonicalInstant, personDayAt } from "../logging/day.ts";
+import { canonicalInstant, localDay, personDayAt } from "../logging/day.ts";
 import { insertWeight } from "../logging/weight.ts";
 import { insertScaleReading } from "../queries/scale/insert-scale-reading.ts";
 import { selectDayReceipt } from "../queries/scale/select-day-receipt.ts";
@@ -199,11 +199,11 @@ export function scaleQuestionKinds(clock: Clock): [string, QuestionKind][] {
               selectScaleReading(database, {
                 client_id: question.subject_ref,
               })?.day ??
-                personDayAt(
+                localDay(
                   scale_reading.measured_at,
                   person.timezone,
                   person.day_start_hour,
-                ).day,
+                ),
             );
           return { status: "applied", weight_logged };
         },
@@ -259,99 +259,97 @@ export function createScaleSubscriber({
       ...parsed.reading,
       clientId: `scale:${slug}:${parsed.reading.measured_at}`,
     };
-    const ingest = () =>
-      writeTransaction(database, (scope): Stored => {
-        const scoped = scopeDatabase(scope);
-        if (
-          selectSubjectQuestion(scoped, { subject_ref: reading.clientId }) ||
-          selectScaleReading(scoped, { client_id: reading.clientId })
-        )
-          return "duplicate";
-        const userId = users.get(slug);
-        if (userId === undefined) {
-          createQuestion(
-            scoped,
-            {
-              userId: null,
-              kind: "scale_unmapped",
-              subjectRef: reading.clientId,
-              prompt: `Scale user "${slug}" has no person. Add it to TARE_SCALE_USERS to log later readings.`,
-            },
-            clock,
-            questionKinds,
-          );
-          return "question_unmapped";
-        }
-        const person = selectPerson(scoped, { id: userId });
-        if (!person) throw new Error("Mapped person missing");
-        if (
-          selectWeightByClient(scoped, {
-            user_id: person.id,
-            client_id: reading.clientId,
-          })
-        )
-          return "duplicate";
-        const { day, start, end } = personDayAt(
-          reading.measured_at,
-          person.timezone,
-          person.day_start_hour,
-        );
-        const ownerDay = { user_id: userId, day };
-        const { problem, trendText } = compareTrend(
-          scoped,
-          person,
-          reading,
-          day,
-        );
-        const autoLog =
-          problem === null &&
-          !selectDayReceipt(scoped, {
-            ...ownerDay,
-            start: start.toISOString(),
-            end: end.toISOString(),
-          }) &&
-          selectTodayWeights(scoped, ownerDay).length === 0 &&
-          selectPriorFood(scoped, {
-            ...ownerDay,
-            measured_at: reading.measured_at,
-          }).length === 0;
-        insertScaleReading(scoped, {
-          ...ownerDay,
-          client_id: reading.clientId,
-          created_at: clock.now().toISOString(),
-        });
-        if (autoLog) {
-          if (!logScaleWeight(scope, person, reading, clock, day))
-            throw new Error("Scale weight already exists");
-          afterCommit(scope, onLogged, () => log("scale_refresh_failed"));
-          return "logged";
-        }
-        const amount = Number(reading.weight_kg.toFixed(1));
-        const time = localTime(reading.measured_at, person.timezone);
+    const ingest = (scope: WriteScope): Stored => {
+      const scoped = scopeDatabase(scope);
+      if (
+        selectSubjectQuestion(scoped, { subject_ref: reading.clientId }) ||
+        selectScaleReading(scoped, { client_id: reading.clientId })
+      )
+        return "duplicate";
+      const userId = users.get(slug);
+      if (userId === undefined) {
         createQuestion(
           scoped,
           {
-            userId: person.id,
-            kind: "scale_implausible",
+            userId: null,
+            kind: "scale_unmapped",
             subjectRef: reading.clientId,
-            prompt: `Scale reading of ${amount} kg at ${time}${problem ? ` ${problem}` : `. ${trendText}`} Keep it?`,
-            answerSchema: {
-              ...zod.toJSONSchema(keepAnswer, {
-                target: "draft-7",
-                io: "input",
-              }),
-              scale_reading: {
-                measured_at: reading.measured_at,
-                weight_kg: reading.weight_kg,
-                body_fat_pct: reading.body_fat_pct,
-              },
-            },
+            prompt: `Scale user "${slug}" has no person. Add it to TARE_SCALE_USERS to log later readings.`,
           },
           clock,
           questionKinds,
         );
-        return problem ? "question_implausible" : "question_review";
+        return "question_unmapped";
+      }
+      const person = selectPerson(scoped, { id: userId });
+      if (!person) throw new Error("Mapped person missing");
+      if (
+        selectWeightByClient(scoped, {
+          user_id: person.id,
+          client_id: reading.clientId,
+        })
+      )
+        return "duplicate";
+      const { day, start, end } = personDayAt(
+        reading.measured_at,
+        person.timezone,
+        person.day_start_hour,
+      );
+      const ownerDay = { user_id: userId, day };
+      const bounds = {
+        start: start.toISOString(),
+        end: end.toISOString(),
+      };
+      const { problem, trendText } = compareTrend(scoped, person, reading, day);
+      const autoLog =
+        problem === null &&
+        !selectDayReceipt(scoped, {
+          ...ownerDay,
+          ...bounds,
+        }) &&
+        selectTodayWeights(scoped, ownerDay).length === 0 &&
+        !selectPriorFood(scoped, {
+          ...ownerDay,
+          ...bounds,
+          measured_at: reading.measured_at,
+        });
+      insertScaleReading(scoped, {
+        ...ownerDay,
+        client_id: reading.clientId,
+        created_at: clock.now().toISOString(),
       });
+      if (autoLog) {
+        if (!logScaleWeight(scope, person, reading, clock, day))
+          throw new Error("Scale weight already exists");
+        afterCommit(scope, onLogged, () => log("scale_refresh_failed"));
+        return "logged";
+      }
+      const amount = Number(reading.weight_kg.toFixed(1));
+      const time = localTime(reading.measured_at, person.timezone);
+      createQuestion(
+        scoped,
+        {
+          userId: person.id,
+          kind: "scale_implausible",
+          subjectRef: reading.clientId,
+          prompt: `Scale reading of ${amount} kg at ${time}${problem ? ` ${problem}` : `. ${trendText}`} Keep it?`,
+          answerSchema: {
+            ...zod.toJSONSchema(keepAnswer, {
+              target: "draft-7",
+              io: "input",
+            }),
+            scale_reading: {
+              measured_at: reading.measured_at,
+              weight_kg: reading.weight_kg,
+              body_fat_pct: reading.body_fat_pct,
+            },
+          },
+        },
+        clock,
+        questionKinds,
+      );
+      return problem ? "question_implausible" : "question_review";
+    };
 
     const failed = (error: unknown): ScaleResult => {
       const reason =
@@ -366,7 +364,9 @@ export function createScaleSubscriber({
     for (let attempt = 0; ; attempt++) {
       const retryDelay = RETRY_DELAYS_MS[attempt];
       try {
-        return { status: tryWithoutBusyWait(database, ingest) };
+        return {
+          status: writeTransaction(database, ingest, { noBusyWait: true }),
+        };
       } catch (error) {
         const code = errorCode(error)?.split("_", 2).join("_");
         if (
@@ -390,14 +390,4 @@ function errorCode(error: unknown) {
     typeof error.code === "string"
     ? error.code
     : undefined;
-}
-
-function tryWithoutBusyWait<Result>(database: Database, attempt: () => Result) {
-  const timeout = database.pragma("busy_timeout", { simple: true });
-  database.pragma("busy_timeout = 0");
-  try {
-    return attempt();
-  } finally {
-    database.pragma(`busy_timeout = ${Number(timeout)}`);
-  }
 }

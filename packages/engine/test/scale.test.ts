@@ -244,15 +244,22 @@ test("food logged during a rollback uses the same Tare day as the scale", async 
     food: "2026-10-25T01:15:00.000Z",
     reading: "2026-10-25T01:30:00.000Z",
   };
-  for (const timezone of ["America/New_York", "Antarctica/Troll"]) {
+  for (const [timezone, day] of [
+    ["America/New_York", "2026-10-24"],
+    ["Antarctica/Troll", "2026-10-25"],
+  ]) {
     const { database, app, signIn, admin, setNow } = auth.fixture(context);
     setNow(times.food);
     database
       .prepare("UPDATE users SET timezone = ?, day_start_hour = 2")
       .run(timezone);
+    const headers = {
+      ...auth.requestedWith,
+      Cookie: auth.cookie(await signIn()),
+    };
     const response = await app.request("/api/intake", {
       method: "POST",
-      headers: { ...auth.requestedWith, Cookie: auth.cookie(await signIn()) },
+      headers,
       body: JSON.stringify({
         client_id: "example-food",
         name: "Example oats",
@@ -273,7 +280,71 @@ test("food logged during a rollback uses the same Tare day as the scale", async 
       `${BASE}/alex`,
     );
     assert.equal(result.status, "question_review", timezone);
+    const today = await app.request("/api/today", { headers });
+    assert.equal(today.status, 200);
+    const ledger = await today.json();
+    assert.equal(ledger.day, day, timezone);
+    assert.equal(ledger.totals.kcal.total, 150, timezone);
   }
+});
+
+test("a manual weight during a rollback blocks scale auto-log on the same Tare day", async (context) => {
+  const manualAt = "2026-10-25T01:15:00.000Z";
+  const scaleAt = "2026-10-25T01:30:00.000Z";
+  for (const [timezone, day] of [
+    ["America/New_York", "2026-10-24"],
+    ["Antarctica/Troll", "2026-10-25"],
+  ]) {
+    const { database, app, signIn, admin, setNow } = auth.fixture(context);
+    setNow(manualAt);
+    database
+      .prepare("UPDATE users SET timezone = ?, day_start_hour = 2")
+      .run(timezone);
+    const response = await app.request("/api/weights", {
+      method: "POST",
+      headers: { ...auth.requestedWith, Cookie: auth.cookie(await signIn()) },
+      body: JSON.stringify({ client_id: "example-manual", weight_kg: 72 }),
+    });
+    assert.equal(response.status, 201);
+    const clock = { now: () => new Date(scaleAt) };
+    const ingest = createScaleSubscriber({
+      database,
+      topic: BASE,
+      users: new Map([["alex", admin.id]]),
+      clock,
+      questionKinds: createOrderQuestionKinds({ clock }),
+    });
+    const result = await ingest(
+      Buffer.from(JSON.stringify(fixture(scaleAt, 72))),
+      `${BASE}/alex`,
+    );
+    assert.equal(result.status, "question_review", timezone);
+    assert.equal((await response.json()).entry.day, day, timezone);
+  }
+});
+
+test("scale refresh runs after commit with the original busy timeout", async (context) => {
+  const { database, admin } = auth.fixture(context);
+  database.pragma("busy_timeout = 4321");
+  const refreshes: unknown[] = [];
+  const ingest = createScaleSubscriber({
+    database,
+    topic: BASE,
+    users: new Map([["alex", admin.id]]),
+    clock,
+    questionKinds: createOrderQuestionKinds({ clock }),
+    onLogged: () =>
+      refreshes.push({
+        timeout: database.pragma("busy_timeout", { simple: true }),
+        inTransaction: database.inTransaction,
+      }),
+  });
+  const result = await ingest(
+    Buffer.from(JSON.stringify(fixture("2026-03-10T12:00:00.000Z", 72))),
+    `${BASE}/alex`,
+  );
+  assert.equal(result.status, "logged");
+  assert.deepEqual(refreshes, [{ timeout: 4321, inTransaction: false }]);
 });
 
 test("0056 assigns rollback-era food to the Tare day that contained it", async (context) => {

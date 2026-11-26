@@ -19,6 +19,7 @@ export function wallTime(instant: Date, zone: string): Date {
       timeZone: zone,
       calendar: "gregory",
       numberingSystem: "latn",
+      era: "short",
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
@@ -32,9 +33,20 @@ export function wallTime(instant: Date, zone: string): Date {
   const parts = Object.fromEntries(
     formatter.formatToParts(instant).map((part) => [part.type, part.value]),
   );
-  return new Date(
-    `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}.${String(instant.getUTCMilliseconds()).padStart(3, "0")}Z`,
+  const year = Number(parts.year);
+  const wall = new Date(0);
+  wall.setUTCFullYear(
+    parts.era === "BC" ? 1 - year : year,
+    Number(parts.month) - 1,
+    Number(parts.day),
   );
+  wall.setUTCHours(
+    Number(parts.hour),
+    Number(parts.minute),
+    Number(parts.second),
+    instant.getUTCMilliseconds(),
+  );
+  return wall;
 }
 
 export function wallInstant(

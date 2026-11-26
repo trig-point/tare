@@ -4,6 +4,8 @@ export type SelectPriorFoodParams = {
   user_id: number;
   day: string;
   measured_at: string;
+  start: string;
+  end: string;
 };
 
 export type SelectPriorFoodResult = {
@@ -13,18 +15,31 @@ export type SelectPriorFoodResult = {
 export function selectPriorFood(
   db: Database,
   params: SelectPriorFoodParams,
-): SelectPriorFoodResult[] {
+): SelectPriorFoodResult | null {
   const sql = `
 	SELECT created_at FROM first_food_times
-	WHERE user_id = ? AND day = ? AND created_at < ?;
+	WHERE user_id = ? AND day = ? AND created_at < ?
+	UNION ALL
+	SELECT created_at FROM legacy_food_times
+	WHERE user_id = ? AND eaten_at >= ? AND eaten_at < ?
+	  AND created_at < ?
+	LIMIT 1;
 	
 	`;
-  const rows = db
+  const res = db
     .prepare(sql)
     .raw(true)
-    .all([params.user_id, params.day, params.measured_at]);
+    .get([
+      params.user_id,
+      params.day,
+      params.measured_at,
+      params.user_id,
+      params.start,
+      params.end,
+      params.measured_at,
+    ]);
 
-  return rows.map((data) => mapArrayToSelectPriorFoodResult(data));
+  return res ? mapArrayToSelectPriorFoodResult(res) : null;
 }
 
 function mapArrayToSelectPriorFoodResult(data: any) {

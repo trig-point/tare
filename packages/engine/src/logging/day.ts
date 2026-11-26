@@ -1,4 +1,4 @@
-import { personDayBounds } from "../calendar/time.ts";
+import { personDayBounds, wallTime } from "../calendar/time.ts";
 import { OperationError } from "../operations/registry.ts";
 
 export function canonicalInstant(input: string): string {
@@ -23,33 +23,11 @@ export function canonicalInstant(input: string): string {
 }
 
 export function localDay(
-  instant: string,
-  timeZone: string,
+  timestamp: string,
+  timezone: string,
   dayStartHour: number,
 ): string {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    calendar: "gregory",
-    numberingSystem: "latn",
-    era: "short",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(new Date(instant));
-  const values = Object.fromEntries(
-    parts.map((part) => [part.type, part.value]),
-  );
-  const year = Number(values.year);
-  const day = new Date(0);
-  day.setUTCFullYear(
-    values.era === "BC" ? 1 - year : year,
-    Number(values.month) - 1,
-    Number(values.day),
-  );
-  if (Number(values.hour) < dayStartHour) day.setUTCDate(day.getUTCDate() - 1);
-  return day.toISOString().slice(0, 10);
+  return personDayAt(timestamp, timezone, dayStartHour).day;
 }
 
 export function shiftDay(day: string, days: number) {
@@ -64,7 +42,9 @@ export function personDayAt(
   dayStartHour: number,
 ) {
   const instant = new Date(timestamp);
-  const candidate = localDay(timestamp, timezone, dayStartHour);
+  const wall = wallTime(instant, timezone);
+  if (wall.getUTCHours() < dayStartHour) wall.setUTCDate(wall.getUTCDate() - 1);
+  const candidate = wall.toISOString().slice(0, 10);
   const boundsFor = (day: string) =>
     personDayBounds(day, timezone, dayStartHour);
   const candidateBounds = boundsFor(candidate);

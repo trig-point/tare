@@ -13,7 +13,7 @@ import { insertIntakeEntry } from "../queries/insert-intake-entry.ts";
 import { selectFood } from "../queries/select-food.ts";
 import { selectIntakeByClient } from "../queries/select-intake-by-client.ts";
 import { selectSourceFood } from "../queries/select-source-food.ts";
-import { canonicalInstant, personDayAt } from "./day.ts";
+import { canonicalInstant, localDay } from "./day.ts";
 import {
   adHocBasis,
   eatingOutValue,
@@ -326,7 +326,7 @@ function writeIntake(
     defaultTag && !mealPartFood,
     !input.packaged_food && snapshot.kcal_basis !== "label",
   );
-  const { day } = personDayAt(eaten_at, person.timezone, person.day_start_hour);
+  const day = localDay(eaten_at, person.timezone, person.day_start_hour);
   const plan = selectedTemplate(database, person, day, instant);
   const slot =
     input.slot === undefined
