@@ -150,6 +150,20 @@ test("a malformed document or an unoffered session is refused over HTTP and MCP"
         },
       },
     ],
+    ...(
+      [
+        ["self alternate", ["legs_a"]],
+        ["repeated alternate", ["push_a", "push_a"]],
+      ] as const
+    ).map(([name, alternates]): [string, Record<string, unknown>] => [
+      name,
+      {
+        sessions: {
+          ...exampleSchedule().sessions,
+          legs_a: { ...exampleSchedule().sessions.legs_a, alternates },
+        },
+      },
+    ]),
     ["bad date", { planned: [{ date: "2026-02-30", session: "push_a" }] }],
     [
       "duplicate date",
@@ -206,6 +220,13 @@ test("a malformed document or an unoffered session is refused over HTTP and MCP"
     arguments: {},
   });
   assert.deepEqual(read.structuredContent, { schedule: null });
+  const unscheduled = await setup.admin.request(
+    "/api/workout-schedule/today/legs_a",
+  );
+  assert.deepEqual(
+    [unscheduled.status, (await unscheduled.json()).error?.code],
+    [400, "session_not_scheduled"],
+  );
   const stored = await client.callTool({
     name: "replace_workout_schedule",
     arguments: exampleSchedule(),

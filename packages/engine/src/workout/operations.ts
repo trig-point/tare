@@ -144,6 +144,8 @@ export function workoutToday(
   session?: string,
 ) {
   const schedule = readSchedule(database, person.id);
+  if (!schedule && session !== undefined)
+    throw new OperationError(400, "session_not_scheduled");
   if (!schedule) return null;
   const scheduled = resolveToday(
     schedule,

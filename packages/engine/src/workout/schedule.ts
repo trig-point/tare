@@ -84,9 +84,13 @@ export const scheduleDocument = zod
     };
     document.rotation.forEach((key, index) => known(key, ["rotation", index]));
     for (const [name, entry] of Object.entries(document.sessions))
-      entry.alternates?.forEach((key, index) =>
-        known(key, ["sessions", name, "alternates", index]),
-      );
+      entry.alternates?.forEach((key, index) => {
+        const path = ["sessions", name, "alternates", index];
+        if (key === name) refuse(path, `${name} cannot be its own alternate`);
+        else if (entry.alternates?.indexOf(key) !== index)
+          refuse(path, `duplicate alternate ${key}`);
+        else known(key, path);
+      });
     if (document.next_session !== null)
       known(document.next_session, ["next_session"]);
     const dates = new Set<string>();
