@@ -141,7 +141,7 @@ export function GuideTile({
           choices.map((choice) => (
             <Button
               key={choice.key}
-              disabled={pending || (!online && choice.key !== workout.session)}
+              disabled={choice.key !== workout.session && (pending || !online)}
               onClick={() => choose(workout, choice.key)}
             >
               {choice.where}
