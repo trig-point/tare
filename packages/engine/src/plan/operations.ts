@@ -405,6 +405,8 @@ export const planOperations = [
   defineOperation({
     ...write,
     name: "planned_item_action",
+    description:
+      "Eat or skip a planned item. Eligible restaurant items default to eating out. Use eating_out only when eating.",
     path: "/api/plan/items/action",
     bodyLimit: 8192,
     input: plannedItemActionInput,

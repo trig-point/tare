@@ -2,7 +2,10 @@ import type { Database } from "better-sqlite3";
 import { profile } from "./adaptive-seed.ts";
 import type { twoUsers } from "./two-users.ts";
 
-type Person = Awaited<ReturnType<typeof twoUsers>>["admin"];
+type Person = Pick<
+  Awaited<ReturnType<typeof twoUsers>>["admin"],
+  "user" | "request"
+>;
 const breakfastAndDinner = [
   { name: "Breakfast", start_minute: 0, end_minute: 600, share: 72 },
   { name: "Dinner", start_minute: 600, end_minute: 1440, share: 28 },

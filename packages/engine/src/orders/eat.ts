@@ -2,8 +2,9 @@ import { z as zod } from "zod";
 import type { Person } from "../auth/middleware.ts";
 import { scopeDatabase, type WriteScope } from "../db.ts";
 import { localDay } from "../logging/day.ts";
+import { intakeRead } from "../logging/eating-out.ts";
 import { type IntakeInput, insertIntake } from "../logging/intake.ts";
-import { intakeRow } from "../logging/schemas.ts";
+import { intakeReadRow, intakeRow } from "../logging/schemas.ts";
 import { mealNutritionState } from "../meal-nutrition/index.ts";
 import { OperationError } from "../operations/registry.ts";
 import type { PantryStock, StockOutcome } from "../pantry/requests.ts";
@@ -30,18 +31,24 @@ const mealResult = zod.strictObject({
   quantity: zod.number().int().nonnegative(),
   revision: zod.number().int().positive(),
 });
-export const eatMealOutput = zod.strictObject({
+const eatMealReceipt = zod.strictObject({
   entry: intakeRow,
   meal: mealResult,
   stock: stockResult.optional(),
 });
-export const plannedItemActionInput = zod.strictObject({
+const plannedItemActionBase = zod.strictObject({
   item_id: zod.number().int().positive(),
   revision: eatMealInput.shape.revision,
   action: zod.enum(["ate", "ate_three_quarters", "skip"]),
   mutation_id: eatMealInput.shape.mutation_id,
 });
-export const plannedItemActionOutput = zod.strictObject({
+export const plannedItemActionInput = plannedItemActionBase.extend({
+  eating_out: zod.boolean().optional(),
+});
+export const planPressPayload = plannedItemActionBase.omit({
+  mutation_id: true,
+});
+const plannedItemActionReceipt = zod.strictObject({
   item: zod.strictObject({
     id: zod.number().int().positive(),
     revision: zod.number().int().positive(),
@@ -52,13 +59,20 @@ export const plannedItemActionOutput = zod.strictObject({
   stock: stockResult.optional(),
 });
 
+export const eatMealOutput = eatMealReceipt.extend({ entry: intakeReadRow });
+export const plannedItemActionOutput = plannedItemActionReceipt.extend({
+  entry: intakeReadRow.nullable(),
+});
+
 export function eatOrderMeal(
   scope: WriteScope,
   person: Person,
   input: zod.infer<typeof eatMealInput>,
   now: string,
 ): zod.infer<typeof eatMealOutput> {
-  return eatMealOutput.parse(applyMealAction(scope, person, input, now, null));
+  return eatMealOutput.parse(
+    readMealAction(scope, applyMealAction(scope, person, input, now, null)),
+  );
 }
 
 export function actOnPlannedItem(
@@ -69,8 +83,18 @@ export function actOnPlannedItem(
   stock: PantryStock,
 ): zod.infer<typeof plannedItemActionOutput> {
   return plannedItemActionOutput.parse(
-    applyMealAction(scope, person, input, now, stock),
+    readMealAction(scope, applyMealAction(scope, person, input, now, stock)),
   );
+}
+
+function readMealAction(
+  scope: WriteScope,
+  result: ReturnType<typeof applyMealAction>,
+) {
+  return {
+    ...result,
+    entry: result.entry && intakeRead(scopeDatabase(scope), result.entry),
+  };
 }
 
 function applyMealAction(
@@ -84,6 +108,9 @@ function applyMealAction(
 ) {
   const database = scopeDatabase(scope);
   const planned = "item_id" in input;
+  const eatingOut = planned ? input.eating_out : undefined;
+  if (input.action === "skip" && eatingOut !== undefined)
+    throw new OperationError(400, "invalid_request");
   const receipt = selectMealAction(database, {
     user_id: person.id,
     mutation_id: input.mutation_id,
@@ -97,7 +124,7 @@ function applyMealAction(
           receipt.order_meal_id !== input.meal_id)
     )
       throw new OperationError(409, "mutation_conflict");
-    const saved = (planned ? plannedItemActionOutput : eatMealOutput).parse(
+    const saved = (planned ? plannedItemActionReceipt : eatMealReceipt).parse(
       JSON.parse(receipt.result),
     );
     return { ...saved, stock: replayStock(scope, person, receipt, stock) };
@@ -159,6 +186,8 @@ function applyMealAction(
     if (foodId === null) throw new Error("Meal action has no food");
     const intake: IntakeInput = {
       client_id: input.mutation_id,
+      eating_out: eatingOut,
+      orderMeal: meal !== null,
       reference: { kind: "food", id: foodId },
       servings:
         (meal ? 1 : (item?.servings ?? 1)) *
@@ -209,12 +238,12 @@ function applyMealAction(
   if (marked && marked.length !== 1)
     throw new Error("Planned item update returned no row");
   const result = item
-    ? plannedItemActionOutput.parse({
+    ? plannedItemActionReceipt.parse({
         item: marked?.[0],
         entry,
         meal: consumed,
       })
-    : eatMealOutput.parse({ entry, meal: consumed });
+    : eatMealReceipt.parse({ entry, meal: consumed });
   const inserted = insertMealAction(database, {
     user_id: person.id,
     mutation_id: input.mutation_id,

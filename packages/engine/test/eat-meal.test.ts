@@ -92,6 +92,7 @@ test("meal actions scale labels, replay before revisions and roll back rejected 
     {},
     { ...action(meal.id), mutation_id: " " },
     { ...action(meal.id), action: "skip" },
+    { ...action(meal.id), eating_out: false },
     { ...action(meal.id), extra: true },
   ])
     await reject(invalid, "invalid_request", admin, 400);
@@ -124,15 +125,43 @@ test("meal actions scale labels, replay before revisions and roll back rejected 
   const beforeReplay = state();
   assert.deepEqual(await (await send(action(meal.id))).json(), result);
   assert.deepEqual(state(), beforeReplay);
-  const legacy = structuredClone(result);
-  delete legacy.entry.slot_template_id;
-  delete legacy.entry.slot_position;
+  const { can_tag_eating_out, ...storedEntry } = result.entry;
+  const {
+    slot_template_id: _template,
+    slot_position: _position,
+    eating_out,
+    kcal_basis,
+    packaged_food,
+    ...legacyEntry
+  } = storedEntry;
+  assert.deepEqual(
+    [can_tag_eating_out, eating_out, kcal_basis, packaged_food],
+    [false, 0, "label", 0],
+  );
   const receipt = database.prepare(
     "UPDATE meal_actions SET result = ? WHERE user_id = ? AND mutation_id = ?",
   );
-  receipt.run(JSON.stringify(legacy), admin.user.id, "example-mutation");
-  assert.deepEqual(await (await send(action(meal.id))).json(), legacy);
-  receipt.run(JSON.stringify(result), admin.user.id, "example-mutation");
+  receipt.run(
+    JSON.stringify({ ...result, entry: legacyEntry }),
+    admin.user.id,
+    "example-mutation",
+  );
+  assert.deepEqual(await (await send(action(meal.id))).json(), {
+    ...result,
+    entry: {
+      ...legacyEntry,
+      eating_out: 0,
+      kcal_basis: "legacy",
+      packaged_food: 0,
+      can_tag_eating_out: false,
+    },
+  });
+  receipt.run(
+    JSON.stringify({ ...result, entry: storedEntry }),
+    admin.user.id,
+    "example-mutation",
+  );
+
   await reject(action(meal.id, "stale-mutation"), "stale_revision");
   await reject({ ...action(meal.id), action: "ate" }, "mutation_conflict");
   await reject(action(meal.id), "meal_not_found", member, 404);
@@ -177,6 +206,27 @@ test("meal actions scale labels, replay before revisions and roll back rejected 
   );
   assert.deepEqual(state(), beforeFailure);
   database.exec("DROP TRIGGER fail_meal_action");
+  database
+    .prepare("UPDATE intake_entries SET kcal_basis = 'legacy' WHERE id = ?")
+    .run(result.entry.id);
+  const resnapshot = (eating_out?: boolean) =>
+    admin.request(`/api/intake/${result.entry.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ servings: 2, eating_out }),
+    });
+  const refused = await resnapshot(true);
+  assert.equal(refused.status, 400);
+  assert.deepEqual(await refused.json(), {
+    error: { code: "eating_out_not_allowed" },
+  });
+  const edit = await resnapshot();
+  assert.equal(edit.status, 200);
+  const { entry } = await edit.json();
+  assert.deepEqual(
+    [entry.kcal_basis, entry.eating_out, entry.can_tag_eating_out],
+    ["label", 0, false],
+  );
+
   database
     .prepare("DELETE FROM intake_entries WHERE id = ? AND user_id = ?")
     .run(result.entry.id, admin.user.id);

@@ -21,6 +21,8 @@ export type UpdateIntakeData = {
   amount_estimated: number;
   servings_low: number | null;
   servings_high: number | null;
+  eating_out: number;
+  kcal_basis: string;
 };
 
 export type UpdateIntakeParams = {
@@ -55,6 +57,9 @@ export type UpdateIntakeResult = {
   amount_estimated: number;
   servings_low: number | null;
   servings_high: number | null;
+  eating_out: number;
+  kcal_basis: string;
+  packaged_food: number;
 };
 
 export function updateIntake(
@@ -63,10 +68,7 @@ export function updateIntake(
   params: UpdateIntakeParams,
 ): UpdateIntakeResult[] {
   const sql = `
-	UPDATE intake_entries SET slot_template_id = ?, slot_position = ?, name = ?, servings = ?, eaten_at = ?, day = ?, kcal = ?, protein_g = ?, carbs_g = ?, fat_g = ?, fiber_g = ?, kcal_low = ?, kcal_high = ?, provenance = ?, source = ?, portion_note = ?, updated_at = ?, amount_estimated = ?, servings_low = ?, servings_high = ? WHERE user_id = ? AND id = ? RETURNING user_id, id, client_id, food_id, source_food_id, servings, eaten_at, day,
-	  kcal, protein_g, carbs_g, fat_g, fiber_g, kcal_low, kcal_high, provenance,
-	  source, portion_note, created_at, updated_at, name, slot_template_id,
-	  slot_position, amount_estimated, servings_low, servings_high;
+	UPDATE intake_entries SET slot_template_id = ?, slot_position = ?, name = ?, servings = ?, eaten_at = ?, day = ?, kcal = ?, protein_g = ?, carbs_g = ?, fat_g = ?, fiber_g = ?, kcal_low = ?, kcal_high = ?, provenance = ?, source = ?, portion_note = ?, updated_at = ?, amount_estimated = ?, servings_low = ?, servings_high = ?, eating_out = ?, kcal_basis = ? WHERE user_id = ? AND id = ? RETURNING *;
 	
 	`;
   const rows = db
@@ -93,6 +95,8 @@ export function updateIntake(
       data.amount_estimated,
       data.servings_low,
       data.servings_high,
+      data.eating_out,
+      data.kcal_basis,
       params.user_id,
       params.id,
     ]);
@@ -128,6 +132,9 @@ function mapArrayToUpdateIntakeResult(data: any) {
     amount_estimated: data[23],
     servings_low: data[24],
     servings_high: data[25],
+    eating_out: data[26],
+    kcal_basis: data[27],
+    packaged_food: data[28],
   };
   return result;
 }

@@ -120,6 +120,7 @@ for (const kind of ["intake", "weight", "days"] as const)
       });
       assert.equal(stored?.protein_g, null);
       assert.equal(stored?.provenance, "estimated");
+      assert.deepEqual([stored?.kcal_basis, stored?.eating_out], ["legacy", 0]);
       assert.equal(stored?.day, day);
       // History is never consumed from the pantry, not even as a disabled outcome.
       const outcomes = "SELECT count(*) FROM pantry_outcomes";

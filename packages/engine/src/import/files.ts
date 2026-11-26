@@ -100,6 +100,7 @@ export async function importFiles(
                 person,
                 {
                   client_id: input.client_id,
+                  historicalImport: true,
                   eaten_at: checkedInstant(input.eaten_at, clock),
                   name: input.name,
                   numbers: numbersFrom(input),

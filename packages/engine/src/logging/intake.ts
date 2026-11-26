@@ -14,6 +14,11 @@ import { selectFood } from "../queries/select-food.ts";
 import { selectIntakeByClient } from "../queries/select-intake-by-client.ts";
 import { selectSourceFood } from "../queries/select-source-food.ts";
 import { canonicalInstant, localDay } from "./day.ts";
+import {
+  adHocBasis,
+  eatingOutValue,
+  referenceEatingOut,
+} from "./eating-out.ts";
 import { type Claim, resolveProvenance } from "./provenance.ts";
 import {
   type Numbers,
@@ -60,6 +65,11 @@ export type IntakeInput = {
   eaten_at?: string;
   portion_note?: string | null;
   slot?: { template_id: number; position: number };
+  eating_out?: boolean;
+  kcal_basis?: "menu" | "other";
+  packaged_food?: boolean;
+  historicalImport?: true;
+  orderMeal?: boolean;
 } & (
   | {
       reference: Reference;
@@ -76,10 +86,15 @@ export function referenceSnapshot(
   servings: number,
   claim: Claim = {},
   estimatedRange?: ServingRange | null,
+  orderMeal = false,
+  resolvedFood?: ReferenceFood,
 ) {
-  const food = readReferenceFood(scope, person, reference);
+  const food = resolvedFood ?? readReferenceFood(scope, person, reference);
   if (!food) throw new OperationError(404, "food_not_found");
-  return snapshotFromFood(food, servings, claim, estimatedRange);
+  return {
+    ...snapshotFromFood(food, servings, claim, estimatedRange),
+    ...referenceEatingOut(scopeDatabase(scope), food, orderMeal),
+  };
 }
 
 export function readReferenceFood(
@@ -262,21 +277,18 @@ function writeIntake(
   const eaten_at = canonicalInstant(input.eaten_at ?? now);
   let snapshot: ReturnType<typeof referenceSnapshot>;
   if ("reference" in input) {
-    snapshot = mealPartFood
-      ? snapshotFromFood(
-          mealPartFood,
-          input.servings,
-          input.claim,
-          input.estimatedRange,
-        )
-      : referenceSnapshot(
-          scope,
-          person,
-          input.reference,
-          input.servings,
-          input.claim,
-          input.estimatedRange,
-        );
+    if (input.kcal_basis !== undefined || input.packaged_food !== undefined)
+      throw new OperationError(400, "invalid_kcal_basis");
+    snapshot = referenceSnapshot(
+      scope,
+      person,
+      input.reference,
+      input.servings,
+      input.claim,
+      input.estimatedRange,
+      input.orderMeal,
+      mealPartFood,
+    );
   } else {
     validateNumbers(input.numbers);
     snapshot = {
@@ -285,9 +297,22 @@ function writeIntake(
       name: input.name.trim(),
       provenance: resolveProvenance(input.claim, null),
       source: input.claim.source ?? null,
+      kcal_basis: adHocBasis(
+        input.kcal_basis,
+        input.numbers.kcal,
+        input.claim.provenance === "label",
+        input.packaged_food === true,
+      ),
+      defaultTag: false,
     };
     if (!snapshot.name) throw new OperationError(400, "invalid_request");
   }
+  const { defaultTag, ...storedSnapshot } = snapshot;
+  const eating_out = eatingOutValue(
+    input.eating_out,
+    defaultTag && !mealPartFood,
+    !input.packaged_food && snapshot.kcal_basis !== "label",
+  );
   const day = localDay(eaten_at, person.timezone, person.day_start_hour);
   const plan = selectedTemplate(database, person, day, instant);
   const slot =
@@ -301,7 +326,10 @@ function writeIntake(
   if (input.slot !== undefined && !slot)
     throw new OperationError(400, "slot_not_found");
   const inserted = insertIntakeEntry(database, {
-    ...snapshot,
+    ...storedSnapshot,
+    eating_out,
+    kcal_basis: input.historicalImport ? "legacy" : snapshot.kcal_basis,
+    packaged_food: input.packaged_food ? 1 : 0,
     user_id: person.id,
     client_id: input.client_id,
     food_id:

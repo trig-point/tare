@@ -1,9 +1,10 @@
 import { fromStoredNutrition, toStoredNutrition } from "@tare/nutrition";
 import { z as zod } from "zod";
 import { writeTransaction } from "../db.ts";
+import { intakeRead } from "../logging/eating-out.ts";
 import { insertIntake } from "../logging/intake.ts";
 import {
-  intakeRow,
+  intakeReadRow,
   numbersFrom,
   nutrientFields,
   validateNumbers,
@@ -30,7 +31,7 @@ const saveInput = zod
     action: zod
       .enum(["create", "update", "delete"])
       .describe(
-        "Update replaces the whole meal; omitted optional fields are cleared.",
+        "Update replaces the meal. Omit restaurant to keep it or send null to clear it.",
       ),
     id: identifier.optional(),
     name: text.optional(),
@@ -95,10 +96,11 @@ const saveRegularMeal = defineOperation({
     const body = writeTransaction(context.database, () => {
       const user_id = operationPerson(context).id;
       const owner = { user_id, id: input.id as number };
-      if (
-        input.action !== "create" &&
-        !selectRegularMeal(context.database, owner)
-      )
+      const stored =
+        input.action === "create"
+          ? null
+          : selectRegularMeal(context.database, owner);
+      if (input.action !== "create" && !stored)
         throw new OperationError(404, "not_found");
       if (input.action === "delete") {
         const archived = archiveRegularMeal(
@@ -135,7 +137,10 @@ const saveRegularMeal = defineOperation({
         source: input.source ?? null,
       };
       const metadata = {
-        restaurant: input.restaurant ?? null,
+        restaurant:
+          input.restaurant === undefined
+            ? (stored?.restaurant ?? null)
+            : input.restaurant,
         baseline: input.baseline as zod.infer<typeof baseline>,
       };
       let id = owner.id;
@@ -170,14 +175,17 @@ const saveRegularMeal = defineOperation({
 const logRegularMeal = defineOperation({
   ...shared,
   name: "log_regular_meal",
+  description:
+    "Log a regular meal. Eligible restaurant meals default to eating out. Send eating_out: false to clear the default.",
   path: "/api/regular-meals/log",
   input: zod.strictObject({
     id: identifier,
     client_id: text,
     eaten_at: zod.string(),
+    eating_out: zod.boolean().optional(),
   }),
   output: zod.strictObject({
-    entry: intakeRow,
+    entry: intakeReadRow,
     created: zod.boolean(),
     stock: stockResult.optional(),
   }),
@@ -198,6 +206,7 @@ const logRegularMeal = defineOperation({
         {
           client_id: input.client_id,
           eaten_at: input.eaten_at,
+          eating_out: input.eating_out,
           reference: { kind: "food", id: input.id },
           servings: 1,
           claim: {},
@@ -208,7 +217,11 @@ const logRegularMeal = defineOperation({
     });
     return {
       status: body.created ? 201 : 200,
-      body: { ...body, stock: stockView(context.database, stock) },
+      body: {
+        ...body,
+        entry: intakeRead(context.database, body.entry),
+        stock: stockView(context.database, stock),
+      },
     };
   },
 });

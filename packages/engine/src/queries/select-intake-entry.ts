@@ -32,6 +32,9 @@ export type SelectIntakeEntryResult = {
   amount_estimated: number;
   servings_low: number | null;
   servings_high: number | null;
+  eating_out: number;
+  kcal_basis: string;
+  packaged_food: number;
 };
 
 export function selectIntakeEntry(
@@ -42,7 +45,7 @@ export function selectIntakeEntry(
 	SELECT user_id, id, client_id, food_id, source_food_id, servings, eaten_at, day,
 	  kcal, protein_g, carbs_g, fat_g, fiber_g, kcal_low, kcal_high, provenance,
 	  source, portion_note, created_at, updated_at, name, slot_template_id,
-	  slot_position, amount_estimated, servings_low, servings_high FROM intake_entries WHERE user_id = ? AND id = ? LIMIT 1;
+	  slot_position, amount_estimated, servings_low, servings_high, eating_out, kcal_basis, packaged_food FROM intake_entries WHERE user_id = ? AND id = ? LIMIT 1;
 	
 	`;
   const res = db.prepare(sql).raw(true).get([params.user_id, params.id]);
@@ -78,6 +81,9 @@ function mapArrayToSelectIntakeEntryResult(data: any) {
     amount_estimated: data[23],
     servings_low: data[24],
     servings_high: data[25],
+    eating_out: data[26],
+    kcal_basis: data[27],
+    packaged_food: data[28],
   };
   return result;
 }

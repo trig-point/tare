@@ -1,6 +1,7 @@
 import type { Database } from "better-sqlite3";
 import { z as zod } from "zod";
-import { intakeRow } from "../logging/schemas.ts";
+import { intakeRead } from "../logging/eating-out.ts";
+import { intakeReadRow, type intakeRow } from "../logging/schemas.ts";
 import { selectLedgerEntries } from "../queries/select-ledger-entries.ts";
 import type { targetSchema } from "../target/reader.ts";
 
@@ -19,7 +20,7 @@ export const ledgerTotalsSchema = zod.strictObject({
 });
 export const ledgerSchema = zod.strictObject({
   day: zod.string(),
-  entries: zod.array(intakeRow),
+  entries: zod.array(intakeReadRow),
   totals: ledgerTotalsSchema,
 });
 
@@ -57,6 +58,18 @@ export function ledgerTotals(
 export function readLedger(database: Database, personId: number, day: string) {
   const entries = selectLedgerEntries(database, { user_id: personId, day });
   return { day, entries, totals: ledgerTotals(entries) };
+}
+
+export function readLedgerView(
+  database: Database,
+  personId: number,
+  day: string,
+) {
+  const ledger = readLedger(database, personId, day);
+  return {
+    ...ledger,
+    entries: ledger.entries.map((entry) => intakeRead(database, entry)),
+  };
 }
 
 export function remainingFor(

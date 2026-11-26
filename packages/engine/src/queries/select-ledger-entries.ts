@@ -32,6 +32,9 @@ export type SelectLedgerEntriesResult = {
   amount_estimated: number;
   servings_low: number | null;
   servings_high: number | null;
+  eating_out: number;
+  kcal_basis: string;
+  packaged_food: number;
 };
 
 export function selectLedgerEntries(
@@ -42,7 +45,7 @@ export function selectLedgerEntries(
 	SELECT user_id, id, client_id, food_id, source_food_id, servings, eaten_at, day,
 	  kcal, protein_g, carbs_g, fat_g, fiber_g, kcal_low, kcal_high, provenance,
 	  source, portion_note, created_at, updated_at, name, slot_template_id,
-	  slot_position, amount_estimated, servings_low, servings_high FROM intake_entries
+	  slot_position, amount_estimated, servings_low, servings_high, eating_out, kcal_basis, packaged_food FROM intake_entries
 	WHERE user_id = ? AND day = ?
 	ORDER BY eaten_at, id;
 	
@@ -80,6 +83,9 @@ function mapArrayToSelectLedgerEntriesResult(data: any) {
     amount_estimated: data[23],
     servings_low: data[24],
     servings_high: data[25],
+    eating_out: data[26],
+    kcal_basis: data[27],
+    packaged_food: data[28],
   };
   return result;
 }
