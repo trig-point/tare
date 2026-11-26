@@ -66,7 +66,13 @@ export function AddFood({ person, replay, online }: Props) {
     ...catalogQuery(person.id, name),
     enabled: online && term !== "",
   });
-  const lookup = useMutation({ mutationFn: searchOnline, retry: 0 });
+  const lookup = useMutation({
+    mutationFn: async (name: string) => {
+      const foods = await searchOnline(name);
+      return { foods, updatedAt: Date.now() };
+    },
+    retry: 0,
+  });
   const barcode = useMutation({ mutationFn: lookupBarcode, retry: 0 });
   const probe = useQuery({ ...photoProbeQuery(person.id), enabled: online });
   const photo = (probe.data ?? savedPhotoProbe(person.id)) !== false;
@@ -76,7 +82,10 @@ export function AddFood({ person, replay, online }: Props) {
     catalog.data?.result === "match" ? catalog.data.foods : [];
   const recent = todayFoods(today.data?.entries ?? []);
   const live = [
-    { foods: searched?.data ?? [], updatedAt: searched?.submittedAt ?? 0 },
+    {
+      foods: searched?.data?.foods ?? [],
+      updatedAt: searched?.data?.updatedAt ?? 0,
+    },
     { foods: catalogMatches, updatedAt: catalog.dataUpdatedAt },
     { foods: recent, updatedAt: today.dataUpdatedAt },
     { foods: usual.data ?? [], updatedAt: usual.dataUpdatedAt },
@@ -95,7 +104,7 @@ export function AddFood({ person, replay, online }: Props) {
   const choices = mergeChoices(
     matchingFoods(usualList ?? [], term),
     catalogMatches,
-    searched?.data ?? [],
+    searched?.data?.foods ?? [],
   ).map(refreshTags);
   const catalogMissed =
     term !== "" &&
@@ -209,7 +218,7 @@ export function AddFood({ person, replay, online }: Props) {
                 </Button>
               )}
               {searched?.isError && <p role="alert">Couldn’t search online</p>}
-              {searched?.data?.length === 0 && (
+              {searched?.data?.foods.length === 0 && (
                 <OnlineMiss
                   enterManually={
                     catalogMissed ? undefined : () => setManual(term)
