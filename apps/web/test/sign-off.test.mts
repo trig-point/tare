@@ -15,6 +15,7 @@ import {
   readUnsignedDays,
   signOffDay,
   signOffValues,
+  skipDay,
 } from "../src/days-api.ts";
 import { test } from "./support.mts";
 import "./tsx.mts";
@@ -151,6 +152,11 @@ test("unsigned days are listed and reviewed in turn", async (context) => {
   const last = nextUnsignedDay(remaining, "2025-12-28");
   assert.equal(last, null);
   assert.doesNotMatch(await review(person, "2025-12-28", last), /Next day/);
+  assert.deepEqual(await skipDay("2025-12-28"), { skipped: true });
+  assert.deepEqual(
+    (await readUnsignedDays(signal)).map((entry) => entry.day),
+    ["2025-12-29"],
+  );
 });
 
 test("imported days are listed until signed off", async (context) => {

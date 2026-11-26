@@ -87,7 +87,8 @@ export const daySignOffOperations = [
     input: dayInput,
     output: zod.strictObject({ skipped: zod.boolean() }),
     handler(input, context) {
-      rejectFuture(input.day, context);
+      if (input.day >= today(context))
+        throw new OperationError(400, "day_not_past");
       const updated = skipDay(
         context.database,
         { skipped_at: context.clock.now().toISOString() },

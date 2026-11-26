@@ -51,6 +51,12 @@ test("skipping hides a past day until sign-off and preserves its entries", async
       .prepare("SELECT skipped_at FROM days WHERE user_id = ? AND day = ?")
       .pluck()
       .get(admin.user.id, day);
+  const today = await admin.request("/api/days/skip", {
+    method: "POST",
+    body: JSON.stringify({ day: "2026-01-01" }),
+  });
+  assert.equal(today.status, 400);
+  assert.deepEqual(await today.json(), { error: { code: "day_not_past" } });
   const skip = () => send(admin, "/api/days/skip", { day });
   assert.deepEqual(await skip(), { skipped: false });
   const logged = await log(admin, "skip");
@@ -176,7 +182,7 @@ test("browser sign-off preserves, clears and replaces fields; reads and lists be
   }
   for (const [path, input, code] of [
     ["skip", {}, "invalid_request"],
-    ["skip", { day: future }, "day_in_future"],
+    ["skip", { day: future }, "day_not_past"],
     ["sign-off", {}, "invalid_request"],
     ["sign-off", { day, hunger: 0 }, "invalid_request"],
     ["sign-off", { day, hunger: 6 }, "invalid_request"],
