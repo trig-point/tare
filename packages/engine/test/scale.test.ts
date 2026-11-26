@@ -435,6 +435,57 @@ test("Keep records on the frozen day and Discard reports no weight", async (cont
   );
 });
 
+test("a legacy Keep with no provable day leaves the reading open for manual entry", async (context) => {
+  const { database, app, admin, signIn } = auth.fixture(context, {
+    questionKinds: createOrderQuestionKinds({ clock }),
+  });
+  const measuredAt = "2026-03-10T20:00:00.000Z";
+  const clientId = `scale:alex:${measuredAt}`;
+  database
+    .prepare(
+      "INSERT INTO scale_readings (client_id, user_id, created_at, day) VALUES (?, ?, ?, NULL)",
+    )
+    .run(clientId, admin.id, measuredAt);
+  database
+    .prepare(`INSERT INTO questions
+    (id, user_id, kind, subject_ref, prompt, answer_schema, status, created_at)
+    VALUES (1, ?, 'scale_implausible', ?, 'Keep it?', ?, 'open', ?)`)
+    .run(
+      admin.id,
+      clientId,
+      JSON.stringify({
+        scale_reading: {
+          measured_at: measuredAt,
+          weight_kg: 72,
+          body_fat_pct: null,
+        },
+      }),
+      measuredAt,
+    );
+  database.exec("UPDATE users SET timezone = 'UTC', day_start_hour = 0");
+  const headers = {
+    ...auth.requestedWith,
+    Cookie: auth.cookie(await signIn()),
+  };
+  const answer = (keep: boolean) =>
+    app.request("/api/questions/answer", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ id: 1, answer: { keep } }),
+    });
+  await auth.rejection(await answer(true), 409, "scale_day_unknown");
+  const open = await app.request("/api/questions", { headers });
+  assert.equal((await open.json()).questions.length, 1);
+  const discarded = await answer(false);
+  assert.equal(discarded.status, 200);
+  assert.deepEqual(await discarded.json(), {
+    id: 1,
+    status: "answered",
+    weight_logged: false,
+  });
+  assert.deepEqual(database.prepare(WEIGHTS).all(), []);
+});
+
 test("unmapped and out-of-range readings become questions and stay judged", async () => {
   const scale = setup();
   const stray = fixture("2026-03-01T07:00:00Z", 70);
@@ -543,6 +594,25 @@ test("two scale users land in their own weights over MQTT and survive a reconnec
   assert.deepEqual(owners, ["1,72", "2,64"]);
 });
 
+test("SQLite contention is recoverable for the previous five-second window", async (context) => {
+  const file = join(scratch(context), "recovery.sqlite");
+  const connection = openDatabase(file);
+  const lock = new Database(file);
+  context.after(() => {
+    lock.close();
+    connection.close();
+  });
+  let elapsed = 0;
+  const scale = setup(connection.database, async (delayMs) => {
+    elapsed += delayMs;
+    if (elapsed >= 2_500) lock.exec("ROLLBACK");
+  });
+  lock.exec("BEGIN IMMEDIATE");
+  assert.equal(await scale.send(fixture("2026-03-10T08:00:00Z", 72)), "logged");
+  assert.equal(scale.weights().length, 1);
+  assert.deepEqual(scale.logs, []);
+});
+
 test("MQTT ACK follows a successful BUSY retry or a logged terminal failure", async (context) => {
   const file = join(scratch(context), "test.sqlite");
   const connection = openDatabase(file);
@@ -553,11 +623,11 @@ test("MQTT ACK follows a successful BUSY retry or a logged terminal failure", as
   let closing = false;
   const scale = setup(
     connection.database,
-    () =>
+    (delayMs) =>
       new Promise<void>((resolve) => {
         advance = resolve;
         if (closing) resolve();
-        else steps.emit("retry", resolve);
+        else steps.emit("retry", resolve, delayMs);
       }),
   );
   const publisher = createHomeAssistantPublisher({
@@ -596,11 +666,12 @@ test("MQTT ACK follows a successful BUSY retry or a logged terminal failure", as
     await producer.publishAsync(topic, JSON.stringify(fixture(at, 72)), {
       qos: 1,
     });
-    for (const attempt of [1, 2, 3, 4]) {
-      const [next] = await retry;
+    for (let elapsed = 0; elapsed < 5_000; ) {
+      const [next, delayMs] = await retry;
+      elapsed += delayMs;
       assert.equal(settlements.length, index);
       if (succeeds) lock.exec("ROLLBACK");
-      else if (attempt < 4) retry = once(steps, "retry");
+      else if (elapsed < 5_000) retry = once(steps, "retry");
       next();
       if (succeeds) break;
     }
@@ -712,7 +783,7 @@ test("a BUSY retry cannot acknowledge a reused packet ID on a replacement connec
   assert.equal(scale.questions().length, 1);
 });
 
-test("MQTT acknowledges a rejected handler after logging the failure", async (context) => {
+test("MQTT acknowledges after logging a rejection and settling the other matching handler", async (context) => {
   const { broker, producer, url } = await brokerFixture(context);
   const connection = openDatabase(":memory:");
   const logs: string[] = [];
@@ -738,14 +809,76 @@ test("MQTT acknowledges a rejected handler after logging the failure", async (co
   });
   const topic = `${BASE}/alex`;
   const subscribed = once(broker, "subscribe");
-  publisher.subscribe(topic, async () => {
+  publisher.subscribe(`${BASE}/+`, async () => {
     throw new Error("Example terminal failure");
+  });
+  publisher.subscribe(topic, async () => {
+    await setImmediate();
+    logs.push("Exact handler settled");
   });
   await subscribed;
   const failed = once(steps, "failure");
   const acknowledged = once(broker, "ack");
   await producer.publishAsync(topic, "example", { qos: 1 });
   await failed;
-  assert.deepEqual(sentAcks, [["mqtt_handler_failed Error"]]);
   await acknowledged;
+  assert.deepEqual(sentAcks, [
+    ["mqtt_handler_failed Error", "Exact handler settled"],
+  ]);
+});
+
+test("MQTT logs and leaves deliveries skipped during shutdown unacknowledged", async (context) => {
+  const { broker, producer, url } = await brokerFixture(context);
+  const connection = openDatabase(":memory:");
+  const { promise: offlineAck, resolve: finish } =
+    Promise.withResolvers<void>();
+  const steps = new EventEmitter();
+  const sentAcks: number[] = [];
+  const handled: string[] = [];
+  broker.authorizePublish = (client, packet, callback) => {
+    if (
+      !client?.id.startsWith("tare-") ||
+      packet.payload.toString() !== "offline"
+    ) {
+      callback(null);
+      return;
+    }
+    steps.emit("offline");
+    void offlineAck.then(() => callback(null));
+  };
+  const publisher = createHomeAssistantPublisher({
+    database: connection.database,
+    config: load({ TARE_MQTT_URL: url }).mqtt as MqttConfig,
+    clock: { ...clock, schedule: () => ({ cancel() {} }) },
+    log(code, detail) {
+      if (detail === "mqtt_stopping") steps.emit("skipped", code);
+    },
+    clientOptions: {
+      log(format, packet) {
+        if (format === "_writePacket :: packet: %O" && packet.cmd === "puback")
+          sentAcks.push(packet.messageId);
+      },
+    },
+  });
+  context.after(async () => {
+    finish();
+    await publisher.stop();
+    connection.close();
+  });
+  const topic = `${BASE}/alex`;
+  const subscribed = once(broker, "subscribe");
+  publisher.subscribe(topic, (payload) => {
+    handled.push(payload.toString());
+  });
+  await subscribed;
+  const offline = once(steps, "offline");
+  const stopped = publisher.stop();
+  await offline;
+  const skipped = once(steps, "skipped");
+  await producer.publishAsync(topic, "skipped", { qos: 1 });
+  assert.deepEqual(await skipped, ["mqtt_handler_failed"]);
+  finish();
+  await stopped;
+  assert.deepEqual(handled, []);
+  assert.deepEqual(sentAcks, []);
 });

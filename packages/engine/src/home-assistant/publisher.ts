@@ -106,12 +106,16 @@ export function createHomeAssistantPublisher({
   client.on("close", markOffline);
   client.on("error", markOffline);
   async function handleDelivery(topic: string, payload: Buffer) {
-    if (topic === config.statusTopic) {
-      if (payload.toString() === "online") refreshAll(true);
-      return;
+    if (topic === config.statusTopic && payload.toString() === "online")
+      refreshAll(true);
+    for (const [filter, handler] of handlers) {
+      if (!topicMatches(filter, topic)) continue;
+      try {
+        await handler(payload, topic);
+      } catch (error) {
+        log("mqtt_handler_failed", errorName(error));
+      }
     }
-    for (const [filter, handler] of handlers)
-      if (topicMatches(filter, topic)) await handler(payload, topic);
   }
 
   // Packet IDs can be reused after a reconnect.
@@ -127,7 +131,7 @@ export function createHomeAssistantPublisher({
     };
     if (stopped) {
       log("mqtt_handler_failed", "mqtt_stopping");
-      acknowledgeOnConnection();
+      acknowledge(new Error("mqtt_stopping"));
       return;
     }
     const delivery = handleDelivery(

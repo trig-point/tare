@@ -380,9 +380,12 @@ function QuestionForm({
       {!online && <p className="question-hint">Answers need a connection.</p>}
       {answer.isError && (
         <p role="alert">
-          {answer.error instanceof ApiError && answer.error.status === 400
-            ? "Check the answer"
-            : "Couldn’t save answer"}
+          {answer.error instanceof ApiError &&
+          answer.error.code === "scale_day_unknown"
+            ? "Log this weight manually."
+            : answer.error instanceof ApiError && answer.error.status === 400
+              ? "Check the answer"
+              : "Couldn’t save answer"}
         </p>
       )}
     </>

@@ -9,8 +9,9 @@ import {
   type WriteScope,
   writeTransaction,
 } from "../db.ts";
-import { canonicalInstant, localDay, personDayAt } from "../logging/day.ts";
+import { canonicalInstant, personDayAt } from "../logging/day.ts";
 import { insertWeight } from "../logging/weight.ts";
+import { OperationError } from "../operations/registry.ts";
 import { insertScaleReading } from "../queries/scale/insert-scale-reading.ts";
 import { selectDayReceipt } from "../queries/scale/select-day-receipt.ts";
 import { selectPriorFood } from "../queries/scale/select-prior-food.ts";
@@ -41,7 +42,8 @@ export type ScaleResult =
   | { status: Stored | "ignored" }
   | { status: "invalid_input" | "failed"; reason: string };
 
-const RETRY_DELAYS_MS = [100, 250, 500, 1000];
+// Match SQLite's normal five-second busy window without blocking the event loop.
+const RETRY_DELAYS_MS = [100, 250, 500, 1000, 1000, 1000, 1150];
 const TREND_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const MIN_KG = 20;
 const MAX_KG = 350;
@@ -180,7 +182,13 @@ export function scaleQuestionKinds(clock: Clock): [string, QuestionKind][] {
         name: "scale_implausible",
         answer: keepAnswer,
         apply(scope, question, value) {
+          if (!keepAnswer.parse(value).keep)
+            return { status: "applied", weight_logged: false };
           const database = scopeDatabase(scope);
+          const day = selectScaleReading(database, {
+            client_id: question.subject_ref,
+          })?.day;
+          if (day == null) throw new OperationError(409, "scale_day_unknown");
           const person =
             question.user_id === null
               ? null
@@ -189,22 +197,13 @@ export function scaleQuestionKinds(clock: Clock): [string, QuestionKind][] {
           const { scale_reading } = storedReading.parse(
             JSON.parse(question.answer_schema),
           );
-          const weight_logged =
-            keepAnswer.parse(value).keep &&
-            logScaleWeight(
-              scope,
-              person,
-              { ...scale_reading, clientId: question.subject_ref },
-              clock,
-              selectScaleReading(database, {
-                client_id: question.subject_ref,
-              })?.day ??
-                localDay(
-                  scale_reading.measured_at,
-                  person.timezone,
-                  person.day_start_hour,
-                ),
-            );
+          const weight_logged = logScaleWeight(
+            scope,
+            person,
+            { ...scale_reading, clientId: question.subject_ref },
+            clock,
+            day,
+          );
           return { status: "applied", weight_logged };
         },
       },
