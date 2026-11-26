@@ -1,4 +1,5 @@
 export {
+  type Endpoint,
   fetchOura,
   fetchOuraCollection,
   type OuraData,

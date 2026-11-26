@@ -3,6 +3,7 @@ import {
   fetchOura,
   mapOura,
   type OuraFetchOptions,
+  type OuraSignals,
 } from "@tare/health-sources";
 import type { Database } from "better-sqlite3";
 import type { Config } from "../config.ts";
@@ -23,6 +24,10 @@ import type { OuraService } from "./service.ts";
 const backfillDays = 30;
 // Sleep can reach Oura days after the night, so each run re-reads a few days.
 const overlapDays = 3;
+
+/** First day the hourly sync reads for a person who has never synced. */
+export const syncWindowStart = (today: string) =>
+  shiftDay(today, 1 - backfillDays);
 
 export function createOuraSyncJob({
   database,
@@ -50,7 +55,7 @@ export function createOuraSyncJob({
     const local = (instant: string) =>
       localDay(instant, person.timezone, person.day_start_hour);
     const today = local(clock.now().toISOString());
-    const earliest = shiftDay(today, 1 - backfillDays);
+    const earliest = syncWindowStart(today);
     const resume = person.last_synced_at
       ? shiftDay(local(person.last_synced_at), -overlapDays)
       : earliest;
@@ -99,26 +104,7 @@ export function createOuraSyncJob({
     writeTransaction(database, () => {
       const now = clock.now().toISOString();
       const source = { user_id: owner, source: "oura" };
-      for (const entry of mapped.daily) {
-        const metric = metricName.safeParse(entry.metric);
-        if (
-          !metric.success ||
-          !signalVocabulary[metric.data].value.safeParse(entry.value).success
-        )
-          continue;
-        upsertSignal(database, { ...entry, ...source, updated_at: now });
-      }
-      for (const period of mapped.sleepPeriods)
-        upsertSleepPeriod(database, {
-          ...source,
-          source_record_id: period.recordId,
-          day: period.day,
-          started_at: period.startedAt,
-          ended_at: period.endedAt,
-          sleep_minutes: period.sleepMinutes,
-          kind: period.kind,
-          updated_at: now,
-        });
+      writeSignalsAndSleep(database, owner, mapped, now);
       for (const session of mapped.sessions)
         upsertSourceActivity(database, {
           ...source,
@@ -176,4 +162,39 @@ export function createOuraSyncJob({
   // Same-day credit needs today's burn as it accrues; next-day only needs yesterday's.
   const schedule = creditMode === "same-day" ? "0 * * * *" : "0 7 * * *";
   return { name: "oura-sync", schedule, run };
+}
+
+/** Daily signals that pass the vocabulary check, and sleep periods; the caller owns the transaction. */
+export function writeSignalsAndSleep(
+  database: Database,
+  owner: number,
+  mapped: Pick<OuraSignals, "daily" | "sleepPeriods">,
+  now: string,
+) {
+  const source = { user_id: owner, source: "oura" };
+  const days = new Set<string>();
+  for (const entry of mapped.daily) {
+    const metric = metricName.safeParse(entry.metric);
+    if (
+      !metric.success ||
+      !signalVocabulary[metric.data].value.safeParse(entry.value).success
+    )
+      continue;
+    upsertSignal(database, { ...entry, ...source, updated_at: now });
+    days.add(entry.day);
+  }
+  for (const period of mapped.sleepPeriods) {
+    upsertSleepPeriod(database, {
+      ...source,
+      source_record_id: period.recordId,
+      day: period.day,
+      started_at: period.startedAt,
+      ended_at: period.endedAt,
+      sleep_minutes: period.sleepMinutes,
+      kind: period.kind,
+      updated_at: now,
+    });
+    days.add(period.day);
+  }
+  return days;
 }
