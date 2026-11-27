@@ -26,10 +26,10 @@ export function DueDoses({
   const section = useRef<HTMLElement>(null);
   const shown = doses.data?.length ?? 0;
   useEffect(() => {
-    if (hash === "doses" && shown > 0)
+    if (hash === "doses" && (shown > 0 || doses.isError))
       section.current?.scrollIntoView({ block: "start" });
-  }, [hash, shown]);
-  if (!shown) return null;
+  }, [hash, shown, doses.isError]);
+  if (!shown && !doses.isError) return null;
   return (
     <section
       id="doses"
@@ -37,6 +37,11 @@ export function DueDoses({
       aria-label="Due doses"
       className="mt-3 scroll-mt-4 rounded-(--radius) border border-border bg-surface"
     >
+      {doses.isError && (
+        <p className="m-0 p-4" role="alert">
+          Couldn't load doses
+        </p>
+      )}
       <ul className="m-0 list-none p-0">
         {doses.data?.map((dose) => (
           <DoseRow
@@ -69,6 +74,13 @@ function DoseRow({
     mutationFn: async (action: "log" | "skip") => {
       if (!online || !navigator.onLine) throw new Error("Offline");
       await answerDose(action, dose.key);
+    },
+    onSuccess: async () => {
+      const queryKey = dueDosesKey(person);
+      await client.cancelQueries({ queryKey });
+      client.setQueryData<DueDose[]>(queryKey, (doses) =>
+        doses?.filter((cachedDose) => cachedDose.key !== dose.key),
+      );
     },
     onSettled: () =>
       Promise.all([

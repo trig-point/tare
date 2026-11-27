@@ -16,9 +16,18 @@ const { DueDoses } = await import("../src/due-doses.tsx");
 const { createMemoryHistory, createRootRoute, createRouter, RouterProvider } =
   await import("@tanstack/react-router");
 
-async function render(doses: DueDose[]) {
+async function render(doses: DueDose[] | Error) {
   const client = new QueryClient();
-  client.setQueryData(dueDosesKey(1), doses);
+  if (doses instanceof Error) {
+    await assert.rejects(
+      client.fetchQuery({
+        queryKey: dueDosesKey(1),
+        queryFn: () => Promise.reject(doses),
+      }),
+    );
+  } else {
+    client.setQueryData(dueDosesKey(1), doses);
+  }
   const router = createRouter({
     routeTree: createRootRoute({
       component: () =>
@@ -92,4 +101,12 @@ test("no due dose renders nothing; a malformed response fails", async (context) 
     Response.json({ medications: [{}] }),
   );
   await assert.rejects(readDueDoses(new AbortController().signal));
+});
+
+test("a failed load shows an alert inside the doses section", async () => {
+  const html = await render(new Error("Load failed"));
+  assert.match(
+    html,
+    /<section id="doses"[^>]*>.*<p [^>]*role="alert"[^>]*>Couldn&#x27;t load doses<\/p>.*<\/section>/s,
+  );
 });
