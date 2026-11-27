@@ -3,6 +3,7 @@ import { ApiError, api } from "./api.ts";
 import {
   activitySetSchema,
   blankSet,
+  type LoadUnit,
   loadUnit,
   type SetInput,
 } from "./health-api.ts";
@@ -74,12 +75,30 @@ export function opensShort(movement: PlannedMovement) {
   return (movement.card?.sessions ?? 0) >= SHORT_CARD_SESSIONS;
 }
 
-export function prescribedSet(movement: PlannedMovement) {
+const plannedLoad =
+  /^(?:(pin)\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:(kg|lb)\s*(?:per\s+hand|\/\s*hand|each)?|(pin))?)$/i;
+
+function readLoad(text: string | undefined) {
+  const match = plannedLoad.exec(text?.trim() ?? "");
+  const load = match?.[2] ?? match?.[3];
+  return load ? { load, unit: match?.[1] ?? match?.[4] ?? match?.[5] } : null;
+}
+
+export function sessionLoadUnit(workout: ScheduledWorkout): LoadUnit {
+  const units = workout.movements.map((movement) =>
+    readLoad(movement.load)?.unit?.toLowerCase(),
+  );
+  const count = (unit: LoadUnit) =>
+    units.filter((read) => read === unit).length;
+  return count("lb") > count("kg") ? "lb" : "kg";
+}
+
+export function prescribedSet(
+  movement: PlannedMovement,
+  fallbackUnit: LoadUnit = "kg",
+) {
   const name = movement.name.trim();
-  const load =
-    /^(?:(pin)\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(kg|lb|pin)?)$/i.exec(
-      movement.load?.trim() ?? "",
-    );
+  const load = readLoad(movement.load);
   return {
     ...blankSet(),
     exercise:
@@ -90,8 +109,8 @@ export function prescribedSet(movement: PlannedMovement) {
             .replace(/[\uD800-\uDBFF]$/, "")
             .trimEnd()}…`,
     reps: /^\d+$/.test(movement.reps.trim()) ? movement.reps.trim() : "",
-    load: load?.[2] ?? load?.[3] ?? "",
-    load_unit: loadUnit(load?.[1] ?? load?.[4]),
+    load: load?.load ?? "",
+    load_unit: load ? loadUnit(load.unit) : fallbackUnit,
   };
 }
 

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { ApiError, liveRefresh } from "./api.ts";
-import { setInput, setRow } from "./health-api.ts";
+import { type LoadUnit, setInput, setRow } from "./health-api.ts";
 import {
   Button,
   Dialog,
@@ -30,6 +30,7 @@ import {
   type SavedWorkout,
   type ScheduledWorkout,
   saveGuideSet,
+  sessionLoadUnit,
   undoGuideSet,
 } from "./workout-guide.ts";
 
@@ -283,6 +284,7 @@ function GuideSession({
     activity.isFetching ||
     activity.isError ||
     saved === undefined;
+  const fallbackUnit = sessionLoadUnit(workout);
   const occurrences = new Map<string, number>();
   const setsByExercise = new Map<string, SavedWorkout["sets"]>();
   for (const set of saved?.sets ?? []) {
@@ -330,6 +332,7 @@ function GuideSession({
                     key={marked?.client_set_id ?? row}
                     number={setIndex + 1}
                     movement={movement}
+                    fallbackUnit={fallbackUnit}
                     marked={marked}
                     next={position === sets.length}
                     previous={sets.at(-1)}
@@ -522,6 +525,7 @@ function Movement({
 function GuideSet({
   number,
   movement,
+  fallbackUnit,
   marked,
   next,
   previous,
@@ -533,6 +537,7 @@ function GuideSet({
 }: {
   number: number;
   movement: PlannedMovement;
+  fallbackUnit: LoadUnit;
   marked: SavedWorkout["sets"][number] | undefined;
   next: boolean;
   previous: SavedWorkout["sets"][number] | undefined;
@@ -545,7 +550,7 @@ function GuideSet({
   const [input, setInput] = useState<ReturnType<typeof prescribedSet> | null>(
     null,
   );
-  const base = prescribedSet(movement);
+  const base = prescribedSet(movement, fallbackUnit);
   const prior = previous && setRow(previous);
   const row = marked
     ? setRow(marked)

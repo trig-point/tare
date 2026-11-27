@@ -22,6 +22,7 @@ import {
   restSeconds,
   type ScheduledWorkout,
   saveGuideSet,
+  sessionLoadUnit,
   undoGuideSet,
 } from "../src/workout-guide.ts";
 import "./tsx.mts";
@@ -60,6 +61,9 @@ test("the planned load opens as a pin, pound or kilogram set and a pin reads bac
     ["PIN 7.5", ["7.5", "pin"]],
     ["10 pin", ["10", "pin"]],
     ["10 lb", ["10", "lb"]],
+    ["50 lb per hand", ["50", "lb"]],
+    ["50 lb/hand", ["50", "lb"]],
+    ["20 KG each", ["20", "kg"]],
     ["10", ["10", "kg"]],
     ["pin", ["", "kg"]],
     ["pin ten", ["", "kg"]],
@@ -68,6 +72,19 @@ test("the planned load opens as a pin, pound or kilogram set and a pin reads bac
     const row = prescribedSet({ ...movement, load });
     assert.deepEqual([row.load, row.load_unit], expected, load);
   }
+  const session = {
+    ...workout,
+    movements: ["50 lb per hand", "pin 4", "bodyweight"].map((load) => ({
+      ...movement,
+      load,
+    })),
+  };
+  const unit = sessionLoadUnit(session);
+  assert.deepEqual(
+    session.movements.map((planned) => prescribedSet(planned, unit).load_unit),
+    ["lb", "pin", "lb"],
+  );
+  assert.equal(sessionLoadUnit({ ...workout, movements: [] }), "kg");
   const pin = setInput(prescribedSet({ ...movement, load: "pin 10" }));
   assert.deepEqual([pin.load, pin.load_unit], [10, "pin"]);
   const stored = {
