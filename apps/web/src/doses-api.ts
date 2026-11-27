@@ -9,11 +9,18 @@ const medicationsSchema = z.object({
       status: z
         .object({
           next_dose: z
-            .object({
-              public_key: z.string().nullable(),
-              scheduled_at: z.string(),
-              status: z.enum(["scheduled", "due", "late"]),
-            })
+            .discriminatedUnion("status", [
+              z.object({
+                public_key: z.string().nullable(),
+                scheduled_at: z.string(),
+                status: z.literal("scheduled"),
+              }),
+              z.object({
+                public_key: z.string().min(1),
+                scheduled_at: z.string(),
+                status: z.enum(["due", "late"]),
+              }),
+            ])
             .nullable(),
         })
         .nullable(),
@@ -34,7 +41,7 @@ export async function readDueDoses(signal: AbortSignal): Promise<DueDose[]> {
   );
   return medications.flatMap(({ name, status }) => {
     const dose = status?.next_dose;
-    return dose?.public_key && dose.status !== "scheduled"
+    return dose && dose.status !== "scheduled"
       ? [
           {
             key: dose.public_key,

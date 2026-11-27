@@ -16,8 +16,12 @@ const { DueDoses } = await import("../src/due-doses.tsx");
 const { createMemoryHistory, createRootRoute, createRouter, RouterProvider } =
   await import("@tanstack/react-router");
 
-async function render(doses: DueDose[] | Error) {
-  const client = new QueryClient();
+async function render(
+  doses: DueDose[] | Error,
+  client = new QueryClient(),
+  online = false,
+  updatedAt?: number,
+) {
   if (doses instanceof Error) {
     await assert.rejects(
       client.fetchQuery({
@@ -26,12 +30,12 @@ async function render(doses: DueDose[] | Error) {
       }),
     );
   } else {
-    client.setQueryData(dueDosesKey(1), doses);
+    client.setQueryData(dueDosesKey(1), doses, { updatedAt });
   }
   const router = createRouter({
     routeTree: createRootRoute({
       component: () =>
-        createElement(DueDoses, { person: 1, online: false, timezone: "UTC" }),
+        createElement(DueDoses, { person: 1, online, timezone: "UTC" }),
     }),
     history: createMemoryHistory({ initialEntries: ["/#doses"] }),
   });
@@ -98,7 +102,21 @@ test("due and late doses list with Taken and Skip, which answer them", async (co
 test("no due dose renders nothing; a malformed response fails", async (context) => {
   assert.equal(await render([]), "");
   context.mock.method(globalThis, "fetch", async () =>
-    Response.json({ medications: [{}] }),
+    Response.json({
+      medications: [
+        {
+          id: 1,
+          name: "Example Tablet",
+          status: {
+            next_dose: {
+              public_key: null,
+              scheduled_at: "2026-01-01T08:00:00Z",
+              status: "due",
+            },
+          },
+        },
+      ],
+    }),
   );
   await assert.rejects(readDueDoses(new AbortController().signal));
 });
@@ -109,4 +127,26 @@ test("a failed load shows an alert inside the doses section", async () => {
     html,
     /<section id="doses"[^>]*>.*<p [^>]*role="alert"[^>]*>Couldn&#x27;t load doses<\/p>.*<\/section>/s,
   );
+});
+
+test("an answered row stays disabled while the list waits for a newer load", async () => {
+  const client = new QueryClient();
+  const dose = {
+    key: "tablet",
+    name: "Example Tablet",
+    scheduled_at: "2026-01-01T08:00:00Z",
+    status: "due",
+  } as const;
+  const other = { ...dose, key: "drops", name: "Example Drops" };
+  const mutation = client.getMutationCache().build(client, {
+    mutationKey: ["answer-dose", 1],
+    mutationFn: async () => {},
+  });
+  await mutation.execute({ action: "skip", key: dose.key });
+  const { submittedAt } = mutation.state;
+  const stale = await render([dose, other], client, true, submittedAt - 1);
+  assert.match(stale, /Example Tablet.*>Skipped<.*Example Drops/s);
+  assert.equal((stale.match(/<button[^>]* disabled=""/g) ?? []).length, 4);
+  const fresh = await render([other], client, true, submittedAt + 1);
+  assert.doesNotMatch(fresh, /Example Tablet|disabled=""/);
 });
