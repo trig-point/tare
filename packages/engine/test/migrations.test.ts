@@ -431,6 +431,46 @@ test("0038 numbers earlier local rejections and dates earlier deliveries", (cont
   );
 });
 
+test("0058 keeps every stored set, allows a pin and refuses an unknown unit", (context) => {
+  const database = new Database(":memory:");
+  const folder = mkdtempSync(join(tmpdir(), "tare-pin-"));
+  context.after(() => {
+    database.close();
+    rmSync(folder, { recursive: true, force: true });
+  });
+  cpSync(migrations, folder, { recursive: true });
+  const migration = "0058_activity_set_pin.sql";
+  rmSync(join(folder, migration));
+  const before = pathToFileURL(folder + sep);
+  database.pragma("foreign_keys = ON");
+  applyMigrations(database, before);
+  const instant = "2026-01-01T00:00:00.000Z";
+  database.exec(`
+    INSERT INTO users (id, username, timezone, created_at)
+      VALUES (1, 'example-person', 'UTC', '${instant}');
+    INSERT INTO activity_sessions (id, user_id, timing, day, kind, source, created_at)
+      VALUES (1, 1, 'date_only', '2026-01-01', 'strength', 'manual', '${instant}');
+    INSERT INTO activity_sets VALUES
+      (1, 1, 1, 'Row', 'warmup', 10, 20, 'kg', NULL, NULL, NULL, NULL, 'first'),
+      (1, 1, 2, 'Squat', 'working', 8, 22.68, 'lb', NULL, 3, 4, 'Slow', NULL),
+      (1, 1, 3, 'Plank', 'working', NULL, NULL, NULL, 60, NULL, NULL, NULL, NULL);
+  `);
+  const sets = () =>
+    database.prepare("SELECT * FROM activity_sets ORDER BY set_index").all();
+  const stored = sets();
+  cpSync(new URL(migration, migrations), join(folder, migration));
+  applyMigrations(database, before);
+  assert.deepEqual(sets(), stored);
+  const insert = database.prepare(
+    "INSERT INTO activity_sets (user_id, session_id, set_index, exercise, load_kg, load_unit, client_set_id) VALUES (1, 1, ?, 'Pulldown', 10, ?, ?)",
+  );
+  insert.run(4, "pin", "pin");
+  assert.throws(() => insert.run(5, "stone", null), /CHECK constraint/);
+  assert.throws(() => insert.run(5, "kg", "first"), /UNIQUE/);
+  database.exec("DELETE FROM activity_sessions");
+  assert.deepEqual(sets(), []);
+});
+
 test("0055 tags archived menu history and leaves sign-off and calories intact", (context) => {
   const database = new Database(":memory:");
   const folder = mkdtempSync(join(tmpdir(), "tare-eating-out-"));

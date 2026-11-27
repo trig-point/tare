@@ -14,7 +14,8 @@ export function setView(row: SelectActivitySetsResult) {
       load_kg === null
         ? null
         : twoPlaces(row.load_unit === "lb" ? load_kg / kgPerPound : load_kg),
-    load_kg: load_kg === null ? null : twoPlaces(load_kg),
+    load_kg:
+      load_kg === null || row.load_unit === "pin" ? null : twoPlaces(load_kg),
   };
 }
 

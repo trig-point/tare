@@ -392,6 +392,55 @@ const pairs = (sessions: SelectActivitiesResult[]) =>
     .map((workout) => `${workout.id}:${workout.tracker?.id ?? "-"}`)
     .join(" ");
 
+test("a pin set is stored and read back as a pin; an unknown unit is refused", async (context) => {
+  const { app, database, signIn } = fixture(context);
+  const headers = { ...requestedWith, Cookie: cookie(await signIn()) };
+  const send = async (path: string, body: unknown, method = "POST") => {
+    const response = await app.request(`/api/${path}`, {
+      headers,
+      method,
+      body: JSON.stringify(body),
+    });
+    return { status: response.status, body: await response.json() };
+  };
+  const pinSet = {
+    exercise: "Lat pulldown",
+    reps: 10,
+    load: 10,
+    load_unit: "pin",
+  };
+  const pinView = { load: 10, load_unit: "pin", load_kg: null };
+  const stored = () =>
+    database
+      .prepare(
+        "SELECT load_kg, load_unit FROM activity_sets ORDER BY set_index",
+      )
+      .all();
+  const logged = await send("activities", {
+    timing: "date_only",
+    day,
+    kind: "strength",
+    client_id: "pin-workout",
+    sets: [pinSet, strengthSet],
+  });
+  assert.equal(logged.status, 200);
+  assert.partialDeepStrictEqual(logged.body.sets, [
+    pinView,
+    { load: 50, load_unit: "lb", load_kg: 22.68 },
+  ]);
+  assert.deepEqual(stored(), [
+    { load_kg: 10, load_unit: "pin" },
+    { load_kg: 50 * 0.45359237, load_unit: "lb" },
+  ]);
+  const sets = `activities/${logged.body.id}/sets`;
+  const replaced = await send(sets, { sets: [pinSet] }, "PATCH");
+  assert.partialDeepStrictEqual(replaced.body.sets, [pinView]);
+  const before = stored();
+  const unknown = { sets: [{ ...pinSet, load_unit: "stone" }] };
+  assert.equal((await send(sets, unknown, "PATCH")).status, 400);
+  assert.deepEqual(stored(), before);
+});
+
 test("merged workouts pair one-to-one by largest overlap, then earlier start, then lower id", () => {
   const cases: [SelectActivitiesResult[], string][] = [
     [

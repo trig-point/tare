@@ -42,7 +42,7 @@ const setInput = zod
     set_type: zod.enum(["warmup", "working", "drop", "failure"]).optional(),
     reps: zod.number().int().min(0).max(1000).nullable().optional(),
     load: zod.number().min(0).max(1000).nullable().optional(),
-    load_unit: zod.enum(["kg", "lb"]).nullable().optional(),
+    load_unit: zod.enum(["kg", "lb", "pin"]).nullable().optional(),
     duration_seconds: zod.number().int().positive().max(86_400).nullish(),
     rir_low: zod.number().int().min(0).max(10).nullable().optional(),
     rir_high: zod.number().int().min(0).max(10).nullable().optional(),
