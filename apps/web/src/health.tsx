@@ -10,6 +10,7 @@ import {
   deleteHabit,
   type Habit,
   habitLabels,
+  loadUnit,
   logActivity,
   loggedSource,
   logHabit,
@@ -559,12 +560,13 @@ function SetFields({
                 disabled={disabled}
                 onChange={(event) =>
                   change(index, {
-                    load_unit: event.target.value === "lb" ? "lb" : "kg",
+                    load_unit: loadUnit(event.target.value),
                   })
                 }
               >
                 <option value="kg">kg</option>
                 <option value="lb">lb</option>
+                <option value="pin">pin</option>
               </select>
             )}
           </Field>

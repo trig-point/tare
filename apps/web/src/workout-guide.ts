@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { ApiError, api } from "./api.ts";
-import { activitySetSchema, blankSet, type SetInput } from "./health-api.ts";
+import {
+  activitySetSchema,
+  blankSet,
+  loadUnit,
+  type SetInput,
+} from "./health-api.ts";
 
 import { clientId as newClientId } from "./outbox-store.ts";
 
@@ -71,9 +76,10 @@ export function opensShort(movement: PlannedMovement) {
 
 export function prescribedSet(movement: PlannedMovement) {
   const name = movement.name.trim();
-  const load = /^(\d+(?:\.\d+)?)\s*(kg|lb)?$/i.exec(
-    movement.load?.trim() ?? "",
-  );
+  const load =
+    /^(?:(pin)\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(kg|lb|pin)?)$/i.exec(
+      movement.load?.trim() ?? "",
+    );
   return {
     ...blankSet(),
     exercise:
@@ -84,9 +90,8 @@ export function prescribedSet(movement: PlannedMovement) {
             .replace(/[\uD800-\uDBFF]$/, "")
             .trimEnd()}…`,
     reps: /^\d+$/.test(movement.reps.trim()) ? movement.reps.trim() : "",
-    load: load?.[1] ?? "",
-    load_unit:
-      load?.[2]?.toLowerCase() === "lb" ? ("lb" as const) : ("kg" as const),
+    load: load?.[2] ?? load?.[3] ?? "",
+    load_unit: loadUnit(load?.[1] ?? load?.[4]),
   };
 }
 

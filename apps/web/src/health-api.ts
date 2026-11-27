@@ -167,11 +167,15 @@ export function withClientId<Body, Result>(
 }
 
 type StoredSet = Workout["sets"][number];
+export const loadUnits = ["kg", "lb", "pin"] as const;
+export type LoadUnit = (typeof loadUnits)[number];
+export const loadUnit = (text: string | null | undefined): LoadUnit =>
+  loadUnits.find((unit) => unit === text?.toLowerCase()) ?? "kg";
 export type SetRow = {
   exercise: string;
   reps: string;
   load: string;
-  load_unit: "kg" | "lb";
+  load_unit: LoadUnit;
   kept: Partial<StoredSet>;
 };
 export type SetInput = ReturnType<typeof setInput>;
@@ -192,7 +196,7 @@ export function setRow(set: StoredSet): SetRow {
     exercise: set.exercise,
     reps: set.reps === null ? "" : String(set.reps),
     load: set.load === null ? "" : String(set.load),
-    load_unit: set.load_unit === "lb" ? "lb" : "kg",
+    load_unit: loadUnit(set.load_unit),
     kept: {
       set_type,
       duration_seconds,
@@ -217,8 +221,13 @@ export function setInput(row: SetRow) {
 }
 export function setText(set: StoredSet) {
   const reps = set.reps === null ? "" : ` ${set.reps}`;
+  const amount = set.load === null ? "" : displayNumber(set.load);
   const load =
-    set.load === null ? "" : ` × ${displayNumber(set.load)} ${set.load_unit}`;
+    set.load === null
+      ? ""
+      : set.load_unit === "pin"
+        ? ` × pin ${amount}`
+        : ` × ${amount} ${set.load_unit}`;
   return `${set.exercise}${reps}${load}`;
 }
 
