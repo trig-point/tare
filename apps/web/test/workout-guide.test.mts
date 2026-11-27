@@ -75,7 +75,7 @@ test("the planned load opens as a pin, pound or kilogram set and a pin reads bac
   }
   const session = {
     ...workout,
-    movements: ["50 lb per hand", "pin 4", "bodyweight"].map((load) => ({
+    movements: ["50 lb per hand", "pin 4", "bodyweight", "30"].map((load) => ({
       ...movement,
       load,
     })),
@@ -83,7 +83,7 @@ test("the planned load opens as a pin, pound or kilogram set and a pin reads bac
   const unit = sessionLoadUnit(session);
   assert.deepEqual(
     session.movements.map((planned) => prescribedSet(planned, unit).load_unit),
-    ["lb", "pin", "lb"],
+    ["lb", "pin", "lb", "lb"],
   );
   assert.equal(sessionLoadUnit({ ...workout, movements: [] }), "kg");
   const pin = setInput(prescribedSet({ ...movement, load: "pin 10" }));
@@ -97,8 +97,12 @@ test("the planned load opens as a pin, pound or kilogram set and a pin reads bac
   assert.equal(setText(stored), "Lat pulldown 10 × pin 10");
   assert.equal(setRow(stored).load_unit, "pin");
   const blank = { ...stored, load: null, load_unit: null };
-  const pounds = prescribedSet({ ...movement, load: "50 lb/hand" });
-  assert.equal(followSet(pounds, blank).load_unit, "lb");
+  const block = { ...movement, name: stored.exercise };
+  const pounds = prescribedSet({ ...block, load: "50 lb/hand" });
+  assert.equal(followSet(pounds, blank, 2).load_unit, "lb");
+  const warmup = { ...stored, load: 25, load_unit: "kg" as const };
+  const working = followSet(pounds, warmup, 1);
+  assert.deepEqual([working.load, working.load_unit], ["50", "lb"]);
   assert.equal(
     setText({ ...stored, load_unit: "lb" }),
     "Lat pulldown 10 × 10 lb",

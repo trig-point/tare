@@ -552,7 +552,9 @@ function GuideSet({
     null,
   );
   const base = prescribedSet(movement, fallbackUnit);
-  const row = marked ? setRow(marked) : (input ?? followSet(base, previous));
+  const row = marked
+    ? setRow(marked)
+    : (input ?? followSet(base, previous, number));
   const inputId = useId();
   return (
     <form

@@ -112,15 +112,16 @@ export function prescribedSet(
             .trimEnd()}…`,
     reps: /^\d+$/.test(movement.reps.trim()) ? movement.reps.trim() : "",
     load: load?.load ?? "",
-    load_unit: load ? loadUnit(load.unit) : fallbackUnit,
+    load_unit: load?.unit ? loadUnit(load.unit) : fallbackUnit,
   };
 }
 
 export function followSet(
   base: SetRow,
   previous: SavedWorkout["sets"][number] | undefined,
+  setNumber: number,
 ) {
-  if (!previous) return base;
+  if (setNumber === 1 || !previous) return base;
   const prior = setRow(previous);
   return {
     ...base,
