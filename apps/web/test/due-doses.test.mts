@@ -149,4 +149,21 @@ test("an answered row stays disabled while the list waits for a newer load", asy
   assert.equal((stale.match(/<button[^>]* disabled=""/g) ?? []).length, 4);
   const fresh = await render([other], client, true, submittedAt + 1);
   assert.doesNotMatch(fresh, /Example Tablet|disabled=""/);
+  const failure = client.getMutationCache().build(client, {
+    mutationKey: ["answer-dose", 1],
+    mutationFn: async () => {
+      throw new Error("Network failed");
+    },
+  });
+  await assert.rejects(failure.execute({ action: "log", key: other.key }));
+  const failedAt = failure.state.submittedAt;
+  const failed = await render([other], client, true, failedAt - 1);
+  assert.match(failed, />Not saved</);
+  assert.equal((failed.match(/<button[^>]* disabled=""/g) ?? []).length, 2);
+  const retry = await render([other], client, true, failedAt + 1);
+  assert.doesNotMatch(retry, /Not saved|disabled=""/);
+  assert.match(
+    retry,
+    /<button[^>]*>Taken<\/button>.*<button[^>]*>Skip<\/button>/s,
+  );
 });

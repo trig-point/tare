@@ -67,15 +67,19 @@ export function DueDoses({
       (lastAnswer.status !== "pending" &&
         doses.dataUpdatedAt > lastAnswer.submittedAt));
   function submitAnswer(action: DoseAnswer["action"], key: string) {
+    const current = client.getQueryState(dueDosesKey(person));
     if (
       !canAnswer ||
-      client.getQueryState(dueDosesKey(person))?.status !== "success" ||
+      current?.status !== "success" ||
+      current.fetchStatus === "paused" ||
       client.getMutationCache().find({
         mutationKey,
         exact: true,
         predicate: ({ state }) =>
           state.status === "pending" ||
-          (state.variables as DoseAnswer | undefined)?.key === key,
+          state.submittedAt >= current.dataUpdatedAt ||
+          (state.status === "success" &&
+            (state.variables as DoseAnswer | undefined)?.key === key),
       })
     )
       return;
@@ -103,8 +107,10 @@ export function DueDoses({
       )}
       <ul className="m-0 list-none p-0">
         {doses.data?.map((dose) => {
-          const answered = answers.find(
-            ({ variables }) => variables.key === dose.key,
+          const answered = answers.findLast(
+            ({ variables, status, submittedAt }) =>
+              variables.key === dose.key &&
+              (status !== "error" || submittedAt >= doses.dataUpdatedAt),
           );
           const label =
             answered?.status === "success"
