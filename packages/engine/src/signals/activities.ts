@@ -85,7 +85,7 @@ export const widestSet = {
   set_type: "failure",
   reps: 1000,
   load: widestNumber,
-  load_unit: "kg",
+  load_unit: "pin",
   duration_seconds: 86_400,
   rir_low: 10,
   rir_high: 10,
