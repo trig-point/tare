@@ -13,6 +13,7 @@ import {
   weightUnit,
 } from "./body-units.ts";
 import { refreshDays } from "./days-api.ts";
+import { DueDoses } from "./due-doses.tsx";
 import { EatingOutSwitch } from "./eating-out.tsx";
 import { BodyCard } from "./health.tsx";
 import type { OutboxReplay } from "./outbox-replay.ts";
@@ -97,6 +98,11 @@ export function Today({
           </Link>
         )}
       </div>
+      <DueDoses
+        person={person.id}
+        online={online}
+        timezone={today.data?.timezone}
+      />
       {/* The bare Radix root and panels carry no data-slot, so Body keeps its base styles. */}
       <Tabs.Root
         defaultValue="food"
