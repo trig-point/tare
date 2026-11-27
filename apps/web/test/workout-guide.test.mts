@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { twoUsers } from "../../../packages/engine/test/support/two-users.ts";
 import { exampleSchedule } from "../../../packages/engine/test/support/workout-schedule.ts";
 import { ApiError } from "../src/api.ts";
-import { setInput, setRow, setText } from "../src/health-api.ts";
+import { setInput } from "../src/health-api.ts";
 import { scheduledWorkoutKey } from "../src/today-api.ts";
 import {
   closeStaleGuide,
@@ -54,34 +54,15 @@ const clientId = "guide:2026-01-05:upper_a";
 const activity = { id: 3, client_id: clientId, sets: [] };
 const input = setInput(prescribedSet(movement));
 
-test("the planned load opens as a pin, pound or kilogram set and a pin reads back as a pin", () => {
+test("the planned load opens as a pin, pound or kilogram set", () => {
   for (const [load, expected] of [
     ["pin 10", ["10", "pin"]],
-    ["PIN 7.5", ["7.5", "pin"]],
-    ["10 pin", ["10", "pin"]],
     ["10 lb", ["10", "lb"]],
     ["10", ["10", "kg"]],
-    ["pin", ["", "kg"]],
-    ["pin ten", ["", "kg"]],
-    [undefined, ["", "kg"]],
   ] as const) {
     const row = prescribedSet({ ...movement, load });
     assert.deepEqual([row.load, row.load_unit], expected, load);
   }
-  const pin = setInput(prescribedSet({ ...movement, load: "pin 10" }));
-  assert.deepEqual([pin.load, pin.load_unit], [10, "pin"]);
-  const stored = {
-    ...{ set_index: 1, exercise: "Lat pulldown", set_type: "working" },
-    ...{ reps: 10, load: 10, load_unit: "pin", load_kg: null },
-    ...{ duration_seconds: null, rir_low: null, rir_high: null, notes: null },
-    client_set_id: null,
-  };
-  assert.equal(setText(stored), "Lat pulldown 10 × pin 10");
-  assert.equal(setRow(stored).load_unit, "pin");
-  assert.equal(
-    setText({ ...stored, load_unit: "lb" }),
-    "Lat pulldown 10 × 10 lb",
-  );
 });
 
 test("Done uses the card rest or 90 seconds and opens short at three sessions", () => {

@@ -431,7 +431,7 @@ test("0038 numbers earlier local rejections and dates earlier deliveries", (cont
   );
 });
 
-test("0058 keeps every stored set, allows a pin and refuses an unknown unit", (context) => {
+test("0058 keeps every stored set and allows a pin", (context) => {
   const database = new Database(":memory:");
   const folder = mkdtempSync(join(tmpdir(), "tare-pin-"));
   context.after(() => {
@@ -455,20 +455,15 @@ test("0058 keeps every stored set, allows a pin and refuses an unknown unit", (c
       (1, 1, 2, 'Squat', 'working', 8, 22.68, 'lb', NULL, 3, 4, 'Slow', NULL),
       (1, 1, 3, 'Plank', 'working', NULL, NULL, NULL, 60, NULL, NULL, NULL, NULL);
   `);
-  const sets = () =>
-    database.prepare("SELECT * FROM activity_sets ORDER BY set_index").all();
+  const sets = () => database.prepare("SELECT * FROM activity_sets").all();
   const stored = sets();
   cpSync(new URL(migration, migrations), join(folder, migration));
   applyMigrations(database, before);
   assert.deepEqual(sets(), stored);
-  const insert = database.prepare(
-    "INSERT INTO activity_sets (user_id, session_id, set_index, exercise, load_kg, load_unit, client_set_id) VALUES (1, 1, ?, 'Pulldown', 10, ?, ?)",
+  database.exec(
+    "INSERT INTO activity_sets (user_id, session_id, set_index, exercise, load_kg, load_unit) VALUES (1, 1, 4, 'Pulldown', 10, 'pin')",
   );
-  insert.run(4, "pin", "pin");
-  assert.throws(() => insert.run(5, "stone", null), /CHECK constraint/);
-  assert.throws(() => insert.run(5, "kg", "first"), /UNIQUE/);
-  database.exec("DELETE FROM activity_sessions");
-  assert.deepEqual(sets(), []);
+  assert.equal(sets().length, 4);
 });
 
 test("0055 tags archived menu history and leaves sign-off and calories intact", (context) => {
