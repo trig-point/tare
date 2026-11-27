@@ -6,6 +6,8 @@ import {
   type LoadUnit,
   loadUnit,
   type SetInput,
+  type SetRow,
+  setRow,
 } from "./health-api.ts";
 
 import { clientId as newClientId } from "./outbox-store.ts";
@@ -111,6 +113,20 @@ export function prescribedSet(
     reps: /^\d+$/.test(movement.reps.trim()) ? movement.reps.trim() : "",
     load: load?.load ?? "",
     load_unit: load ? loadUnit(load.unit) : fallbackUnit,
+  };
+}
+
+export function followSet(
+  base: SetRow,
+  previous: SavedWorkout["sets"][number] | undefined,
+) {
+  if (!previous) return base;
+  const prior = setRow(previous);
+  return {
+    ...base,
+    reps: prior.reps,
+    load: prior.load,
+    load_unit: previous.load_unit === null ? base.load_unit : prior.load_unit,
   };
 }
 

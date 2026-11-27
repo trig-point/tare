@@ -15,6 +15,7 @@ import {
   closeStaleGuide,
   DEFAULT_REST_SECONDS,
   discardGuide,
+  followSet,
   guideChoices,
   guideClientId,
   newGuideSet,
@@ -551,18 +552,7 @@ function GuideSet({
     null,
   );
   const base = prescribedSet(movement, fallbackUnit);
-  const prior = previous && setRow(previous);
-  const row = marked
-    ? setRow(marked)
-    : (input ??
-      (prior
-        ? {
-            ...base,
-            reps: prior.reps,
-            load: prior.load,
-            load_unit: prior.load_unit,
-          }
-        : base));
+  const row = marked ? setRow(marked) : (input ?? followSet(base, previous));
   const inputId = useId();
   return (
     <form

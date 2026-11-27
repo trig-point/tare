@@ -10,6 +10,7 @@ import { setInput, setRow, setText } from "../src/health-api.ts";
 import { scheduledWorkoutKey } from "../src/today-api.ts";
 import {
   closeStaleGuide,
+  followSet,
   guideChoices,
   newGuideSet,
   openGuideChoice,
@@ -95,6 +96,9 @@ test("the planned load opens as a pin, pound or kilogram set and a pin reads bac
   };
   assert.equal(setText(stored), "Lat pulldown 10 × pin 10");
   assert.equal(setRow(stored).load_unit, "pin");
+  const blank = { ...stored, load: null, load_unit: null };
+  const pounds = prescribedSet({ ...movement, load: "50 lb/hand" });
+  assert.equal(followSet(pounds, blank).load_unit, "lb");
   assert.equal(
     setText({ ...stored, load_unit: "lb" }),
     "Lat pulldown 10 × 10 lb",
