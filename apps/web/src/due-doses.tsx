@@ -1,11 +1,6 @@
-import {
-  useMutation,
-  useMutationState,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouterState } from "@tanstack/react-router";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import {
   answerDose,
   type DueDose,
@@ -16,10 +11,19 @@ import { Button } from "./shared/ui/index.ts";
 import { press } from "./slots.tsx";
 import { refreshToday } from "./today-api.ts";
 
-type DoseAnswer = {
-  action: "log" | "skip";
-  key: string;
-};
+export function doseTapDelay(keys: string) {
+  let readyKeys: string | undefined;
+  return {
+    getSnapshot: () => readyKeys,
+    subscribe(notify: () => void) {
+      const timer = setTimeout(() => {
+        readyKeys = keys;
+        notify();
+      }, 700);
+      return () => clearTimeout(timer);
+    },
+  };
+}
 
 /** Doses that are due or late, reached from reminders at `/#doses`. */
 export function DueDoses({
@@ -32,59 +36,10 @@ export function DueDoses({
   timezone: string | undefined;
 }) {
   const doses = useQuery({ ...dueDosesQuery(person), enabled: online });
-  const client = useQueryClient();
-  const mutationKey = ["answer-dose", person];
-  const answers = useMutationState({
-    filters: { mutationKey, exact: true },
-    select: ({ state }) => ({
-      ...state,
-      variables: state.variables as DoseAnswer,
-    }),
-  });
-  const answer = useMutation({
-    mutationKey,
-    gcTime: Infinity,
-    networkMode: "always",
-    mutationFn: async ({ action, key }: DoseAnswer) => {
-      if (!online || !navigator.onLine) throw new Error("Offline");
-      await answerDose(action, key);
-    },
-    onSettled: async () => {
-      const queryKey = dueDosesKey(person);
-      await client.cancelQueries({ queryKey });
-      await Promise.all([
-        client.invalidateQueries({ queryKey }),
-        refreshToday(client, person),
-      ]);
-    },
-  });
-  const lastAnswer = answers.at(-1);
-  const canAnswer =
-    online &&
-    doses.isSuccess &&
-    !doses.isPaused &&
-    (!lastAnswer ||
-      (lastAnswer.status !== "pending" &&
-        doses.dataUpdatedAt > lastAnswer.submittedAt));
-  function submitAnswer(action: DoseAnswer["action"], key: string) {
-    const current = client.getQueryState(dueDosesKey(person));
-    if (
-      !canAnswer ||
-      current?.status !== "success" ||
-      current.fetchStatus === "paused" ||
-      client.getMutationCache().find({
-        mutationKey,
-        exact: true,
-        predicate: ({ state }) =>
-          state.status === "pending" ||
-          state.submittedAt >= current.dataUpdatedAt ||
-          (state.status === "success" &&
-            (state.variables as DoseAnswer | undefined)?.key === key),
-      })
-    )
-      return;
-    answer.mutate({ action, key });
-  }
+  const keys = doses.data?.map((dose) => dose.key).join(",") ?? "";
+  const { subscribe, getSnapshot } = useMemo(() => doseTapDelay(keys), [keys]);
+  const tapsReady =
+    useSyncExternalStore(subscribe, getSnapshot, getSnapshot) === keys;
   const hash = useRouterState({ select: (state) => state.location.hash });
   const section = useRef<HTMLElement>(null);
   const shown = doses.data?.length ?? 0;
@@ -106,31 +61,16 @@ export function DueDoses({
         </p>
       )}
       <ul className="m-0 list-none p-0">
-        {doses.data?.map((dose) => {
-          const answered = answers.findLast(
-            ({ variables, status, submittedAt }) =>
-              variables.key === dose.key &&
-              (status !== "error" || submittedAt >= doses.dataUpdatedAt),
-          );
-          const label =
-            answered?.status === "success"
-              ? answered.variables.action === "log"
-                ? "Taken"
-                : "Skipped"
-              : answered?.status === "error"
-                ? "Not saved"
-                : undefined;
-          return (
-            <DoseRow
-              key={dose.key}
-              dose={dose}
-              disabled={!canAnswer || Boolean(answered)}
-              label={label}
-              timezone={timezone}
-              onAnswer={(action) => submitAnswer(action, dose.key)}
-            />
-          );
-        })}
+        {doses.data?.map((dose) => (
+          <DoseRow
+            key={dose.key}
+            dose={dose}
+            person={person}
+            online={online}
+            tapsReady={tapsReady}
+            timezone={timezone}
+          />
+        ))}
       </ul>
     </section>
   );
@@ -138,17 +78,37 @@ export function DueDoses({
 
 function DoseRow({
   dose,
-  disabled,
-  label,
+  person,
+  online,
+  tapsReady,
   timezone,
-  onAnswer,
 }: {
   dose: DueDose;
-  disabled: boolean;
-  label: string | undefined;
+  person: number;
+  online: boolean;
+  tapsReady: boolean;
   timezone: string | undefined;
-  onAnswer: (action: DoseAnswer["action"]) => void;
 }) {
+  const client = useQueryClient();
+  const queryKey = dueDosesKey(person);
+  const answer = useMutation({
+    networkMode: "always",
+    mutationFn: async (action: "log" | "skip") => {
+      if (!online || !navigator.onLine) throw new Error("Offline");
+      await answerDose(action, dose.key);
+    },
+    onSuccess: async () => {
+      await client.cancelQueries({ queryKey });
+      client.setQueryData<DueDose[]>(queryKey, (doses) =>
+        doses?.filter((cachedDose) => cachedDose.key !== dose.key),
+      );
+    },
+    onSettled: () => {
+      void client.invalidateQueries({ queryKey });
+      void refreshToday(client, person);
+    },
+  });
+  const disabled = !online || !tapsReady || answer.isPending;
   const time = new Date(dose.scheduled_at).toLocaleTimeString([], {
     hour: "numeric",
     minute: "2-digit",
@@ -166,28 +126,24 @@ function DoseRow({
             <span className="text-caution"> Late</span>
           )}
         </p>
+        {answer.isError && <p role="alert">Not saved</p>}
       </div>
-      <div className="relative flex shrink-0 gap-3">
+      <div className="flex shrink-0 gap-3">
         <Button
-          className={label ? "invisible" : press}
+          className={press}
           disabled={disabled}
-          onClick={() => onAnswer("log")}
+          onClick={() => answer.mutate("log")}
         >
           Taken
         </Button>
         <Button
           variant="ghost"
-          className={label ? "invisible" : press}
+          className={press}
           disabled={disabled}
-          onClick={() => onAnswer("skip")}
+          onClick={() => answer.mutate("skip")}
         >
           Skip
         </Button>
-        {label && (
-          <output className="absolute inset-0 flex items-center justify-center">
-            {label}
-          </output>
-        )}
       </div>
     </li>
   );

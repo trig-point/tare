@@ -12,7 +12,7 @@ import {
 import { test } from "./support.mts";
 import "./tsx.mts";
 
-const { DueDoses } = await import("../src/due-doses.tsx");
+const { DueDoses, doseTapDelay } = await import("../src/due-doses.tsx");
 const { createMemoryHistory, createRootRoute, createRouter, RouterProvider } =
   await import("@tanstack/react-router");
 
@@ -20,7 +20,6 @@ async function render(
   doses: DueDose[] | Error,
   client = new QueryClient(),
   online = false,
-  updatedAt?: number,
 ) {
   if (doses instanceof Error) {
     await assert.rejects(
@@ -30,7 +29,7 @@ async function render(
       }),
     );
   } else {
-    client.setQueryData(dueDosesKey(1), doses, { updatedAt });
+    client.setQueryData(dueDosesKey(1), doses);
   }
   const router = createRouter({
     routeTree: createRootRoute({
@@ -129,41 +128,28 @@ test("a failed load shows an alert inside the doses section", async () => {
   );
 });
 
-test("an answered row stays disabled while the list waits for a newer load", async () => {
+test("changed dose rows block taps for 700 ms", async (context) => {
   const client = new QueryClient();
-  const dose = {
+  const dose: DueDose = {
     key: "tablet",
     name: "Example Tablet",
     scheduled_at: "2026-01-01T08:00:00Z",
     status: "due",
-  } as const;
-  const other = { ...dose, key: "drops", name: "Example Drops" };
-  const mutation = client.getMutationCache().build(client, {
-    mutationKey: ["answer-dose", 1],
-    mutationFn: async () => {},
-  });
-  await mutation.execute({ action: "skip", key: dose.key });
-  const { submittedAt } = mutation.state;
-  const stale = await render([dose, other], client, true, submittedAt - 1);
-  assert.match(stale, /Example Tablet.*>Skipped<.*Example Drops/s);
-  assert.equal((stale.match(/<button[^>]* disabled=""/g) ?? []).length, 4);
-  const fresh = await render([other], client, true, submittedAt + 1);
-  assert.doesNotMatch(fresh, /Example Tablet|disabled=""/);
-  const failure = client.getMutationCache().build(client, {
-    mutationKey: ["answer-dose", 1],
-    mutationFn: async () => {
-      throw new Error("Network failed");
-    },
-  });
-  await assert.rejects(failure.execute({ action: "log", key: other.key }));
-  const failedAt = failure.state.submittedAt;
-  const failed = await render([other], client, true, failedAt - 1);
-  assert.match(failed, />Not saved</);
-  assert.equal((failed.match(/<button[^>]* disabled=""/g) ?? []).length, 2);
-  const retry = await render([other], client, true, failedAt + 1);
-  assert.doesNotMatch(retry, /Not saved|disabled=""/);
-  assert.match(
-    retry,
-    /<button[^>]*>Taken<\/button>.*<button[^>]*>Skip<\/button>/s,
-  );
+  };
+  const next = { ...dose, key: "drops", name: "Example Drops" };
+  await render([dose, next], client, true);
+  const changed = await render([next], client, true);
+  assert.equal((changed.match(/<button[^>]* disabled=""/g) ?? []).length, 2);
+
+  context.mock.timers.enable({ apis: ["setTimeout"] });
+  const delay = doseTapDelay(next.key);
+  const notify = context.mock.fn();
+  const unsubscribe = delay.subscribe(notify);
+  assert.notEqual(delay.getSnapshot(), next.key);
+  context.mock.timers.tick(699);
+  assert.notEqual(delay.getSnapshot(), next.key);
+  context.mock.timers.tick(1);
+  assert.equal(delay.getSnapshot(), next.key);
+  assert.equal(notify.mock.callCount(), 1);
+  unsubscribe();
 });
