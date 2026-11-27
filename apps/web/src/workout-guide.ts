@@ -3,8 +3,11 @@ import { ApiError, api } from "./api.ts";
 import {
   activitySetSchema,
   blankSet,
+  type LoadUnit,
   loadUnit,
   type SetInput,
+  type SetRow,
+  setRow,
 } from "./health-api.ts";
 
 import { clientId as newClientId } from "./outbox-store.ts";
@@ -74,12 +77,30 @@ export function opensShort(movement: PlannedMovement) {
   return (movement.card?.sessions ?? 0) >= SHORT_CARD_SESSIONS;
 }
 
-export function prescribedSet(movement: PlannedMovement) {
+const plannedLoad =
+  /^(?:(pin)\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:(kg|lb)\s*(?:per\s+hand|\/\s*hand|each)?|(pin))?)$/i;
+
+function readLoad(text: string | undefined) {
+  const match = plannedLoad.exec(text?.trim() ?? "");
+  const load = match?.[2] ?? match?.[3];
+  return load ? { load, unit: match?.[1] ?? match?.[4] ?? match?.[5] } : null;
+}
+
+export function sessionLoadUnit(workout: ScheduledWorkout): LoadUnit {
+  const units = workout.movements.map((movement) =>
+    readLoad(movement.load)?.unit?.toLowerCase(),
+  );
+  const count = (unit: LoadUnit) =>
+    units.filter((read) => read === unit).length;
+  return count("lb") > count("kg") ? "lb" : "kg";
+}
+
+export function prescribedSet(
+  movement: PlannedMovement,
+  fallbackUnit: LoadUnit = "kg",
+) {
   const name = movement.name.trim();
-  const load =
-    /^(?:(pin)\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(kg|lb|pin)?)$/i.exec(
-      movement.load?.trim() ?? "",
-    );
+  const load = readLoad(movement.load);
   return {
     ...blankSet(),
     exercise:
@@ -90,8 +111,23 @@ export function prescribedSet(movement: PlannedMovement) {
             .replace(/[\uD800-\uDBFF]$/, "")
             .trimEnd()}…`,
     reps: /^\d+$/.test(movement.reps.trim()) ? movement.reps.trim() : "",
-    load: load?.[2] ?? load?.[3] ?? "",
-    load_unit: loadUnit(load?.[1] ?? load?.[4]),
+    load: load?.load ?? "",
+    load_unit: load?.unit ? loadUnit(load.unit) : fallbackUnit,
+  };
+}
+
+export function followSet(
+  base: SetRow,
+  previous: SavedWorkout["sets"][number] | undefined,
+  setNumber: number,
+) {
+  if (setNumber === 1 || !previous) return base;
+  const prior = setRow(previous);
+  return {
+    ...base,
+    reps: prior.reps,
+    load: prior.load,
+    load_unit: previous.load_unit === null ? base.load_unit : prior.load_unit,
   };
 }
 

@@ -10,6 +10,7 @@ import { setInput, setRow, setText } from "../src/health-api.ts";
 import { scheduledWorkoutKey } from "../src/today-api.ts";
 import {
   closeStaleGuide,
+  followSet,
   guideChoices,
   newGuideSet,
   openGuideChoice,
@@ -22,6 +23,7 @@ import {
   restSeconds,
   type ScheduledWorkout,
   saveGuideSet,
+  sessionLoadUnit,
   undoGuideSet,
 } from "../src/workout-guide.ts";
 import "./tsx.mts";
@@ -60,6 +62,9 @@ test("the planned load opens as a pin, pound or kilogram set and a pin reads bac
     ["PIN 7.5", ["7.5", "pin"]],
     ["10 pin", ["10", "pin"]],
     ["10 lb", ["10", "lb"]],
+    ["50 lb per hand", ["50", "lb"]],
+    ["50 lb/hand", ["50", "lb"]],
+    ["20 KG each", ["20", "kg"]],
     ["10", ["10", "kg"]],
     ["pin", ["", "kg"]],
     ["pin ten", ["", "kg"]],
@@ -68,6 +73,19 @@ test("the planned load opens as a pin, pound or kilogram set and a pin reads bac
     const row = prescribedSet({ ...movement, load });
     assert.deepEqual([row.load, row.load_unit], expected, load);
   }
+  const session = {
+    ...workout,
+    movements: ["50 lb per hand", "pin 4", "bodyweight", "30"].map((load) => ({
+      ...movement,
+      load,
+    })),
+  };
+  const unit = sessionLoadUnit(session);
+  assert.deepEqual(
+    session.movements.map((planned) => prescribedSet(planned, unit).load_unit),
+    ["lb", "pin", "lb", "lb"],
+  );
+  assert.equal(sessionLoadUnit({ ...workout, movements: [] }), "kg");
   const pin = setInput(prescribedSet({ ...movement, load: "pin 10" }));
   assert.deepEqual([pin.load, pin.load_unit], [10, "pin"]);
   const stored = {
@@ -78,6 +96,13 @@ test("the planned load opens as a pin, pound or kilogram set and a pin reads bac
   };
   assert.equal(setText(stored), "Lat pulldown 10 × pin 10");
   assert.equal(setRow(stored).load_unit, "pin");
+  const blank = { ...stored, load: null, load_unit: null };
+  const block = { ...movement, name: stored.exercise };
+  const pounds = prescribedSet({ ...block, load: "50 lb/hand" });
+  assert.equal(followSet(pounds, blank, 2).load_unit, "lb");
+  const warmup = { ...stored, load: 25, load_unit: "kg" as const };
+  const working = followSet(pounds, warmup, 1);
+  assert.deepEqual([working.load, working.load_unit], ["50", "lb"]);
   assert.equal(
     setText({ ...stored, load_unit: "lb" }),
     "Lat pulldown 10 × 10 lb",
